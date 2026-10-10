@@ -127,13 +127,16 @@ private func entry(_ dir: String, _ file: String, artist: String, title: String,
 
 /// Abbrechen: sofort beendet, Befunde bis dahin bleiben, nach dem Abbruch kommt nichts mehr dazu
 @Test func consistencyCheckCancelsQuickly() throws {
-    let tracks = (0..<100_000).map { i in
+    // klein und mit einem Arbeiter: der Test läuft parallel zu Zeit-Tests der Engine und soll keine Kerne belegen
+    let tracks = (0..<20_000).map { i in
         var t = Track(key: "HD/:none/:\(i).mp3", path: "/nonexistent-minos/\(i).mp3")
         t.title = "T\(i)"; t.artist = "A"
         return t
     }
-    let run = ConsistencyRun.start(ConsistencyCheck.Input(tracks: tracks))
-    while run.snapshot(sinceLine: 0, sinceFinding: 0).done < 50 { usleep(1000) }
+    var input = ConsistencyCheck.Input(tracks: tracks)
+    input.concurrency = 1
+    let run = ConsistencyRun.start(input)
+    while run.snapshot(sinceLine: .max, sinceFinding: .max).done < 50 { usleep(200) }
     let t0 = Date()
     run.cancel()
     let s = run.snapshot(sinceLine: 0, sinceFinding: 0)
