@@ -222,6 +222,9 @@ public final class MixController: @unchecked Sendable {
     private let lock = NSRecursiveLock()
     private var state = MixState()
     private var audio: [TrackAudio?] = Array(repeating: nil, count: MixEngine.deckCount)
+    /// zählt Ladevorgänge je Deck: nur der zuletzt gestartete darf das Deck belegen
+    /// (zwei Ladevorgänge kurz hintereinander enden sonst in beliebiger Reihenfolge)
+    private var loadSeq = [Int](repeating: 0, count: MixEngine.deckCount)
     private var fluxReverseRestore: [Int: Bool] = [:]
     private var timer: DispatchSourceTimer?
     private var tickCount = 0
@@ -299,22 +302,25 @@ public final class MixController: @unchecked Sendable {
 
     public func load(_ t: Track, deck d: Int) {
         let rate = engine.sampleRate
-        locked {
+        let seq: Int = locked {
+            loadSeq[d] += 1
             state.decks[d].loading = true
             state.decks[d].error = nil
             state.decks[d].playing = false
             engine.player(d).playing = false
+            return loadSeq[d]
         }
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             do {
                 let t0 = Date()
                 let a = try TrackAudio.decode(url: URL(fileURLWithPath: t.path), sampleRate: rate)
-                if ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1" {
+                if Self.debug {
                     print(String(format: "[load] deck %d: %.2f s, %.0f MB", d, Date().timeIntervalSince(t0), Double(a.frames) * 8 / 1e6))
                 }
-                finishLoad(t, a, d)
+                finishLoad(t, a, d, seq: seq)
             } catch {
                 locked {
+                    guard seq == loadSeq[d] else { return }   // inzwischen ein anderer Track gewählt
                     state.decks[d].loading = false
                     state.decks[d].error = "Laden fehlgeschlagen: \(error.localizedDescription)"
                 }
@@ -322,8 +328,12 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
-    private func finishLoad(_ t: Track, _ a: TrackAudio, _ d: Int) {
-        let (old, gen): (TrackAudio?, UInt32) = locked {
+    /// MIX741_DEBUG=1: Lade-, Hänger- und Controller-Protokoll
+    public static let debug = ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1"
+
+    private func finishLoad(_ t: Track, _ a: TrackAudio, _ d: Int, seq: Int) {
+        let r: (TrackAudio?, UInt32)? = locked {
+            guard seq == loadSeq[d] else { return nil }   // überholt: ein später gewählter Track lädt noch oder liegt schon
             let old = audio[d]
             var s = state.decks[d]
             let p = state.prefs
@@ -371,6 +381,7 @@ public final class MixController: @unchecked Sendable {
             applyAllFX()
             return (old, gen)
         }
+        guard let (old, gen) = r else { return }   // `a` wird hier freigegeben, der Kern hat es nie gesehen
         releaseWhenFree(old, deck: d, gen: gen)
         analyzePhrase(d, a)
     }

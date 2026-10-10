@@ -28,7 +28,8 @@ public final class MixEngine: @unchecked Sendable {
     /// aktuelle Rate des Geräts
     public var outputRate: Double { output.deviceRate }
 
-    /// Wird gerufen, wenn sich die Geräteliste ändert und unser Gerät weg ist (Hauptthread)
+    /// Wird gerufen, wenn sich die Geräteliste ändert (Hauptthread); ob neu verbunden wird, entscheidet die Oberfläche
+    /// (unser Gerät weg, gewähltes Interface wieder da, Ausgabe läuft nicht)
     public var onConfigurationChange: (@Sendable () -> Void)?
 
     public struct Routing: Equatable, Sendable {
@@ -79,10 +80,7 @@ public final class MixEngine: @unchecked Sendable {
         var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal,
                                               mElement: kAudioObjectPropertyElementMain)
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &addr, .main) { [weak self] _, _ in
-            guard let self else { return }
-            let ids = Set(Self.outputDevices().map(\.id))
-            // nur reagieren, wenn unser Gerät verschwunden oder wieder da ist
-            if let dev = self.routing.device, !ids.contains(dev) || !self.output.running { self.onConfigurationChange?() }
+            self?.onConfigurationChange?()
         }
     }
 

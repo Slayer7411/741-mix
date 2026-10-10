@@ -182,8 +182,7 @@ final class ControllerManager: @unchecked Sendable {
         let deck: (ControllerUnit.Side) -> Int = { $0 == .left ? unit.info.left : unit.info.right }
         let text = "\(unit.info.id): " + String(describing: e).replacingOccurrences(of: "MixApp.ControllerUnit.Side.", with: "")
         DispatchQueue.main.async { self.status.lastEvent = text }
-        print("[hid] \(text)")
-        fflush(stdout)
+        if MixController.debug { print("[hid] \(text)"); fflush(stdout) }   // sonst ein write() je Reglerschritt auf der Steuer-Queue
         switch e {
         case let .play(s, down):
             if down { unit.shift ? core.cup(deck(s)) : core.togglePlay(deck(s)) }

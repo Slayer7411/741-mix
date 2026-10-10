@@ -34,6 +34,7 @@ app bundle -> `scripts/make-app.sh` (`--no-install` keeps it in `build/`).
 the realtime core has hard rules. a pr that breaks one is not merged.
 
 * audio thread (`MixDSP`) -> atomics only, no locks, no allocations, no swift, no logging
+* new recursive dsp state (filters, delay lines) -> reset it in `healDeck`, keep filter frequencies below nyquist (`Biquad::safeF`)
 * deck logic, sync, controllers -> control thread (`MixController`), never the main thread
 * ui only mirrors state and calls commands
 * the device sample rate is never changed
@@ -53,7 +54,7 @@ swift test
 MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 ```
 
-`swift test` also renders the audio core offline (no device): transport, seek, loop, reverse, keylock, fx tail, limiter, clock, track handoff, decode -> `Tests/MixEngineTests`. the same runs in ci on every push.
+`swift test` also renders the audio core offline (no device): transport, seek, loop, reverse, keylock, fx tail, limiter, clock, track handoff, decode, nan / denormal / low-rate guards, load order -> `Tests/MixEngineTests`. the same runs in ci on every push. cpu per block (local only): `MIX741_BENCH=1 swift test --filter benchRenderCPU`.
 the self test plays, syncs, loops and jumps without sound and ends by itself. check the `[selftest]` lines: phase error should stay at ~0.00 beats.
 audio / sync changes -> also test live with 2 decks + keylock, note the cpu load.
 controller changes -> name the device and serial-free setup you tested with.

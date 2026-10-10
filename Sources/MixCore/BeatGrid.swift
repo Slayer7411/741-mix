@@ -11,8 +11,10 @@ public struct BeatGrid: Hashable, Sendable {
     }
 
     public init?(track: Track) {
-        guard track.bpm > 0 else { return nil }
-        self.init(anchor: (track.gridAnchorMs ?? 0) / 1000, bpm: track.bpm)
+        // inf/nan aus einer kaputten Collection: kein Grid (sonst stürzt jede Takt-Anzeige bei Int(…) ab)
+        guard track.bpm > 0, track.bpm.isFinite else { return nil }
+        let anchor = (track.gridAnchorMs ?? 0) / 1000
+        self.init(anchor: anchor.isFinite ? anchor : 0, bpm: track.bpm)
     }
 
     /// Länge eines Beats in Sekunden
