@@ -40,6 +40,7 @@ final class InlineEditController {
     func install() {
         guard mouseMonitor == nil else { return }
         mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] e in
+            if self?.chipDown(e) == true { return nil }   // Tag-Chip: Tabelle bekommt den Klick nicht
             self?.mouseDown(e)
             return e
         }
@@ -52,6 +53,27 @@ final class InlineEditController {
         pending?.cancel()
         pending = nil
         model?.inline = nil
+    }
+
+    /// Tag-Chip in Kommentar 2 unter dem Klick: (Track, x ab linkem Zellrand, Zellbreite) -> Tag oder nil
+    var chipAt: ((Track, CGFloat, CGFloat) -> String?)?
+
+    /// Klick (ohne ⌘/⇧/⌃) in die Spalte Kommentar 2 auf einen Chip: Tag in den Filter / lösen, ⌥ = ausschließen.
+    /// Doppelklick auf einen Chip: zweiter Klick verfällt (lädt nicht, schaltet nicht zurück). Nicht während einer Inline-Bearbeitung.
+    private func chipDown(_ e: NSEvent) -> Bool {
+        guard let chipAt, let tv = table, let model, model.inline == nil, e.window === tv.window,
+              e.modifierFlags.intersection([.command, .shift, .control]).isEmpty else { return false }
+        let p = tv.convert(e.locationInWindow, from: nil)
+        guard tv.visibleRect.contains(p) else { return false }
+        let r = tv.row(at: p), c = tv.column(at: p)
+        guard field(ofColumn: c, in: tv) == .comment2, let cv = tv.view(atColumn: c, row: r, makeIfNecessary: false) else { return false }
+        let list = rows()
+        let f = tv.convert(cv.bounds, from: cv)
+        guard r >= 0, r < list.count, p.x - f.minX < f.width, let tag = chipAt(list[r], p.x - f.minX, f.width) else { return false }
+        pending?.cancel()
+        pending = nil
+        if e.clickCount == 1 { model.toggleTag(tag, exclude: e.modifierFlags.contains(.option)) }
+        return true
     }
 
     func field(ofColumn c: Int, in tv: NSTableView) -> TrackField? {
