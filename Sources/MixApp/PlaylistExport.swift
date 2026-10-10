@@ -19,7 +19,11 @@ enum PlaylistExport {
             do {
                 try text.write(to: url, atomically: true, encoding: .utf8)
                 store.status = "exportiert: \(tracks.count) tracks -> \(url.lastPathComponent)"
-            } catch { store.status = "export fehlgeschlagen: \(error.localizedDescription)" }
+                StatusCenter.post(.ok, String(localized: "Exportiert: \(tracks.count) Tracks"), detail: url.path, key: "export")
+            } catch {
+                store.status = "export fehlgeschlagen: \(error.localizedDescription)"
+                StatusCenter.post(.error, String(localized: "Export fehlgeschlagen: \(error.localizedDescription)"), detail: url.path, key: "export")
+            }
         case .folder:
             let panel = NSOpenPanel()
             panel.canChooseDirectories = true
@@ -41,15 +45,22 @@ enum PlaylistExport {
                         copied += 1
                     } catch { failed += 1 }
                     let n = i + 1
-                    if n % 5 == 0 { await MainActor.run { store.status = "export läuft: \(n)/\(tracks.count)" } }
+                    if n % 5 == 0 {
+                        await MainActor.run { store.status = "export läuft: \(n)/\(tracks.count)" }
+                        StatusCenter.post(.info, String(localized: "Export läuft: \(name)"), detail: dir.path, key: "export",
+                                          progress: Double(n) / Double(tracks.count), progressText: "\(n)/\(tracks.count)")
+                    }
                 }
                 let entries = tracks.map { entry($0) }
                 let nmlText = PlaylistNMLWriter.nml(name: name, entries: entries, index: index)
                 try? nmlText.write(to: dir.appendingPathComponent(safe + ".nml"), atomically: true, encoding: .utf8)
                 let m3uText = await m3u(tracks, relativeTo: dir)
                 try? m3uText.write(to: dir.appendingPathComponent(safe + ".m3u8"), atomically: true, encoding: .utf8)
+                let (ok, bad) = (copied, failed)
                 await MainActor.run {
-                    store.status = "exportiert: \(copied) dateien -> \(dir.path)" + (failed > 0 ? " · \(failed) fehlgeschlagen" : "")
+                    store.status = "exportiert: \(ok) dateien -> \(dir.path)" + (bad > 0 ? " · \(bad) fehlgeschlagen" : "")
+                    StatusCenter.post(bad > 0 ? .warning : .ok, String(localized: "Exportiert: \(ok) Dateien") +
+                                      (bad > 0 ? " · " + String(localized: "\(bad) fehlgeschlagen") : ""), detail: dir.path, key: "export")
                 }
             }
         }

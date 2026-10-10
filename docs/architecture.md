@@ -37,6 +37,21 @@ master clock -> metronome click -> own pair
 * a deck block with nan / inf is dropped, the deck resets its recursive state (`healDeck`) and fades back in; nan never reaches the device
 * hard clip as last stage
 
+dsp load (`MixDSPCoreAudio.cpp`):
+
+* render callback: `mach_absolute_time` before and after `mdsp_render` -> `mdsp_load_record(start, end, frames)`
+* budget = frames × ticks per frame (set from the engine rate before start). per block: busy and budget summed, peak in per mille (compare-exchange), block over budget -> overload counter. relaxed atomics only, no lock, no allocation; ~0.2 µs per block incl. both clock reads (debug build)
+* `mdsp_load_take` swaps the sums to zero -> average and peak per read window. one reader (status bar, 4 hz)
+* device overloads: property listener on `kAudioDeviceProcessorOverload`, counted on a utility queue
+* latency shown = `kAudioDevicePropertyBufferFrameSize` + `Latency` + `SafetyOffset` + stream latency. keylock lookahead (`mdsp_keylock_latency`, stretch output latency) is pre-read and not added
+
+track load (`MixController.load`):
+
+* file missing -> error right away
+* decode on a background queue, progress after every chunk (frames, false = cancel)
+* watchdog every 0.25 s: no new frames for `loadTimeout` (4 s) -> cancel flag, load sequence bumped, deck emptied, notice. a decoder stuck in a read returns later and its result is dropped by the sequence check
+* notices (`EngineNotice`: level, key, text, detail) -> `StatusCenter` (main thread, `StatusLog` in MixCore: expiry, dedupe by key, history of 50)
+
 plugins (audio units):
 
 ```

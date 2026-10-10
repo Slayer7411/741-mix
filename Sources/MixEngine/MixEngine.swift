@@ -222,6 +222,43 @@ public final class MixEngine: @unchecked Sendable {
         mdsp_metronome(core, on, Float(volume), Int32(firstChannel))
     }
 
+    // MARK: - Last / Latenz
+
+    /// Messwerte für die Statusleiste: DSP-Last, Aussetzer, Latenz
+    public struct RenderLoad: Sendable, Equatable {
+        /// Rechenzeit ÷ Blockdauer seit dem letzten Abholen (Mittel, schwerster Block)
+        public var average = 0.0
+        public var peak = 0.0
+        /// eigene Messung: Blöcke über 100 % Budget; Gerät: HAL-Überlastmeldungen (beide seit Start/Zurücksetzen)
+        public var overloads = 0
+        public var deviceOverloads = 0
+        public var blocks = 0
+        /// Ausgabelatenz (Puffer + Gerät + Sicherheit + Stream), Sekunden
+        public var outputLatency = 0.0
+        /// Keylock-Vorlauf (wird ausgeglichen), Sekunden
+        public var keylockLatency = 0.0
+        public var bufferFrames = 0
+        public var sampleRate = 0.0
+        public var running = false
+        public init() {}
+    }
+
+    /// Werte seit dem letzten Aufruf abholen (Mittel und Spitze beginnen danach neu) – höchstens ein Abholer
+    public func takeLoad() -> RenderLoad {
+        let l = mdsp_load_take()
+        var r = RenderLoad()
+        r.average = l.average; r.peak = l.peak; r.blocks = Int(l.blocks)
+        r.overloads = Int(l.overloads); r.deviceOverloads = output.deviceOverloads
+        r.outputLatency = output.outputLatency; r.keylockLatency = mdsp_keylock_latency(core)
+        r.bufferFrames = Int(output.bufferFrameSize); r.sampleRate = output.deviceRate; r.running = output.running
+        return r
+    }
+
+    public func resetOverloads() {
+        mdsp_load_reset_overloads()
+        output.resetDeviceOverloads()
+    }
+
     // MARK: - Pegel
 
     public final class Level: @unchecked Sendable {

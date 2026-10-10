@@ -77,7 +77,7 @@ tracks without an analysis in the collection play, but have no grid -> no sync.
 ├ deck A ───────────────────────┬ deck B ────────────────────────────┤
 ├ deck C ───────────────────────┼ deck D ────────────────────────────┤
 ├ browser pane 1 ───────────────┼ browser pane 2 ────────────────────┤
-└ status: tracks · collection · load time ── device · mode · routing ┘
+└ status: message · detail ─ device · routing · prep ─ DSP LAT DROP RAM CPU ┘
 ```
 
 * MIXER -> internal mixer on / off (⌥⌘M)
@@ -87,6 +87,26 @@ tracks without an analysis in the collection play, but have no grid -> no sync.
 * ↻ -> reload the collection
 * the line between decks and browser can be dragged, the height is saved
 * fullscreen -> toolbar hides, comes back with the mouse at the top
+
+### status bar
+
+* left: current message, second line = path / reason or progress (`42/120`, ✕ = cancel). idle: tracks · collection · load time
+* colors: red = error, gold = warning, purple = info, bone = done
+* info 4 s, done 3 s, warning 8 s, error stays until clicked or replaced. `+n` = more active messages
+* click -> last 50 messages with time
+* messages: track load failed / timed out, track loaded, phrase anchor found, plugin not loaded / blocked, collection loaded, collection file written / not written, metadata saved, export progress / done, played state reset
+* middle: device · mode · routing · rate, ↻ reconnect, preparation count, preview progress
+* right (⌘, -> DISPLAY -> status bar):
+
+| meter | shows |
+|---|---|
+| DSP | render time of one audio block ÷ block duration, bar = average, tick = peak (held 1.5 s), red above 70 % |
+| LATENCY | output latency in ms (buffer + device + safety offset + stream), buffer frames · device rate |
+| DROPOUTS | blocks over 100 % of their budget + overload reports from the device, since start. red = one in the last minute, click = reset |
+| RAM | memory of the process (physical footprint) |
+| CPU | process cpu, 100 % = one core |
+
+click on the meters -> details (keylock lookahead, own vs device overloads).
 
 ## ◆ 04 · DECKS
 
@@ -155,6 +175,7 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 * jumps to load cue / grid, track start or hotcue 1 (⌘, -> DECKS)
 * first load: keylock on (setting)
 * track end warning: remaining time blinks red x seconds before the end (0 = off)
+* file missing -> fails at once. no audio data for 4 s (cloud file not downloaded, read stuck, setting 2-15 s) -> load cancelled. unreadable format -> fails with the reason
 
 ## ◆ 05 · WAVEFORM + GRID
 
@@ -458,6 +479,10 @@ backup = copy the `MINOS-741` folder.
 | sync won't engage | track has no grid -> analyze it in your library software once |
 | link peers but no tempo | LINK on in both apps, same network, firewall |
 | crackles | other apps on the same device, sample rate set in audio midi setup |
+| DROPOUTS counts up | DSP near or above 100 % -> bigger buffer (⌘, -> AUDIO), fewer keylock decks / plugins. DSP low but dropouts -> device or system (other audio apps, usb hub, energy saver) |
+| DSP red | single blocks over 70 %: plugins, 4 decks with keylock, small buffer. average matters, a single peak after loading is normal |
+| latency too high | buffer size in ⌘, -> AUDIO. LATENCY = buffer + device + safety offset; keylock lookahead is compensated and not audible as delay |
+| track won't load | status bar message: `Datei fehlt` = path in the collection wrong; `(4 s) keine Audiodaten` = cloud file not on disk -> make it available offline; otherwise the format reason |
 | artist in red | file missing or moved -> fix the path in the collection, reload ↻ |
 | ui hangs | audio + sync keep running. report it with the version from the title bar |
 

@@ -29,13 +29,14 @@ public final class TrackAudio: @unchecked Sendable {
         right.deallocate()
     }
 
-    public enum DecodeError: Error { case format, convert(String) }
+    public enum DecodeError: Error { case format, convert(String), cancelled }
 
     /// Blockweise Dekodierung
     private static let chunk: AVAudioFrameCount = 1 << 16
 
     /// Liest die Datei blockweise direkt in den Deck-Puffer (Stereo, `sampleRate`) – keine zweite Kopie des ganzen Tracks.
-    public static func decode(url: URL, sampleRate: Double) throws -> TrackAudio {
+    /// `progress` bekommt nach jedem Block die bisher gelesenen Frames; false = abbrechen (wirft `.cancelled`)
+    public static func decode(url: URL, sampleRate: Double, progress: ((Int) -> Bool)? = nil) throws -> TrackAudio {
         let file = try AVAudioFile(forReading: url)
         let inFmt = file.processingFormat
         guard inFmt.sampleRate > 0, sampleRate > 0, inFmt.channelCount > 0 else { throw DecodeError.format }   // sonst Int(inf) beim Anlegen
@@ -49,6 +50,7 @@ public final class TrackAudio: @unchecked Sendable {
                 try file.read(into: inBuf, frameCount: chunk)
                 guard inBuf.frameLength > 0 else { break }
                 t.append(inBuf, mono: mono)
+                if let progress, !progress(t.frames) { throw DecodeError.cancelled }
             }
         } else {
             // Rate/Format wandeln; Mono bleibt Mono und wird beim Anhängen auf beide Seiten gelegt
@@ -73,6 +75,7 @@ public final class TrackAudio: @unchecked Sendable {
                 if let readError { throw readError }
                 if status == .error { throw DecodeError.convert(err?.localizedDescription ?? "?") }
                 t.append(outBuf, mono: mono)
+                if let progress, !progress(t.frames) { throw DecodeError.cancelled }
                 if status == .endOfStream || status == .inputRanDry { break }
             }
         }

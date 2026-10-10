@@ -417,6 +417,12 @@ struct WaveformSettings: View {
                     .font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
             PreviewSettings()
+            Section("Statusleiste") {
+                Toggle("Last-Anzeigen (DSP, Latenz, Aussetzer, Speicher, CPU)", isOn: $mix.prefs.ui.showMeters)
+                sliderRow("Laden abbrechen nach (keine Audiodaten)", $mix.prefs.engine.loadTimeout, 2...15, step: 1, format: "%.0f", unit: "s")
+                Text("dsp = rechenzeit des audio-blocks ÷ blockdauer, rot ab 70 %. aussetzer: blöcke über dem budget plus überlast-meldungen des geräts, klick setzt zurück. meldungen: klick zeigt die letzten 50.")
+                    .settingsHint()
+            }
             Section("Cover") {
                 Toggle("Cover im Deck anzeigen", isOn: $mix.prefs.ui.showDeckCover)
                 Toggle("Cover-Vorschau im Browser", isOn: $mix.prefs.ui.showCoverPreview)

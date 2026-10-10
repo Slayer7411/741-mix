@@ -157,22 +157,8 @@ struct ContentView: View {
         }
     }
 
-    private var statusBar: some View {
-        HStack {
-            Text(store.status).lineLimit(1)
-            Spacer()
-            Text(mix.engineStatus)
-            Button("↻") { mix.reconnect() }
-                .buttonStyle(.plain)
-                .help("Audio-Interface neu verbinden")
-            Text("· Preparation: \(store.preparation.count)")
-            OverviewStatus()
-        }
-        .font(Theme.mono(11))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 8)
-        .padding(.bottom, 4)
-    }
+    /// Statusleiste: Meldungen, Audio-Status, Last-Anzeigen (StatusBar.swift)
+    private var statusBar: some View { StatusBar() }
 }
 
 /// Beenden nur nach Rückfrage (Sicherheit im Set); davor Sitzung und History schreiben

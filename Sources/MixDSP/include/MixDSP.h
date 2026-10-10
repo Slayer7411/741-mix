@@ -90,6 +90,9 @@ bool mdsp_clock_stamp(MDEngine *e, double *beat, uint64_t *hostTime);
 void mdsp_set_render_host(MDEngine *e, uint64_t hostTime);
 void mdsp_metronome(MDEngine *e, bool on, float volume, int firstChannel);
 
+/// Vorlauf des Keylock-Stretchers in Sekunden (wird beim Abspielen ausgeglichen: hörbare Position stimmt)
+double mdsp_keylock_latency(MDEngine *e);
+
 /// Direkt rendern (Tests/Offline): out[ch][frame]
 void mdsp_render(MDEngine *e, float **out, int channels, int frames);
 

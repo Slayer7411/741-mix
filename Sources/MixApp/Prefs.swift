@@ -136,6 +136,8 @@ struct UIPrefs: Codable, Equatable {
     var showDeckCover = true
     /// Cover des gewählten Tracks unter dem Baum im Browser
     var showCoverPreview = true
+    /// Last-Anzeigen rechts in der Statusleiste (DSP, Latenz, Aussetzer, Speicher, CPU)
+    var showMeters = true
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.

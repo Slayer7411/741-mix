@@ -838,6 +838,7 @@ bool mdsp_clock_stamp(MDEngine *e, double *beat, uint64_t *hostTime) {
 void mdsp_clock_set_bpm(MDEngine *e, double bpm) { e->clock.bpm.store(std::clamp(bpm, 20.0, 300.0)); }
 void mdsp_clock_set_beat(MDEngine *e, double beat) { e->clock.setBeat.store(beat); e->clock.beatOut.store(beat); }
 double mdsp_clock_beat(MDEngine *e) { return e->clock.beatOut.load(); }
+double mdsp_keylock_latency(MDEngine *e) { return e->decks[0].stretch.outputLatency() / e->fs; }
 void mdsp_metronome(MDEngine *e, bool on, float volume, int ch) {
     e->clock.metroOn.store(on); e->clock.metroVol.store(volume); e->clock.metroCh.store(ch);
 }

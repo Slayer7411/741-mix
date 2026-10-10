@@ -83,6 +83,7 @@ final class LibraryStore {
 
     func load(_ url: URL = LibraryStore.defaultNML) {
         status = "Lade \(url.lastPathComponent) …"
+        StatusCenter.post(.info, String(localized: "Collection wird geladen: \(url.lastPathComponent)"), detail: url.path, key: "collection")
         let meta = meta
         Task.detached(priority: .userInitiated) {
             do {
@@ -125,9 +126,13 @@ final class LibraryStore {
                     self.customCache = [:]
                     self.sourceURL = url
                     self.status = "\(c.tracks.count) Tracks · \(url.lastPathComponent) · \(String(format: "%.1f", secs)) s"
+                    StatusCenter.post(.ok, String(localized: "Collection geladen: \(c.tracks.count) Tracks"), detail: url.path, key: "collection")
                 }
             } catch {
-                await MainActor.run { self.status = "Fehler beim Laden: \(error)" }
+                await MainActor.run {
+                    self.status = "Fehler beim Laden: \(error)"
+                    StatusCenter.post(.error, String(localized: "Collection nicht geladen: \(error.localizedDescription)"), detail: url.path, key: "collection")
+                }
             }
         }
     }
@@ -157,6 +162,7 @@ final class LibraryStore {
         smartCache = [:]
         customCache = [:]
         tracks = list
+        StatusCenter.post(.ok, String(localized: "Gespeichert: \(applied.count) Tracks (Metadaten)"), key: "edits")
         if writeBack { scheduleWriteBack() }
     }
 
@@ -207,6 +213,7 @@ final class LibraryStore {
         guard !pending.isEmpty else { return }
         if Self.collectionSoftwareRunning() {
             status = String(localized: "Collection-Datei nicht geschrieben: die Collection-Software läuft. Änderungen bleiben in MINOS-741.")
+            StatusCenter.post(.warning, status, key: "writeback")
             return
         }
         writing = true
@@ -227,8 +234,10 @@ final class LibraryStore {
                         msg += " · " + String(localized: "\(r.missing.count) nicht gefunden (Datei inzwischen geändert -> ↻ neu laden)")
                     }
                     self.status = msg
+                    StatusCenter.post(r.missing.isEmpty ? .ok : .warning, msg, detail: url.path, key: "writeback")
                 case let .failure(e):
                     self.status = String(localized: "Collection-Datei nicht geschrieben: \(String(describing: e))")
+                    StatusCenter.post(.error, self.status, detail: url.path, key: "writeback")
                 }
             }
         }

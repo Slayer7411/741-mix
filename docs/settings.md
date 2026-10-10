@@ -63,6 +63,8 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * browser preview: own column (default) / behind the title / off
 * compute previews in the background, only while no deck plays (on) -> [manual](MANUAL.md#preview)
 * language: system / english / german (after restart)
+* status bar: load meters DSP · latency · dropouts · memory · cpu (on) -> [manual](MANUAL.md#status-bar)
+* cancel loading after x s without audio data (4 s, 2-15)
 
 ## ◆ AUDIO
 
