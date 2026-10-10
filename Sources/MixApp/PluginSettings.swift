@@ -214,11 +214,17 @@ final class PluginManager {
 /// Einstellungen → PLUGINS
 struct PluginSettingsView: View {
     @Environment(MixModel.self) private var mix
-    @State private var search = ""
-    @State private var expanded: String?
+
+    var body: some View { PluginSettingsPage(pm: mix.plugins) }
+}
+
+/// Inhalt des Tabs; das Selbsttest-Bild nutzt ihn ohne MixModel (kein Audio) und gibt Suche + aufgeklappte Zeile vor
+struct PluginSettingsPage: View {
+    let pm: PluginManager
+    @State var search = ""
+    @State var expanded: String?
 
     var body: some View {
-        let pm = mix.plugins
         let s = pm.settings
         Form {
             Section("Laden") {
@@ -324,6 +330,10 @@ private struct PluginRow: View {
                     Text(verbatim: meta(e)).font(Theme.mono(10)).foregroundStyle(Theme.muted).lineLimit(1)
                 }
                 Spacer(minLength: 8)
+                if e.format == .vst3 && loadable {
+                    StatusBadge(status: .init(text: String(localized: "läuft im Prozess"), alert: false, strong: false))
+                        .help("VST3 läuft im Prozess von MINOS-741 (isolieren geht nur für Audio Units)")
+                }
                 StatusBadge(status: status(e))
                 if e.canValidate {
                     Button(LocalizedStringKey(pm.validating == e.id ? "prüft …" : "Prüfen")) { pm.validate(e) }
@@ -389,8 +399,7 @@ private struct PluginRow: View {
         case .folder: src = String(localized: "eigener Ordner")
         case .appExtension: src = String(localized: "App")
         }
-        let iso = pm.isolated(e) ? " · " + String(localized: "isoliert")
-            : (e.format == .vst3 && e.info != nil ? " · " + String(localized: "läuft im Prozess") : "")
+        let iso = pm.isolated(e) ? " · " + String(localized: "isoliert") : ""
         return [e.manufacturer, e.version, e.format.rawValue, src].filter { !$0.isEmpty }.joined(separator: " · ") + iso
     }
 

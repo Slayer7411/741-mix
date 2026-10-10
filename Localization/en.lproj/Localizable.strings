@@ -346,3 +346,4 @@
 "keine Effekt-Klasse (Fx) im Bundle" = "no effect class (Fx) in the bundle";
 "selbsttest" = "self-check";
 "läuft im Prozess" = "in-process";
+"VST3 läuft im Prozess von MINOS-741 (isolieren geht nur für Audio Units)" = "VST3 runs inside the MINOS-741 process (isolation only for audio units)";

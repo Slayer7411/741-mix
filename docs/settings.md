@@ -46,6 +46,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * list with search: per plugin use in MINOS-741 (on / off), status, PRÜFEN (auval / VST3 self-check), click -> path, load default / isolated / in-process (audio units), `läuft im prozess` (VST3), unblock, last log
 * ALLE PRÜFEN with progress and cancel, results kept per plugin + version
 * crash marker `plugin-opening.json` next to it, a leftover marker blocks that plugin on the next start -> [manual](MANUAL.md#-08--fx)
+* offscreen image of this tab without audio: `MIX741_SELFTEST=1 MIX741_SHOT=plugins:<folder>` (optional `MIX741_SHOT_PLUGINS=<plugin folder>`)
 
 ## ◆ DISPLAY
 
