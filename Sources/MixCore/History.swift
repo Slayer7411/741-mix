@@ -130,6 +130,9 @@ public struct NMLEntryIndex: Sendable {
 
     public init() {}
 
+    /// geänderte Blöcke übernehmen (nach dem Zurückschreiben in die Collection)
+    public mutating func update(_ blocks: [String: String]) { raw.merge(blocks) { _, new in new } }
+
     public init(nmlText s: String) {
         guard let c0 = s.range(of: "<COLLECTION"), let c1 = s.range(of: "</COLLECTION>") else { return }
         var cursor = c0.upperBound

@@ -67,6 +67,7 @@ public final class NMLParser: NSObject, XMLParserDelegate {
             current = Track(key: "", path: "")
             current?.title = a["TITLE"] ?? ""
             current?.artist = a["ARTIST"] ?? ""
+            current?.locked = a["LOCK"] == "1"
         case "LOCATION" where current != nil:
             let vol = a["VOLUME"] ?? "", dir = a["DIR"] ?? "", file = a["FILE"] ?? ""
             current?.key = vol + dir + file
@@ -83,6 +84,7 @@ public final class NMLParser: NSObject, XMLParserDelegate {
             t.keyText = a["KEY"] ?? ""
             t.remixer = a["REMIXER"] ?? ""
             t.producer = a["PRODUCER"] ?? ""
+            t.mix = a["MIX"] ?? ""
             t.catalogNo = a["CATALOG_NO"] ?? ""
             t.fileSizeKB = Int(a["FILESIZE"] ?? "") ?? 0
             t.duration = Double(a["PLAYTIME_FLOAT"] ?? a["PLAYTIME"] ?? "") ?? 0

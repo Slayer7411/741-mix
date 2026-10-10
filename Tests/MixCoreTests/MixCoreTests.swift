@@ -128,7 +128,7 @@ let sampleNML = """
 }
 
 /// echte Collection auf diesem Mac (neuester Versionsordner); Tests überspringen sich ohne sie
-private func realCollection() -> URL {
+func realCollection() -> URL {
     let base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Native Instruments")
     let dirs = (try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)) ?? []
     return dirs.filter { $0.lastPathComponent.hasPrefix("Traktor") }.map { $0.appendingPathComponent("collection.nml") }
