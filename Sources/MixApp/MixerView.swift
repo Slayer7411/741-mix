@@ -241,8 +241,10 @@ struct MasterClockPanel: View {
         HStack(spacing: 6) {
             // Tempo und Master-Anzeige ändern sich laufend (Tempo-Fader am Master-Deck): eigene Hosting-View, sonst rechnet
             // jede Änderung das Layout des ganzen Fensters neu. Das Zahnrad bleibt draußen (SettingsLink braucht die Szene)
-            // Größe hängt nur an der LINK-Beschriftung (Teilnehmerzahl)
-            Isolated("clock", sizeKey: mix.linkPeersShown) { Controls().environment(mix).foregroundStyle(Theme.bone).tint(Theme.state) }
+            // Größe hängt nur an der LINK-Beschriftung (Teilnehmerzahl) und an MAIN (extern ausgeblendet)
+            Isolated("clock", sizeKey: [mix.linkPeersShown, mix.masterVolumeActive ? 1 : 0]) {
+                Controls().environment(mix).foregroundStyle(Theme.bone).tint(Theme.state)
+            }
             SettingsLink { Text("⚙︎").font(Theme.mono(14)).foregroundStyle(Theme.bone) }
                 .buttonStyle(.borderless)
                 .help("Einstellungen (⌘,)")
@@ -308,8 +310,11 @@ struct MasterClockPanel: View {
                 DeckButton(title: "Q", active: mix.prefs.engine.quantize, width: 14) { mix.toggleQuantize() }
                     .help("Quant: Sprünge halten die Beat-Phase")
             }
-            Knob(value: Binding(get: { mix.clock.masterVolume }, set: { mix.setMasterVolume($0) }), range: 0...1,
-                 defaultValue: 0.85, label: "MAIN", size: 24)
+            // externer Mixer: Lautstärke regelt das Pult, MAIN wirkt nicht -> ausgeblendet
+            if mix.masterVolumeActive {
+                Knob(value: Binding(get: { mix.clock.masterVolume }, set: { mix.setMasterVolume($0) }), range: 0...1,
+                     defaultValue: 0.85, label: "MAIN", size: 24)
+            }
         }
     }
     }

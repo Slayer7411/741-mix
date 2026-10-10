@@ -271,6 +271,8 @@ final class MixModel {
         run { core.setMasterVolume(v) }
         UserDefaults.standard.set(v, forKey: "masterVolume")
     }
+    /// MAIN wirkt nur im internen Modus oder mit „Main-Volume wirkt auch extern“ (sonst setzt der Kern 1)
+    var masterVolumeActive: Bool { mixerMode == .internalMixer || prefs.engine.masterVolumeExternal }
     func toggleQuantize() { prefs.engine.quantize.toggle() }
     func toggleSnap() { prefs.engine.snap.toggle() }
     func setClockMaster(_ on: Bool) { run { core.setClockMaster(on) } }
