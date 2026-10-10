@@ -345,6 +345,12 @@
 "Spektrum (rot/grün/blau)" = "Spectrum (red/green/blue)";
 "wie Wellenform" = "like the waveform";
 "Vorschauen im Hintergrund berechnen" = "Compute previews in the background";
+"Schrift über dem Band" = "Text above the band";
+"Schrift halbfett" = "Semibold text";
+"Band" = "Band";
+"Voll" = "Full";
+"Gedämpft" = "Dimmed";
+"Leicht" = "Light";
 "immer (gedrosselt)" = "always (throttled)";
 "nur wenn kein Deck spielt" = "only while no deck plays";
 "aus" = "off";

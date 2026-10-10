@@ -146,6 +146,11 @@ struct UIPrefs: Codable, Equatable {
     var previewBackground = true
     /// fehlende Vorschauen im Hintergrund berechnen: immer (gedrosselt, solange ein Deck spielt) / nur ohne Deck / aus
     var previewFill = PreviewFill.always
+    /// Vorschau „ganze Zeile“: Schriftgröße der Textzeile (pt) und ob halbfett
+    var previewTextSize = 12.0
+    var previewTextBold = true
+    /// Vorschau „ganze Zeile“: Deckkraft des Bandes (1 = voll, kleiner = gedämpft, Text hebt sich ab)
+    var previewBandAlpha = 0.75
     /// Cover links im Deck-Kopf
     var showDeckCover = true
     /// Cover des gewählten Tracks unter dem Baum im Browser
