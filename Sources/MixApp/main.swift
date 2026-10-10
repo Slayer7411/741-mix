@@ -102,7 +102,7 @@ struct ContentView: View {
         @Environment(MixModel.self) private var mix
         var body: some View {
             Color.clear
-                .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
+                .onChange(of: mix.decks.map(\.trackKey), initial: true) { _, keys in
                     store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
                 }
         }

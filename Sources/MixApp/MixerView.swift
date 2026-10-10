@@ -242,7 +242,7 @@ struct MasterClockPanel: View {
             // Tempo und Master-Anzeige ändern sich laufend (Tempo-Fader am Master-Deck): eigene Hosting-View, sonst rechnet
             // jede Änderung das Layout des ganzen Fensters neu. Das Zahnrad bleibt draußen (SettingsLink braucht die Szene)
             // Größe hängt nur an der LINK-Beschriftung (Teilnehmerzahl)
-            Isolated(sizeKey: mix.linkPeersShown) { Controls().environment(mix).foregroundStyle(Theme.bone).tint(Theme.state) }
+            Isolated("clock", sizeKey: mix.linkPeersShown) { Controls().environment(mix).foregroundStyle(Theme.bone).tint(Theme.state) }
             SettingsLink { Text("⚙︎").font(Theme.mono(14)).foregroundStyle(Theme.bone) }
                 .buttonStyle(.borderless)
                 .help("Einstellungen (⌘,)")

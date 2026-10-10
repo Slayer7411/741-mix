@@ -18,6 +18,8 @@ let deckLetters = ["A", "B", "C", "D"]
 @MainActor @Observable
 final class DeckMirror {
     var state = DeckState()
+    /// geladener Track (Schlüssel) – für RUNNING TRACKS, ohne bei jeder Deck-Änderung mitzurendern
+    var trackKey = ""
 }
 
 /// FX-Unit für die Oberfläche: eigenes Observable je Unit (FXUnitView liest nur ihre Unit)
@@ -146,7 +148,11 @@ final class MixModel {
                 }
             }
             state = s
-            for d in decks.indices where s.decks[d] != decks[d].state { decks[d].state = s.decks[d] }
+            for d in decks.indices where s.decks[d] != decks[d].state {
+                decks[d].state = s.decks[d]
+                let key = s.decks[d].track?.key ?? ""
+                if key != decks[d].trackKey { decks[d].trackKey = key }
+            }
             if s.effectiveMaster != effectiveMaster { effectiveMaster = s.effectiveMaster }
             if s.clockMaster != clockMaster { clockMaster = s.clockMaster }
             for (u, m) in fxUnits.enumerated() {

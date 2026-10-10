@@ -13,17 +13,18 @@ struct DeckView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             VStack(alignment: .leading, spacing: 4) {
-                DeckHeader(d: d)
+                // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen)
+                row("header", DeckHeader(d: d), key: mix.prefs.ui.showMixer ? 0 : mix.prefs.ui.fxUnitCount)
                 WaveformView(d: d)
                     .frame(minHeight: mix.prefs.ui.waveformHeight, maxHeight: .infinity)
                 PhaseBar(d: d).frame(height: 8)
                 OverviewView(d: d)
                     .frame(height: 18)
-                TransportRow(d: d)
-                CueRow(d: d)
-                LoopRow(d: d)
-                JumpRow(d: d)
-                if mix.prefs.ui.showGridTools { GridToolsRow(d: d) }
+                row("transport", TransportRow(d: d))
+                row("cues", CueRow(d: d))
+                row("loop", LoopRow(d: d))
+                row("jump", JumpRow(d: d))
+                if mix.prefs.ui.showGridTools { row("grid", GridToolsRow(d: d)) }
             }
             TempoColumn(d: d)
         }
@@ -50,6 +51,12 @@ struct DeckView: View {
                 Rectangle().fill(focused ? Theme.deckFocused : Theme.deck)
             }
         }
+    }
+
+    /// Zeile in eigener Hosting-View: eine Änderung (Taste an/aus) rechnet nur das Layout dieser Zeile, nicht das des
+    /// ganzen Decks. Breite vom Deck, Höhe einmal gemessen (je `key`, z. B. FX-Tasten im Kopf ohne Mixer).
+    private func row<V: View>(_ name: String, _ v: V, key: AnyHashable = 0) -> some View {
+        Isolated(deckLetters[d] + " " + name, sizeKey: key, fillWidth: true) { v.environment(mix).foregroundStyle(Theme.bone).tint(Theme.state) }
     }
 
     static func same(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-9 }
@@ -147,7 +154,7 @@ struct DeckHeader: View {
                         ForEach(0..<(m.fxUnits == 4 ? 2 : 1), id: \.self) { row in
                             HStack(spacing: 2) {
                                 ForEach([0, 1].map { row * 2 + $0 }, id: \.self) { u in
-                                    DeckButton(title: "FX\(u + 1)", active: m.fxAssign[u], color: Theme.state) { mix.toggleFXAssign(d, u) }
+                                    DeckButton(title: "FX\(u + 1)", active: m.fxAssign[u], color: Theme.state) { mix.toggleFXAssign(d, u) }.stable()
                                 }
                             }
                         }
@@ -190,18 +197,18 @@ struct TransportRow: View {
 
         var body: some View {
             HStack(spacing: 3) {
-                DeckButton(title: "CUP", width: 26) { mix.cup(d) }
+                DeckButton(title: "CUP", width: 26) { mix.cup(d) }.stable()
                 PressButton(title: "CUE", active: m.cueHeld, width: 30, down: { mix.cueDown(d) }, up: { mix.cueUp(d) })
-                DeckButton(title: m.playing ? "❚❚" : "▶", active: m.playing, color: Theme.state, width: 30) { mix.togglePlay(d) }
+                DeckButton(title: m.playing ? "❚❚" : "▶", active: m.playing, color: Theme.state, width: 30) { mix.togglePlay(d) }.stable()
                 Divider().frame(height: 14)
-                DeckButton(title: "SYNC", active: m.sync, color: Theme.state) { mix.toggleSync(d) }
+                DeckButton(title: "SYNC", active: m.sync, color: Theme.state) { mix.toggleSync(d) }.stable()
                 DeckButton(title: "MASTER", active: m.master,
-                           color: Theme.secondary) { mix.toggleMaster(d) }
-                DeckButton(title: "KEY", active: m.keylock, color: Theme.state) { mix.toggleKeylock(d) }
-                DeckButton(title: "−") { mix.shiftKey(d, -1) }
-                DeckButton(title: "+") { mix.shiftKey(d, 1) }
-                DeckButton(title: "REV", active: m.reverse, color: Theme.state) { mix.toggleReverse(d) }
-                DeckButton(title: "FLUX", active: m.flux, color: Theme.state) { mix.toggleFlux(d) }
+                           color: Theme.secondary) { mix.toggleMaster(d) }.stable()
+                DeckButton(title: "KEY", active: m.keylock, color: Theme.state) { mix.toggleKeylock(d) }.stable()
+                DeckButton(title: "−") { mix.shiftKey(d, -1) }.stable()
+                DeckButton(title: "+") { mix.shiftKey(d, 1) }.stable()
+                DeckButton(title: "REV", active: m.reverse, color: Theme.state) { mix.toggleReverse(d) }.stable()
+                DeckButton(title: "FLUX", active: m.flux, color: Theme.state) { mix.toggleFlux(d) }.stable()
                 Spacer(minLength: 2)
             }
         }
@@ -229,19 +236,19 @@ struct GridToolsRow: View {
         var body: some View {
             HStack(spacing: 3) {
                 Text("GRID").font(Theme.label(9, .bold)).foregroundStyle(Theme.muted).frame(width: 30, alignment: .leading)
-                DeckButton(title: "◂◂") { mix.shiftGrid(d, ms: -10) }.help("Grid 10 ms früher")
-                DeckButton(title: "◂") { mix.shiftGrid(d, ms: -1) }.help("Grid 1 ms früher")
-                DeckButton(title: "▸") { mix.shiftGrid(d, ms: 1) }.help("Grid 1 ms später")
-                DeckButton(title: "▸▸") { mix.shiftGrid(d, ms: 10) }.help("Grid 10 ms später")
+                DeckButton(title: "◂◂") { mix.shiftGrid(d, ms: -10) }.stable().help("Grid 10 ms früher")
+                DeckButton(title: "◂") { mix.shiftGrid(d, ms: -1) }.stable().help("Grid 1 ms früher")
+                DeckButton(title: "▸") { mix.shiftGrid(d, ms: 1) }.stable().help("Grid 1 ms später")
+                DeckButton(title: "▸▸") { mix.shiftGrid(d, ms: 10) }.stable().help("Grid 10 ms später")
                 Divider().frame(height: 14)
-                DeckButton(title: "BPM −") { mix.setGridBPM(d, (mix.deck(d).grid?.bpm ?? 0) - 0.01) }
+                DeckButton(title: "BPM −") { mix.setGridBPM(d, (mix.deck(d).grid?.bpm ?? 0) - 0.01) }.stable()
                 Text(m.bpm.map { String(format: "%.3f", $0) } ?? "—").font(Theme.mono(10)).frame(width: 52)
-                DeckButton(title: "+") { mix.setGridBPM(d, (mix.deck(d).grid?.bpm ?? 0) + 0.01) }
-                DeckButton(title: "÷2") { mix.scaleGridBPM(d, 0.5) }
-                DeckButton(title: "×2") { mix.scaleGridBPM(d, 2) }
+                DeckButton(title: "+") { mix.setGridBPM(d, (mix.deck(d).grid?.bpm ?? 0) + 0.01) }.stable()
+                DeckButton(title: "÷2") { mix.scaleGridBPM(d, 0.5) }.stable()
+                DeckButton(title: "×2") { mix.scaleGridBPM(d, 2) }.stable()
                 Divider().frame(height: 14)
-                DeckButton(title: "SET") { mix.setGridAnchorHere(d) }.help("Beat 1 an die aktuelle Position")
-                DeckButton(title: "RESET") { mix.resetGrid(d) }.help("Grid aus der Collection")
+                DeckButton(title: "SET") { mix.setGridAnchorHere(d) }.stable().help("Beat 1 an die aktuelle Position")
+                DeckButton(title: "RESET") { mix.resetGrid(d) }.stable().help("Grid aus der Collection")
                 // Anker um ganze Beats/Takte: Raster bleibt, nur Takt- und Phrasenzählung wandert; schmale Decks: weniger Knöpfe
                 // FirstFit statt ViewThatFits: ViewThatFits baut seine Kandidaten bei jedem Layout neu auf (Knöpfe mit
                 // Tooltip, Fokus, Tastatur) – das kostete bei jeder Zustandsänderung ~40 ms über vier Decks
@@ -256,7 +263,7 @@ struct GridToolsRow: View {
 
         private func anchorButtons(_ steps: [Int]) -> some View {
             ForEach(steps, id: \.self) { n in
-                DeckButton(title: n < 0 ? "◂\(-n)" : "\(n)▸") { mix.shiftGridBeats(d, n) }
+                DeckButton(title: n < 0 ? "◂\(-n)" : "\(n)▸") { mix.shiftGridBeats(d, n) }.stable()
                     .help(LocalizedStringKey(n == -4 ? "Grid-Anker 1 Takt früher (Raster bleibt)" : n == 4 ? "Grid-Anker 1 Takt später (Raster bleibt)"
                                  : n < 0 ? "Grid-Anker 1 Beat früher (Raster bleibt)" : "Grid-Anker 1 Beat später (Raster bleibt)"))
             }
@@ -266,7 +273,7 @@ struct GridToolsRow: View {
         @ViewBuilder private func phraseButton(short: Bool) -> some View {
             if let n = m.suggestion {
                 let v = n > 0 ? "+\(n)" : "\u{2212}\(-n)"
-                DeckButton(title: short ? "PHR \(v)" : "PHRASE \(v)", active: true, color: Theme.state) { mix.applyPhraseAnchor(d) }
+                DeckButton(title: short ? "PHR \(v)" : "PHRASE \(v)", active: true, color: Theme.state) { mix.applyPhraseAnchor(d) }.stable()
                     .help(String(localized: "Phrasen-Anker: Strukturwechsel liegen \(n) Beats neben den 8-Takt-Grenzen – Klick verschiebt den Anker (Sicherheit \(String(format: "%.2f", m.confidence)))"))
             }
         }
@@ -298,13 +305,13 @@ struct CueRow: View {
                     let c = m.colors[n]
                     DeckButton(title: "\(n + 1)", active: c != nil, color: c ?? .gray, fill: true) {
                         mix.hotcue(d, n, delete: NSEvent.modifierFlags.contains(.option))
-                    }
+                    }.stable()
                     .help("Klick: springen/setzen · ⌥-Klick: löschen")
                 }
                 Divider().frame(height: 14)
-                DeckButton(title: "IN", active: m.inArmed, color: Theme.state) { mix.setLoopIn(d) }
-                DeckButton(title: "OUT") { mix.setLoopOut(d) }
-                DeckButton(title: "RE") { mix.reloop(d) }
+                DeckButton(title: "IN", active: m.inArmed, color: Theme.state) { mix.setLoopIn(d) }.stable()
+                DeckButton(title: "OUT") { mix.setLoopOut(d) }.stable()
+                DeckButton(title: "RE") { mix.reloop(d) }.stable()
             }
         }
     }
@@ -331,14 +338,14 @@ struct LoopRow: View {
 
         var body: some View {
             HStack(spacing: 3) {
-                DeckButton(title: "LOOP", active: m.active, color: Theme.state, width: 30) { mix.autoLoop(d) }
+                DeckButton(title: "LOOP", active: m.active, color: Theme.state, width: 30) { mix.autoLoop(d) }.stable()
                 ForEach(BeatSizes.loop, id: \.self) { s in
                     let selected = DeckView.same(m.size, s)
                     DeckButton(title: BeatSizes.label(s), active: selected, color: Theme.state, fill: true) {
                         let deck = mix.deck(d)
                         if deck.loopActive { if !DeckView.same(deck.loopSize, s) { mix.autoLoop(d, size: s) } }
                         else { mix.core.setLoopSize(d, s); mix.pull() }
-                    }
+                    }.stable()
                 }
             }
         }
@@ -360,13 +367,13 @@ struct JumpRow: View {
 
         var body: some View {
             HStack(spacing: 3) {
-                DeckButton(title: "◀◀", width: 30) { mix.beatjump(d, beats: -mix.deck(d).jumpSize) }
+                DeckButton(title: "◀◀", width: 30) { mix.beatjump(d, beats: -mix.deck(d).jumpSize) }.stable()
                 ForEach(BeatSizes.jump, id: \.self) { s in
                     DeckButton(title: BeatSizes.label(s), active: DeckView.same(size, s), color: Theme.state, fill: true) {
                         mix.setJumpSize(d, s)
-                    }
+                    }.stable()
                 }
-                DeckButton(title: "▶▶", width: 30) { mix.beatjump(d, beats: mix.deck(d).jumpSize) }
+                DeckButton(title: "▶▶", width: 30) { mix.beatjump(d, beats: mix.deck(d).jumpSize) }.stable()
             }
         }
     }
@@ -562,7 +569,7 @@ struct TempoColumn: View {
                     PressButton(title: "‹", width: 8, down: { mix.bend(d, -1) }, up: { mix.bend(d, 0) })
                     PressButton(title: "›", width: 8, down: { mix.bend(d, 1) }, up: { mix.bend(d, 0) })
                 }
-                DeckButton(title: "0", width: 10) { mix.setTempo(d, 0) }.help("Tempo zurücksetzen")
+                DeckButton(title: "0", width: 10) { mix.setTempo(d, 0) }.stable().help("Tempo zurücksetzen")
             }
             .frame(width: 34)
         }

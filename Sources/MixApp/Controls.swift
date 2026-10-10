@@ -88,6 +88,21 @@ struct DeckButton: View {
     }
 }
 
+extension DeckButton {
+    /// überspringen, solange Titel, Zustand, Farbe und Breite gleich bleiben – nur für Aktionen, die den Zustand erst
+    /// beim Klick lesen (die Aktion einer übersprungenen Taste ist die vom letzten Neuzeichnen)
+    func stable() -> some View { EquatableView(content: Stable(button: self)) }
+
+    struct Stable: View, Equatable {
+        let button: DeckButton
+        var body: some View { button }
+        static func == (a: Self, b: Self) -> Bool {
+            a.button.title == b.button.title && a.button.active == b.button.active && a.button.color == b.button.color
+                && a.button.width == b.button.width && a.button.fill == b.button.fill
+        }
+    }
+}
+
 /// Taste mit Drücken/Loslassen (CUE-Halten, Pitch-Bend)
 struct PressButton: View {
     let title: String
@@ -143,9 +158,15 @@ struct FirstFit: Layout {
 /// außen). Die Umgebung wird nicht vererbt: Modelle und Stil beim Aufruf mitgeben.
 struct Isolated<Content: View>: NSViewRepresentable {
     let sizeKey: AnyHashable
+    /// Breite vom Vorschlag (Zeilen über die ganze Deck-Breite), Höhe gemessen
+    var fillWidth = false
+    /// Name in der Layout-Messung (MIX741_BENCH_LAYOUT)
+    var name = "iso"
     let content: Content
-    init(sizeKey: AnyHashable = 0, @ViewBuilder _ content: () -> Content) {
+    init(_ name: String = "iso", sizeKey: AnyHashable = 0, fillWidth: Bool = false, @ViewBuilder _ content: () -> Content) {
+        self.name = name
         self.sizeKey = sizeKey
+        self.fillWidth = fillWidth
         self.content = content()
     }
 
@@ -158,7 +179,7 @@ struct Isolated<Content: View>: NSViewRepresentable {
 
     func makeNSView(context: Context) -> BoundaryHostingView<Content> {
         let v = BoundaryHostingView(rootView: content)
-        v.name = String(describing: type(of: content)).components(separatedBy: "<").dropFirst(3).first ?? "iso"
+        v.name = name
         v.sizingOptions = []
         return v
     }
@@ -168,11 +189,14 @@ struct Isolated<Content: View>: NSViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: BoundaryHostingView<Content>, context: Context) -> CGSize? {
         let c = context.coordinator
         if c.key != sizeKey {
-            let probe = NSHostingView(rootView: content)
-            probe.appearance = nsView.effectiveAppearance
-            c.size = probe.intrinsicContentSize
+            // ideale Größe ungerundet (intrinsicContentSize rundet auf ganze Punkte – Zeilen säßen dann versetzt)
+            let probe = NSHostingController(rootView: content)
+            probe.view.appearance = nsView.effectiveAppearance
+            let ideal = probe.sizeThatFits(in: CGSize(width: 100_000, height: 100_000))
+            c.size = CGSize(width: ideal.width < 50_000 ? ideal.width : 0, height: ideal.height)
             c.key = sizeKey
         }
+        if fillWidth, let w = proposal.width { return CGSize(width: w, height: c.size.height) }
         return c.size
     }
 }
