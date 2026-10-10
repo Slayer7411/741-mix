@@ -182,3 +182,15 @@
 "Sitzung und History werden gespeichert." = "Session and history will be saved.";
 "Beenden" = "Quit";
 "Abbrechen" = "Cancel";
+/* Phrasen-Anker */
+"Aus" = "Off";
+"Automatisch" = "Automatic";
+"beim laden prüft minos, ob die strukturwechsel des tracks auf 8-takt-grenzen ab dem grid-anker liegen. vorschlagen -> roter phrase-knopf in der grid-zeile, automatisch -> anker wird um ganze beats verschoben. bpm und raster bleiben, gespeichert in den eigenen änderungen, nie in der collection." = "on load minos checks whether the track's structural changes sit on 8-bar boundaries from the grid anchor. suggest -> red phrase button in the grid row, automatic -> the anchor moves by whole beats. bpm and grid stay, stored in minos's own edits, never in the collection.";
+"Grid-Anker 1 Beat früher (Raster bleibt)" = "Grid anchor 1 beat earlier (grid stays)";
+"Grid-Anker 1 Beat später (Raster bleibt)" = "Grid anchor 1 beat later (grid stays)";
+"Grid-Anker 1 Takt früher (Raster bleibt)" = "Grid anchor 1 bar earlier (grid stays)";
+"Grid-Anker 1 Takt später (Raster bleibt)" = "Grid anchor 1 bar later (grid stays)";
+"Grid-Anker auf Phrasen ausrichten" = "Align grid anchor to phrases";
+"Phrasen-Anker" = "Phrase anchor";
+"Phrasen-Anker: Strukturwechsel liegen %lld Beats neben den 8-Takt-Grenzen – Klick verschiebt den Anker (Sicherheit %@)" = "Phrase anchor: structural changes sit %lld beats off the 8-bar boundaries – click moves the anchor (confidence %@)";
+"Vorschlagen" = "Suggest";

@@ -39,3 +39,16 @@ import Testing
     #expect(c.offsetBeats == nil)
     #expect(!c.aligned)
 }
+
+/// Phrasen-Anker: Anker um ganze Beats verschoben -> Start-Cue bleibt am Collection-Anker; feine Verschiebung -> Start-Cue folgt
+@Test func phraseAnchorEditKeepsStartCue() {
+    var t = Track(key: "k", path: "/x")
+    t.bpm = 120   // Beat = 500 ms
+    t.cues = [Cue(name: "AutoGrid", kind: .grid, startMs: 1000, lengthMs: 0, hotcue: -1)]
+    let renumbered = TrackEdit(gridAnchorMs: 1000 - 3 * 500).apply(to: t)
+    #expect(renumbered.gridAnchorMs == -500)
+    #expect(renumbered.cues.first { $0.kind == .load }?.startMs == 1000)
+    let nudged = TrackEdit(gridAnchorMs: 1010).apply(to: t)
+    #expect(nudged.cues.first { $0.kind == .load } == nil)
+    #expect(BeatGrid(track: renumbered)!.time(ofBeat: 3) == 1.0)   // Raster bleibt, nur die Zählung wandert
+}

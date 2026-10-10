@@ -33,6 +33,7 @@ enum SelfTest {
             core.setLinkEnabled(ProcessInfo.processInfo.environment["MIX741_LINKTEST"] != nil)
             var p = mix.prefs.engine
             p.historyThreshold = 3            // nur im Test: schnell als gespielt markieren (nicht gespeichert)
+            p.phraseAnchor = .suggest         // nur vorschlagen: der Test verschiebt keinen Anker (keine eigenen Änderungen)
             core.setPrefs(p)
             while store.tracks.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
             let c = store.tracks.filter { $0.bpm > 120 && $0.bpm < 140 && $0.gridAnchorMs != nil && $0.fileExists }
@@ -44,6 +45,12 @@ enum SelfTest {
                 let s = core.snapshot()
                 if let e = s.decks[0].error ?? s.decks[1].error { log(e); exit(1) }
                 try? await Task.sleep(for: .milliseconds(100))
+            }
+            // Phrasen-Anker läuft nach dem Laden im Hintergrund (Vorschlag oder keiner)
+            try? await Task.sleep(for: .milliseconds(800))
+            for d in 0..<2 {
+                let s = core.snapshot().decks[d]
+                log(String(format: "Phrasen-Anker %@: %@", deckLetters[d], s.phraseSuggestion.map { String(format: "%+d Beats (Sicherheit %.2f)", $0, s.phraseConfidence) } ?? "kein Vorschlag"))
             }
             // nur Bild: beide Decks auf 1:00 stellen, nicht abspielen, kurz stehen lassen (für Screenshots)
             if ProcessInfo.processInfo.environment["MIX741_SNAPSHOT"] != nil {

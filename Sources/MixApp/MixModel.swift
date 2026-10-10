@@ -180,6 +180,8 @@ final class MixModel {
     func setGridBPM(_ d: Int, _ v: Double) { run { core.setGridBPM(d, v) } }
     func scaleGridBPM(_ d: Int, _ f: Double) { run { core.scaleGridBPM(d, f) } }
     func setGridAnchorHere(_ d: Int) { run { core.setGridAnchorHere(d) } }
+    func shiftGridBeats(_ d: Int, _ n: Int) { run { core.shiftGridBeats(d, n) } }
+    func applyPhraseAnchor(_ d: Int) { run { core.applyPhraseAnchor(d) } }
     func resetGrid(_ d: Int) { if let o = originals[d] { run { core.resetGrid(d, original: o) } } }
     func togglePlay(_ d: Int) { run { core.togglePlay(d) } }
     func cueDown(_ d: Int) { run { core.cueDown(d) } }

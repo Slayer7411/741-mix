@@ -12,6 +12,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * phase lock while synced, sync mode: dynamic / fixed / tempo only, pitch bend amount
 * metronome output pair
 * default loop size and beatjump size
+* align grid anchor to phrases: off / suggest (default) / automatic -> on load the anchor is checked against the track's 8-bar structure, see manual 05
 * history: played after x seconds audible, optional copy into the collection's history folder
 * show 4 decks, preview start position in the browser
 
