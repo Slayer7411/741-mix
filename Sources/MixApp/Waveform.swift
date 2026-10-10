@@ -230,7 +230,8 @@ struct WaveformView: View {
         static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.scene == b.scene && a.wave === b.wave && a.waiting == b.waiting }
 
         var body: some View {
-            WaveLayerView(scene: scene, wave: wave, position: { [mix, d] in mix.position(d) }, loop: { [mix, d] in mix.engine.loop(d) })
+            WaveLayerView(scene: scene, wave: wave, position: { [mix, d] in mix.position(d) }, speed: { [mix, d] in mix.playSpeed(d) },
+                          loop: { [mix, d] in mix.engine.loop(d) })
                 .overlay {
                     if waiting {
                         Text("Wellenform wird berechnet …").font(Theme.mono(10)).foregroundStyle(.secondary)

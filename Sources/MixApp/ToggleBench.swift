@@ -331,6 +331,16 @@ enum StateBench {
         log(String(format: "%d decks spielen %.0f s: hauptthread %.1f %% eines kerns · wellen-takte %.0f/s je deck, verschoben %.0f/s, step+commit %.2f ms/s · hänger >16 ms: %d %@",
                    decks, wall, (c1 - c0) / wall * 100, Double(w.steps) / wall / 4, Double(w.moves) / wall, w.seconds / wall * 1000,
                    hitches.count, hitches.map { String(format: "%.0f", $0) }.joined(separator: " ")))
+        // Gleichmäßigkeit: Bewegung der Wellenform je Bild in Gerätepixeln (laufende Decks)
+        let px = w.px.sorted()
+        if !px.isEmpty {
+            let med = px[px.count / 2], mean = px.reduce(0, +) / Double(px.count)
+            let dev = px.map { abs($0 - mean) }.reduce(0, +) / Double(px.count)
+            let q = { (f: Double) in px[min(px.count - 1, Int(Double(px.count) * f))] }
+            log(String(format: "   wellenform je bild (%@): median %.1f px, mittlere abweichung %.2f px, p5–p95 %.0f–%.0f px, ohne bewegung %.1f %% (n=%d)",
+                       env["MIX741_BENCH_RAW"] != nil ? "roh" : "geglättet", med, dev, q(0.05), q(0.95),
+                       Double(px.filter { $0 == 0 }.count) / Double(px.count) * 100, px.count))
+        }
         sampler?.waitUntilExit()
     }
 }

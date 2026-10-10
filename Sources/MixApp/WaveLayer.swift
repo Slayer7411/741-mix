@@ -37,12 +37,15 @@ struct WaveLayerView: NSViewRepresentable {
     let scene: WaveScene
     let wave: RenderedWaveform?
     let position: @MainActor () -> Double
+    /// Abspielgeschwindigkeit (s je s, 0 = steht) – Spielkopf zwischen den Meldungen des Kerns
+    let speed: @MainActor () -> Double
     let loop: @MainActor () -> (active: Bool, start: Double, end: Double)
 
     func makeNSView(context: Context) -> WaveLayerNSView { WaveLayerNSView() }
 
     func updateNSView(_ v: WaveLayerNSView, context: Context) {
         v.position = position
+        v.speed = speed
         v.loop = loop
         v.wave = wave
         v.scene = scene
@@ -59,6 +62,7 @@ struct WaveLayerView: NSViewRepresentable {
 /// Vektor-Pfade pro Frame zu zeichnen hat den Render-Server ausgelastet (Hauptthread wartete in CA synchronize).
 final class WaveLayerNSView: NSView {
     var position: @MainActor () -> Double = { 0 }
+    var speed: @MainActor () -> Double = { 0 }
     var loop: @MainActor () -> (active: Bool, start: Double, end: Double) = { (false, 0, 0) }
     var wave: RenderedWaveform? { didSet { if wave !== oldValue { rebuild(tiles: true) } } }
     var scene = WaveScene() {
@@ -84,6 +88,8 @@ final class WaveLayerNSView: NSView {
     private var lastLoop: (Bool, Double, Double) = (false, 0, 0)
     private var lastCountdown = ""
     private var lastPos = Double.nan
+    /// Kern meldet je Audio-Block, Bilder kommen öfter oder versetzt: Spielkopf je Bild gleichmäßig weiter
+    private var smoother = PlayheadSmoother()
 
     // Kacheln
     private static let tileQueue = DispatchQueue(label: "minos741.wavetiles", qos: .userInitiated)
@@ -137,7 +143,9 @@ final class WaveLayerNSView: NSView {
         link?.invalidate()
         link = nil
         guard window != nil else { return }
-        let l = displayLink(target: self, selector: #selector(step))
+        // Messung offscreen: der Display-Link der Ansicht läuft nur, wenn sie auf dem Bildschirm ist -> der des Bildschirms
+        let l = Self.benching ? (NSScreen.main ?? NSScreen.screens[0]).displayLink(target: self, selector: #selector(tick))
+            : displayLink(target: self, selector: #selector(tick))
         l.add(to: .main, forMode: .common)
         link = l
     }
@@ -393,33 +401,48 @@ final class WaveLayerNSView: NSView {
 
     // MARK: pro Frame: nur verschieben
 
-    /// nur MIX741_BENCH=play: Takte, Verschiebungen, Zeit in step (inkl. Commit)
-    struct BenchStats { var steps = 0, moves = 0, seconds = 0.0 }
+    /// nur MIX741_BENCH=play: Takte, Verschiebungen, Zeit in step (inkl. Commit), Bewegung je Bild (Gerätepixel) bei
+    /// laufendem Deck. MIX741_BENCH_RAW=1: Spielkopf ungeglättet (Position des Kerns wie gemeldet)
+    struct BenchStats { var steps = 0, moves = 0, seconds = 0.0, px: [Double] = [] }
     static var bench = BenchStats()
     static func benchReset() { bench = BenchStats() }
     private static let benching = ToggleBench.mode == "play"
+    private static let unsmoothed = benching && ProcessInfo.processInfo.environment["MIX741_BENCH_RAW"] != nil
+    private var benchX = Double.nan
+    private var lastTick = 0.0
 
-    @objc private func step() {
-        guard Self.benching else { return stepFrame() }
+    @objc private func tick(_ link: CADisplayLink) {
+        lastTick = link.targetTimestamp
+        guard Self.benching else { return step(at: link.targetTimestamp) }
         let t0 = CACurrentMediaTime()
-        stepFrame()
+        step(at: link.targetTimestamp)
         Self.bench.steps += 1
         Self.bench.seconds += CACurrentMediaTime() - t0
     }
 
-    private func stepFrame() {
+    /// t = Zeit des Bildes (Display-Link); nil = außerhalb des Takts neu aufgebaut: Spielkopf vom letzten Bild,
+    /// lief der Takt nicht (Ansicht verdeckt, offscreen), die gemeldete Position
+    private func step(at t: Double? = nil) {
         guard scene.hasTrack else { return }
-        let pos = position()
+        let raw = position()
+        let pos: Double
+        if Self.unsmoothed { pos = raw }
+        else if let t { pos = smoother.update(raw: raw, speed: speed(), at: t) }
+        else { pos = smoother.shown.isNaN || CACurrentMediaTime() - lastTick > 0.05 ? raw : smoother.shown }
         let l = loop()
         let loopChanged = l.active != lastLoop.0 || l.start != lastLoop.1 || l.end != lastLoop.2
+        let x = ((Double(bounds.width / 2) - pos * pps) * scale).rounded() / scale
+        if Self.benching, t != nil, speed() != 0 {
+            if !benchX.isNaN { Self.bench.px.append(abs(x - benchX) * scale) }
+            benchX = x
+        }
         // Deck steht: nichts verschieben, keine Transaktion (sonst 4 Decks × 120 Hz im Leerlauf)
         if pos == lastPos, !loopChanged, tilesPending.isEmpty { return }
         lastPos = pos
         if Self.benching { Self.bench.moves += 1 }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let x = Double(bounds.width / 2) - pos * pps
-        strip.position = CGPoint(x: (CGFloat(x) * scale).rounded() / scale, y: 0)
+        strip.position = CGPoint(x: x, y: 0)
         updateTiles(pos)
         if loopChanged {
             lastLoop = (l.active, l.start, l.end)

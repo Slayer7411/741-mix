@@ -175,6 +175,11 @@ final class MixModel {
 
     func deck(_ d: Int) -> DeckState { decks[d].state }
     func position(_ d: Int) -> Double { core.position(d) }
+    /// Abspielgeschwindigkeit für die Anzeige (s Track je s): 0 = steht, negativ = rückwärts, CUE gehalten läuft
+    func playSpeed(_ d: Int) -> Double {
+        let s = decks[d].state
+        return s.playing || s.cueHeld ? s.rate * (s.reverse ? -1 : 1) : 0
+    }
     func audio(_ d: Int) -> TrackAudio? { core.trackAudio(d) }
     func phaseError(_ d: Int) -> Double? { core.phaseError(d) }
     var masterBPM: Double { clock.masterTempo }
