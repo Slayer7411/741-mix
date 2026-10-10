@@ -317,7 +317,7 @@ struct CueRow: View {
     }
 }
 
-/// Loopgrößen über die ganze Breite: gewählte Größe rot (auch vom Encoder), LOOP = an/aus.
+/// Loopgrößen über die ganze Breite: gewählte Größe lila (auch vom Encoder; rot bleibt LOOP = an/aus).
 /// Klick auf eine Größe wählt sie; läuft ein Loop, wird er auf die neue Größe gestellt.
 struct LoopRow: View {
     @Environment(MixModel.self) private var mix
@@ -341,7 +341,7 @@ struct LoopRow: View {
                 DeckButton(title: "LOOP", active: m.active, color: Theme.state, width: 30) { mix.autoLoop(d) }.stable()
                 ForEach(BeatSizes.loop, id: \.self) { s in
                     let selected = DeckView.same(m.size, s)
-                    DeckButton(title: BeatSizes.label(s), active: selected, color: Theme.state, fill: true) {
+                    DeckButton(title: BeatSizes.label(s), active: selected, color: Theme.secondary, fill: true) {
                         let deck = mix.deck(d)
                         if deck.loopActive { if !DeckView.same(deck.loopSize, s) { mix.autoLoop(d, size: s) } }
                         else { mix.core.setLoopSize(d, s); mix.pull() }
