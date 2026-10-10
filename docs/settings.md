@@ -9,7 +9,8 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * load position: load cue / grid, track start or hotcue 1
 * track end warning (seconds, 0 = off)
 * keylock on for the first load, default tempo range (±6 … ±100 %)
-* phase lock while synced, pitch bend amount
+* phase lock while synced, sync mode: dynamic / fixed / tempo only, pitch bend amount
+* metronome output pair
 * default loop size and beatjump size
 * history: played after x seconds audible, optional copy into traktors history folder
 * show 4 decks, preview start position in the browser
@@ -17,11 +18,12 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 ## ◆ MIXER & FX
 
 * show internal mixer
+* headroom internal / external (−3 dB default), auto-gain external, main volume external
 * auto-gain from the collection loudness
 * eq kill (knob fully left = off)
 * crossfader curve: smooth / sharp cut
 * channel filter resonance
-* show fx units, delay feedback, fx filter resonance
+* show fx units, 2 or 4 units, delay feedback, fx filter resonance
 
 ## ◆ DISPLAY
 
@@ -30,7 +32,10 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * zoom (seconds per side), minimum height (grows with the window), dim the played part
 * beatgrid: on / off, colorful (phrases, bars, beats), phrase length 16 / 32 / 64 / 128 beats, bar numbers
 * cue colors: start cue red, cues white, loops green, 1-2 bar loops magenta
+* magenta markers every 8 / 16 / 32 bars
 * tag separator for comment 2, empty = space
+* browser layout, hide the tree while decks are visible
+* language: system / english / german (after restart)
 
 ## ◆ AUDIO
 
@@ -41,7 +46,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 
 ## ◆ CONTROLLER
 
-* x1 mk2: decks per unit (left / right), blink to identify
+* x1 mk2: decks per unit (left / right), browser pane and fx unit per unit, blink to identify
 * cue action: flux reverse / cue / reverse
 * flux tap toggles flux mode, beatjump size for flux + hotcue 3 / 4
 * touch strip: bend or seek, sensitivity

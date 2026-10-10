@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/assets/banner.svg" alt="MINOS-741" width="100%"></p>
 
-<p align="center"><a href="https://github.com/Slayer7411/MINOS-741/releases"><img src="https://img.shields.io/github/v/release/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=%24MINOS" alt="release"></a> <a href="https://github.com/Slayer7411/MINOS-741/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/CHANGELOG-%E2%97%86-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="changelog"></a> <a href="https://github.com/Slayer7411/MINOS-741/blob/main/LICENSE.md"><img src="https://img.shields.io/badge/LICENSE-GPL--2.0+-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="license"></a> <img src="https://img.shields.io/badge/MACOS-15+-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="macos 15+"> <img src="https://img.shields.io/badge/SWIFT-6-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="swift 6"> <img src="https://img.shields.io/badge/C++-17-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="c++17"></p>
+<p align="center"><a href="https://github.com/Slayer7411/MINOS-741/releases"><img src="https://img.shields.io/github/v/release/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=%24MINOS" alt="release"></a> <a href="https://github.com/Slayer7411/MINOS-741/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/CHANGELOG-%E2%97%86-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="changelog"></a> <a href="docs/MANUAL.md"><img src="https://img.shields.io/badge/MANUAL-%E2%86%92-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="manual"></a> <a href="https://github.com/Slayer7411/MINOS-741/blob/main/LICENSE.md"><img src="https://img.shields.io/badge/LICENSE-GPL--2.0+-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="license"></a> <img src="https://img.shields.io/badge/MACOS-15+-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="macos 15+"> <img src="https://img.shields.io/badge/SWIFT-6-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="swift 6"> <img src="https://img.shields.io/badge/C++-17-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="c++17"></p>
 <p align="center"><a href="https://github.com/Slayer7411/MINOS-741/commits/main"><img src="https://img.shields.io/github/last-commit/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=LAST%20COMMIT" alt="last commit"></a> <a href="https://github.com/Slayer7411/MINOS-741/graphs/contributors"><img src="https://img.shields.io/github/contributors/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=CONTRIBUTORS" alt="contributors"></a> <a href="https://github.com/Slayer7411/MINOS-741/discussions"><img src="https://img.shields.io/github/discussions/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=DISCUSSIONS" alt="discussions"></a> <a href="https://github.com/sponsors/Slayer7411"><img src="https://img.shields.io/badge/SPONSOR-%E2%99%A5-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="sponsor"></a></p>
 
 ```
@@ -93,13 +93,15 @@ MIX741_SELFTEST=1 MIX741_NOXONE=1 swift run minos741
 
 ## ◆ DOCS
 
-* [architecture](docs/architecture.md)
-* [library](docs/library.md)
-* [traktor files](docs/traktor-files.md)
-* [kontrol x1 mk2](docs/controllers-x1-mk2.md)
-* [settings](docs/settings.md)
-* [feature parity with traktor](docs/feature-parity.md)
-* [changelog](CHANGELOG.md)
+```
+> minos --help
+```
+
+**[→ MANUAL](docs/MANUAL.md)** -> install, decks, sync, mixer, fx, browser, tags, keys, troubleshooting, faq
+
+* [settings](docs/settings.md) · [kontrol x1 mk2](docs/controllers-x1-mk2.md) · [library](docs/library.md)
+* [architecture](docs/architecture.md) · [traktor files](docs/traktor-files.md) · [feature parity](docs/feature-parity.md)
+* [changelog](CHANGELOG.md) · [contributing](CONTRIBUTING.md) · [all docs](docs/README.md)
 
 ## ◆ DESIGN
 

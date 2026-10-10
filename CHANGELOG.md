@@ -7,6 +7,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ### added
 * x1: sync held + hotcue 3 / 4 = one bar back / forward, inside a loop the loop stays and the position wraps
+* docs: user manual (`docs/MANUAL.md`), docs index, new screenshot
 
 ### changed
 * waveform drawn as vectors at screen resolution -> sharp at any zoom, sharp attack, height = file level (0 dBFS = full)
