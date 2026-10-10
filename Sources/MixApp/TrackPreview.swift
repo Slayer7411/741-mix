@@ -10,6 +10,12 @@ enum PreviewMode: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Farben der Browser-Vorschau: Spektrum (rot = Bass, grün = Mitten, blau = Höhen) oder wie die Deck-Wellenform
+enum PreviewColors: String, CaseIterable, Codable, Identifiable {
+    case spectrum = "Spektrum (rot/grün/blau)", waveform = "wie Wellenform"
+    var id: String { rawValue }
+}
+
 /// Vorschauen im Hintergrund berechnen
 enum PreviewFill: String, CaseIterable, Codable, Identifiable {
     case always = "immer (gedrosselt)", idleOnly = "nur wenn kein Deck spielt", off = "aus"
@@ -159,11 +165,20 @@ struct PreviewSpec: Hashable, Sendable {
     var start: Mark?
     var palette: WaveformPalette
     var style: WaveformStyle
+    var colors: PreviewColors
 
     /// Track mit den eigenen Grid-/Cue-Änderungen (wie beim Laden ins Deck)
     @MainActor init(_ track: Track, mix: MixModel) {
         let t = mix.edits.edit(for: track.key)?.apply(to: track) ?? track
-        let info = Overviews.shared.store.info(t.key)
+        self.init(t, ui: mix.prefs.ui, controller: mix.prefs.controller, info: Overviews.shared.store.info(t.key))
+    }
+
+    /// ohne Modell (Selbsttest-Bilder): Übersicht direkt übergeben
+    init(_ t: Track, ui: UIPrefs, controller: ControllerPrefs, overview: TrackOverview) {
+        self.init(t, ui: ui, controller: controller, info: (gen: 1, duration: overview.duration))
+    }
+
+    private init(_ t: Track, ui: UIPrefs, controller c: ControllerPrefs, info: (gen: Int, duration: Double)?) {
         key = t.key
         path = t.path
         gen = info?.gen ?? 0
@@ -172,10 +187,10 @@ struct PreviewSpec: Hashable, Sendable {
         let tempo = grid?.bpm ?? 0
         bpm = tempo
         anchor = grid?.anchor ?? 0
-        let ui = mix.prefs.ui, c = mix.prefs.controller
         phraseBeats = max(4, ui.phraseBeats)
         palette = ui.waveformPalette
         style = ui.waveformStyle
+        colors = ui.previewColors
         let startMs = Theme.startCueMs(t)
         let mark = { (ms: Double, p: PadColor) in Mark(t: ms / 1000, r: p.rgb.r, g: p.rgb.g, b: p.rgb.b) }
         cues = t.hotcues.map { mark($0.startMs, c.color(for: $0, startMs: startMs, bpm: tempo)) }
@@ -194,6 +209,30 @@ enum PreviewRenderer {
     static let magenta = rgb(0.88, 0.22, 0.78, 1)
     static let void = rgb(10 / 255, 9 / 255, 8 / 255, 0.9)
     private static let space = CGColorSpace(name: CGColorSpace.sRGB)!
+
+    /// Spektrum-Farben: immer die klassische Palette (rot = Bass, grün = Mitten, blau = Höhen), unabhängig vom Deck
+    private static let spectrumColors: (OverviewPaint.RGB, OverviewPaint.RGB, OverviewPaint.RGB) = {
+        let c = RenderedWaveform.Colors.of(.classic)
+        let f = { (x: RenderedWaveform.RGB) in OverviewPaint.RGB(Float(x.r), Float(x.g), Float(x.b)) }
+        return (f(c.low), f(c.mid), f(c.high))
+    }()
+
+    /// je Spalte eine deckende Farbe (Bänder additiv, gesättigt), Höhe aus der Energie; helle Linie an großen Sprüngen
+    private static func drawSpectrum(_ ctx: CGContext, _ o: TrackOverview, width w: Int, height h: Int, pps: CGFloat) {
+        let mid = CGFloat(h) / 2, amp = mid - 1
+        let span = CGFloat(o.duration) * pps   // Übersicht deckt die ganze Datei ab
+        let n = min(w, Int(span.rounded(.up)))
+        guard n > 0 else { return }
+        let (lo, mi, hi) = spectrumColors
+        let cols = OverviewPaint.columns(o, width: n, low: lo, mid: mi, high: hi)
+        for (x, c) in cols.enumerated() {
+            let a = max(0.5, CGFloat(c.amp) * amp)
+            ctx.setFillColor(rgb(CGFloat(c.color.r), CGFloat(c.color.g), CGFloat(c.color.b), 1))
+            ctx.fill(CGRect(x: CGFloat(x) * span / CGFloat(n), y: mid - a, width: max(1, span / CGFloat(n)), height: 2 * a))
+        }
+        ctx.setFillColor(bone.copy(alpha: 0.85)!)
+        ctx.fill(OverviewPaint.drops(o).map { CGRect(x: CGFloat($0) * span - 0.75, y: 0, width: 1.5, height: CGFloat(h)) })
+    }
 
     /// Mini-Übersicht: Phrasen-Bänder, 3-Band-Wellenform (gedämpft), Marker alle 16/32 Takte, Hotcues, Start-Cue
     static func render(_ s: PreviewSpec, overview: TrackOverview?) -> CGImage? {
@@ -228,13 +267,17 @@ enum PreviewRenderer {
                     }
                     b += 64
                 }
-                ctx.setFillColor(lila.copy(alpha: 0.16)!); ctx.fill(bands)
-                ctx.setFillColor(bone.copy(alpha: 0.28)!); ctx.fill(m16)
-                ctx.setFillColor(magenta.copy(alpha: 0.7)!); ctx.fill(m32)
+                // Spektrum: Grid zurückhaltend, damit die Farben tragen
+                let spectrum = s.colors == .spectrum
+                ctx.setFillColor(lila.copy(alpha: spectrum ? 0.09 : 0.16)!); ctx.fill(bands)
+                ctx.setFillColor(bone.copy(alpha: spectrum ? 0.14 : 0.28)!); ctx.fill(m16)
+                ctx.setFillColor(magenta.copy(alpha: spectrum ? 0.4 : 0.7)!); ctx.fill(m32)
             }
         }
-        // Wellenform (gedämpft, Farben aus den Einstellungen)
-        if let o = overview, o.count > 0 {
+        if let o = overview, o.count > 0, s.colors == .spectrum {
+            drawSpectrum(ctx, o, width: w, height: h, pps: pps)
+        } else if let o = overview, o.count > 0 {
+            // wie Wellenform (gedämpft, Farben aus den Einstellungen)
             let colors = RenderedWaveform.Colors.of(s.palette)
             let cg = { (c: RenderedWaveform.RGB) in rgb(c.r, c.g, c.b, 0.6) }
             var lo: [CGRect] = [], mi: [CGRect] = [], hi: [CGRect] = []
@@ -462,10 +505,13 @@ struct PreviewSettings: View {
             Picker("Vorschau", selection: $mix.prefs.ui.previewMode) {
                 ForEach(PreviewMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
             }
+            Picker("Vorschau-Farben", selection: $mix.prefs.ui.previewColors) {
+                ForEach(PreviewColors.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+            }
             Picker("Vorschauen im Hintergrund berechnen", selection: $mix.prefs.ui.previewFill) {
                 ForEach(PreviewFill.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
             }
-            Text("mini-übersicht je track: wellenform, phrasen, marker alle 16 / 32 takte, hotcues, start-cue. entsteht beim laden ins deck, per rechtsklick auf eine quelle -> vorschauen berechnen, oder im hintergrund: sichtbare zeilen zuerst, dann die neuesten tracks. immer: läuft auch beim spielen, gedrosselt (eine datei nach der anderen, halbe rechenzeit, niedrige priorität). nur wenn kein deck spielt: wartet, solange ein deck spielt. pausiert immer, solange ein deck lädt, und 4 s danach. dateien nur in der cloud lädt der hintergrund nicht herunter. gespeichert in ~/Library/Application Support/MINOS-741/overviews.")
+            Text("mini-übersicht je track: wellenform (spektrum: rot = bass, grün = mitten/synths, blau = höhen/drums, helle linie = großer energiesprung), phrasen, marker alle 16 / 32 takte, hotcues, start-cue. entsteht beim laden ins deck, per rechtsklick auf eine quelle -> vorschauen berechnen, oder im hintergrund: sichtbare zeilen zuerst, dann die neuesten tracks. immer: läuft auch beim spielen, gedrosselt (eine datei nach der anderen, halbe rechenzeit, niedrige priorität). nur wenn kein deck spielt: wartet, solange ein deck spielt. pausiert immer, solange ein deck lädt, und 4 s danach. dateien nur in der cloud lädt der hintergrund nicht herunter. gespeichert in ~/Library/Application Support/MINOS-741/overviews.")
                 .font(Theme.mono(10)).foregroundStyle(Theme.muted)
         }
     }

@@ -322,7 +322,9 @@ any installed audio unit effect (apple or third-party, v2 and v3) in the single 
 
 PREVIEW column (after the title, on by default): a mini overview of the whole track per row.
 
-* waveform (3 bands, palette from the waveform setting), scaled per track -> intro, breaks and drops stand out even on loud masters
+* waveform, colors `Spektrum (rot/grün/blau)` (default): red = bass, green = mids / synths, blue = highs / drums, mixed per column. bands are weighted against a typical track -> a bass-heavy track is redder, a hat-heavy one bluer. height from peak and bass, scaled per track -> breaks sit clearly lower, drops jump out. thin bright line = big energy jump (drop), at most 4 per track
+* colors `wie Wellenform`: 3 bands in the palette of the waveform setting, muted
+* grid stays in the background (phrase bands, lines every 16 / 32 bars), fainter with the spectrum colors
 * phrase bands from the grid (phrase length = the waveform phrase), thin line every 16 bars, magenta every 32 bars
 * hotcues as short colored ticks, start cue as a triangle on top. own grid / phrase anchor / hotcue edits are drawn too
 * no overview yet -> grid and cues only
@@ -332,7 +334,7 @@ PREVIEW column (after the title, on by default): a mini overview of the whole tr
 * every mode: computing waits while a deck loads and 4 s after, also in the middle of a file
 * status bar: `Vorschauen 1.234 / 14.160 · gedrosselt` (tracks with overview / tracks with a file), `pausiert (Deck lädt)`, `pausiert (Deck spielt)`, ✕ = stop the background job until the next start. right click batch: `Vorschauen 12/240`, ✕ = cancel
 * files that only exist in the cloud (placeholder, not downloaded) are skipped by the background job and counted: `12 nur online – Rechtsklick lädt`. right click -> `Vorschauen berechnen` reads them (downloads the file)
-* ⌘, -> DISPLAY -> browser preview: own column / behind the title (25 % under the title text) / off
+* ⌘, -> DISPLAY -> browser preview: own column / behind the title (25 % under the title text) / off · preview colors: spectrum / like the waveform
 * overviews are checked against file size and modification time -> a retagged file gets a new one
 
 role chips `BASIS · SYNTH · DRUMS · VOLL · ATMO` -> filter on the role at the end of comment 2 (`» BASIS`). several chips = any of them.

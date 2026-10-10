@@ -130,6 +130,8 @@ struct UIPrefs: Codable, Equatable {
     var writeCollection = false
     /// Browser-Vorschau (Mini-Wellenform + Grid + Cues): eigene Spalte, hinter dem Titel oder aus
     var previewMode = PreviewMode.column
+    /// Farben der Vorschau: Spektrum (rot/grün/blau) oder wie die Wellenform
+    var previewColors = PreviewColors.spectrum
     /// alt (bis 0.x): Hintergrund an/aus – nur noch für die Umstellung auf `previewFill`
     var previewBackground = true
     /// fehlende Vorschauen im Hintergrund berechnen: immer (gedrosselt, solange ein Deck spielt) / nur ohne Deck / aus

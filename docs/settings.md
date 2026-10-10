@@ -61,6 +61,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * music folders for MUSIC FOLDERS: add / remove, empty = automatic (the folder holding 90 % of the collection's files)
 * write browser edits into the collection file (off): backup at most once per hour into `Backup MINOS-741`, not while the library software runs -> [manual](MANUAL.md#-09--browser)
 * browser preview: own column (default) / behind the title / off
+* preview colors: spectrum red / green / blue (default) / like the waveform
 * compute previews in the background: always, throttled while a deck plays (default) / only while no deck plays / off -> [manual](MANUAL.md#preview)
 * language: system / english / german (after restart)
 
