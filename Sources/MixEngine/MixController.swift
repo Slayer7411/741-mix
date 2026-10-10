@@ -158,6 +158,8 @@ public struct MixState: Equatable, Sendable {
     public var clockMaster = false
     public var clockBPM: Double = 128
     public var metronome = false
+    /// Semi-Sync: jeder neu geladene Track übernimmt das Tempo des aktuellen Masters (kein Phasen-Sync)
+    public var semiSync = false
     public var metronomeVolume: Double = 0.5
     public var linkEnabled = false
     /// verbundene Link-Teilnehmer
@@ -327,6 +329,16 @@ public final class MixController: @unchecked Sendable {
             state.decks[d] = s
             audio[d] = a
             playedTime[d] = 0
+            if state.semiSync, t.bpm > 0, state.clockMaster || state.effectiveMaster != nil {
+                // Semi-Sync: Tempo des aktuellen Masters übernehmen (ohne Phasen-Sync); halbes/doppeltes Tempo wählt
+                // das nächste Verhältnis; der Tempo-Bereich wächst bei Bedarf auf die nächste Stufe
+                var ratio = state.masterTempo / t.bpm
+                while ratio > 1.5 { ratio /= 2 }
+                while ratio < 0.75 { ratio *= 2 }
+                let pct = (ratio - 1) * 100
+                if abs(pct) > s.tempoRange, let r = [6.0, 8, 10, 16, 50, 100].first(where: { $0 >= abs(pct) }) { s.tempoRange = r }
+                s.tempoPct = max(-s.tempoRange, min(s.tempoRange, pct))
+            }
             playedLogged[d] = false
             playStart[d] = nil
             let gen = engine.attach(a, deck: d, startAt: s.cuePoint)
@@ -701,6 +713,9 @@ public final class MixController: @unchecked Sendable {
     public func setClockMaster(_ on: Bool) {
         locked {
             if on, !state.clockMaster, let m = state.effectiveMaster, let g = state.decks[m].grid {
+    /// Semi-Sync: neue Tracks laden mit dem Tempo des Masters (kein Phasen-Sync)
+    public func setSemiSync(_ on: Bool) { locked { state.semiSync = on } }
+
                 state.clockBPM = state.decks[m].bpm
                 engine.setClockBPM(state.clockBPM)
                 jumpClock(to: g.beatPosition(at: position(m)))

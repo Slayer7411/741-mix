@@ -14,7 +14,7 @@ struct Session: Codable {
     }
     var decks: [Deck]?
     var fx: [FXUnitState]?
-    var clockBPM: Double?, clockMaster: Bool?, metronome: Bool?, metronomeVolume: Double?, linkEnabled: Bool?
+    var clockBPM: Double?, clockMaster: Bool?, metronome: Bool?, metronomeVolume: Double?, linkEnabled: Bool?, semiSync: Bool?
     var crossfader: Double?, masterVolume: Double?
     var panes: [Pane]?
     var maximized: Bool?
@@ -53,7 +53,7 @@ struct Session: Codable {
                  xf: $0.xf, fxAssign: $0.fxAssign)
         }
         fx = s.fx
-        clockBPM = s.clockBPM; clockMaster = s.clockMaster; metronome = s.metronome
+        clockBPM = s.clockBPM; clockMaster = s.clockMaster; metronome = s.metronome; semiSync = s.semiSync
         metronomeVolume = s.metronomeVolume; linkEnabled = s.linkEnabled
         crossfader = s.crossfader; masterVolume = s.masterVolume
         panes = [browser.paneA, browser.paneB].map { p in
@@ -85,6 +85,7 @@ struct Session: Codable {
             if let v = fx { for u in 0..<min(v.count, s.fx.count) { s.fx[u] = v[u] } }
             if let v = clockBPM { s.clockBPM = v }
             if let v = clockMaster { s.clockMaster = v }
+            if let v = semiSync { s.semiSync = v }
             if let v = metronome { s.metronome = v }
             if let v = metronomeVolume { s.metronomeVolume = v }
             if let v = linkEnabled { s.linkEnabled = v }

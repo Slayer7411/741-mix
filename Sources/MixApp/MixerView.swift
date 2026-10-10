@@ -244,6 +244,8 @@ struct MasterClockPanel: View {
                 }
                 DeckButton(title: "TAP", width: 34) { mix.tap() }
             }
+            DeckButton(title: "SEMI", active: s.semiSync, color: Theme.state, width: 38) { mix.setSemiSync(!s.semiSync) }
+                .help("Semi-Sync: neue Tracks laden mit dem Tempo des Masters, ohne Phasen-Sync")
             Text("│").foregroundStyle(Theme.hairline)
             VStack(spacing: 2) {
                 DeckButton(title: "TICK", active: s.metronome, width: 30) { mix.setMetronome(!s.metronome) }

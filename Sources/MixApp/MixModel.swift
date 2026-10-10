@@ -208,6 +208,7 @@ final class MixModel {
     }
     func toggleQuantize() { prefs.engine.quantize.toggle() }
     func toggleSnap() { prefs.engine.snap.toggle() }
+    func setSemiSync(_ on: Bool) { run { core.setSemiSync(on) } }
     func setClockMaster(_ on: Bool) { run { core.setClockMaster(on) } }
     func nudgeClock(_ d: Double) { run { core.nudgeClock(d) } }
     func setClockBPM(_ v: Double) { run { core.setClockBPM(v) } }
