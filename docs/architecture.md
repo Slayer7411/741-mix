@@ -27,8 +27,8 @@ track (float, in memory) -> hermite varispeed | signalsmith stretch (keylock / k
 master clock -> metronome click -> own pair
 ```
 
-* tracks are decoded fully into memory at the device rate
-* buffers are released only after the core confirms the swap
+* tracks are decoded in chunks straight into the deck buffer (float, device rate) -> one copy in memory
+* track handoff by generation: the old buffer is freed only after the audio thread confirms it took the new one
 * the device rate is never changed
 * keylock latency is compensated -> position and seeks point at what you hear
 * stopped decks without fx tail cost nothing

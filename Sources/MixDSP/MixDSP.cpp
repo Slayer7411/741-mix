@@ -187,9 +187,11 @@ struct Deck {
     std::atomic<int> loopVersion{0};
     std::atomic<bool> loopActiveReq{false};
     std::atomic<double> loopStartReq{0}, loopEndReq{0};
+    // Track-Übergabe: Steuer-Thread füllt Slot (gen & 1) und veröffentlicht gen, Audio-Thread übernimmt und bestätigt
     TrackSlot slots[2];
-    std::atomic<int> pendingSlot{-1};
-    std::atomic<bool> released{true};
+    std::atomic<uint32_t> pendingGen{0};    // 0 = nichts ausstehend
+    std::atomic<uint32_t> consumedGen{0};   // zuletzt übernommene Generation
+    uint32_t loadGen = 0;                   // nur Steuer-Thread
 
     // vom Audio-Thread gelesen/geschrieben, nach außen atomar gespiegelt
     std::atomic<double> posOut{0}, fluxOut{0};
@@ -204,7 +206,6 @@ struct Deck {
     bool wasStretching = false;
     double latSm = 0;   // geglättete Keylock-Latenz (sonst springt die Position bei Tempowechseln)
     int latDir = 1;     // Richtung, in die der Lesekopf der Latenz vorausläuft
-    int tailFrames = 0;
     float gainSm = 1, volSm = 0;
     Biquad eqL, eqM, eqH; float lastEq[3] = {999, 999, 999};
     SweepFilter chanFilter;
@@ -303,15 +304,15 @@ static void readResampled(Deck &d, float *L, float *R, int n, double step) {
 
 static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     // ausstehende Änderungen übernehmen
-    int ps = d.pendingSlot.exchange(-1);
-    if (ps >= 0) {
-        d.cur = d.slots[ps];
+    uint32_t pg = d.pendingGen.exchange(0);
+    if (pg) {
+        d.cur = d.slots[pg & 1];
         d.pos = d.cur.start * d.cur.rate; d.flux = d.pos;
         d.loopActive = false; d.inAcc = 0;
         d.stretch.reset();
-        d.released.store(true);
+        d.consumedGen.store(pg);
     }
-    bool jumped = ps >= 0;
+    bool jumped = pg != 0;
     double seek = d.pendingSeek.exchange(NAN);
     if (!std::isnan(seek) && d.cur.frames > 0) {
         d.pos = std::max(0.0, seek) * d.cur.rate; d.flux = d.pos; d.inAcc = 0;
@@ -335,8 +336,7 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     for (int u = 0; u < MDSP_FX_UNITS; u++) {
         if (d.p[MD_FX1_ASSIGN + u].load() > 0.5f && (d.fx[u].delay.tail > 1e-5f || d.fx[u].reverb.tail > 1e-5f)) fxTail = true;
     }
-    d.tailFrames = playing || fxTail ? 1 : 0;
-    if (!playing && d.tailFrames <= 0) {   // Deck steht, kein Hall/Echo-Rest → nichts rechnen
+    if (!playing && !fxTail) {   // Deck steht, kein Hall/Echo-Rest → nichts rechnen
         d.rms.store(d.rms.load() * 0.8f); d.peak.store(d.peak.load() * 0.8f);
         d.playingOut.store(false);
         d.posOut.store(d.pos / d.cur.rate); d.fluxOut.store(d.flux / d.cur.rate);
@@ -436,7 +436,7 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
         d.volSm += (vol - d.volSm) * 0.002f;
         float l = L[i] * d.volSm, r = R[i] * d.volSm;
         oL[i] += l; oR[i] += r;
-        sum += l * l; pk = std::max(pk, std::fabs(l));
+        sum += (l * l + r * r) * 0.5f; pk = std::max(pk, std::max(std::fabs(l), std::fabs(r)));
     }
     float rms = std::sqrt(sum / std::max(1, n));
     d.rms.store(d.rms.load() * 0.7f + rms * 0.3f);
@@ -479,17 +479,20 @@ MDEngine *mdsp_create(double sampleRate) {
 
 void mdsp_destroy(MDEngine *e) { delete e; }
 
-void mdsp_set_track(MDEngine *e, int deck, const float *left, const float *right, int64_t frames, double trackRate, double startSeconds) {
+uint32_t mdsp_set_track(MDEngine *e, int deck, const float *left, const float *right, int64_t frames, double trackRate, double startSeconds) {
     Deck &d = e->decks[deck];
     d.p[MD_PLAYING].store(0);
-    int active = d.pendingSlot.load();
-    int slot = (active == 0) ? 1 : 0;
-    d.slots[slot] = TrackSlot{left, right, frames, trackRate, startSeconds};
-    d.released.store(false);
-    d.pendingSlot.store(slot);
+    uint32_t gen = ++d.loadGen;
+    if (gen == 0) gen = ++d.loadGen;   // 0 heißt „nichts ausstehend“
+    // Slot der vorletzten Übergabe: längst übernommen oder nie gelesen (von der letzten überholt)
+    d.slots[gen & 1] = TrackSlot{left, right, frames, trackRate, startSeconds};
+    d.pendingGen.store(gen);
+    return gen;
 }
 
-bool mdsp_buffer_released(MDEngine *e, int deck) { return e->decks[deck].released.load(); }
+bool mdsp_track_consumed(MDEngine *e, int deck, uint32_t gen) {
+    return int32_t(e->decks[deck].consumedGen.load() - gen) >= 0;
+}
 void mdsp_set_param(MDEngine *e, int deck, MDParam p, float v) { e->decks[deck].p[p].store(v); }
 void mdsp_set_fx(MDEngine *e, int unit, MDFXParam p, float v) { e->fxp[unit][p].store(v); }
 void mdsp_set_master(MDEngine *e, float v) { e->master.store(v); }

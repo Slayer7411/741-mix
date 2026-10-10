@@ -282,7 +282,11 @@ public final class MixController: @unchecked Sendable {
         }
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             do {
+                let t0 = Date()
                 let a = try TrackAudio.decode(url: URL(fileURLWithPath: t.path), sampleRate: rate)
+                if ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1" {
+                    print(String(format: "[load] deck %d: %.2f s, %.0f MB", d, Date().timeIntervalSince(t0), Double(a.frames) * 8 / 1e6))
+                }
                 finishLoad(t, a, d)
             } catch {
                 locked {
@@ -294,7 +298,7 @@ public final class MixController: @unchecked Sendable {
     }
 
     private func finishLoad(_ t: Track, _ a: TrackAudio, _ d: Int) {
-        let old: TrackAudio? = locked {
+        let (old, gen): (TrackAudio?, UInt32) = locked {
             let old = audio[d]
             var s = state.decks[d]
             let p = state.prefs
@@ -325,21 +329,22 @@ public final class MixController: @unchecked Sendable {
             playedTime[d] = 0
             playedLogged[d] = false
             playStart[d] = nil
-            engine.attach(a, deck: d, startAt: s.cuePoint)
+            let gen = engine.attach(a, deck: d, startAt: s.cuePoint)
             applyRate(d)
             applyMixer(d)
             applyAllFX()
-            return old
+            return (old, gen)
         }
-        // alten Puffer erst freigeben, wenn der Audio-Kern ihn losgelassen hat
-        releaseWhenFree(old, deck: d, tries: 50)
+        releaseWhenFree(old, deck: d, gen: gen)
     }
 
-    private func releaseWhenFree(_ old: TrackAudio?, deck d: Int, tries: Int) {
+    /// alten Puffer halten, bis der Audio-Thread den neuen übernommen hat – ohne Zeitlimit
+    /// (steht die Ausgabe, liest ihn niemand; hängt sie, bleibt lieber ein Puffer liegen als dass sie in freien Speicher greift)
+    private func releaseWhenFree(_ old: TrackAudio?, deck d: Int, gen: UInt32) {
         guard let old else { return }
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { [self] in
-            if engine.bufferReleased(d) || tries <= 0 || !engine.running { _ = old; return }
-            releaseWhenFree(old, deck: d, tries: tries - 1)
+            if engine.trackConsumed(d, gen) || !engine.running { _ = old; return }
+            releaseWhenFree(old, deck: d, gen: gen)
         }
     }
 

@@ -51,10 +51,11 @@ typedef enum {
 MDEngine *mdsp_create(double sampleRate);
 void mdsp_destroy(MDEngine *e);
 
-/// Track-Puffer setzen (Deck wird dabei gestoppt). Speicher gehört dem Aufrufer und muss gültig bleiben,
-/// bis mdsp_buffer_released() für dieses Deck true liefert (Audio-Thread hat den alten Puffer losgelassen).
-void mdsp_set_track(MDEngine *e, int deck, const float *left, const float *right, int64_t frames, double trackRate, double startSeconds);
-bool mdsp_buffer_released(MDEngine *e, int deck);
+/// Track-Puffer setzen (Deck wird dabei gestoppt). Liefert die Übergabe-Generation. Speicher gehört dem Aufrufer;
+/// der vorherige Puffer darf erst weg, wenn mdsp_track_consumed() für diese Generation true liefert
+/// (Audio-Thread hat den neuen übernommen und liest den alten nicht mehr).
+uint32_t mdsp_set_track(MDEngine *e, int deck, const float *left, const float *right, int64_t frames, double trackRate, double startSeconds);
+bool mdsp_track_consumed(MDEngine *e, int deck, uint32_t generation);
 
 void mdsp_set_param(MDEngine *e, int deck, MDParam p, float v);
 void mdsp_set_fx(MDEngine *e, int unit, MDFXParam p, float v);

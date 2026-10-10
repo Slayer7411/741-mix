@@ -88,13 +88,15 @@ public final class MixEngine: @unchecked Sendable {
 
     // MARK: - Laden / Transport
 
-    /// Track-Puffer an ein Deck geben. Den alten Puffer erst freigeben, wenn `bufferReleased(d)` true ist.
-    public func attach(_ audio: TrackAudio?, deck d: Int, startAt seconds: Double) {
+    /// Track-Puffer an ein Deck geben. Liefert die Übergabe-Generation: den alten Puffer erst freigeben,
+    /// wenn `trackConsumed(d, gen)` true ist (Audio-Thread hat den neuen übernommen).
+    @discardableResult
+    public func attach(_ audio: TrackAudio?, deck d: Int, startAt seconds: Double) -> UInt32 {
         players[d].reverse = false
-        mdsp_set_track(core, Int32(d), audio?.left, audio?.right, Int64(audio?.frames ?? 0), audio?.sampleRate ?? sampleRate, seconds)
+        return mdsp_set_track(core, Int32(d), audio?.left, audio?.right, Int64(audio?.frames ?? 0), audio?.sampleRate ?? sampleRate, seconds)
     }
 
-    public func bufferReleased(_ d: Int) -> Bool { mdsp_buffer_released(core, Int32(d)) }
+    public func trackConsumed(_ d: Int, _ gen: UInt32) -> Bool { mdsp_track_consumed(core, Int32(d), gen) }
     public func seek(_ d: Int, seconds: Double) { mdsp_seek(core, Int32(d), max(0, seconds)) }
     public func position(_ d: Int) -> Double { mdsp_position(core, Int32(d)) }
     public func fluxPosition(_ d: Int) -> Double { mdsp_flux_position(core, Int32(d)) }
