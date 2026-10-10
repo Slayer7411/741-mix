@@ -34,6 +34,18 @@ master clock -> metronome click -> own pair
 * stopped decks without fx tail cost nothing
 * hard clip as last stage
 
+plugins (audio units):
+
+```
+fx unit × deck -> PluginInstance (swift, control thread) -> MDPlugin (c, AUHost.cpp) -> AudioUnitRender in the render callback
+```
+
+* one instance per unit × deck, opened off the control lock on its own queue, then swapped in by an atomic pointer
+* the old instance is closed only after the audio thread finished a whole block without it (render counter)
+* input -> render callback on the deck buffer, output -> preallocated buffers, error -> signal stays dry
+* off = input closed, the tail rings out until 1 s below -100 dB, then the plugin is no longer rendered
+* parameters and state (ClassInfo) from the control thread, the plugin window mirrors its changes to the other decks
+
 ## ◆ SYNC
 
 * master = master deck or the master clock (MASTER mode)

@@ -234,3 +234,44 @@ private final class Core {
     c.render(seconds: 25)
     #expect(c.render(seconds: 0.5) < 1e-3)   // klingt aus
 }
+
+/// Audio-Unit-Plugin als FX: Apples AUMatrixReverb auf FX 1, Deck A, D/W 1 – klingt, bleibt endlich, klingt nach dem Stopp aus
+@Test func audioUnitPluginRendersAndRingsOut() throws {
+    let c = Core()
+    var seed: UInt32 = 777
+    for i in 0..<c.frames { seed = seed &* 1664525 &+ 1013904223; let v = (Float(seed >> 8) / Float(1 << 24) - 0.5) * 0.6; c.left[i] = v; c.right[i] = v }
+    var err = [CChar](repeating: 0, count: 256)
+    let fcc = { (s: String) in s.utf8.reduce(UInt32(0)) { $0 << 8 | UInt32($1) } }
+    let plug = try #require(mdplug_open(fcc("aufx"), fcc("mrev"), fcc("appl"), c.fs, UInt32(MDSP_MAX_FRAMES), &err, Int32(err.count)),
+                            "\(String(cString: err))")
+    c.load(); c.render()
+    c.set(MD_FX1_ASSIGN, 1)
+    #expect(mdsp_set_fx_plugin(c.e, 0, 0, plug) == nil)
+    c.fx(MDFX_DRYWET, 1); c.fx(MDFX_PLUGIN_ON, 1)
+    c.set(MD_PLAYING, 1)
+    var finite = true
+    for _ in 0..<Int(1.5 * c.fs / 512) { c.render(512); finite = finite && c.outL.allSatisfy(\.isFinite) && c.outR.allSatisfy(\.isFinite) }
+    let wet = c.render(seconds: 0.5)
+    #expect(finite)
+    #expect(wet > 1e-3)
+    // Stopp + aus: Eingang zu, Hall-Fahne klingt aus
+    c.set(MD_PLAYING, 0); c.fx(MDFX_PLUGIN_ON, 0)
+    let tail = c.render(seconds: 0.2)
+    print(String(format: "[plugin] wet rms %.4f · tail rms %.5f", wet, tail))
+    #expect(tail > 1e-5)
+    c.render(seconds: 30)
+    #expect(c.render(seconds: 0.5) < 1e-4)
+    // Übergabe: das alte Plugin ist erst nach einem Block ohne es frei
+    #expect(mdsp_set_fx_plugin(c.e, 0, 0, nil) == plug)
+    #expect(!mdsp_fx_plugin_released(c.e, 0, 0, plug))
+    c.render()
+    #expect(mdsp_fx_plugin_released(c.e, 0, 0, plug))
+    mdplug_close(plug)
+}
+
+@Test func audioUnitOpenFailsCleanly() {
+    var err = [CChar](repeating: 0, count: 256)
+    let p = mdplug_open(0x7a7a7a7a, 0x7a7a7a7a, 0x7a7a7a7a, 44100, 512, &err, Int32(err.count))
+    #expect(p == nil)
+    #expect(!String(cString: err).isEmpty)
+}

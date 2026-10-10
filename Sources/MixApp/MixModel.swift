@@ -208,6 +208,10 @@ final class MixModel {
     func setCrossfader(_ v: Double) { run { core.setCrossfader(v) } }
     func updateFX(_ u: Int, _ f: (inout FXUnitState) -> Void) { run { core.updateFX(u, f) } }
     func toggleFXAssign(_ d: Int, _ u: Int) { run { core.toggleFXAssign(d, u) } }
+    func setPlugin(_ u: Int, _ id: String?) {
+        if id != state.fx[u].pluginID { PluginWindow.close(u) }
+        run { core.setPlugin(u, id: id) }
+    }
     func setMasterVolume(_ v: Double) {
         run { core.setMasterVolume(v) }
         UserDefaults.standard.set(v, forKey: "masterVolume")

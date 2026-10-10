@@ -223,3 +223,6 @@
 "Ordner hinzufügen …" = "Add folder …";
 "automatisch: %@" = "automatic: %@";
 "Entfernen" = "Remove";
+"Plugin-Liste neu einlesen" = "Rescan plugin list";
+"Audio-Unit-Plugin wählen" = "Choose an audio unit plugin";
+"Plugin-Fenster öffnen" = "Open the plugin window";

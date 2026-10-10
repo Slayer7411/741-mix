@@ -1,5 +1,6 @@
 module MixDSP {
     header "MixDSP.h"
     header "MixDSPCoreAudio.h"
+    header "MixDSPAUHost.h"
     export *
 }

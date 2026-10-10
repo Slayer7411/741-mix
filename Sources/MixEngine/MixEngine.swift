@@ -170,10 +170,15 @@ public final class MixEngine: @unchecked Sendable {
                 set(MDFX_FILTER_ON, 0); set(MDFX_DELAY_ON, 0)
                 set(MDFX_REVERB_ON, on ? 1 : 0); set(MDFX_REVERB_AMOUNT, 1); set(MDFX_REVERB_SIZE, p[0])
                 set(MDFX_REVERB_HP, p[1]); set(MDFX_REVERB_LP, p[2]); set(MDFX_REVERB_DWSEND, 1)
+            case .plugin:
+                // Regler gehen direkt an die Plugin-Parameter (MixController), hier nur an/aus
+                set(MDFX_FILTER_ON, 0); set(MDFX_DELAY_ON, 0); set(MDFX_REVERB_ON, 0)
             }
+            set(MDFX_PLUGIN_ON, on && FXUnitState.Effect(rawValue: fx.singleType) == .plugin ? 1 : 0)
             if FXUnitState.Effect(rawValue: fx.singleType) != .reverb { set(MDFX_REVERB_HP, 0); set(MDFX_REVERB_LP, 1); set(MDFX_REVERB_DWSEND, 0) }
             return
         }
+        set(MDFX_PLUGIN_ON, 0)
         set(MDFX_FILTER_ON, fx.slots[0].on ? 1 : 0)
         set(MDFX_FILTER_AMOUNT, fx.slots[0].amount)
         set(MDFX_FILTER_RES, filterResonance)
@@ -189,6 +194,20 @@ public final class MixEngine: @unchecked Sendable {
     }
 
     public func setReverbSize(unit u: Int, _ size: Double) { mdsp_set_fx(core, Int32(u), MDFX_REVERB_SIZE, Float(size)) }
+
+    // MARK: - Plugins
+
+    /// Plugin-Instanz für FX-Unit × Deck in den Kern geben (nil = keins). Liefert den Kern-Zeiger des vorherigen:
+    /// dessen Instanz erst freigeben, wenn `pluginReleased` true ist.
+    @discardableResult
+    public func setPlugin(unit u: Int, deck d: Int, _ p: PluginInstance?) -> OpaquePointer? {
+        mdsp_set_fx_plugin(core, Int32(u), Int32(d), p?.ptr)
+    }
+
+    /// rechnet der Audio-Thread das alte Plugin sicher nicht mehr?
+    public func pluginReleased(unit u: Int, deck d: Int, _ old: PluginInstance) -> Bool {
+        mdsp_fx_plugin_released(core, Int32(u), Int32(d), old.ptr)
+    }
 
     // MARK: - Master-Clock
 

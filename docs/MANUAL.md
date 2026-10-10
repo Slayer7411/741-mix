@@ -242,7 +242,20 @@ the status bar shows device, mode and routing.
 * deck assign: FX1 … FX4 in the deck header or the mixer
 * default: FX1 -> A / C, FX2 -> B / D
 
-effects so far: filter, delay, reverb. more -> [roadmap](roadmap.md).
+effects so far: filter, delay, reverb, PLUGIN. more -> [roadmap](roadmap.md).
+
+### PLUGIN
+
+any installed audio unit effect (apple or third-party, v2 and v3) in the single mode, e.g. AUMatrixReverb or AUReverb2 instead of the built-in reverb.
+
+* SNGL -> effect menu -> PLUGIN -> the menu below lists every installed effect (`name · manufacturer`)
+* knobs 1-3 -> the first three parameters of the plugin, labels from the plugin
+* D/W -> dry / wet of the unit (on top of the plugin's own mix)
+* ON -> on / off. off = spillover: the plugin gets no new audio and rings out
+* EDIT -> window with the plugin's own view (or a generic one) · changes go to every deck on that unit
+* one instance per deck · loads in the background, the deck plays on dry meanwhile
+* plugin and its settings are saved with the session
+* newly installed plugins -> menu -> rescan plugin list
 
 ## ◆ 09 · BROWSER
 
