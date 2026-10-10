@@ -8,6 +8,12 @@ enum WaveformStyle: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Spektrum-Stil: fein (6 Bänder, eigene Farben, Höhen zusätzlich als Ebene darüber), fein nur gemischt, oder einfach (3 Bänder, Palette)
+enum SpectrumDetail: String, CaseIterable, Codable, Identifiable {
+    case fine = "Spektrum fein (6 Bänder)", fineMix = "Spektrum fein, ohne Höhen-Ebene", simple = "Spektrum (3 Bänder)"
+    var id: String { rawValue }
+}
+
 enum WaveformPalette: String, CaseIterable, Codable, Identifiable {
     case bone = "741 Knochen", orange = "Orange", blue = "Blau/Weiß", classic = "Klassisch"
     var id: String { rawValue }
@@ -96,6 +102,10 @@ struct UIPrefs: Codable, Equatable {
     var waveformSeconds = 4.0
     var waveformStyle = WaveformStyle.threeBand
     var waveformPalette = WaveformPalette.bone
+    /// Spektrum-Stil: feine 6-Band-Farben oder die alten 3 Bänder
+    var spectrumDetail = SpectrumDetail.fine
+    /// Höhen-Betonung im feinen Spektrum (0 = neutral, 1 = Standard, 2 = stark)
+    var waveformHighBoost = 1.0
     var showBeatgrid = true
     var showBarNumbers = true
     var dimPlayed = true
@@ -128,14 +138,24 @@ struct UIPrefs: Codable, Equatable {
     var musicFolders: [String] = []
     /// Metadaten-Änderungen aus dem Browser auch in die Collection-Datei schreiben (mit Sicherung davor)
     var writeCollection = false
-    /// Browser-Vorschau (Mini-Wellenform + Grid + Cues): eigene Spalte, hinter dem Titel oder aus
-    var previewMode = PreviewMode.column
-    /// fehlende Vorschauen im Hintergrund berechnen – nur solange kein Deck spielt
+    /// Browser-Vorschau (Mini-Wellenform + Grid + Cues): ganze Zeile (zweizeilig), eigene Spalte, hinter dem Titel oder aus
+    var previewMode = PreviewMode.fullRow
+    /// Farben der Vorschau: Spektrum (rot/grün/blau) oder wie die Wellenform
+    var previewColors = PreviewColors.spectrum
+    /// alt (bis 0.x): Hintergrund an/aus – nur noch für die Umstellung auf `previewFill`
     var previewBackground = true
+    /// fehlende Vorschauen im Hintergrund berechnen: immer (gedrosselt, solange ein Deck spielt) / nur ohne Deck / aus
+    var previewFill = PreviewFill.always
     /// Cover links im Deck-Kopf
     var showDeckCover = true
     /// Cover des gewählten Tracks unter dem Baum im Browser
     var showCoverPreview = true
+    /// Last-Anzeigen rechts in der Statusleiste (DSP, Latenz, Aussetzer, Speicher, CPU)
+    var showMeters = true
+    /// Collection prüfen: beim Start nach dem Laden automatisch
+    var checkOnStart = false
+    /// Collection prüfen: Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen
+    var checkMusicFolders = true
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.
@@ -143,6 +163,8 @@ struct AppPrefs: Codable, Equatable {
     var engine = EnginePrefs()
     var ui = UIPrefs()
     var controller = ControllerPrefs()
+    /// Cloud-Library: lokal halten, Downloads (⌘, -> CLOUD)
+    var cloud = CloudPrefs()
     /// eigene Tastenkürzel: Aktion-ID -> Kombination als Text ("" = frei), sonst Standard (ShortcutID.defaultCombo)
     var shortcuts: [String: String] = [:]
 
@@ -162,6 +184,16 @@ struct AppPrefs: Codable, Equatable {
         if !Session.isSelfTest, !d.bool(forKey: "migrated.reverb-fdn") {
             if d.data(forKey: key) != nil, p.engine.reverbBrightness == 0.4 { p.engine.reverbBrightness = EnginePrefs().reverbBrightness; p.save() }
             d.set(true, forKey: "migrated.reverb-fdn")
+        }
+        // Browser-Vorschau: alter Standard „eigene Spalte“ -> neuer Standard „ganze Zeile“ (einmalig)
+        if !Session.isSelfTest, !d.bool(forKey: "migrated.preview-row") {
+            if d.data(forKey: key) != nil, p.ui.previewMode == .column { p.ui.previewMode = .fullRow; p.save() }
+            d.set(true, forKey: "migrated.preview-row")
+        }
+        // Hintergrund-Vorschauen: wer den alten Schalter ausgeschaltet hatte, bekommt „aus“ (einmalig)
+        if !Session.isSelfTest, !d.bool(forKey: "migrated.preview-fill") {
+            if d.data(forKey: key) != nil, !p.ui.previewBackground { p.ui.previewFill = .off; p.save() }
+            d.set(true, forKey: "migrated.preview-fill")
         }
         return p
     }

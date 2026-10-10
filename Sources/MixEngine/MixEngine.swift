@@ -207,6 +207,10 @@ public final class MixEngine: @unchecked Sendable {
         mdsp_fx_plugin_released(core, Int32(u), Int32(d), old.ptr)
     }
 
+    /// NaN im Deck: das Plugin wartet auf `reset` (bis dahin trocken)
+    public func pluginNeedsReset(unit u: Int, deck d: Int) -> Bool { mdsp_fx_plugin_needs_reset(core, Int32(u), Int32(d)) }
+    public func pluginResetDone(unit u: Int, deck d: Int) { mdsp_fx_plugin_reset_done(core, Int32(u), Int32(d)) }
+
     // MARK: - Master-Clock
 
     public func setClockBPM(_ bpm: Double) { mdsp_clock_set_bpm(core, bpm) }
@@ -220,6 +224,43 @@ public final class MixEngine: @unchecked Sendable {
     }
     public func setMetronome(on: Bool, volume: Double, firstChannel: Int) {
         mdsp_metronome(core, on, Float(volume), Int32(firstChannel))
+    }
+
+    // MARK: - Last / Latenz
+
+    /// Messwerte für die Statusleiste: DSP-Last, Aussetzer, Latenz
+    public struct RenderLoad: Sendable, Equatable {
+        /// Rechenzeit ÷ Blockdauer seit dem letzten Abholen (Mittel, schwerster Block)
+        public var average = 0.0
+        public var peak = 0.0
+        /// eigene Messung: Blöcke über 100 % Budget; Gerät: HAL-Überlastmeldungen (beide seit Start/Zurücksetzen)
+        public var overloads = 0
+        public var deviceOverloads = 0
+        public var blocks = 0
+        /// Ausgabelatenz (Puffer + Gerät + Sicherheit + Stream), Sekunden
+        public var outputLatency = 0.0
+        /// Keylock-Vorlauf (wird ausgeglichen), Sekunden
+        public var keylockLatency = 0.0
+        public var bufferFrames = 0
+        public var sampleRate = 0.0
+        public var running = false
+        public init() {}
+    }
+
+    /// Werte seit dem letzten Aufruf abholen (Mittel und Spitze beginnen danach neu) – höchstens ein Abholer
+    public func takeLoad() -> RenderLoad {
+        let l = mdsp_load_take()
+        var r = RenderLoad()
+        r.average = l.average; r.peak = l.peak; r.blocks = Int(l.blocks)
+        r.overloads = Int(l.overloads); r.deviceOverloads = output.deviceOverloads
+        r.outputLatency = output.outputLatency; r.keylockLatency = mdsp_keylock_latency(core)
+        r.bufferFrames = Int(output.bufferFrameSize); r.sampleRate = output.deviceRate; r.running = output.running
+        return r
+    }
+
+    public func resetOverloads() {
+        mdsp_load_reset_overloads()
+        output.resetDeviceOverloads()
     }
 
     // MARK: - Pegel

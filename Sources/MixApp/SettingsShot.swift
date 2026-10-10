@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import MixEngine
 
 /// Selbsttest-Bilder der Einstellungen (MIX741_SELFTEST=1 MIX741_SHOT=settings:<ordner>):
 /// jeden Bereich offscreen rendern, je Bereich PNGs schreiben, beenden. Kein sichtbares Fenster, keine Aktivierung.
@@ -50,6 +51,31 @@ enum SettingsShot {
         }
         restore()
         print("[shot] \(SettingsView.tabs.count) Bereiche -> \(dir.path)")
+        exit(0)
+    }
+
+    /// nur der PLUGINS-Tab (MIX741_SELFTEST=1 MIX741_SHOT=plugins:<ordner>, optional MIX741_SHOT_PLUGINS=<plugin-ordner>):
+    /// ohne MixModel – kein Audiogerät, kein Controller, Plugin-Einstellungen nur gelesen. Geht auch, während MINOS-741 läuft
+    static func runPluginsIfRequested() {
+        guard Session.isSelfTest, let arg = ProcessInfo.processInfo.environment["MIX741_SHOT"], arg.hasPrefix("plugins:") else { return }
+        let dir = URL(fileURLWithPath: String(arg.dropFirst("plugins:".count)), isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSApplication.shared.setActivationPolicy(.prohibited)
+        VST3Thread.useMain = true
+        let catalog = PluginCatalog(directory: HistoryStore.baseDir, readOnly: true)
+        if let f = ProcessInfo.processInfo.environment["MIX741_SHOT_PLUGINS"] { catalog.update { $0.folders.append(f) } }
+        let pm = PluginManager(catalog: catalog)
+        let deadline = Date().addingTimeInterval(30)
+        while pm.scanning, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+        let vst3 = pm.entries.filter { $0.format == .vst3 }
+        print("[shot] Plugins: \(pm.entries.count), VST3: " + vst3.map { "\($0.name) (\($0.info != nil ? "ladbar" : $0.problem ?? "?"))" }.joined(separator: ", "))
+        let page = { (search: String, expanded: String?) in
+            AnyView(SettingsPage { PluginSettingsPage(pm: pm, search: search, expanded: expanded) }
+                .frame(width: 643).background(Theme.chitin).preferredColorScheme(.dark))
+        }
+        render(page("", nil), to: dir.appendingPathComponent("plugins-page.png"), fitHeight: true)
+        render(page("vst3", vst3.first { $0.info != nil }?.id), to: dir.appendingPathComponent("plugins-vst3.png"), fitHeight: true)
+        print("[shot] PLUGINS -> \(dir.path)")
         exit(0)
     }
 

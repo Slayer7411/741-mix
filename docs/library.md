@@ -18,6 +18,35 @@
 * default folder: deepest folder that holds 90 % of the collection's existing files, e.g. `~/Music/DJ`
 * own folders: ⌘, -> DISPLAY -> browser -> add folder (the automatic one stays in the list)
 * every pane keeps its own folder and the subfolders switch, saved in the session
+## ◆ CHECK THE COLLECTION
+
+* BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION
+* read only: files (missing, permissions, 0 bytes), audio header, duration vs the collection (> 2 s), spelling on disk (case, nfc / nfd), title / artist vs file name, duplicates (same file, same artist + title), analysis (bpm, grid, key, loudness), grid (bpm 60-200, anchor inside the file), playlist entries without a track, files in the music folders without a collection entry
+* installer style: progress, current file, log, counters. ABBRECHEN stops at once and keeps the findings
+* findings table: filter per check, show in browser / finder, copy path, report as txt or csv
+* details: [manual](MANUAL.md#check-the-collection)
+
+## ◆ RELOAD
+
+* ↻ / ⌘O: everything heavy runs in the background (parse, file check, own edits, indices, sorting of the lists both panes show), the main thread only takes the result
+* unchanged tracks and playlists keep their identity -> the lists do not rebuild when nothing changed
+* 14,160 tracks, two panes: longest ui stall 1.3 s -> under 30 ms (unchanged collection), 1.5 -> 0.3 s with changed entries
+
+## ◆ CLOUD LIBRARIES
+
+library in a cloud folder (google drive for desktop, icloud drive, any file provider under `~/Library/CloudStorage`):
+
+* column ☁: ● local · ☁ online only · ↓ downloading (grey = waiting) · ✕ missing · empty = not in a cloud folder
+* check = file status only (`SF_DATALESS`), nothing gets downloaded. 14k tracks ~0.1 s. on load, on changes in the folder, every 10 min
+* ● LOKAL in the pane header -> local tracks only
+* right click tracks, a playlist, smartlist, playlist folder, PREPARATION or TRACK COLLECTION -> `Bereitmachen (herunterladen)`
+* SET-CHECK in the pane header -> preparation + the pane's list, everything not local listed, `ALLE HOLEN` fetches it
+* keep local while MINOS-741 runs: off / preparation + open playlists + decks (default) / whole library. evicted tracks are fetched again
+* 2 downloads at a time, new ones wait while a deck loads, keep local goes last and one at a time, 3 tries, 10 gb stay free
+* online-only track into a deck -> download requested at once, status bar message
+* quit with open downloads -> handed to the provider, it finishes them without MINOS-741
+* always offline: finder -> right click the library folder -> make available offline. ⌘, -> CLOUD shows whether it is set
+
 ## ◆ EDIT TRACKS
 
 * inline: click a selected row again or return, tab = next column, esc = cancel

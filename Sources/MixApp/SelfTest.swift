@@ -211,6 +211,9 @@ enum SelfTest {
 /// Nur Bild (MIX741_SHOT=wave:<png>, Selbsttest): die Wellenform-Ebene eines Decks offscreen rendern – kein Fenster,
 /// kein Audio, keine Controller. Oben der Zoom aus den Einstellungen, unten 4× weiter heraus; Grid-Anker links im Bild,
 /// Spielkopf in einem 4-Beat-Loop, zwei Hotcues. Erster Track der Collection mit 120–140 BPM und Grid, wie im Selbsttest.
+/// Optional: MIX741_SHOT_TRACK (Teil von Interpret/Titel/Pfad), MIX741_SHOT_AT (Sekunden, Spielkopf, ohne Loop),
+/// MIX741_SHOT_SPAN (Sekunden je Seite), MIX741_SHOT_STYLE (Komma-Liste: 3band, spectrum, fine, fine-mix, mono →
+/// je Stil zwei Streifen untereinander, beschriftet), MIX741_SHOT_PALETTE (bone, orange, blue, classic), MIX741_SHOT_BOOST.
 @MainActor
 enum WaveShot {
     static func run(path: String) -> Never {
@@ -226,45 +229,86 @@ enum WaveShot {
 
     enum ShotError: Error { case noTrack, context, png }
 
+    /// Stil-Kürzel → (Stil, Spektrum-Variante, Beschriftung)
+    private static func look(_ k: String, _ ui: UIPrefs) -> (WaveformStyle, SpectrumDetail, String) {
+        switch k.trimmingCharacters(in: .whitespaces) {
+        case "3band": (.threeBand, ui.spectrumDetail, "3-band layers")
+        case "spectrum": (.spectrum, .simple, "spectrum (3 bands)")
+        case "fine": (.spectrum, .fine, "spectrum fine (6 bands)")
+        case "fine-mix": (.spectrum, .fineMix, "spectrum fine, no high layer")
+        case "mono": (.mono, ui.spectrumDetail, "mono")
+        default: (ui.waveformStyle, ui.spectrumDetail, "settings")
+        }
+    }
+
     private static func render(to url: URL) throws {
-        let ui = AppPrefs.load().ui
+        let env = ProcessInfo.processInfo.environment
+        var ui = AppPrefs.load().ui
+        if let p = env["MIX741_SHOT_PALETTE"] {
+            ui.waveformPalette = ["bone": .bone, "orange": .orange, "blue": .blue, "classic": .classic][p] ?? ui.waveformPalette
+        }
+        if let b = env["MIX741_SHOT_BOOST"].flatMap(Double.init) { ui.waveformHighBoost = b }
+        if let sp = env["MIX741_SHOT_SPAN"].flatMap(Double.init) { ui.waveformSeconds = sp }
         let tracks = try NMLParser.parse(url: LibraryStore.defaultNML).tracks
-        guard let t = tracks.first(where: { $0.bpm > 120 && $0.bpm < 140 && $0.gridAnchorMs != nil && FileManager.default.fileExists(atPath: $0.path) }),
-              let grid = BeatGrid(track: t) else { throw ShotError.noTrack }
+        let want = env["MIX741_SHOT_TRACK"]?.lowercased()
+        guard let t = tracks.first(where: { t in
+            guard FileManager.default.fileExists(atPath: t.path) else { return false }
+            if let want { return "\(t.artist) \(t.title) \(t.path)".lowercased().contains(want) }
+            return t.bpm > 120 && t.bpm < 140 && t.gridAnchorMs != nil
+        }) else { throw ShotError.noTrack }
+        let grid = BeatGrid(track: t)
         SelfTest.log("Track: \(t.artist) – \(t.title) \(t.bpm) BPM")
         let file = URL(fileURLWithPath: t.path)
         let rate = try AVAudioFile(forReading: file).processingFormat.sampleRate   // Dateirate: keine Wandlung nötig
+        let t0 = Date()
         let audio = try TrackAudio.decode(url: file, sampleRate: rate)
-        let wf = RenderedWaveform.render(audio, style: ui.waveformStyle, palette: ui.waveformPalette)
-        var scene = WaveScene(
-            waveID: ObjectIdentifier(wf), duration: audio.duration, grid: grid, span: ui.waveformSeconds,
-            showGrid: true, colorful: ui.colorfulGrid, phraseBeats: ui.phraseBeats, barNumbers: ui.showBarNumbers, barMarkers: ui.barMarkers,
-            dimPlayed: ui.dimPlayed,
-            cues: [WaveScene.Mark(t: grid.time(ofBeat: 2), number: 1, color: NSColor(Theme.cueColor(.cue))),
-                   WaveScene.Mark(t: grid.time(ofBeat: 12), number: 2, color: NSColor(Theme.cueColor(.loop)))],
-            cuePoint: grid.anchor, hasTrack: true)
-        let pos = grid.time(ofBeat: 6.3)
-        let loop = (active: true, start: grid.time(ofBeat: 4), end: grid.time(ofBeat: 8))
-        let w: CGFloat = 1200, h: CGFloat = 180, gap: CGFloat = 8, scale: CGFloat = 2
-        let view = WaveLayerNSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
-        view.position = { pos }
-        view.loop = { loop }
-        view.wave = wf
-        guard let ctx = CGContext(data: nil, width: Int(w * scale), height: Int((h * 2 + gap) * scale), bitsPerComponent: 8, bytesPerRow: 0,
+        SelfTest.log(String(format: "dekodiert + analysiert: %.2f s für %.0f s Audio", Date().timeIntervalSince(t0), audio.duration))
+        let at = env["MIX741_SHOT_AT"].flatMap(Double.init)
+        let pos = at ?? grid.map { $0.time(ofBeat: 6.3) } ?? 10
+        let loop = at == nil && grid != nil
+            ? (active: true, start: grid!.time(ofBeat: 4), end: grid!.time(ofBeat: 8)) : (active: false, start: 0.0, end: 0.0)
+        let looks = (env["MIX741_SHOT_STYLE"] ?? "settings").split(separator: ",").map { look(String($0), ui) }
+        let w: CGFloat = 1200, h: CGFloat = 180, gap: CGFloat = 8, label: CGFloat = 18, scale: CGFloat = 2
+        let rowH = (label + h * 2 + gap * 2)
+        let totalH = rowH * CGFloat(looks.count)
+        guard let ctx = CGContext(data: nil, width: Int(w * scale), height: Int(totalH * scale), bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw ShotError.context }
         ctx.scaleBy(x: scale, y: scale)
         ctx.setFillColor(NSColor(Theme.background).cgColor)
-        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h * 2 + gap))
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: totalH))
         let tick = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in }   // hält den Run-Loop wach
         defer { tick.invalidate() }
-        for (i, span) in [ui.waveformSeconds, ui.waveformSeconds * 4].enumerated() {
-            scene.span = span
-            view.scene = scene
-            RunLoop.main.run(until: Date() + 1.5)   // Kacheln kommen von der Hintergrund-Queue auf den Hauptthread
-            ctx.saveGState()
-            ctx.translateBy(x: 0, y: CGFloat(1 - i) * (h + gap))   // CG: y nach oben, erster Streifen oben
-            view.layer?.render(in: ctx)
-            ctx.restoreGState()
+        for (row, lk) in looks.enumerated() {
+            let tr = Date()
+            let wf = RenderedWaveform.render(audio, style: lk.0, palette: ui.waveformPalette, detail: lk.1, highBoost: ui.waveformHighBoost)
+            SelfTest.log(String(format: "%@: Wellenform gerechnet in %.2f s, %.0f Pfade je Abschnitt", lk.2, Date().timeIntervalSince(tr), Double(wf.chunks.reduce(0) { $0 + $1.layers.count }) / Double(max(1, wf.chunks.count))))
+            let view = WaveLayerNSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
+            view.position = { pos }
+            view.loop = { loop }
+            view.wave = wf
+            var scene = WaveScene(
+                waveID: ObjectIdentifier(wf), duration: audio.duration, grid: grid, span: ui.waveformSeconds,
+                showGrid: true, colorful: ui.colorfulGrid, phraseBeats: ui.phraseBeats, barNumbers: ui.showBarNumbers, barMarkers: ui.barMarkers,
+                dimPlayed: ui.dimPlayed,
+                cues: grid.map { g in [WaveScene.Mark(t: g.time(ofBeat: 2), number: 1, color: NSColor(Theme.cueColor(.cue))),
+                                       WaveScene.Mark(t: g.time(ofBeat: 12), number: 2, color: NSColor(Theme.cueColor(.loop)))] } ?? [],
+                cuePoint: grid?.anchor ?? 0, hasTrack: true)
+            let top = totalH - CGFloat(row) * rowH   // CG: y nach oben
+            let text = String(format: "%@ · %@ – %@ · %.0f s", lk.2, t.artist, t.title, pos) as NSString
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+            text.draw(at: NSPoint(x: 6, y: top - label + 3),
+                      withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold), .foregroundColor: NSColor(Theme.bone)])
+            NSGraphicsContext.restoreGraphicsState()
+            for (i, span) in [ui.waveformSeconds, ui.waveformSeconds * 4].enumerated() {
+                scene.span = span
+                view.scene = scene
+                RunLoop.main.run(until: Date() + 1.5)   // Kacheln kommen von der Hintergrund-Queue auf den Hauptthread
+                ctx.saveGState()
+                ctx.translateBy(x: 0, y: top - label - h - CGFloat(i) * (h + gap))
+                view.layer?.render(in: ctx)
+                ctx.restoreGState()
+            }
         }
         guard let img = ctx.makeImage(),
               let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { throw ShotError.png }

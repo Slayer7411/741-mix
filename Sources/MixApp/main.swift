@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import MixCore
+import MixEngine
 
 /// Anordnung der Browser-Bereiche.
 enum BrowserLayout: String, CaseIterable, Identifiable, Codable {
@@ -82,6 +83,7 @@ struct ContentView: View {
         .windowToolbarFullScreenVisibility(.onHover)
         .background(MainWindowHook())
         .background(OverviewHook())   // Browser-Vorschau: Deck-Tracks, Pause-Regel, Leerlauf
+        .background(CloudHook())      // Cloud-Library: Prüfen, Lokal-halten, Pause beim Laden
         .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
             store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
         }
@@ -157,22 +159,8 @@ struct ContentView: View {
         }
     }
 
-    private var statusBar: some View {
-        HStack {
-            Text(store.status).lineLimit(1)
-            Spacer()
-            Text(mix.engineStatus)
-            Button("↻") { mix.reconnect() }
-                .buttonStyle(.plain)
-                .help("Audio-Interface neu verbinden")
-            Text("· Preparation: \(store.preparation.count)")
-            OverviewStatus()
-        }
-        .font(Theme.mono(11))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 8)
-        .padding(.bottom, 4)
-    }
+    /// Statusleiste: Meldungen, Audio-Status, Last-Anzeigen (StatusBar.swift)
+    private var statusBar: some View { StatusBar() }
 }
 
 /// Beenden nur nach Rückfrage (Sicherheit im Set); davor Sitzung und History schreiben
@@ -187,6 +175,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let a = NSAlert()
         a.messageText = String(localized: "MINOS-741 beenden?")
         a.informativeText = String(localized: "Sitzung und History werden gespeichert.")
+        let pending = MainActor.assumeIsolated { CloudLibrary.shared.pendingCount }
+        if pending > 0 {
+            let handOff = MainActor.assumeIsolated { CloudLibrary.shared.handOffOnQuit }
+            a.informativeText += "\n" + (handOff
+                ? String(localized: "\(pending) Cloud-Downloads offen: der Anbieter lädt sie nach dem Beenden weiter.")
+                : String(localized: "\(pending) Cloud-Downloads offen: sie werden abgebrochen."))
+        }
         a.addButton(withTitle: String(localized: "Beenden"))
         a.addButton(withTitle: String(localized: "Abbrechen"))
         guard a.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
@@ -279,6 +274,7 @@ struct MixApp: App {
                 ForEach([ShortcutID.resetPlayed, .loadSelected, .previewSelected, .reloadCollection]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
+                Button(String(localized: "Collection prüfen …")) { ConsistencyWindow.show(store: store) }
                 Divider()
                 Button(ShortcutID.reconnectAudio.title) { run(.reconnectAudio) }.shortcut(keys.combo(.reconnectAudio))
             }
@@ -298,6 +294,7 @@ extension MixApp {
         appDelegate.onQuit = { [mix, browser, history] in
             Session.saveNow(mix: mix, browser: browser)
             history.finish()
+            CloudLibrary.shared.handOff()
         }
         let session = Session.load()
         session?.applyEngine(to: mix)
@@ -338,6 +335,15 @@ func setAppIcon() {
     }
 }
 
+// VST3-Selbsttest im eigenen Prozess (Einstellungen → PLUGINS → Prüfen): `<exe> --vst3-check <bundle> <klasse>`
+if CommandLine.arguments.count >= 4, CommandLine.arguments[1] == PluginSelfCheck.argument {
+    let info = PluginInfo.vst3(classID: CommandLine.arguments[3], name: URL(fileURLWithPath: CommandLine.arguments[2]).lastPathComponent,
+                               vendor: "", version: "", path: CommandLine.arguments[2])
+    let r = PluginSelfCheck.run(info)
+    print(r.log)
+    exit(r.passed ? 0 : 1)
+}
+
 AppResources.migrateDefaults()
 // Sprache aus den Einstellungen (vor dem ersten Fenster)
 switch AppPrefs.load().ui.language {
@@ -367,11 +373,20 @@ if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SH
 if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("preview:") {
     MainActor.assumeIsolated { PreviewShot.run(shot) }
 }
+MainActor.assumeIsolated { PreviewColorShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=previewcolors:<ordner>, kein Fenster
 MainActor.assumeIsolated { CoverShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cover:<ordner>, endet mit exit
 MainActor.assumeIsolated { TagShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=tags:<ordner>, endet mit exit
+MainActor.assumeIsolated { SettingsShot.runPluginsIfRequested() }   // nur PLUGINS-Tab, ohne Audio: MIX741_SHOT=plugins:<ordner>
 MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
+MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=status:<ordner>, endet mit exit(0)
+MainActor.assumeIsolated { CloudShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cloud:<ordner>, endet mit exit(0)
 
 if ToggleBench.requested { MainActor.assumeIsolated { ToggleBench.run() } }   // Messung offscreen, ohne Fenster
+if ReloadBench.requested { MainActor.assumeIsolated { ReloadBench.run() } }   // Neu-Laden der Collection messen, offscreen
+if ConsistencyCLI.requested { MainActor.assumeIsolated { ConsistencyCLI.run() } }   // Collection prüfen ohne Fenster, nur lesen
+if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("consistency:") {
+    MainActor.assumeIsolated { ConsistencyShot.run(shot) }
+}
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.
 NSApplication.shared.setActivationPolicy(.regular)
 if ProcessInfo.processInfo.environment["MIX741_SHOT"] == nil { NSApplication.shared.activate(ignoringOtherApps: true) }

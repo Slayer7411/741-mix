@@ -3,7 +3,7 @@ import Foundation
 /// Knoten im Playlist-Baum (Ordner, Playlist, Smartlist).
 public final class PlaylistNode: Identifiable, Hashable, @unchecked Sendable {
     public enum Kind: Sendable { case folder, playlist, smartlist }
-    public let id = UUID()
+    public private(set) var id = UUID()
     public var name: String
     public var kind: Kind
     public var children: [PlaylistNode] = []
@@ -15,6 +15,28 @@ public final class PlaylistNode: Identifiable, Hashable, @unchecked Sendable {
     public init(name: String, kind: Kind) { self.name = name; self.kind = kind }
 
     public var childrenOrNil: [PlaylistNode]? { kind == .folder ? children : nil }
+    /// Neu geladener Baum: Knoten mit gleichem Pfad (Art + Name) übernehmen die ID des alten Knotens –
+    /// Auswahl und Zeilen im Baum bleiben über ein Neu-Laden erhalten (sonst baut die Liste alle Zeilen neu)
+    public func adoptIDs(from old: PlaylistNode) {
+        guard kind == old.kind, name == old.name else { return }
+        id = old.id
+        var pool: [String: ArraySlice<PlaylistNode>] = [:]
+        for c in old.children { pool["\(c.kind)|\(c.name)", default: []].append(c) }
+        for c in children {
+            let k = "\(c.kind)|\(c.name)"
+            if let o = pool[k]?.first { c.adoptIDs(from: o); pool[k] = pool[k]?.dropFirst() }
+        }
+    }
+    /// gleicher Baum (Namen, Arten, Playlist-Einträge, Regeln)?
+    public func sameTree(_ o: PlaylistNode) -> Bool {
+        id == o.id && name == o.name && kind == o.kind && trackKeys == o.trackKeys && query == o.query
+            && children.count == o.children.count && zip(children, o.children).allSatisfy { $0.sameTree($1) }
+    }
+    /// alle Knoten nach ID
+    public func index(into d: inout [UUID: PlaylistNode]) {
+        d[id] = self
+        for c in children { c.index(into: &d) }
+    }
     public static func == (a: PlaylistNode, b: PlaylistNode) -> Bool { a.id == b.id }
     public func hash(into h: inout Hasher) { h.combine(id) }
 }

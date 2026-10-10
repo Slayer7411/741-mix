@@ -6,12 +6,31 @@ import MixEngine
 
 /// Browser-Vorschau: wo die Mini-Übersicht (Wellenform + Grid + Cues) steht
 enum PreviewMode: String, CaseIterable, Codable, Identifiable {
-    case column = "Eigene Spalte", behindTitle = "Hinter dem Titel", off = "Aus"
+    case fullRow = "Ganze Zeile (zweizeilig)", column = "Eigene Spalte", behindTitle = "Hinter dem Titel", off = "Aus"
     var id: String { rawValue }
 }
 
-/// Übersichten aller Tracks: Speicher, Nachrechnen (Deck, Stapel, Leerlauf) und ein gedrosselter Zähler, an dem
-/// die sichtbaren Vorschau-Zellen hängen. Regel: der Stapel rechnet nur, solange kein Deck spielt oder lädt.
+/// Farben der Browser-Vorschau: Spektrum (rot = Bass, grün = Mitten, blau = Höhen) oder wie die Deck-Wellenform
+enum PreviewColors: String, CaseIterable, Codable, Identifiable {
+    case spectrum = "Spektrum (rot/grün/blau)", waveform = "wie Wellenform"
+    var id: String { rawValue }
+}
+
+/// Vorschauen im Hintergrund berechnen
+enum PreviewFill: String, CaseIterable, Codable, Identifiable {
+    case always = "immer (gedrosselt)", idleOnly = "nur wenn kein Deck spielt", off = "aus"
+    var id: String { rawValue }
+    var mode: OverviewPolicy.Mode {
+        switch self {
+        case .always: .always
+        case .idleOnly: .idleOnly
+        case .off: .off
+        }
+    }
+}
+
+/// Übersichten aller Tracks: Speicher, Nachrechnen (Deck, Stapel, sichtbare Zeilen, Hintergrund) und ein gedrosselter
+/// Zähler, an dem die sichtbaren Vorschau-Zellen hängen. Regeln: `OverviewPolicy`, Arbeiter: `OverviewJobs`.
 @MainActor @Observable
 final class Overviews {
     static let shared = Overviews()
@@ -31,26 +50,24 @@ final class Overviews {
     /// zählt hoch, wenn Übersichten neu sind oder Grids sich ändern (höchstens 2× je Sekunde)
     private(set) var tick = 0
     private(set) var loaded = false
-    /// Stapel-Fortschritt (Rechtsklick → Vorschauen berechnen)
-    private(set) var done = 0
-    private(set) var total = 0
-    /// Leerlauf: noch offen
-    private(set) var idleLeft = 0
-    private(set) var paused = false
+    /// Stand für die Statuszeile
+    private(set) var progress = OverviewJobs.Progress()
+    /// ✕ in der Statuszeile: Hintergrund bis zum nächsten Start (oder bis die Einstellung wechselt) angehalten
+    private(set) var stopped = false
     @ObservationIgnored private var tickPending = false
 
     private init() {
-        let store = store
-        store.onChange = { _ in DispatchQueue.main.async { MainActor.assumeIsolated { Overviews.shared.bump() } } }
+        let store = store, jobs = jobs
+        store.onChange = { key in
+            jobs.stored(key)
+            DispatchQueue.main.async { MainActor.assumeIsolated { Overviews.shared.bump() } }
+        }
         jobs.store = store
         jobs.onProgress = { p in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     let o = Overviews.shared
-                    if o.done != p.done { o.done = p.done }
-                    if o.total != p.total { o.total = p.total }
-                    if o.idleLeft != p.idleLeft { o.idleLeft = p.idleLeft }
-                    if o.paused != p.paused { o.paused = p.paused }
+                    if o.progress != p { o.progress = p }
                 }
             }
         }
@@ -93,172 +110,42 @@ final class Overviews {
         jobs.enqueue(tracks.filter { !$0.path.isEmpty }.map { .init(key: $0.key, path: $0.path, explicit: true) })
     }
 
+    /// sichtbare Zeile ohne Übersicht -> vor den Hintergrund
+    func want(_ t: Track) {
+        guard !stopped, !t.loose, t.fileExists else { return }
+        jobs.want(key: t.key, path: t.path)
+    }
+
     func cancel() { jobs.cancel() }
 
-    /// Leerlauf-Liste neu: Collection-Tracks ohne Übersicht, neueste zuerst (Filter im Hintergrund)
-    func updateIdle(on: Bool, tracks: [Track]) {
-        guard on else { jobs.setIdle([]); return }
+    /// ✕ ohne Stapel: Hintergrund anhalten
+    func stop() {
+        stopped = true
+        jobs.stopBackground()
+    }
+
+    func setMode(_ f: PreviewFill) {
+        stopped = false
+        jobs.setMode(f.mode)
+    }
+
+    /// Hintergrund-Liste neu: Collection-Tracks ohne Übersicht, neueste zuerst; reine Cloud-Dateien nur gezählt
+    func updateBackground(on: Bool, tracks: [Track]) {
+        guard on, !stopped else { jobs.setBackground([], collection: 0, covered: 0, onlineOnly: 0); return }
         let store = store, jobs = jobs
         DispatchQueue.global(qos: .utility).async {
-            let list = tracks.filter { !$0.loose && $0.fileExists && !$0.path.isEmpty && !store.contains($0.key) }
-                .sorted { ($0.importDate ?? .distantPast) > ($1.importDate ?? .distantPast) }
-            jobs.setIdle(list.map { .init(key: $0.key, path: $0.path, explicit: false) })
-        }
-    }
-
-    func setBusy(_ busy: Bool) { jobs.busy.withLock { $0 = busy } }
-}
-
-/// Warteschlange + Arbeiter (eigene Threads, QoS utility, höchstens 2; Leerlauf nur 1). Pause, solange ein Deck
-/// spielt oder lädt – auch mitten in einer Datei (zwischen zwei Lese-Blöcken).
-final class OverviewJobs: @unchecked Sendable {
-    struct Job { let key: String; let path: String; let explicit: Bool }
-    struct Progress { var done = 0, total = 0, idleLeft = 0, paused = false }
-
-    var store: OverviewStore?
-    var onProgress: (@Sendable (Progress) -> Void)?
-    let busy = OSAllocatedUnfairLock(initialState: false)
-    /// Selbsttest: Arbeiter erst nach dem Laden starten; `maxWorkers` für Messungen
-    var maxWorkers = 2
-
-    private let lock = NSLock()
-    private var explicit: [Job] = []
-    private var queued: Set<String> = []
-    private var idle: [Job] = []
-    private var workers = 0
-    private var started = false
-    private var cancelGen = 0
-    private var failed: Set<String> = []
-    private var progress = Progress()
-
-    func start() {
-        lock.lock(); started = true; lock.unlock()
-        spawn()
-    }
-
-    func enqueue(_ jobs: [Job]) {
-        lock.lock()
-        for j in jobs where !queued.contains(j.key) {
-            explicit.append(j)
-            queued.insert(j.key)
-            progress.total += 1
-        }
-        lock.unlock()
-        report()
-        spawn()
-    }
-
-    func setIdle(_ jobs: [Job]) {
-        lock.lock()
-        idle = jobs.reversed()   // von hinten abarbeiten
-        progress.idleLeft = idle.count
-        lock.unlock()
-        report()
-        spawn()
-    }
-
-    func cancel() {
-        lock.lock()
-        cancelGen += 1
-        explicit.removeAll(); queued.removeAll(); idle.removeAll()
-        progress = Progress()
-        lock.unlock()
-        report()
-    }
-
-    /// wartet (z. B. Messung), bis Stapel und Leerlauf leer sind und kein Arbeiter mehr läuft
-    var isIdle: Bool { lock.lock(); defer { lock.unlock() }; return workers == 0 && explicit.isEmpty && idle.isEmpty }
-
-    private func wanted() -> Int { !explicit.isEmpty ? maxWorkers : (!idle.isEmpty ? 1 : 0) }
-
-    private func spawn() {
-        lock.lock()
-        guard started else { lock.unlock(); return }
-        var n = 0
-        while workers < wanted() { workers += 1; n += 1 }
-        lock.unlock()
-        for _ in 0..<n {
-            let t = Thread { [self] in work() }
-            t.qualityOfService = .utility
-            t.name = "minos741.overview"
-            t.start()
-        }
-    }
-
-    private func report() {
-        lock.lock(); let p = progress; lock.unlock()
-        onProgress?(p)
-    }
-
-    private func setPaused(_ on: Bool) {
-        lock.lock()
-        let changed = progress.paused != on
-        progress.paused = on
-        lock.unlock()
-        if changed { report() }
-    }
-
-    private struct Cancelled: Error {}
-
-    /// solange ein Deck spielt/lädt: warten; abgebrochen -> werfen
-    private func waitWhileBusy(gen: Int) throws {
-        var waited = false
-        while busy.withLock({ $0 }) {
-            if !waited { waited = true; setPaused(true) }
-            lock.lock(); let g = cancelGen; lock.unlock()
-            if g != gen { throw Cancelled() }
-            Thread.sleep(forTimeInterval: 0.25)
-        }
-        if waited { setPaused(false) }
-        lock.lock(); let g = cancelGen; lock.unlock()
-        if g != gen { throw Cancelled() }
-    }
-
-    private func work() {
-        while true {
-            lock.lock()
-            // zu viele Arbeiter für die Lage (nur noch Leerlauf) -> einer hört auf
-            if workers > wanted() || (explicit.isEmpty && idle.isEmpty) {
-                workers -= 1
-                if explicit.isEmpty, progress.done >= progress.total { progress.done = 0; progress.total = 0 }
-                lock.unlock()
-                report()
-                return
+            let files = tracks.filter { !$0.loose && $0.fileExists && !$0.path.isEmpty }
+            var missing: [Track] = [], online = 0
+            for t in files where !store.contains(t.key) {
+                if OverviewPolicy.fileState(path: t.path) == .onlineOnly { online += 1 } else { missing.append(t) }
             }
-            let job = explicit.isEmpty ? idle.removeLast() : explicit.removeFirst()
-            if !job.explicit { progress.idleLeft = idle.count }
-            let gen = cancelGen
-            let skip = failed.contains(job.key)
-            lock.unlock()
-            if !skip { process(job, gen: gen) }
-            lock.lock()
-            if job.explicit, gen == cancelGen { progress.done += 1; queued.remove(job.key) }
-            lock.unlock()
-            report()
+            missing.sort { ($0.importDate ?? .distantPast) > ($1.importDate ?? .distantPast) }
+            jobs.setBackground(missing.map { .init(key: $0.key, path: $0.path, explicit: false) },
+                               collection: files.count, covered: files.count - missing.count - online, onlineOnly: online)
         }
     }
 
-    private func process(_ job: Job, gen: Int) {
-        guard let store else { return }
-        do {
-            try waitWhileBusy(gen: gen)
-            if store.isValid(job.key, path: job.path) { return }
-            // Leerlauf: Dateien, die nur in der Cloud liegen, nicht herunterladen lassen
-            if !job.explicit, Self.isDataless(job.path) { return }
-            guard let stamp = OverviewStore.Stamp.of(path: job.path) else { return }
-            let ov = try OverviewAnalyzer.analyze(url: URL(fileURLWithPath: job.path)) { try waitWhileBusy(gen: gen) }
-            store.put(job.key, path: job.path, overview: ov, stamp: stamp)
-        } catch is Cancelled {
-        } catch {
-            lock.lock(); failed.insert(job.key); lock.unlock()
-        }
-    }
-
-    /// Datei nur als Platzhalter vorhanden (Cloud-Ordner, Inhalt nicht geladen)
-    static func isDataless(_ path: String) -> Bool {
-        var st = stat()
-        return stat(path, &st) == 0 && (st.st_flags & 0x4000_0000) != 0   // SF_DATALESS
-    }
+    func setDecks(playing: Bool, loading: Bool) { jobs.setDecks(playing: playing, loading: loading) }
 }
 
 // MARK: - Zeichnen
@@ -278,11 +165,22 @@ struct PreviewSpec: Hashable, Sendable {
     var start: Mark?
     var palette: WaveformPalette
     var style: WaveformStyle
+    var colors: PreviewColors
+    /// ganze Zeile: breiteres Bild
+    var wide = false
 
     /// Track mit den eigenen Grid-/Cue-Änderungen (wie beim Laden ins Deck)
     @MainActor init(_ track: Track, mix: MixModel) {
         let t = mix.edits.edit(for: track.key)?.apply(to: track) ?? track
-        let info = Overviews.shared.store.info(t.key)
+        self.init(t, ui: mix.prefs.ui, controller: mix.prefs.controller, info: Overviews.shared.store.info(t.key))
+    }
+
+    /// ohne Modell (Selbsttest-Bilder): Übersicht direkt übergeben
+    init(_ t: Track, ui: UIPrefs, controller: ControllerPrefs, overview: TrackOverview) {
+        self.init(t, ui: ui, controller: controller, info: (gen: 1, duration: overview.duration))
+    }
+
+    private init(_ t: Track, ui: UIPrefs, controller c: ControllerPrefs, info: (gen: Int, duration: Double)?) {
         key = t.key
         path = t.path
         gen = info?.gen ?? 0
@@ -291,10 +189,10 @@ struct PreviewSpec: Hashable, Sendable {
         let tempo = grid?.bpm ?? 0
         bpm = tempo
         anchor = grid?.anchor ?? 0
-        let ui = mix.prefs.ui, c = mix.prefs.controller
         phraseBeats = max(4, ui.phraseBeats)
         palette = ui.waveformPalette
         style = ui.waveformStyle
+        colors = ui.previewColors
         let startMs = Theme.startCueMs(t)
         let mark = { (ms: Double, p: PadColor) in Mark(t: ms / 1000, r: p.rgb.r, g: p.rgb.g, b: p.rgb.b) }
         cues = t.hotcues.map { mark($0.startMs, c.color(for: $0, startMs: startMs, bpm: tempo)) }
@@ -305,6 +203,8 @@ struct PreviewSpec: Hashable, Sendable {
 enum PreviewRenderer {
     /// Bildgröße in Pixeln (2×): 200 × 17 pt, die Zelle streckt es auf ihre Breite
     static let width = 400, height = 34
+    /// ganze Zeile (zweizeilig): Band über alle Spalten
+    static let wideWidth = 1000
     static let heightPt: CGFloat = 17
 
     private static func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat) -> CGColor { CGColor(srgbRed: r, green: g, blue: b, alpha: a) }
@@ -314,9 +214,33 @@ enum PreviewRenderer {
     static let void = rgb(10 / 255, 9 / 255, 8 / 255, 0.9)
     private static let space = CGColorSpace(name: CGColorSpace.sRGB)!
 
+    /// Spektrum-Farben: immer die klassische Palette (rot = Bass, grün = Mitten, blau = Höhen), unabhängig vom Deck
+    private static let spectrumColors: (OverviewPaint.RGB, OverviewPaint.RGB, OverviewPaint.RGB) = {
+        let c = RenderedWaveform.Colors.of(.classic)
+        let f = { (x: RenderedWaveform.RGB) in OverviewPaint.RGB(Float(x.r), Float(x.g), Float(x.b)) }
+        return (f(c.low), f(c.mid), f(c.high))
+    }()
+
+    /// je Spalte eine deckende Farbe (Bänder additiv, gesättigt), Höhe aus der Energie; helle Linie an großen Sprüngen
+    private static func drawSpectrum(_ ctx: CGContext, _ o: TrackOverview, width w: Int, height h: Int, pps: CGFloat) {
+        let mid = CGFloat(h) / 2, amp = mid - 1
+        let span = CGFloat(o.duration) * pps   // Übersicht deckt die ganze Datei ab
+        let n = min(w, Int(span.rounded(.up)))
+        guard n > 0 else { return }
+        let (lo, mi, hi) = spectrumColors
+        let cols = OverviewPaint.columns(o, width: n, low: lo, mid: mi, high: hi)
+        for (x, c) in cols.enumerated() {
+            let a = max(0.5, CGFloat(c.amp) * amp)
+            ctx.setFillColor(rgb(CGFloat(c.color.r), CGFloat(c.color.g), CGFloat(c.color.b), 1))
+            ctx.fill(CGRect(x: CGFloat(x) * span / CGFloat(n), y: mid - a, width: max(1, span / CGFloat(n)), height: 2 * a))
+        }
+        ctx.setFillColor(bone.copy(alpha: 0.85)!)
+        ctx.fill(OverviewPaint.drops(o).map { CGRect(x: CGFloat($0) * span - 0.75, y: 0, width: 1.5, height: CGFloat(h)) })
+    }
+
     /// Mini-Übersicht: Phrasen-Bänder, 3-Band-Wellenform (gedämpft), Marker alle 16/32 Takte, Hotcues, Start-Cue
     static func render(_ s: PreviewSpec, overview: TrackOverview?) -> CGImage? {
-        let w = width, h = height
+        let w = s.wide ? wideWidth : width, h = height
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         let W = CGFloat(w), H = CGFloat(h), mid = H / 2
@@ -347,13 +271,17 @@ enum PreviewRenderer {
                     }
                     b += 64
                 }
-                ctx.setFillColor(lila.copy(alpha: 0.16)!); ctx.fill(bands)
-                ctx.setFillColor(bone.copy(alpha: 0.28)!); ctx.fill(m16)
-                ctx.setFillColor(magenta.copy(alpha: 0.7)!); ctx.fill(m32)
+                // Spektrum: Grid zurückhaltend, damit die Farben tragen
+                let spectrum = s.colors == .spectrum
+                ctx.setFillColor(lila.copy(alpha: spectrum ? 0.09 : 0.16)!); ctx.fill(bands)
+                ctx.setFillColor(bone.copy(alpha: spectrum ? 0.14 : 0.28)!); ctx.fill(m16)
+                ctx.setFillColor(magenta.copy(alpha: spectrum ? 0.4 : 0.7)!); ctx.fill(m32)
             }
         }
-        // Wellenform (gedämpft, Farben aus den Einstellungen)
-        if let o = overview, o.count > 0 {
+        if let o = overview, o.count > 0, s.colors == .spectrum {
+            drawSpectrum(ctx, o, width: w, height: h, pps: pps)
+        } else if let o = overview, o.count > 0 {
+            // wie Wellenform (gedämpft, Farben aus den Einstellungen)
             let colors = RenderedWaveform.Colors.of(s.palette)
             let cg = { (c: RenderedWaveform.RGB) in rgb(c.r, c.g, c.b, 0.6) }
             var lo: [CGRect] = [], mi: [CGRect] = [], hi: [CGRect] = []
@@ -450,6 +378,8 @@ struct TrackPreviewCell: View {
         .frame(height: fill ? nil : PreviewRenderer.heightPt)
         .frame(maxHeight: fill ? .infinity : nil)
         .task(id: h) {
+            // sichtbar ohne Übersicht: vor den Hintergrund ziehen
+            if spec.gen == 0 { Overviews.shared.want(track) }
             guard PreviewImages.cached(h) == nil else { return }
             let r = await PreviewImages.render(spec)
             image = r
@@ -498,47 +428,73 @@ struct OverviewMenuButton: View {
     }
 }
 
-/// unsichtbar im Hauptfenster: Deck-Tracks übernehmen, Pause-Regel, Leerlauf-Liste, Grid-Änderungen
+/// unsichtbar im Hauptfenster: Deck-Tracks übernehmen, Deck-Zustand für die Regel, Hintergrund-Liste, Grid-Änderungen
 struct OverviewHook: View {
     @Environment(MixModel.self) private var mix
     @Environment(LibraryStore.self) private var store
 
     private struct Sig: Equatable { var keys: [String]; var grids: [String] }
+    private struct Activity: Equatable { var playing: Bool; var loading: Bool }
 
     var body: some View {
         let decks = (0..<4).map { mix.deck($0) }
-        let busy = decks.contains { $0.playing || $0.loading }
+        let activity = Activity(playing: decks.contains { $0.playing }, loading: decks.contains { $0.loading })
         let sig = Sig(keys: decks.map { $0.loading ? "" : $0.track?.key ?? "" },
                       grids: decks.map { d in
                           "\(d.grid?.bpm ?? 0)|\(d.grid?.anchor ?? 0)|" + d.hotcues.values.map { "\($0.hotcue):\($0.startMs)" }.sorted().joined(separator: ",")
                       })
-        let idleOn = mix.prefs.ui.previewBackground && (!Session.isSelfTest || ProcessInfo.processInfo.environment["MIX741_OVERVIEW_IDLE"] == "1")
+        // Selbsttest: Hintergrund nur mit MIX741_OVERVIEW_IDLE=1
+        let fill = !Session.isSelfTest || ProcessInfo.processInfo.environment["MIX741_OVERVIEW_IDLE"] == "1" ? mix.prefs.ui.previewFill : .off
         let ov = Overviews.shared
         Color.clear.frame(width: 0, height: 0)
-            .onChange(of: busy, initial: true) { ov.setBusy(busy) }
+            .onChange(of: activity, initial: true) { ov.setDecks(playing: activity.playing, loading: activity.loading) }
+            .onChange(of: fill, initial: true) { ov.setMode(fill) }
             .onChange(of: sig.keys, initial: true) {
                 for d in 0..<4 { if let t = mix.deck(d).track, let a = mix.audio(d) { ov.ingest(t, audio: a) } }
             }
             .onChange(of: sig.grids) { ov.bump() }
-            .onChange(of: [store.revision, idleOn ? 1 : 0, ov.loaded ? 1 : 0], initial: true) {
-                if ov.loaded, !store.tracks.isEmpty { ov.updateIdle(on: idleOn, tracks: store.tracks) }
+            .onChange(of: [store.revision, fill == .off ? 0 : 1, ov.loaded ? 1 : 0, ov.stopped ? 1 : 0], initial: true) {
+                if ov.loaded, !store.tracks.isEmpty { ov.updateBackground(on: fill != .off, tracks: store.tracks) }
             }
             .accessibilityHidden(true)
     }
 }
 
-/// Statuszeile: Fortschritt des Stapels, Pause, Abbrechen
+/// Statuszeile: Stapel (n/m) oder Hintergrund (mit Übersicht / alle), Tempo, reine Cloud-Dateien, ✕
 struct OverviewStatus: View {
+    @Environment(MixModel.self) private var mix
+
+    private static func state(_ g: OverviewPolicy.Gate) -> String? {
+        switch g {
+        case .full: nil
+        case .throttled: String(localized: "gedrosselt")
+        case .wait(.loading): String(localized: "pausiert (Deck lädt)")
+        case .wait(.playing): String(localized: "pausiert (Deck spielt)")
+        case .wait(.off): nil
+        }
+    }
+
     var body: some View {
-        let o = Overviews.shared
-        if o.total > 0 {
+        let o = Overviews.shared, p = o.progress
+        let fill = mix.prefs.ui.previewFill
+        if p.total > 0 {
             HStack(spacing: 4) {
-                Text("· " + String(localized: "Vorschauen \(o.done)/\(o.total)"))
-                if o.paused { Text("pausiert (Deck spielt)").foregroundStyle(Theme.state) }
+                Text("· " + String(localized: "Vorschauen \(p.done)/\(p.total)"))
+                if let s = Self.state(p.gate) { Text("· " + s).foregroundStyle(p.gate == .throttled ? Theme.muted : Theme.state) }
                 Button("✕") { o.cancel() }.buttonStyle(.plain).help("Vorschauen berechnen abbrechen")
             }
-        } else if o.idleLeft > 0, !o.paused {
-            Text("· " + String(localized: "Vorschauen: \(o.idleLeft) offen"))
+        } else if fill != .off, !o.stopped, p.left > 0 {
+            HStack(spacing: 4) {
+                Text("· " + String(localized: "Vorschauen \(p.covered.formatted()) / \(p.collection.formatted())"))
+                if let s = Self.state(p.gate) { Text("· " + s).foregroundStyle(p.gate == .throttled ? Theme.muted : Theme.state) }
+                if p.onlineOnly > 0 {
+                    Text("· " + String(localized: "\(p.onlineOnly.formatted()) nur online – Rechtsklick lädt"))
+                        .help("Dateien nur in der Cloud: der Hintergrund lädt sie nicht herunter. Rechtsklick auf eine Quelle → Vorschauen berechnen liest sie trotzdem.")
+                }
+                Button("✕") { o.stop() }.buttonStyle(.plain).help("Hintergrund-Vorschauen bis zum nächsten Start anhalten")
+            }
+        } else if fill != .off, p.onlineOnly > 0 {
+            Text("· " + String(localized: "\(p.onlineOnly.formatted()) nur online – Rechtsklick lädt"))
         }
     }
 }
@@ -553,8 +509,13 @@ struct PreviewSettings: View {
             Picker("Vorschau", selection: $mix.prefs.ui.previewMode) {
                 ForEach(PreviewMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
             }
-            Toggle("Vorschauen im Hintergrund berechnen (nur wenn kein Deck spielt)", isOn: $mix.prefs.ui.previewBackground)
-            Text("mini-übersicht je track: wellenform, phrasen, marker alle 16 / 32 takte, hotcues, start-cue. entsteht beim laden ins deck, per rechtsklick auf eine quelle -> vorschauen berechnen, oder im hintergrund. pausiert, solange ein deck spielt oder lädt. gespeichert in ~/Library/Application Support/MINOS-741/overviews.")
+            Picker("Vorschau-Farben", selection: $mix.prefs.ui.previewColors) {
+                ForEach(PreviewColors.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+            }
+            Picker("Vorschauen im Hintergrund berechnen", selection: $mix.prefs.ui.previewFill) {
+                ForEach(PreviewFill.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+            }
+            Text("mini-übersicht je track: wellenform (spektrum: rot = bass, grün = mitten/synths, blau = höhen/drums, helle linie = großer energiesprung), phrasen, marker alle 16 / 32 takte, hotcues, start-cue. entsteht beim laden ins deck, per rechtsklick auf eine quelle -> vorschauen berechnen, oder im hintergrund: sichtbare zeilen zuerst, dann die neuesten tracks. immer: läuft auch beim spielen, gedrosselt (eine datei nach der anderen, halbe rechenzeit, niedrige priorität). nur wenn kein deck spielt: wartet, solange ein deck spielt. pausiert immer, solange ein deck lädt, und 4 s danach. dateien nur in der cloud lädt der hintergrund nicht herunter. gespeichert in ~/Library/Application Support/MINOS-741/overviews.")
                 .font(Theme.mono(10)).foregroundStyle(Theme.muted)
         }
     }

@@ -5,7 +5,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 ## ◆ LAYOUT
 
 * window resizable, min 720 × 520, default 820 × 640
-* sidebar left: DECKS · MIXER & FX · PLUGINS · DISPLAY · AUDIO · CONTROLLER · TAGS · KEYBOARD, active section with red bar
+* sidebar left: DECKS · MIXER & FX · PLUGINS · DISPLAY · AUDIO · CONTROLLER · TAGS · CLOUD · KEYBOARD, active section with red bar
 * page right, scrolls: `◆ SECTION` heading with hairline, rows with fixed label column left, control right
 * toggles as squares (red = on), sliders with value + unit (s, ms, pt), hints in small mono
 * controller: one block per unit (left / right deck, browser pane, fx unit, blink)
@@ -41,16 +41,18 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 
 saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in the user defaults.
 
-* load third-party plugins isolated (on): separate system service, apple plugins always in-process
-* folders: system and user audio unit folders + AUv3 (always), own folders (add / remove), install plugin …, rescan
-* list with search: per plugin use in MINOS-741 (on / off), status, PRÜFEN (auval), click -> path, load default / isolated / in-process, unblock, last auval log
+* load third-party plugins isolated (on): separate system service for audio units, apple plugins and VST3 always in-process
+* folders: system and user audio unit folders + AUv3 + system and user VST3 folders (always), own folders (add / remove), install plugin … (`.component` and `.vst3`), rescan
+* list with search: per plugin use in MINOS-741 (on / off), status, PRÜFEN (auval / VST3 self-check), click -> path, load default / isolated / in-process (audio units), `läuft im prozess` (VST3), unblock, last log
 * ALLE PRÜFEN with progress and cancel, results kept per plugin + version
 * crash marker `plugin-opening.json` next to it, a leftover marker blocks that plugin on the next start -> [manual](MANUAL.md#-08--fx)
+* offscreen image of this tab without audio: `MIX741_SELFTEST=1 MIX741_SHOT=plugins:<folder>` (optional `MIX741_SHOT_PLUGINS=<plugin folder>`)
 
 ## ◆ DISPLAY
 
-* waveform style: 3-band layers / spectrum / mono
-* palette: 741 bone, orange, blue / white, classic
+* waveform style: 3-band layers / spectrum fine (6 bands) / spectrum fine, no high layer / spectrum (3 bands) / mono
+* palette: 741 bone, orange, blue / white, classic (not for spectrum fine, it has fixed band colors -> [manual](MANUAL.md#-05--waveform--grid))
+* high emphasis (spectrum fine): 0-2, default 1
 * zoom (seconds per side), minimum height (grows with the window), dim the played part
 * beatgrid: on / off, colorful (phrases, bars, beats), phrase length 16 / 32 / 64 / 128 beats, bar numbers
 * cue colors: start cue red, cues white, loops green, 1-2 bar loops magenta
@@ -60,9 +62,13 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * cover: in the deck header (on), preview of the selected track below the browser tree (on). the browser column `Cover` is switched via right click on the list header
 * music folders for MUSIC FOLDERS: add / remove, empty = automatic (the folder holding 90 % of the collection's files)
 * write browser edits into the collection file (off): backup at most once per hour into `Backup MINOS-741`, not while the library software runs -> [manual](MANUAL.md#-09--browser)
-* browser preview: own column (default) / behind the title / off
-* compute previews in the background, only while no deck plays (on) -> [manual](MANUAL.md#preview)
+* browser preview: full row, two lines (default) / own column / behind the title / off
+* preview colors: spectrum red / green / blue (default) / like the waveform
+* compute previews in the background: always, throttled while a deck plays (default) / only while no deck plays / off -> [manual](MANUAL.md#preview)
+* collection check: check on start (off), scan the music folders for files without a collection entry (on) -> [manual](MANUAL.md#check-the-collection)
 * language: system / english / german (after restart)
+* status bar: load meters DSP · latency · dropouts · memory · cpu (on) -> [manual](MANUAL.md#status-bar)
+* cancel loading after x s without audio data (4 s, 2-15)
 
 ## ◆ AUDIO
 
@@ -72,6 +78,16 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * mode: internal (mixer in the app) or external (mixing desk)
 * internal: which pair the master goes to
 * external: one pair per deck, default a 1/2 · b 3/4 · c 5/6 · d 7/8
+
+## ◆ CLOUD
+
+library in a cloud folder -> [library · cloud libraries](library.md#-cloud-libraries)
+
+* state: local · online only · missing, time and duration of the last check, CHECK NOW
+* keep local while MINOS-741 runs: off / preparation + open playlists + decks (default) / whole library. open playlists = playlists and smartlists in the browser panes up to 1000 tracks
+* parallel downloads 1-4 (2), keep at least 5 / 10 / 20 / 50 gb free (10)
+* on quit hand open downloads to the provider (on)
+* library folder, available offline (pinned / not / unknown, all local), SHOW IN FINDER, CHECK. pinning is done in the finder: right click -> make available offline
 
 ## ◆ KEYBOARD
 

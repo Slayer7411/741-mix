@@ -68,6 +68,7 @@ final class HistoryStore {
     func resetPlayed() {
         played = []
         savePlayed()
+        StatusCenter.post(.ok, String(localized: "Gespielt-Markierungen zurückgesetzt"), key: "played")
     }
 
     private func savePlayed() {
