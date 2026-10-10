@@ -323,6 +323,10 @@ case "de", "en": UserDefaults.standard.set([AppPrefs.load().ui.language], forKey
 default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
 }
 Theme.registerFonts()
+// Selbsttest-Bild: ohne App-Fenster rendern und beenden
+if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"] {
+    MainActor.assumeIsolated { HeaderShot.run(shot) }
+}
 
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.
 NSApplication.shared.setActivationPolicy(.regular)
