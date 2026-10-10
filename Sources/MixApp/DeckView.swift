@@ -11,7 +11,6 @@ struct DeckView: View {
     let d: Int
 
     var body: some View {
-        let focused = mix.focusedDeck == d
         HStack(alignment: .top, spacing: 6) {
             VStack(alignment: .leading, spacing: 4) {
                 DeckHeader(d: d)
@@ -30,14 +29,68 @@ struct DeckView: View {
         }
         .padding(6)
         .frame(maxHeight: .infinity)
-        .background(Rectangle().fill(focused ? Theme.deckFocused : Theme.deck))
-        .overlay(Rectangle().stroke(mix.effectiveMaster == d ? Theme.gold : (focused ? Theme.bone.opacity(0.5) : Theme.hairline),
-                                    lineWidth: 1))
+        .background(Frame(d: d, border: false))
+        .overlay(Frame(d: d, border: true))
         .contentShape(Rectangle())
         .onTapGesture { mix.focusedDeck = d }
     }
 
+    /// Fläche und Rahmen (Fokus, Master gold) lesen Fokus und Master selbst: ein Master-Wechsel färbt nur sie neu,
+    /// DeckView und seine Zeilen bleiben unberührt
+    struct Frame: View {
+        @Environment(MixModel.self) private var mix
+        let d: Int
+        let border: Bool
+
+        var body: some View {
+            let focused = mix.focusedDeck == d
+            if border {
+                Rectangle().stroke(mix.effectiveMaster == d ? Theme.gold : (focused ? Theme.bone.opacity(0.5) : Theme.hairline), lineWidth: 1)
+            } else {
+                Rectangle().fill(focused ? Theme.deckFocused : Theme.deck)
+            }
+        }
+    }
+
     static func same(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-9 }
+}
+
+/// Deck in eigener NSHostingView = Layout-Grenze. SwiftUI reicht jede Größen-Invalidierung bis zur Wurzel durch und
+/// misst von dort alles neu (vier Decks, Mixer, Leiste, Browser); in eigener Hosting-View rechnet eine Zustandsänderung
+/// nur das Layout dieses Decks. Größe kommt von außen (sizingOptions leer: keine Rückmeldung nach oben).
+struct DeckHost: NSViewRepresentable {
+    @Environment(MixModel.self) private var mix
+    @Environment(WaveformCache.self) private var cache
+    let d: Int
+
+    struct Root: View {
+        let d: Int
+        let mix: MixModel
+        let cache: WaveformCache
+        var body: some View {
+            DeckView(d: d)
+                .environment(mix)
+                .environment(cache)
+                .foregroundStyle(Theme.bone)
+                .tint(Theme.state)
+        }
+    }
+
+    func makeNSView(context: Context) -> BoundaryHostingView<Root> {
+        let v = BoundaryHostingView(rootView: Root(d: d, mix: mix, cache: cache))
+        v.name = "deck " + deckLetters[d]
+        v.sizingOptions = []
+        return v
+    }
+
+    func updateNSView(_ v: BoundaryHostingView<Root>, context: Context) {
+        if v.rootView.d != d || v.rootView.mix !== mix || v.rootView.cache !== cache { v.rootView = Root(d: d, mix: mix, cache: cache) }
+    }
+
+    /// nimmt den angebotenen Platz; sonst fragt SwiftUI bei jedem äußeren Layout fittingSize ab (Auto Layout + inneres Layout)
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: BoundaryHostingView<Root>, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
 }
 
 /// Kopf: Buchstabe, Titel/Artist, FX-Zuweisung, Zeit, BPM, Code, Key, Phase

@@ -57,6 +57,8 @@ final class MixModel {
     @ObservationIgnored let fxUnits = (0..<MixEngine.fxUnitCount).map { _ in FXMirror() }
     private(set) var clock = ClockMirror()
     private(set) var crossfader = 0.0
+    /// Link-Teilnehmer, wie die LINK-Taste sie zeigt (0 = nur „LINK“) – Größen-Schlüssel der Master-Clock-Leiste
+    private(set) var linkPeersShown = 0
     private(set) var effectiveMaster: Int?
     private(set) var clockMaster = false
     var focusedDeck = 0
@@ -155,6 +157,8 @@ final class MixModel {
             let c = ClockMirror(s)
             if c != clock { clock = c }
             if s.crossfader != crossfader { crossfader = s.crossfader }
+            let peers = s.linkEnabled ? s.linkPeers : 0
+            if peers != linkPeersShown { linkPeersShown = peers }
             persistEdits()
         }
     }

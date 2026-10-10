@@ -236,6 +236,25 @@ struct TopBar: View {
 /// Master-Clock: LINK, AUTO/MASTER, Tempo mit −/+ und Tap, Metronom, Snap/Quant, Hauptlautstärke
 struct MasterClockPanel: View {
     @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        HStack(spacing: 6) {
+            // Tempo und Master-Anzeige ändern sich laufend (Tempo-Fader am Master-Deck): eigene Hosting-View, sonst rechnet
+            // jede Änderung das Layout des ganzen Fensters neu. Das Zahnrad bleibt draußen (SettingsLink braucht die Szene)
+            // Größe hängt nur an der LINK-Beschriftung (Teilnehmerzahl)
+            Isolated(sizeKey: mix.linkPeersShown) { Controls().environment(mix).foregroundStyle(Theme.bone).tint(Theme.state) }
+            SettingsLink { Text("⚙︎").font(Theme.mono(14)).foregroundStyle(Theme.bone) }
+                .buttonStyle(.borderless)
+                .help("Einstellungen (⌘,)")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Rectangle().fill(Theme.deck))
+        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    struct Controls: View {
+    @Environment(MixModel.self) private var mix
     @State private var dragStart: Double?
 
     var body: some View {
@@ -291,14 +310,8 @@ struct MasterClockPanel: View {
             }
             Knob(value: Binding(get: { mix.clock.masterVolume }, set: { mix.setMasterVolume($0) }), range: 0...1,
                  defaultValue: 0.85, label: "MAIN", size: 24)
-            SettingsLink { Text("⚙︎").font(Theme.mono(14)).foregroundStyle(Theme.bone) }
-                .buttonStyle(.borderless)
-                .help("Einstellungen (⌘,)")
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Rectangle().fill(Theme.deck))
-        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+    }
     }
 }
 

@@ -40,8 +40,8 @@ enum ToggleProbe {
 @MainActor
 enum ToggleBench {
     /// toggle: Browser groß/klein · state: Zustandsänderungen an Deck A · play: Hauptthread-Last bei laufenden Decks
-    nonisolated static var mode: String { ProcessInfo.processInfo.environment["MIX741_BENCH"] ?? "" }
-    nonisolated static var requested: Bool { ["toggle", "state", "play"].contains(mode) }
+    nonisolated static let mode = ProcessInfo.processInfo.environment["MIX741_BENCH"] ?? ""
+    nonisolated static let requested = ["toggle", "state", "play"].contains(mode)
 
     static func snapshot(_ v: NSView, to path: String) {
         guard let layer = v.layer else { return }
@@ -72,10 +72,14 @@ enum ToggleBench {
             mix.prefs.ui.showMixer = false
             mix.prefs.ui.browserHeight = 306
         }
-        let root = ContentView()
-            .environment(store).environment(mix).environment(browser)
-            .environment(ControllerStatus()).environment(WaveformCache()).environment(history)
-        let host = NSHostingView(rootView: root)
+        // wie im Fenster der App: Mindestgröße, Fenster fragt nur sie ab (Fenstergröße: .contentMinSize)
+        let root = MinSize(width: 1280, height: 860) {
+            ContentView()
+                .environment(store).environment(mix).environment(browser)
+                .environment(ControllerStatus()).environment(WaveformCache()).environment(history)
+        }
+        let host = WindowHostingView(rootView: root)
+        host.sizingOptions = [.minSize]
         let rect = NSRect(x: 0, y: 0, width: 1600, height: 1000)
         let win = NSWindow(contentRect: rect, styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         win.contentView = host
@@ -143,6 +147,17 @@ enum ToggleBench {
         }
         app.run()
         exit(0)
+    }
+}
+
+/// Fenster-Hosting-View der Messung: misst ihre Layout-Zeit wie BoundaryHostingView, meldet aber Größen normal
+final class WindowHostingView<Content: View>: NSHostingView<Content> {
+    override func layout() {
+        TimedLayout.stack.append(0)
+        let t0 = CACurrentMediaTime()
+        super.layout()
+        let dt = CACurrentMediaTime() - t0
+        TimedLayout.times["window", default: 0] += dt - TimedLayout.stack.removeLast()
     }
 }
 
@@ -234,6 +249,7 @@ enum StateBench {
             ("hotcue", { cueSet.toggle(); mix.hotcue(d, 7, delete: !cueSet) }),
             ("tempo", { tempo.toggle(); mix.setTempo(d, tempo ? 1.5 : 0) }),
             ("keylock", { mix.toggleKeylock(d) }),
+            ("clock bpm", { tempo.toggle(); mix.setClockBPM(tempo ? 127 : 128) }),   // nur die Master-Clock-Leiste
             ("gain", { tempo.toggle(); mix.updateDeck(d) { $0.gainDb = tempo ? 1 : 0 } }),   // ohne Mixer unsichtbar: Grundkosten
         ].filter { a in env["MIX741_BENCH_ONLY"].map { $0.split(separator: ",").contains(Substring(a.0)) } ?? true }
         let sampler = startSample(seconds: max(5, actions.count * n * 2 * 60 / 1000))
@@ -256,16 +272,18 @@ enum StateBench {
         }
         var all: [Double] = [], allSync: [Double] = []
         log("deck A, n=\(n) je aktion · natural = änderung bis hauptthread frei (nach swiftui + ca-commit) · tick = bis nächster display-link-takt · sync = layout + flush direkt")
+        TimedLayout.times = [:]
         for (name, act) in actions {
-            var natural: [Double] = [], tick: [Double] = [], sync: [Double] = []
+            var natural: [Double] = [], tick: [Double] = [], sync: [Double] = [], command: [Double] = []
             for i in 0..<(n + 2) {
                 // natürlich: wie nach Klick/Controller – Run-Loop macht Update und Commit
                 let t0 = CACurrentMediaTime()
                 pending = t0
                 act()
+                let ta = CACurrentMediaTime()
                 let t1 = await nextTick()
                 try? await Task.sleep(for: .milliseconds(30))
-                if i >= 2 { natural.append(done * 1000); tick.append((t1 - t0) * 1000) }
+                if i >= 2 { natural.append(done * 1000); tick.append((t1 - t0) * 1000); command.append((ta - t0) * 1000) }
                 // direkt: Layout erzwingen und übergeben
                 let s0 = CACurrentMediaTime()
                 act()
@@ -277,6 +295,12 @@ enum StateBench {
                 try? await Task.sleep(for: .milliseconds(30))
             }
             all += natural; allSync += sync
+            if env["MIX741_BENCH_LAYOUT"] != nil {
+                log("   befehl + pull (ohne ui): \(stats(command))")
+                log("   layout je hosting-view (ms je änderung): " + TimedLayout.times.sorted { $0.key < $1.key }
+                    .map { String(format: "%@ %.2f", $0.key, $0.value * 1000 / Double(2 * (n + 2))) }.joined(separator: " · "))
+                TimedLayout.times = [:]
+            }
             log("\(name.padding(toLength: 10, withPad: " ", startingAt: 0)) natural \(stats(natural)) | tick \(stats(tick)) | sync \(stats(sync))")
         }
         log("→ alle      natural \(stats(all)) | sync \(stats(allSync)) · >16 ms: \(all.filter { $0 > 16 }.count)/\(all.count)")

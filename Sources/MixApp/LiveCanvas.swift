@@ -15,6 +15,11 @@ struct LiveCanvas: NSViewRepresentable {
         v.configure(fps: fps, running: running)
         v.needsDisplay = true
     }
+
+    /// nimmt den angebotenen Platz; ohne das misst SwiftUI die NSView bei jedem Layout über Auto Layout (fittingSize)
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: LiveCanvasView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
 }
 
 final class LiveCanvasView: NSView {

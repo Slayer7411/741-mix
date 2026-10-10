@@ -130,19 +130,20 @@ struct ContentView: View {
         VStack(spacing: 6) {
             TopBar()
             // Decks mit fester Höhe: zwei flexible Decks übereinander ließen SwiftUI jede Zustandsänderung
-            // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks)
+            // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks); jedes Deck in eigener
+            // Hosting-View (DeckHost), damit eine Deck-Änderung nicht das ganze Fenster neu misst
             GeometryReader { geo in
                 let rows: CGFloat = mix.showFourDecks ? 2 : 1
                 let deckH = max(120, (geo.size.height - (rows - 1) * 6) / rows)
                 HStack(alignment: .top, spacing: 6) {
                     VStack(spacing: 6) {
-                        DeckView(d: 0).frame(height: deckH)
-                        if mix.showFourDecks { DeckView(d: 2).frame(height: deckH) }
+                        DeckHost(d: 0).frame(height: deckH)
+                        if mix.showFourDecks { DeckHost(d: 2).frame(height: deckH) }
                     }
                     if mix.prefs.ui.showMixer { MixerView().fixedSize(horizontal: true, vertical: false) }
                     VStack(spacing: 6) {
-                        DeckView(d: 1).frame(height: deckH)
-                        if mix.showFourDecks { DeckView(d: 3).frame(height: deckH) }
+                        DeckHost(d: 1).frame(height: deckH)
+                        if mix.showFourDecks { DeckHost(d: 3).frame(height: deckH) }
                     }
                 }
             }
@@ -224,14 +225,15 @@ struct MixApp: App {
 
     var body: some Scene {
         WindowGroup(appTitle) {
-            ContentView()
-                .environment(store)
-                .environment(mix)
-                .environment(browser)
-                .environment(controllerStatus)
-                .environment(waveforms)
-                .environment(history)
-                .frame(minWidth: 1280, minHeight: 860)
+            MinSize(width: 1280, height: 860) {
+                ContentView()
+                    .environment(store)
+                    .environment(mix)
+                    .environment(browser)
+                    .environment(controllerStatus)
+                    .environment(waveforms)
+                    .environment(history)
+            }
                 .onAppear { startControllers() }
                 .onChange(of: mix.prefs.controller) { controller?.prefs = mix.prefs.controller }
                 .onChange(of: mix.prefs.ui.fxUnitCount) { controller?.fxUnits = mix.prefs.ui.fxUnitCount }

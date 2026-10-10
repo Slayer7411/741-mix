@@ -47,6 +47,11 @@ struct WaveLayerView: NSViewRepresentable {
         v.wave = wave
         v.scene = scene
     }
+
+    /// nimmt den angebotenen Platz; ohne das misst SwiftUI die NSView bei jedem Layout über Auto Layout (fittingSize)
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: WaveLayerNSView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
 }
 
 /// Wellenform-Ansicht ohne SwiftUI im Frame-Takt. Drei Ebenen im scrollenden Streifen:
@@ -57,7 +62,13 @@ final class WaveLayerNSView: NSView {
     var loop: @MainActor () -> (active: Bool, start: Double, end: Double) = { (false, 0, 0) }
     var wave: RenderedWaveform? { didSet { if wave !== oldValue { rebuild(tiles: true) } } }
     var scene = WaveScene() {
-        didSet { if scene != oldValue { rebuild(tiles: scene.tileKey != oldValue.tileKey) } }
+        didSet {
+            guard scene != oldValue else { return }
+            // nur Cues geändert (Hotcue setzen/löschen, Cue-Punkt): Grid bleibt – es neu zu bauen kostete ~4 ms
+            var a = scene, b = oldValue
+            (a.cues, a.cuePoint, b.cues, b.cuePoint) = ([], 0, [], 0)
+            if a == b, builtSize == bounds.size { rebuildCues() } else { rebuild(tiles: scene.tileKey != oldValue.tileKey) }
+        }
     }
 
     private let content = CALayer()   // gespiegelt: y nach unten
@@ -174,6 +185,16 @@ final class WaveLayerNSView: NSView {
         if scene.showGrid, let g = scene.grid, g.bpm > 0 { buildGrid(g, h: h) }
         buildCues(h: h)
         step()
+    }
+
+    private func rebuildCues() {
+        guard scene.hasTrack, bounds.height > 0 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        cueLayer.sublayers = nil
+        buildCues(h: bounds.height)
+        step()   // steht der Display-Link (offscreen), sonst nichts zu tun: Position unverändert
     }
 
     private func clearTiles() {
