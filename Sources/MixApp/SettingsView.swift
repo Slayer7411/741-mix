@@ -63,6 +63,7 @@ struct DeckSettings: View {
                     ForEach(SyncMode.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 sliderRow("Pitch-Bend-Stärke", $mix.prefs.engine.bendAmount, 0.01...0.12, format: "%.2f")
+                sliderRow("Ableton-Link-Versatz (ms)", $mix.prefs.engine.linkOffsetMs, -50...50, step: 1, format: "%+.0f")
             }
             Section("Loops & Beatjump") {
                 Picker("Loopgröße (Standard)", selection: $mix.prefs.engine.defaultLoopSize) {

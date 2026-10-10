@@ -40,6 +40,8 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var bendAmount = 0.04
     public var phaseLock = true
     public var syncMode = SyncMode.dynamic
+    /// Ableton Link: Versatz in ms (positiv = die anderen Teilnehmer spielen später)
+    public var linkOffsetMs = 0.0
     public var trackEndWarning = 30.0
     public var crossfaderCurve = CrossfaderCurve.smooth
     public var eqKill = true
@@ -886,7 +888,10 @@ public final class MixController: @unchecked Sendable {
             }
             // Ableton Link: Tempo und Beat der Clock vorgeben, Teilnehmer zählen
             if state.linkEnabled {
-                link.lead(bpm: state.clockBPM, beat: engine.clockBeat)
+                if let st = engine.clockStamp {
+                    link.offsetMicros = Int64(state.prefs.linkOffsetMs * 1000)
+                    link.lead(bpm: state.clockBPM, beat: st.beat, hostTime: st.hostTime)
+                }
                 linkTicks += 1
                 if linkTicks % 100 == 0 { let n = link.peers; if n != state.linkPeers { state.linkPeers = n } }
             } else if state.linkPeers != 0 { state.linkPeers = 0 }

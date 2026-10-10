@@ -181,6 +181,12 @@ public final class MixEngine: @unchecked Sendable {
     public func setClockBPM(_ bpm: Double) { mdsp_clock_set_bpm(core, bpm) }
     public func setClockBeat(_ beat: Double) { mdsp_clock_set_beat(core, beat) }
     public var clockBeat: Double { mdsp_clock_beat(core) }
+    /// Beat am Anfang des letzten Blocks + Host-Zeit, zu der er hörbar ist (mach_absolute_time)
+    public var clockStamp: (beat: Double, hostTime: UInt64)? {
+        var b = 0.0, h: UInt64 = 0
+        guard mdsp_clock_stamp(core, &b, &h) else { return nil }
+        return (b, h + LinkSession.hostTicks(seconds: output.outputLatency))
+    }
     public func setMetronome(on: Bool, volume: Double, firstChannel: Int) {
         mdsp_metronome(core, on, Float(volume), Int32(firstChannel))
     }

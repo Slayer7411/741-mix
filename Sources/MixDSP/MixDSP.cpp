@@ -192,6 +192,10 @@ struct Clock {
     std::atomic<float> metroVol{0.5f};
     std::atomic<int> metroCh{0};
     double beat = 0;
+    // Beat am Blockanfang + Host-Zeit des Blocks (für Link), per Sequenzzähler konsistent lesbar
+    std::atomic<uint32_t> stampSeq{0};
+    std::atomic<double> stampBeat{0};
+    std::atomic<uint64_t> stampHost{0};
     // Klick-Synthese (kurzer Sinus mit Abklingen)
     double clickPhase = 0, clickFreq = 1000; float clickEnv = 0;
 };
@@ -203,6 +207,7 @@ struct MDEngine {
     std::atomic<float> fxp[MDSP_FX_UNITS][MDFX_PARAM_COUNT];
     std::atomic<float> master{0.85f};
     float masterSm = 0.85f;
+    uint64_t renderHost = 0;   // setzt der CoreAudio-Callback vor jedem Block
 };
 
 // ---------- Lesen aus dem Track ----------
@@ -487,6 +492,7 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
     Clock &k = e->clock;
     double sb = k.setBeat.exchange(NAN);
     if (!std::isnan(sb)) k.beat = sb;
+    double beatStart = k.beat;
     double perSample = k.bpm.load() / 60.0 / e->fs;
     bool metro = k.metroOn.load();
     float mv = k.metroVol.load();
@@ -516,6 +522,24 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
         }
     }
     k.beatOut.store(k.beat);
+    k.stampSeq.fetch_add(1, std::memory_order_acq_rel);
+    k.stampBeat.store(beatStart, std::memory_order_relaxed);
+    k.stampHost.store(e->renderHost, std::memory_order_relaxed);
+    k.stampSeq.fetch_add(1, std::memory_order_release);
+}
+
+void mdsp_set_render_host(MDEngine *e, uint64_t hostTime) { e->renderHost = hostTime; }
+
+bool mdsp_clock_stamp(MDEngine *e, double *beat, uint64_t *hostTime) {
+    Clock &k = e->clock;
+    for (int i = 0; i < 8; i++) {
+        uint32_t s = k.stampSeq.load(std::memory_order_acquire);
+        if (s & 1) continue;
+        double b = k.stampBeat.load(std::memory_order_relaxed);
+        uint64_t h = k.stampHost.load(std::memory_order_relaxed);
+        if (k.stampSeq.load(std::memory_order_acquire) == s) { *beat = b; *hostTime = h; return h != 0; }
+    }
+    return false;
 }
 
 void mdsp_clock_set_bpm(MDEngine *e, double bpm) { e->clock.bpm.store(std::clamp(bpm, 20.0, 300.0)); }

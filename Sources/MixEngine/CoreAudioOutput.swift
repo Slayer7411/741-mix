@@ -9,6 +9,8 @@ final class CoreAudioOutput {
     private(set) var channels = 2
     private(set) var deviceRate: Double = 44100
     private(set) var running = false
+    /// Zeit vom Render-Callback bis zum Ausgang (Puffer + Geräte-, Sicherheits- und Stream-Latenz), Sekunden
+    private(set) var outputLatency: Double = 0
 
     /// startet die Ausgabe auf `device` (nil = Systemstandard) mit allen Ausgangskanälen des Geräts
     func start(device: AudioDeviceID?, engine: OpaquePointer, bufferFrames: UInt32?) throws {
@@ -44,6 +46,28 @@ final class CoreAudioOutput {
         try check(AudioUnitInitialize(au), "Initialisieren")
         try check(AudioOutputUnitStart(au), "Starten")
         running = true
+        outputLatency = Double(Self.latencyFrames(dev)) / deviceRate
+    }
+
+    private static func latencyFrames(_ dev: AudioDeviceID) -> UInt32 {
+        func get(_ obj: AudioObjectID, _ sel: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope) -> UInt32 {
+            var addr = AudioObjectPropertyAddress(mSelector: sel, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+            var v: UInt32 = 0, size = UInt32(MemoryLayout<UInt32>.size)
+            return AudioObjectGetPropertyData(obj, &addr, 0, nil, &size, &v) == noErr ? v : 0
+        }
+        var n = get(dev, kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeGlobal)
+            + get(dev, kAudioDevicePropertyLatency, kAudioObjectPropertyScopeOutput)
+            + get(dev, kAudioDevicePropertySafetyOffset, kAudioObjectPropertyScopeOutput)
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioObjectPropertyScopeOutput,
+                                              mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        if AudioObjectGetPropertyDataSize(dev, &addr, 0, nil, &size) == noErr, size >= UInt32(MemoryLayout<AudioStreamID>.size) {
+            var first = AudioStreamID(0); size = UInt32(MemoryLayout<AudioStreamID>.size)
+            if AudioObjectGetPropertyData(dev, &addr, 0, nil, &size, &first) == noErr {
+                n += get(first, kAudioStreamPropertyLatency, kAudioObjectPropertyScopeGlobal)
+            }
+        }
+        return n
     }
 
     func stop() {
