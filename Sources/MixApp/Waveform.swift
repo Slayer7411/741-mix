@@ -163,21 +163,26 @@ final class RenderedWaveform: @unchecked Sendable {
 }
 
 /// Hält fertige Wellenformen je Track-Puffer und rechnet neue im Hintergrund.
+/// Schlüssel ist die Speicheradresse des Puffers – der Eintrag hält ihn schwach und gilt nur, solange genau dieser
+/// Puffer lebt (ein neuer Track an derselben Adresse bekäme sonst die Wellenform des alten).
+/// Wellenformen entladener Tracks fallen beim nächsten Eintrag weg.
 @MainActor @Observable
 final class WaveformCache {
-    private var done: [String: RenderedWaveform] = [:]
+    private struct Entry { weak var audio: TrackAudio?; let wave: RenderedWaveform }
+    private var done: [String: Entry] = [:]
     @ObservationIgnored private var running: Set<String> = []
 
     func waveform(for audio: TrackAudio?, style: WaveformStyle, palette: WaveformPalette) -> RenderedWaveform? {
         guard let audio else { return nil }
         let key = "\(ObjectIdentifier(audio).hashValue)-\(style.rawValue)-\(palette.rawValue)"
-        if let w = done[key] { return w }
+        if let e = done[key], e.audio === audio { return e.wave }
         if !running.contains(key) {
             running.insert(key)
             Task.detached(priority: .userInitiated) {
                 let w = RenderedWaveform.render(audio, style: style, palette: palette)
                 await MainActor.run {
-                    self.done[key] = w
+                    self.done.removeAll { $0.value.audio == nil }
+                    self.done[key] = Entry(audio: audio, wave: w)
                     self.running.remove(key)
                     if self.done.count > 16 { self.done.removeAll { $0.key != key } }
                 }
