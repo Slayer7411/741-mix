@@ -363,6 +363,7 @@ if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SH
 if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("preview:") {
     MainActor.assumeIsolated { PreviewShot.run(shot) }
 }
+MainActor.assumeIsolated { PreviewColorShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=previewcolors:<ordner>, kein Fenster
 MainActor.assumeIsolated { CoverShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cover:<ordner>, endet mit exit
 MainActor.assumeIsolated { SettingsShot.runPluginsIfRequested() }   // nur PLUGINS-Tab, ohne Audio: MIX741_SHOT=plugins:<ordner>
 MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)

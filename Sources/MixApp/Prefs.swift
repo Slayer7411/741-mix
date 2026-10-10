@@ -138,10 +138,14 @@ struct UIPrefs: Codable, Equatable {
     var musicFolders: [String] = []
     /// Metadaten-Änderungen aus dem Browser auch in die Collection-Datei schreiben (mit Sicherung davor)
     var writeCollection = false
-    /// Browser-Vorschau (Mini-Wellenform + Grid + Cues): eigene Spalte, hinter dem Titel oder aus
-    var previewMode = PreviewMode.column
-    /// fehlende Vorschauen im Hintergrund berechnen – nur solange kein Deck spielt
+    /// Browser-Vorschau (Mini-Wellenform + Grid + Cues): ganze Zeile (zweizeilig), eigene Spalte, hinter dem Titel oder aus
+    var previewMode = PreviewMode.fullRow
+    /// Farben der Vorschau: Spektrum (rot/grün/blau) oder wie die Wellenform
+    var previewColors = PreviewColors.spectrum
+    /// alt (bis 0.x): Hintergrund an/aus – nur noch für die Umstellung auf `previewFill`
     var previewBackground = true
+    /// fehlende Vorschauen im Hintergrund berechnen: immer (gedrosselt, solange ein Deck spielt) / nur ohne Deck / aus
+    var previewFill = PreviewFill.always
     /// Cover links im Deck-Kopf
     var showDeckCover = true
     /// Cover des gewählten Tracks unter dem Baum im Browser
@@ -174,6 +178,16 @@ struct AppPrefs: Codable, Equatable {
         if !Session.isSelfTest, !d.bool(forKey: "migrated.reverb-fdn") {
             if d.data(forKey: key) != nil, p.engine.reverbBrightness == 0.4 { p.engine.reverbBrightness = EnginePrefs().reverbBrightness; p.save() }
             d.set(true, forKey: "migrated.reverb-fdn")
+        }
+        // Browser-Vorschau: alter Standard „eigene Spalte“ -> neuer Standard „ganze Zeile“ (einmalig)
+        if !Session.isSelfTest, !d.bool(forKey: "migrated.preview-row") {
+            if d.data(forKey: key) != nil, p.ui.previewMode == .column { p.ui.previewMode = .fullRow; p.save() }
+            d.set(true, forKey: "migrated.preview-row")
+        }
+        // Hintergrund-Vorschauen: wer den alten Schalter ausgeschaltet hatte, bekommt „aus“ (einmalig)
+        if !Session.isSelfTest, !d.bool(forKey: "migrated.preview-fill") {
+            if d.data(forKey: key) != nil, !p.ui.previewBackground { p.ui.previewFill = .off; p.save() }
+            d.set(true, forKey: "migrated.preview-fill")
         }
         return p
     }
