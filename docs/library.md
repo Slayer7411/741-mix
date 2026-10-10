@@ -8,6 +8,13 @@
 * space / browse push = big browser
 * split line between decks and browser can be dragged
 
+## ◆ EDIT TRACKS
+
+* inline: click a selected row again or return, tab = next column, esc = cancel
+* edit window: right click -> `Bearbeiten …` or ⌘E, also for several tracks at once
+* saved in MINOS-741 first, optional write-back into the collection file with backup
+* details: [manual](MANUAL.md#-09--browser), [nml files](nml-files.md)
+
 ## ◆ ROLE CHIPS
 
 basis · synth · drums · voll · atmo

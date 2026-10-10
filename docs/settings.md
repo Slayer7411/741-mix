@@ -35,6 +35,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * magenta markers every 8 / 16 / 32 bars
 * tag separator for comment 2, empty = space
 * browser layout, hide the tree while decks are visible
+* write browser edits into the collection file (off): backup at most once per hour into `Backup MINOS-741`, not while the library software runs -> [manual](MANUAL.md#-09--browser)
 * language: system / english / german (after restart)
 
 ## ◆ AUDIO

@@ -6,6 +6,10 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* browser: edit track metadata -> inline (click a selected row again or return, tab = next column, esc = cancel), edit window via right click -> `Bearbeiten …` / ⌘E with PREV / NEXT, RESTORE · CANCEL · APPLY · OK, several tracks at once with "apply to all" boxes and `‹mehrere›` for different values. fields: title, artist, release, mix, remixer, producer, label, catalog no, genre, comment 1 + 2, key text, track #, release date, bpm (not when locked), rating. list, search and sorting follow right away
+* edits saved in `metadata.json`, laid over the collection on every load, right click -> `Eigene Änderungen verwerfen`
+* setting: write the edits into the collection file (off by default) -> only the edited entries change, byte for byte the rest, backup `Backup MINOS-741/collection_….nml` at most once per hour, atomic, never while the library software runs
+* browser: mix column (hidden by default)
 * key readout above each deck: open key of the track, the audible key in red as soon as it deviates (`8m → 3m`), the deviation in semitones below (keylock off: from the tempo, keylock on: from the key shift)
 * SEMI in the master clock: every newly loaded track takes the tempo of the current master (clock or master deck, nearest half / double ratio), no phase lock
 * quit asks first (⌘Q / quit menu) -> session, history and played state are written before the app closes

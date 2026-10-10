@@ -117,6 +117,8 @@ struct UIPrefs: Codable, Equatable {
     var colorfulGrid = true
     /// Beats je Phrase (Markierung/Farbwechsel)
     var phraseBeats = 64
+    /// Metadaten-Änderungen aus dem Browser auch in die Collection-Datei schreiben (mit Sicherung davor)
+    var writeCollection = false
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.
