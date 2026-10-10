@@ -1,5 +1,7 @@
 <p align="center"><img src="docs/assets/banner.svg" alt="MINOS-741" width="100%"></p>
 
+<p align="center"><a href="https://github.com/Slayer7411/MINOS-741/graphs/contributors"><img src="https://img.shields.io/github/contributors/Slayer7411/MINOS-741?style=flat-square&label=CONTRIBUTORS&labelColor=0a0a0a&color=e8e4d8" alt="contributors"></a></p>
+
 native dj software for macos. traktor workflow and files, own browser and tag system.
 
 <p align="center"><img src="docs/assets/screenshot.png" alt="MINOS-741 with 4 decks, external mixer mode and dual browser" width="100%"></p>
