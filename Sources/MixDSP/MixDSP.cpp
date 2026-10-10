@@ -41,22 +41,28 @@ struct Biquad {
     float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
     float z1[2] = {0, 0}, z2[2] = {0, 0};
     void setIdentity() { b0 = 1; b1 = b2 = a1 = a2 = 0; }
+    /// Frequenz unter Nyquist halten: darüber wird der Filter instabil (Geräte mit 16–32 kHz)
+    static double safeF(double f, double fs) { return std::clamp(f, 1.0, fs * 0.45); }
     void set(double c0, double c1, double c2, double d0, double d1, double d2) {
         b0 = float(c0 / d0); b1 = float(c1 / d0); b2 = float(c2 / d0); a1 = float(d1 / d0); a2 = float(d2 / d0);
     }
     void lowpass(double f, double q, double fs) {
+        f = safeF(f, fs);
         double w = 2 * kPi * f / fs, c = std::cos(w), a = std::sin(w) / (2 * q);
         set((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + a, -2 * c, 1 - a);
     }
     void highpass(double f, double q, double fs) {
+        f = safeF(f, fs);
         double w = 2 * kPi * f / fs, c = std::cos(w), a = std::sin(w) / (2 * q);
         set((1 + c) / 2, -(1 + c), (1 + c) / 2, 1 + a, -2 * c, 1 - a);
     }
     void peaking(double f, double q, double db, double fs) {
+        f = safeF(f, fs);
         double A = std::pow(10, db / 40), w = 2 * kPi * f / fs, c = std::cos(w), a = std::sin(w) / (2 * q);
         set(1 + a * A, -2 * c, 1 - a * A, 1 + a / A, -2 * c, 1 - a / A);
     }
     void shelf(bool low, double f, double db, double fs) {
+        f = safeF(f, fs);
         double A = std::pow(10, db / 40), w = 2 * kPi * f / fs, c = std::cos(w), s = std::sin(w);
         double a = s / 2 * std::sqrt(2.0), sq = 2 * std::sqrt(A) * a;
         if (low) set(A * ((A + 1) - (A - 1) * c + sq), 2 * A * ((A - 1) - (A + 1) * c), A * ((A + 1) - (A - 1) * c - sq),

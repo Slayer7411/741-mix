@@ -60,6 +60,26 @@ private final class Engine {
 
 private func allFinite(_ blocks: [[Float]]) -> Bool { blocks.allSatisfy { $0.allSatisfy { $0.isFinite } } }
 
+/// Gerät mit niedriger Rate (z. B. 22,05 kHz): Filterfrequenzen über Nyquist dürfen keinen instabilen Filter ergeben
+@Test func filtersStayStableAtLowDeviceRate() {
+    for fs in [16000.0, 22050, 32000] {
+        let c = Engine(fs: fs)
+        c.load(deck: 0, seconds: 3) { i, _ in Float(sin(2 * .pi * 440 * Double(i) / fs)) * 0.5 }
+        c.set(0, MD_PLAYING, 1)
+        c.set(0, MD_FILTER, -0.05)    // Lowpass knapp unter 20 kHz
+        c.set(0, MD_EQ_HIGH, 6)       // Shelf bei 10 kHz
+        var peak: Float = 0, finite = true
+        for _ in 0..<Int(2 * fs / 512) {
+            let o = c.render(512)
+            finite = finite && allFinite(o)
+            peak = max(peak, o[0].map { abs($0) }.max() ?? 0)
+        }
+        #expect(finite, "fs \(fs)")
+        #expect(peak <= 1 && peak > 0.1, "fs \(fs): peak \(peak)")
+    }
+}
+
+/// Denormals: ausklingende Filter erzeugen keine subnormalen Werte (Intel: sonst Rechenzeit ×100);
 /// die Gleitkomma-Einstellung des aufrufenden Threads bleibt unverändert
 @Test func noDenormalsInDecayingTail() {
     let c = Engine()
