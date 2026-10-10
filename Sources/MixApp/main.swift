@@ -323,6 +323,7 @@ case "de", "en": UserDefaults.standard.set([AppPrefs.load().ui.language], forKey
 default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
 }
 Theme.registerFonts()
+MainActor.assumeIsolated { DeckShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=deck:…, kehrt dann nicht zurück
 
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.
 NSApplication.shared.setActivationPolicy(.regular)

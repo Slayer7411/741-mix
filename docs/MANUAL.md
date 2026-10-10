@@ -122,9 +122,13 @@ A  title                 FX1 FX2    -1:10  130.00   11m   ±8 ▾
 |---|---|
 | 1-8 | hotcue: click = jump / set, ⌥-click = delete |
 | IN / OUT | manual loop |
-| ◂ 4 ▸ | auto loop size 1/32 … 32, click on the size = loop on / off |
 | RE | reloop |
-| ◀◀ 4 ▾ ▶▶ | beatjump 1/4 … 64. inside a loop = move the loop |
+| LOOP | auto loop on / off with the selected size |
+| 1/32 … 32 | loop size. click = select, a running loop takes the new size |
+| ◀◀ 1/4 … 64 ▶▶ | beatjump size + jump. inside a loop = move the loop |
+
+* hotcues, loop sizes and beatjump sizes each span the full deck width
+* the selected loop size and beatjump size are red, also when changed from the controller (loop encoder, flux + pads)
 
 * hotcues come from the collection. colors: start cue red, cues white, loops green, short loops magenta (⌘, -> DISPLAY)
 * edits are saved in an own file. the collection stays untouched
