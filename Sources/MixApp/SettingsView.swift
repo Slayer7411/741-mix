@@ -1,32 +1,260 @@
 import SwiftUI
+import AppKit
 import MixCore
 import MixEngine
 
 /// Einstellungen (⌘,) – jede Option der App ist hier einstellbar.
+/// Links die Bereiche (neuer Bereich = eine Zeile in `tabs`), rechts der Inhalt scrollbar.
 struct SettingsView: View {
+    static let tabs: [SettingsTab] = [
+        SettingsTab("DECKS") { DeckSettings() },
+        SettingsTab("MIXER & FX") { MixerFXSettings() },
+        SettingsTab("ANZEIGE") { WaveformSettings() },
+        SettingsTab("AUDIO") { AudioSettings() },
+        SettingsTab("CONTROLLER") { ControllerSettings() },
+        SettingsTab("TAGS") { TagColorSettings() },
+    ]
+
+    @State var selection = 0
+
     var body: some View {
-        TabView {
-            DeckSettings().tabItem { Text("DECKS") }
-            MixerFXSettings().tabItem { Text("MIXER & FX") }
-            WaveformSettings().tabItem { Text("ANZEIGE") }
-            AudioSettings().tabItem { Text("AUDIO") }
-            ControllerSettings().tabItem { Text("CONTROLLER") }
-            TagColorSettings().tabItem { Text("TAGS") }
+        HStack(spacing: 0) {
+            SettingsSidebar(tabs: Self.tabs, selection: $selection)
+            Rectangle().fill(Theme.hairline).frame(width: 1)
+            ScrollView {
+                SettingsPage { Self.tabs[min(selection, Self.tabs.count - 1)].content() }
+            }
+            .id(selection)
+            .background(Theme.chitin)
         }
-        .frame(width: 600, height: 560)
+        .frame(minWidth: 720, idealWidth: 820, maxWidth: .infinity, minHeight: 520, idealHeight: 640, maxHeight: .infinity)
+        .background(Theme.void)
+        .background(ResizableWindow())
         .preferredColorScheme(.dark)
     }
 }
 
-/// kleine Helfer für Zeilen
-private func sliderRow(_ title: String, _ value: Binding<Double>, _ range: ClosedRange<Double>, step: Double? = nil,
-                       format: String = "%.2f") -> some View {
-    LabeledContent(title) {
-        HStack {
-            if let step { Slider(value: value, in: range, step: step) } else { Slider(value: value, in: range) }
-            Text(String(format: format, value.wrappedValue)).monospacedDigit().frame(width: 52, alignment: .trailing)
+/// ein Bereich der Einstellungen
+struct SettingsTab: Identifiable {
+    /// Lokalisierungsschlüssel des Titels
+    let id: String
+    let content: @MainActor () -> AnyView
+    var title: LocalizedStringKey { LocalizedStringKey(id) }
+
+    init<V: View>(_ key: String, @ViewBuilder _ content: @escaping @MainActor () -> V) {
+        id = key
+        self.content = { AnyView(content()) }
+    }
+}
+
+/// Seitenleiste: Cinzel versal, roter Balken am aktiven Eintrag
+private struct SettingsSidebar: View {
+    let tabs: [SettingsTab]
+    @Binding var selection: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(verbatim: "MINOS-741").font(Theme.label(11, .bold)).foregroundStyle(Theme.muted)
+                .padding(.leading, 18).padding(.top, 20).padding(.bottom, 14)
+            ForEach(tabs.indices, id: \.self) { i in
+                let active = i == selection
+                Button { selection = i } label: {
+                    HStack(spacing: 0) {
+                        Rectangle().fill(active ? Theme.state : .clear).frame(width: 3)
+                        Text(tabs[i].title).font(Theme.label(12, .bold))
+                            .foregroundStyle(active ? Theme.bone : Theme.bone.opacity(0.6))
+                            .lineLimit(1)
+                            .padding(.leading, 15)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(height: 32)
+                    .background(active ? Theme.chitinRaised : .clear)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
         }
-        .frame(width: 280)
+        .frame(width: 176)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Theme.void)
+    }
+}
+
+/// Rahmen einer Einstellungsseite: Abstände, Schrift, Stile für Form, Zeilen, Schalter, Tasten
+struct SettingsPage<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .formStyle(SettingsFormStyle())
+            .labeledContentStyle(SettingsRowStyle())
+            .toggleStyle(SettingsToggleStyle())
+            .buttonStyle(SettingsButtonStyle())
+            .controlSize(.small)
+            .font(Theme.mono(11))
+            .foregroundStyle(Theme.bone)
+            .tint(Theme.state)
+            .padding(.horizontal, 28)
+            .padding(.top, 22)
+            .padding(.bottom, 28)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+enum SettingsMetrics {
+    /// feste Breite der Beschriftungsspalte
+    static let labelWidth: CGFloat = 220
+    static let rowSpacing: CGFloat = 16
+    static let readoutWidth: CGFloat = 64
+    /// größte Breite der Bedienelement-Spalte (Popups, Regler)
+    static let controlWidth: CGFloat = 340
+}
+
+/// Form ohne macOS-Kästen: je Abschnitt `◆ TITEL` mit Haarlinie, darunter die Zeilen
+struct SettingsFormStyle: FormStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        LazyVStack(alignment: .leading, spacing: 30) {
+            ForEach(sections: configuration.content) { section in
+                VStack(alignment: .leading, spacing: 0) {
+                    if !section.header.isEmpty {
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(verbatim: "◆").font(Theme.label(9)).foregroundStyle(Theme.muted)
+                                section.header.font(Theme.label(12, .bold)).textCase(.uppercase).foregroundStyle(Theme.bone)
+                            }
+                            Rectangle().fill(Theme.hairline).frame(height: 1)
+                        }
+                        .padding(.bottom, 8)
+                    }
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(subviews: section.content) { row in
+                            if row.containerValues.settingsHint {
+                                row.padding(.top, 1).padding(.bottom, 6)
+                            } else {
+                                row.padding(.vertical, 5)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+extension ContainerValues {
+    @Entry var settingsHint = false
+}
+
+extension View {
+    /// Hinweistext unter einer Zeile: Plex Mono 10, gedämpft
+    func settingsHint() -> some View {
+        font(Theme.mono(10)).foregroundStyle(Theme.muted)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .containerValue(\.settingsHint, true)
+    }
+
+    /// in die Spalte der Bedienelemente einrücken (Zeile ohne eigene Beschriftung)
+    func settingsControlColumn() -> some View {
+        padding(.leading, SettingsMetrics.labelWidth + SettingsMetrics.rowSpacing)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Eingabefeld mit Haarlinie (wie die Browser-Suche)
+    func settingsField() -> some View {
+        textFieldStyle(.plain)
+            .font(Theme.mono(11))
+            .padding(.horizontal, 6).padding(.vertical, 4)
+            .background(Theme.void)
+            .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+    }
+}
+
+/// Zeile: Beschriftung links in fester Breite (Plex Mono), Bedienelement rechts
+struct SettingsRowStyle: LabeledContentStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .center, spacing: SettingsMetrics.rowSpacing) {
+            configuration.label
+                .font(Theme.mono(11)).foregroundStyle(Theme.bone)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: SettingsMetrics.labelWidth, alignment: .leading)
+            configuration.content
+                .font(Theme.mono(11))
+                .frame(maxWidth: SettingsMetrics.controlWidth, alignment: .leading)
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 22)
+    }
+}
+
+/// Schalter als Quadrat: Haarlinie, an = rot gefüllt
+struct SettingsToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .center, spacing: SettingsMetrics.rowSpacing) {
+            configuration.label
+                .font(Theme.mono(11)).foregroundStyle(Theme.bone)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: SettingsMetrics.labelWidth, alignment: .leading)
+            ZStack {
+                Rectangle().fill(Theme.void)
+                Rectangle().stroke(configuration.isOn ? Theme.state : Theme.muted, lineWidth: 1)
+                if configuration.isOn { Rectangle().fill(Theme.state).padding(3) }
+            }
+            .frame(width: 14, height: 14)
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 22)
+        .contentShape(Rectangle())
+        .onTapGesture { configuration.isOn.toggle() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// Taste: Cinzel versal, Haarlinie, gedrückt rot
+struct SettingsButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Theme.label(10, .bold))
+            .textCase(.uppercase)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .frame(minHeight: 20)
+            .foregroundStyle(Theme.bone)
+            .background(Rectangle().fill(configuration.isPressed ? Theme.state.opacity(0.85) : Theme.void))
+            .overlay(Rectangle().stroke(configuration.isPressed ? Theme.state : Theme.hairline, lineWidth: 1))
+            .fixedSize()
+            .contentShape(Rectangle())
+    }
+}
+
+/// Fenster der Einstellungen in der Größe veränderbar machen
+private struct ResizableWindow: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Probe() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class Probe: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.styleMask.insert(.resizable)
+        }
+    }
+}
+
+/// kleine Helfer für Zeilen; `unit` steht hinter dem Zahlenwert (s, ms, pt, %, dB)
+private func sliderRow(_ title: String, _ value: Binding<Double>, _ range: ClosedRange<Double>, step: Double? = nil,
+                       format: String = "%.2f", unit: String = "") -> some View {
+    LabeledContent(title) {
+        HStack(spacing: 10) {
+            // Schritt über die Bindung statt Slider(step:) – sonst zeichnet macOS je Schritt einen Teilstrich
+            Slider(value: Binding(get: { value.wrappedValue },
+                                  set: { v in value.wrappedValue = step.map { min(range.upperBound, max(range.lowerBound, ($0 * (v / $0).rounded()))) } ?? v }),
+                   in: range)
+            Text(verbatim: String(format: format, value.wrappedValue) + (unit.isEmpty ? "" : " \(unit)"))
+                .font(Theme.mono(11)).monospacedDigit().foregroundStyle(Theme.bone)
+                .frame(width: SettingsMetrics.readoutWidth, alignment: .trailing)
+        }
     }
 }
 
@@ -43,7 +271,7 @@ struct DeckSettings: View {
                 Picker("Beim Laden springen zu", selection: $mix.prefs.engine.loadPosition) {
                     ForEach(LoadPosition.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
-                sliderRow("Track-Ende-Warnung (s, 0 = aus)", $mix.prefs.engine.trackEndWarning, 0...90, step: 5, format: "%.0f")
+                sliderRow("Track-Ende-Warnung (s, 0 = aus)", $mix.prefs.engine.trackEndWarning, 0...90, step: 5, format: "%.0f", unit: "s")
             }
             Section("Master-Clock & Metronom") {
                 Picker("Metronom auf Kanalpaar", selection: $mix.prefs.engine.metronomeChannel) {
@@ -51,7 +279,7 @@ struct DeckSettings: View {
                         Text("\(c + 1)/\(c + 2)").tag(c)
                     }
                 }
-                Text("im extern-modus z. b. auf das paar vom kopfhörer-cue legen -> klick nur auf dem kopfhörer").font(Theme.mono(10)).foregroundStyle(Theme.muted)
+                Text("im extern-modus z. b. auf das paar vom kopfhörer-cue legen -> klick nur auf dem kopfhörer").settingsHint()
             }
             Section("Tempo & Sync") {
                 Toggle("Keylock beim ersten Laden an", isOn: $mix.prefs.engine.keylockDefault)
@@ -63,7 +291,7 @@ struct DeckSettings: View {
                     ForEach(SyncMode.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 sliderRow("Pitch-Bend-Stärke", $mix.prefs.engine.bendAmount, 0.01...0.12, format: "%.2f")
-                sliderRow("Link-Versatz (ms)", $mix.prefs.engine.linkOffsetMs, -50...50, step: 1, format: "%+.0f")
+                sliderRow("Link-Versatz (ms)", $mix.prefs.engine.linkOffsetMs, -50...50, step: 1, format: "%+.0f", unit: "ms")
             }
             Section("Loops & Beatjump") {
                 Picker("Loopgröße (Standard)", selection: $mix.prefs.engine.defaultLoopSize) {
@@ -74,17 +302,16 @@ struct DeckSettings: View {
                 }
             }
             Section("History & Preparation") {
-                sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f")
+                sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f", unit: "s")
                 Toggle("History zusätzlich in den History-Ordner der Collection schreiben", isOn: $mix.prefs.ui.historyToExternal)
                 Text("history und preparation werden als nml gespeichert (~/Library/Application Support/MINOS-741) -> direkt in die collection importierbar. preparation wird bei jedem start archiviert und geleert.")
-                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
+                    .settingsHint()
             }
             Section("Ansicht") {
                 Toggle("4 Decks anzeigen", isOn: $mix.prefs.ui.showFourDecks)
                 sliderRow("Vorhören im Browser ab (Anteil)", $mix.prefs.ui.previewStart, 0...0.9, format: "%.1f")
             }
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -122,7 +349,6 @@ struct MixerFXSettings: View {
                 sliderRow("FX-Filter-Resonanz", $mix.prefs.engine.fxFilterResonance, 0...1)
             }
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -139,8 +365,8 @@ struct WaveformSettings: View {
                 Picker("Farben", selection: $mix.prefs.ui.waveformPalette) {
                     ForEach(WaveformPalette.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
-                sliderRow("Sichtbare Sekunden je Seite (Zoom)", $mix.prefs.ui.waveformSeconds, 1...16, step: 0.5, format: "%.1f")
-                sliderRow("Mindesthöhe (pt, wächst mit dem Fenster)", $mix.prefs.ui.waveformHeight, 30...200, step: 5, format: "%.0f")
+                sliderRow("Sichtbare Sekunden je Seite (Zoom)", $mix.prefs.ui.waveformSeconds, 1...16, step: 0.5, format: "%.1f", unit: "s")
+                sliderRow("Mindesthöhe (pt, wächst mit dem Fenster)", $mix.prefs.ui.waveformHeight, 30...200, step: 5, format: "%.0f", unit: "pt")
                 Toggle("Gespielten Teil abdunkeln", isOn: $mix.prefs.ui.dimPlayed)
             }
             Section("Beatgrid") {
@@ -173,7 +399,6 @@ struct WaveformSettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -183,15 +408,18 @@ struct AudioSettings: View {
     var body: some View {
         Form {
             Section("Ausgabegerät") {
-                HStack {
-                    Picker("Gerät", selection: Binding(
-                        get: { mix.deviceUID ?? "" },
-                        set: { mix.deviceUID = $0.isEmpty ? nil : $0; mix.applyRouting() })) {
-                        Text("Systemstandard").tag("")
-                        ForEach(mix.outputDevices) { d in Text("\(d.name) – \(d.channels) Kanäle").tag(d.uid) }
+                LabeledContent("Gerät") {
+                    HStack(spacing: 8) {
+                        Picker("Gerät", selection: Binding(
+                            get: { mix.deviceUID ?? "" },
+                            set: { mix.deviceUID = $0.isEmpty ? nil : $0; mix.applyRouting() })) {
+                            Text("Systemstandard").tag("")
+                            ForEach(mix.outputDevices) { d in Text("\(d.name) – \(d.channels) Kanäle").tag(d.uid) }
+                        }
+                        .labelsHidden()
+                        Button { mix.refreshDevices() } label: { Text("↻") }
+                            .help("Geräteliste neu einlesen")
                     }
-                    Button { mix.refreshDevices() } label: { Text("↻") }
-                        .help("Geräteliste neu einlesen")
                 }
                 LabeledContent("Kanäle", value: "\(mix.deviceChannels)")
                 Picker("Samplerate", selection: Binding(get: { mix.sampleRate }, set: { mix.setAudioFormat(rate: $0) })) {
@@ -206,13 +434,14 @@ struct AudioSettings: View {
                         Text(String(format: "%d · %.1f ms", n, Double(n) / max(mix.engine.outputRate, 1) * 1000)).tag(n)
                     }
                 }
-                HStack {
+                VStack(alignment: .leading, spacing: 6) {
                     Button("Neu verbinden") { mix.reconnect() }
                     Text("startet die Ausgabe neu, z. B. wenn das Interface nach einem USB-Aussetzer stumm bleibt")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .settingsHint()
                 }
+                .settingsControlColumn()
                 Text("Eine neue Samplerate gilt am Gerät sofort, MINOS-741 rechnet ab dem nächsten Start damit.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .settingsHint()
             }
             Section("Mixer") {
                 Picker("Modus", selection: Binding(get: { mix.mixerMode }, set: { mix.mixerMode = $0; mix.applyRouting() })) {
@@ -232,13 +461,13 @@ struct AudioSettings: View {
                             get: { mix.deckPairs[d] }, set: { mix.deckPairs[d] = $0; mix.applyRouting() }))
                     }
                     Button("Standard: A 1/2 · B 3/4 · C 5/6 · D 7/8") { mix.deckPairs = [0, 2, 4, 6]; mix.applyRouting() }
+                        .settingsControlColumn()
                     Text("Am Mischpult die Kanal-Eingänge auf USB stellen. EQ, Fader, Crossfader und Kopfhörer-Cue macht dann das Pult; Filter, FX und Gain bleiben in MINOS-741.")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .settingsHint()
                 }
             }
-            Section { Text(mix.engineStatus).font(.callout).foregroundStyle(.secondary) }
+            Section { Text(mix.engineStatus).settingsHint() }
         }
-        .formStyle(.grouped)
         .onAppear { mix.refreshDevices() }
     }
 
@@ -260,35 +489,51 @@ struct ControllerSettings: View {
         Form {
             Section("Controller (nativ, HID)") {
                 if status.devices.isEmpty {
-                    Text("Kein Controller gefunden. Andere DJ-Software beenden, falls sie läuft.").foregroundStyle(.secondary)
+                    Text("Kein Controller gefunden. Andere DJ-Software beenden, falls sie läuft.").settingsHint()
                 }
                 ForEach(status.devices) { d in
-                    HStack {
-                        Text("Controller \(d.id)").font(.body.monospaced())
-                        Spacer()
-                        Picker("Links", selection: Binding(get: { d.left }, set: { status.assign(d.id, left: $0, right: d.right) })) {
-                            ForEach(0..<4, id: \.self) { Text(deckLetters[$0]).tag($0) }
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Controller \(d.id)").font(Theme.mono(11, .medium))
+                            Spacer()
+                            Button("Blinken") { status.identify(d.id) }.help("Pads dieses Controllers leuchten kurz weiß")
                         }
-                        .frame(width: 110)
-                        Picker("Rechts", selection: Binding(get: { d.right }, set: { status.assign(d.id, left: d.left, right: $0) })) {
-                            ForEach(0..<4, id: \.self) { Text(deckLetters[$0]).tag($0) }
+                        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                            GridRow {
+                                deviceLabel("Links")
+                                Picker("Links", selection: Binding(get: { d.left }, set: { status.assign(d.id, left: $0, right: d.right) })) {
+                                    ForEach(0..<4, id: \.self) { Text(deckLetters[$0]).tag($0) }
+                                }
+                                .labelsHidden().frame(width: 120)
+                                deviceLabel("Rechts")
+                                Picker("Rechts", selection: Binding(get: { d.right }, set: { status.assign(d.id, left: d.left, right: $0) })) {
+                                    ForEach(0..<4, id: \.self) { Text(deckLetters[$0]).tag($0) }
+                                }
+                                .labelsHidden().frame(width: 120)
+                            }
+                            GridRow {
+                                deviceLabel("Browser")
+                                Picker("Browser", selection: Binding(get: { d.pane }, set: { status.assignPane(d.id, $0) })) {
+                                    Text("links").tag(0)
+                                    Text("rechts").tag(1)
+                                }
+                                .labelsHidden().frame(width: 120)
+                                deviceLabel("FX")
+                                Picker("FX", selection: Binding(get: { d.fxUnit }, set: { status.assignFX(d.id, $0) })) {
+                                    Text(verbatim: "FX1 + FX3").tag(10)
+                                    Text(verbatim: "FX2 + FX4").tag(11)
+                                    Text(verbatim: "FX1 + FX2").tag(-1)
+                                    Text(verbatim: "FX1").tag(0)
+                                    Text(verbatim: "FX2").tag(1)
+                                }
+                                .labelsHidden().frame(width: 120)
+                            }
                         }
-                        .frame(width: 120)
-                        Picker("Browser", selection: Binding(get: { d.pane }, set: { status.assignPane(d.id, $0) })) {
-                            Text("links").tag(0)
-                            Text("rechts").tag(1)
-                        }
-                        .frame(width: 130)
-                        Picker("FX", selection: Binding(get: { d.fxUnit }, set: { status.assignFX(d.id, $0) })) {
-                            Text(verbatim: "FX1 + FX3").tag(10)
-                            Text(verbatim: "FX2 + FX4").tag(11)
-                            Text(verbatim: "FX1 + FX2").tag(-1)
-                            Text(verbatim: "FX1").tag(0)
-                            Text(verbatim: "FX2").tag(1)
-                        }
-                        .frame(width: 120)
-                        Button("Blinken") { status.identify(d.id) }.help("Pads dieses Controllers leuchten kurz weiß")
                     }
+                    .padding(12)
+                    .background(Theme.void)
+                    .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+                    .padding(.vertical, 3)
                 }
             }
             Section("Belegung") {
@@ -307,7 +552,7 @@ struct ControllerSettings: View {
                           10...127, step: 1, format: "%.0f")
                 sliderRow("Helligkeit aus", Binding(get: { Double(mix.prefs.controller.ledOff) }, set: { mix.prefs.controller.ledOff = Int($0) }),
                           0...40, step: 1, format: "%.0f")
-                Text("pad-farben: ⌘, -> anzeige -> cue-farben (gleich wie auf dem bildschirm)").font(Theme.mono(10)).foregroundStyle(Theme.muted)
+                Text("pad-farben: ⌘, -> anzeige -> cue-farben (gleich wie auf dem bildschirm)").settingsHint()
             }
             Section("Feste Belegung (NI-Standard)") {
                 Text("""
@@ -315,11 +560,16 @@ struct ControllerSettings: View {
                 drücken = Loop (Shift: drehen = Beatjump, drücken = Reloop) · Load · Browse (drücken = Vorhören) · \
                 FX: D/W, Regler 1–3 = Filter/Delay/Reverb, Tasten 1–3 = an/aus, Mode = alle aus bzw. Delay-Zeit · FX-Zuweisung.
                 """)
-                .font(.callout).foregroundStyle(.secondary)
+                .settingsHint()
             }
-            Section("Letztes Ereignis") { Text(status.lastEvent.isEmpty ? "—" : status.lastEvent).font(.callout.monospaced()) }
+            Section("Letztes Ereignis") { Text(status.lastEvent.isEmpty ? "—" : status.lastEvent).font(Theme.mono(11)) }
         }
-        .formStyle(.grouped)
+    }
+
+    /// Beschriftung über/neben einem Geräte-Picker (gleiche Spalten in jedem Block)
+    private func deviceLabel(_ key: LocalizedStringKey) -> some View {
+        Text(key).font(Theme.label(10, .bold)).textCase(.uppercase).foregroundStyle(Theme.muted)
+            .frame(width: 70, alignment: .leading)
     }
 }
 

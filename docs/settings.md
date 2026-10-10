@@ -2,6 +2,15 @@
 
 everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 
+## ◆ LAYOUT
+
+* window resizable, min 720 × 520, default 820 × 640
+* sidebar left: DECKS · MIXER & FX · DISPLAY · AUDIO · CONTROLLER · TAGS, active section with red bar
+* page right, scrolls: `◆ SECTION` heading with hairline, rows with fixed label column left, control right
+* toggles as squares (red = on), sliders with value + unit (s, ms, pt), hints in small mono
+* controller: one block per unit (left / right deck, browser pane, fx unit, blink)
+* new section = one line in `SettingsView.tabs`
+
 ## ◆ DECKS
 
 * snap (cues, loops) and quant (jumps keep the phase)

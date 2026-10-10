@@ -219,6 +219,7 @@ struct MixApp: App {
                 .environment(store)
                 .environment(controllerStatus)
         }
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Collection öffnen …") {
@@ -323,9 +324,10 @@ case "de", "en": UserDefaults.standard.set([AppPrefs.load().ui.language], forKey
 default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
 }
 Theme.registerFonts()
+MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
 
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.
 NSApplication.shared.setActivationPolicy(.regular)
-NSApplication.shared.activate(ignoringOtherApps: true)
+if ProcessInfo.processInfo.environment["MIX741_SHOT"] == nil { NSApplication.shared.activate(ignoringOtherApps: true) }
 setAppIcon()
 MixApp.main()

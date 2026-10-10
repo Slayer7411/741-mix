@@ -59,12 +59,12 @@ struct TagColorSettings: View {
         Form {
             Section("Tags (Kommentar 2)") {
                 LabeledContent("Trennzeichen") {
-                    TextField("", text: $mix.prefs.ui.tagSeparators).font(Theme.mono(13)).frame(width: 80)
+                    TextField("", text: $mix.prefs.ui.tagSeparators).settingsField().frame(width: 80)
                 }
                 Toggle("Tags farbig markieren", isOn: $mix.prefs.ui.tagHighlight)
             }
             Section("Tag-Farben") {
-                TextField("Filtern", text: $filter)
+                TextField("Filtern", text: $filter).settingsField().frame(maxWidth: 260)
                 ForEach(list.prefix(300), id: \.key) { tag, n in
                     HStack {
                         Text(tag).font(Theme.mono(12)).padding(.horizontal, 3).background(TagColors.color(tag, mix.prefs.ui))
@@ -81,6 +81,5 @@ struct TagColorSettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
     }
 }

@@ -18,6 +18,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * ci: build + tests on every push and pull request, badge in the readme
 
 ### changed
+* settings window redone: sidebar instead of tabs, resizable (min 720 × 520), `◆` section headings, fixed label column, square toggles, slider values with units, one block per controller; selftest renders it offscreen (`MIX741_SHOT=settings:<folder>`)
 * reverb softer: input diffusion, damped and slowly modulated comb filters, gentle lowpass at the output -> no metallic ringing, made for blends
 * waveform: highs layer more visible (flat mapping of the high band, hats stay visible under kick and bass)
 * waveform: rendered as bitmap tiles around the playhead on a background thread, grid and cues stay vector layers -> the render server no longer redraws thousands of path points per frame (main thread spent ~65 % waiting for it, now ~0 %)
