@@ -36,12 +36,21 @@ struct DeckSettings: View {
         @Bindable var mix = mix
         Form {
             Section("Abspielen") {
-                Toggle("Quantize (Cues, Loops, Sprünge rasten auf Beats ein)", isOn: $mix.prefs.engine.quantize)
+                Toggle("Snap (Cues und Loop-Punkte rasten auf den Beat)", isOn: $mix.prefs.engine.snap)
+                Toggle("Quant (Sprünge halten die Beat-Phase)", isOn: $mix.prefs.engine.quantize)
                 Toggle("Hotcue-Sprung hält die Beat-Phase", isOn: $mix.prefs.engine.hotcueKeepsPhase)
                 Picker("Beim Laden springen zu", selection: $mix.prefs.engine.loadPosition) {
                     ForEach(LoadPosition.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 sliderRow("Track-Ende-Warnung (s, 0 = aus)", $mix.prefs.engine.trackEndWarning, 0...90, step: 5, format: "%.0f")
+            }
+            Section("Master-Clock & Metronom") {
+                Picker("Metronom auf Kanalpaar", selection: $mix.prefs.engine.metronomeChannel) {
+                    ForEach(Array(stride(from: 0, to: max(2, mix.deviceChannels - 1), by: 2)), id: \.self) { c in
+                        Text("\(c + 1)/\(c + 2)").tag(c)
+                    }
+                }
+                Text("im extern-modus z. b. auf das paar vom kopfhörer-cue legen -> klick nur auf dem kopfhörer").font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
             Section("Tempo & Sync") {
                 Toggle("Keylock beim ersten Laden an", isOn: $mix.prefs.engine.keylockDefault)

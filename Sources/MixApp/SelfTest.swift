@@ -44,6 +44,13 @@ enum SelfTest {
             Thread.sleep(forTimeInterval: 3)
             log(String(format: "Hauptthread 3 s blockiert: A lief %.2f s weiter, B folgt %.2f BPM, Phase %.4f",
                        core.position(0) - p0, core.snapshot().decks[1].bpm, core.phaseError(1) ?? .nan))
+            // Master-Clock: MINOS gibt das Tempo vor, B (Sync) folgt Tempo und Phase der Clock
+            core.setClockMaster(true)
+            core.setClockBPM(126)
+            try? await Task.sleep(for: .seconds(3))
+            log(String(format: "Clock-Master 126: B %.2f BPM, Phase zur Clock %.4f Beats, Clock-Beat %.2f",
+                       core.snapshot().decks[1].bpm, core.phaseError(1) ?? .nan, core.engine.clockBeat))
+            core.setClockMaster(false)
             core.autoLoop(0, size: 4)
             try? await Task.sleep(for: .seconds(4))
             let l = core.engine.loop(0), pos = core.position(0)

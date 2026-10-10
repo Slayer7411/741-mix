@@ -41,7 +41,7 @@ struct Knob: View {
                 .onEnded { _ in dragStart = nil })
             .onTapGesture(count: 2) { set(defaultValue) }
             if !label.isEmpty {
-                Text(label).font(Theme.label(8, .semibold)).foregroundStyle(Theme.muted).lineLimit(1)
+                Text(label).font(Theme.label(8, .semibold)).foregroundStyle(Theme.muted).lineLimit(1).fixedSize()
             }
         }
     }

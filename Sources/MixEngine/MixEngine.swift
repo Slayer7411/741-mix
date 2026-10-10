@@ -153,6 +153,15 @@ public final class MixEngine: @unchecked Sendable {
 
     public func setReverbSize(unit u: Int, _ size: Double) { mdsp_set_fx(core, Int32(u), MDFX_REVERB_SIZE, Float(size)) }
 
+    // MARK: - Master-Clock
+
+    public func setClockBPM(_ bpm: Double) { mdsp_clock_set_bpm(core, bpm) }
+    public func setClockBeat(_ beat: Double) { mdsp_clock_set_beat(core, beat) }
+    public var clockBeat: Double { mdsp_clock_beat(core) }
+    public func setMetronome(on: Bool, volume: Double, firstChannel: Int) {
+        mdsp_metronome(core, on, Float(volume), Int32(firstChannel))
+    }
+
     // MARK: - Pegel
 
     public final class Level: @unchecked Sendable {

@@ -184,8 +184,19 @@ struct Deck {
 
 } // namespace
 
+struct Clock {
+    std::atomic<double> bpm{128}, setBeat{NAN}, beatOut{0};
+    std::atomic<bool> metroOn{false};
+    std::atomic<float> metroVol{0.5f};
+    std::atomic<int> metroCh{0};
+    double beat = 0;
+    // Klick-Synthese (kurzer Sinus mit Abklingen)
+    double clickPhase = 0, clickFreq = 1000; float clickEnv = 0;
+};
+
 struct MDEngine {
     double fs;
+    Clock clock;
     Deck decks[MDSP_DECKS];
     std::atomic<float> fxp[MDSP_FX_UNITS][MDFX_PARAM_COUNT];
     std::atomic<float> master{0.85f};
@@ -454,13 +465,45 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
         done += n;
     }
     float m = e->master.load();
+    Clock &k = e->clock;
+    double sb = k.setBeat.exchange(NAN);
+    if (!std::isnan(sb)) k.beat = sb;
+    double perSample = k.bpm.load() / 60.0 / e->fs;
+    bool metro = k.metroOn.load();
+    float mv = k.metroVol.load();
+    int mc = std::clamp(k.metroCh.load(), 0, std::max(0, channels - 2));
     for (int i = 0; i < frames; i++) {
         e->masterSm += (m - e->masterSm) * 0.002f;
         for (int c = 0; c < channels; c++) {
             float x = out[c][i] * e->masterSm;
             out[c][i] = x > 1.f ? 1.f : (x < -1.f ? -1.f : x);   // harte Begrenzung als letzte Sicherung
         }
+        // Clock weiterzählen, bei jedem Beat klicken (Takt-Eins höher)
+        double before = k.beat;
+        k.beat += perSample;
+        if (std::floor(k.beat) != std::floor(before)) {
+            long b = long(std::floor(k.beat));
+            k.clickFreq = (b % 4 == 0) ? 1600 : 1000;
+            k.clickEnv = 1; k.clickPhase = 0;
+        }
+        if (metro && k.clickEnv > 0.001f) {
+            float c = float(std::sin(k.clickPhase)) * k.clickEnv * mv * 0.5f;
+            k.clickPhase += 2 * kPi * k.clickFreq / e->fs;
+            k.clickEnv *= 0.9985f;
+            out[mc][i] += c;
+            if (mc + 1 < channels) out[mc + 1][i] += c;
+        } else if (k.clickEnv > 0) {
+            k.clickEnv *= 0.9985f;
+        }
     }
+    k.beatOut.store(k.beat);
+}
+
+void mdsp_clock_set_bpm(MDEngine *e, double bpm) { e->clock.bpm.store(std::clamp(bpm, 20.0, 300.0)); }
+void mdsp_clock_set_beat(MDEngine *e, double beat) { e->clock.setBeat.store(beat); e->clock.beatOut.store(beat); }
+double mdsp_clock_beat(MDEngine *e) { return e->clock.beatOut.load(); }
+void mdsp_metronome(MDEngine *e, bool on, float volume, int ch) {
+    e->clock.metroOn.store(on); e->clock.metroVol.store(volume); e->clock.metroCh.store(ch);
 }
 
 } // extern "C"

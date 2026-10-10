@@ -16,7 +16,12 @@ public enum CrossfaderCurve: String, CaseIterable, Codable, Sendable {
 
 /// Einstellungen, die der Steuerkern braucht (alle in ⌘, änderbar)
 public struct EnginePrefs: Codable, Equatable, Sendable {
+    /// Quant: Sprünge (Hotcue, Loop, Beatjump) halten die Beat-Phase
     public var quantize = true
+    /// Snap: gesetzte Cues und Loop-Punkte rasten auf den nächsten Beat
+    public var snap = true
+    /// Metronom auf welches Kanalpaar (0-basiert)
+    public var metronomeChannel = 0
     public var keylockDefault = true
     public var tempoRangeDefault = 8.0
     public var autoGain = true
@@ -105,6 +110,12 @@ public struct MixState: Equatable, Sendable {
     }
     public var fx = [FXUnitState(), FXUnitState()]
     public var masterDeck: Int?
+    /// Master-Clock: im Clock-Modus gibt MINOS das Tempo vor (kein Deck ist Master)
+    public var clockMaster = false
+    public var clockBPM: Double = 128
+    public var metronome = false
+    public var metronomeVolume: Double = 0.5
+    public var linkEnabled = false
     public var crossfader: Double = 0
     public var masterVolume: Double = 0.85
     public var externalMixer = false
@@ -112,7 +123,14 @@ public struct MixState: Equatable, Sendable {
 
     public init() {}
 
+    /// Tempo, dem gesyncte Decks folgen (Clock oder Master-Deck)
+    public var masterTempo: Double {
+        if clockMaster { return clockBPM }
+        return effectiveMaster.map { decks[$0].bpm } ?? clockBPM
+    }
+
     public var effectiveMaster: Int? {
+        if clockMaster { return nil }
         if let m = masterDeck, decks[m].grid != nil { return m }
         return decks.indices.first { decks[$0].playing && !decks[$0].sync && decks[$0].grid != nil }
             ?? decks.indices.first { decks[$0].playing && decks[$0].grid != nil }
@@ -173,6 +191,7 @@ public final class MixController: @unchecked Sendable {
     public func setPrefs(_ p: EnginePrefs) {
         locked {
             state.prefs = p
+            engine.setMetronome(on: state.metronome, volume: state.metronomeVolume, firstChannel: p.metronomeChannel)
             applyAllMixer()
             applyAllFX()
         }
@@ -182,11 +201,19 @@ public final class MixController: @unchecked Sendable {
 
     // MARK: Positionen / Phase
 
-    public func phaseError(_ d: Int) -> Double? {
-        locked {
-            guard let m = state.effectiveMaster, m != d, let g = state.decks[d].grid, let mg = state.decks[m].grid else { return nil }
-            return BeatGrid.phaseError(own: g.beatPosition(at: position(d)), master: mg.beatPosition(at: position(m)))
-        }
+    public func phaseError(_ d: Int) -> Double? { locked { phaseErrorLocked(d) } }
+
+    /// Beat-Position, an der sich gesyncte Decks ausrichten (Clock oder Master-Deck)
+    private func masterBeat() -> Double? {
+        if state.clockMaster { return engine.clockBeat }
+        guard let m = state.effectiveMaster, let mg = state.decks[m].grid else { return nil }
+        return mg.beatPosition(at: position(m))
+    }
+
+    private func phaseErrorLocked(_ d: Int) -> Double? {
+        if !state.clockMaster, state.effectiveMaster == d { return nil }
+        guard let g = state.decks[d].grid, let mb = masterBeat() else { return nil }
+        return BeatGrid.phaseError(own: g.beatPosition(at: position(d)), master: mb)
     }
 
     // MARK: Laden
@@ -391,8 +418,9 @@ public final class MixController: @unchecked Sendable {
 
     private func beatLength(_ d: Int) -> Double { state.decks[d].grid?.beat ?? 0.5 }
 
+    /// Snap: Cue-/Loop-Punkte auf den nächsten Beat
     private func snapped(_ d: Int, _ t: Double) -> Double {
-        guard state.prefs.quantize, let g = state.decks[d].grid else { return t }
+        guard state.prefs.snap, let g = state.decks[d].grid else { return t }
         return g.nearestBeat(to: t)
     }
 
@@ -518,15 +546,67 @@ public final class MixController: @unchecked Sendable {
     }
 
     private func alignPhase(_ d: Int, hard: Bool) {
-        guard let m = state.effectiveMaster, m != d, let g = state.decks[d].grid, g.bpm > 0 else { return }
-        state.decks[d].tempoPct = (state.decks[m].bpm / g.bpm - 1) * 100
+        guard let g = state.decks[d].grid, g.bpm > 0 else { return }
+        if !state.clockMaster { guard let m = state.effectiveMaster, m != d else { return } }
+        state.decks[d].tempoPct = (state.masterTempo / g.bpm - 1) * 100
         state.decks[d].nudge = 0
         applyRate(d)
-        if hard, let mg = state.decks[m].grid {
-            let e = BeatGrid.phaseError(own: g.beatPosition(at: position(d)), master: mg.beatPosition(at: position(m)))
+        if hard, let e = phaseErrorLocked(d) {
             engine.seek(d, seconds: position(d) - e * g.beat)
         }
     }
+
+    // MARK: Master-Clock
+
+    /// Clock als Master an/aus. Beim Einschalten übernimmt sie Tempo und Phase des bisherigen Masters (kein Sprung).
+    public func setClockMaster(_ on: Bool) {
+        locked {
+            if on, !state.clockMaster, let m = state.effectiveMaster, let g = state.decks[m].grid {
+                state.clockBPM = state.decks[m].bpm
+                engine.setClockBPM(state.clockBPM)
+                engine.setClockBeat(g.beatPosition(at: position(m)))
+            }
+            state.clockMaster = on
+            if on { state.masterDeck = nil }
+        }
+    }
+
+    public func setClockBPM(_ bpm: Double) {
+        locked {
+            state.clockBPM = max(40, min(250, (bpm * 100).rounded() / 100))
+            engine.setClockBPM(state.clockBPM)
+        }
+    }
+
+    public func nudgeClock(_ delta: Double) { locked { setClockBPM(state.clockBPM + delta) } }
+
+    private var taps: [Date] = []
+    /// Tap-Tempo: Mittel der letzten Abstände (Pause > 2 s beginnt neu)
+    public func tap() {
+        locked {
+            let now = Date()
+            if let last = taps.last, now.timeIntervalSince(last) > 2 { taps.removeAll() }
+            taps.append(now)
+            if taps.count > 8 { taps.removeFirst() }
+            guard taps.count >= 3 else { return }
+            let span = taps.last!.timeIntervalSince(taps.first!) / Double(taps.count - 1)
+            if span > 0 {
+                setClockBPM(60 / span)
+                if !state.clockMaster { state.clockMaster = true; state.masterDeck = nil }
+                engine.setClockBeat(0)
+            }
+        }
+    }
+
+    public func setMetronome(_ on: Bool, volume: Double? = nil) {
+        locked {
+            state.metronome = on
+            if let v = volume { state.metronomeVolume = v }
+            engine.setMetronome(on: on, volume: state.metronomeVolume, firstChannel: state.prefs.metronomeChannel)
+        }
+    }
+
+    public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on } }
 
     /// Tempo an die Engine; steht das Deck, laufen Time-Stretch/Varispeed im Bypass (spart viel CPU im Leerlauf)
     private func applyRate(_ d: Int) {
@@ -616,16 +696,16 @@ public final class MixController: @unchecked Sendable {
                     state.decks[d].playing = p.playing
                     applyRate(d)
                 }
-                guard state.decks[d].sync, state.decks[d].playing, let m = master, m != d,
+                let hasMaster = state.clockMaster || (master != nil && master != d)
+                guard state.decks[d].sync, state.decks[d].playing, hasMaster,
                       let g = state.decks[d].grid, g.bpm > 0 else {
                     if state.decks[d].nudge != 0, !state.decks[d].sync { state.decks[d].nudge = 0; applyRate(d) }
                     continue
                 }
-                let target = (state.decks[m].bpm / g.bpm - 1) * 100
+                let target = (state.masterTempo / g.bpm - 1) * 100
                 var changed = abs(target - state.decks[d].tempoPct) > 0.0001
                 state.decks[d].tempoPct = target
-                if state.prefs.phaseLock, let mg = state.decks[m].grid {
-                    let e = BeatGrid.phaseError(own: g.beatPosition(at: position(d)), master: mg.beatPosition(at: position(m)))
+                if state.prefs.phaseLock, let e = phaseErrorLocked(d) {
                     if abs(e) > 0.2 {
                         engine.seek(d, seconds: position(d) - e * g.beat)
                         state.decks[d].nudge = 0
@@ -636,6 +716,13 @@ public final class MixController: @unchecked Sendable {
                     }
                 }
                 if changed { applyRate(d) }
+            }
+            // AUTO-Modus: Clock folgt Tempo und Phase des Master-Decks (für Metronom und Link)
+            if !state.clockMaster, let m = master, let g = state.decks[m].grid, state.decks[m].playing {
+                let bpm = state.decks[m].bpm
+                if abs(bpm - state.clockBPM) > 0.005 { state.clockBPM = bpm; engine.setClockBPM(bpm) }
+                let want = g.beatPosition(at: position(m))
+                if abs(BeatGrid.phaseError(own: engine.clockBeat, master: want)) > 0.02 { engine.setClockBeat(want) }
             }
             // History: hörbare Spielzeit zählen, ab Schwelle als gespielt melden
             var played: [(Int, Track, Date)] = []

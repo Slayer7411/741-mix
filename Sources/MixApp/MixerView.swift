@@ -146,7 +146,7 @@ struct FXUnitView: View {
     }
 }
 
-/// Obere Leiste: FX 1 · Master (Clock, Quantize, Lautstärke, Einstellungen) · FX 2
+/// Obere Leiste: FX 1 · Master-Clock (wie Traktor) · FX 2
 struct TopBar: View {
     @Environment(MixModel.self) private var mix
 
@@ -154,27 +154,75 @@ struct TopBar: View {
         HStack(spacing: 6) {
             if mix.prefs.ui.showFXUnits { FXUnitView(u: 0) }
             Spacer(minLength: 4)
-            HStack(spacing: 8) {
-                VStack(spacing: 0) {
-                    Text(mix.masterBPM > 0 ? String(format: "%.2f", mix.masterBPM) : "—")
-                        .font(Theme.mono(14, .bold))
-                    Text(mix.effectiveMaster.map { "MASTER " + deckLetters[$0] } ?? "KEIN MASTER")
-                        .font(Theme.label(9, .medium)).foregroundStyle(.secondary)
-                }
-                DeckButton(title: "Q", active: mix.prefs.engine.quantize, color: Theme.state, width: 18) { mix.toggleQuantize() }
-                    .help("Quantize: Cues, Loops und Sprünge rasten auf Beats ein")
-                Knob(value: Binding(get: { mix.state.masterVolume }, set: { mix.setMasterVolume($0) }), range: 0...1,
-                     defaultValue: 0.85, label: "MAIN", size: 24)
-                SettingsLink { Text("⚙︎").font(Theme.mono(14)).foregroundStyle(Theme.bone) }
-                    .buttonStyle(.borderless)
-                    .help("Einstellungen (⌘,)")
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Rectangle().fill(Theme.deck))
-            .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+            MasterClockPanel()
             Spacer(minLength: 4)
             if mix.prefs.ui.showFXUnits { FXUnitView(u: 1) }
         }
+    }
+}
+
+/// Master-Clock: LINK, AUTO/MASTER, Tempo mit −/+ und Tap, Metronom, Snap/Quant, Hauptlautstärke
+struct MasterClockPanel: View {
+    @Environment(MixModel.self) private var mix
+    @State private var dragStart: Double?
+
+    var body: some View {
+        let s = mix.state
+        HStack(spacing: 6) {
+            DeckButton(title: "LINK", active: s.linkEnabled, color: Theme.secondary, width: 30) { mix.toggleLink() }
+                .help("Ableton Link: MINOS gibt das Tempo vor")
+            VStack(spacing: 2) {
+                DeckButton(title: "AUTO", active: !s.clockMaster, width: 40) { mix.setClockMaster(false) }
+                    .help("Ein Deck ist Master (automatisch oder per MASTER-Taste)")
+                DeckButton(title: "MASTER", active: s.clockMaster, color: Theme.secondary, width: 40) { mix.setClockMaster(true) }
+                    .help("Clock ist Master: MINOS gibt das Tempo vor, gesyncte Decks folgen")
+            }
+            VStack(spacing: 0) {
+                Text(String(format: "%.2f", mix.masterBPM))
+                    .font(Theme.mono(17, .semibold))
+                    .foregroundStyle(s.clockMaster ? Theme.secondary : Theme.bone)
+                    .gesture(DragGesture(minimumDistance: 1)
+                        .onChanged { g in
+                            // ziehen: 1 BPM pro 20 pt; schaltet auf Clock-Master
+                            if dragStart == nil { dragStart = mix.masterBPM; mix.setClockMaster(true) }
+                            mix.setClockBPM((dragStart ?? 128) - Double(g.translation.height) / 20)
+                        }
+                        .onEnded { _ in dragStart = nil })
+                    .help("ziehen = Tempo ändern")
+                Text(s.clockMaster ? "CLOCK" : (mix.effectiveMaster.map { "DECK " + deckLetters[$0] } ?? "KEIN MASTER"))
+                    .font(Theme.label(8)).foregroundStyle(Theme.muted)
+            }
+            .frame(width: 66)
+            VStack(spacing: 2) {
+                HStack(spacing: 2) {
+                    DeckButton(title: "−", width: 12) { mix.setClockMaster(true); mix.nudgeClock(-0.1) }
+                    DeckButton(title: "+", width: 12) { mix.setClockMaster(true); mix.nudgeClock(0.1) }
+                }
+                DeckButton(title: "TAP", width: 34) { mix.tap() }
+            }
+            Text("│").foregroundStyle(Theme.hairline)
+            VStack(spacing: 2) {
+                DeckButton(title: "TICK", active: s.metronome, width: 30) { mix.setMetronome(!s.metronome) }
+                    .help("Metronom auf dem Beat der Clock")
+            }
+            Knob(value: Binding(get: { mix.state.metronomeVolume }, set: { mix.setMetronome(mix.state.metronome, volume: $0) }),
+                 range: 0...1, defaultValue: 0.5, label: "TICK", size: 20)
+            Text("│").foregroundStyle(Theme.hairline)
+            VStack(spacing: 2) {
+                DeckButton(title: "S", active: mix.prefs.engine.snap, width: 14) { mix.toggleSnap() }
+                    .help("Snap: Cues und Loop-Punkte rasten auf den Beat")
+                DeckButton(title: "Q", active: mix.prefs.engine.quantize, width: 14) { mix.toggleQuantize() }
+                    .help("Quant: Sprünge halten die Beat-Phase")
+            }
+            Knob(value: Binding(get: { mix.state.masterVolume }, set: { mix.setMasterVolume($0) }), range: 0...1,
+                 defaultValue: 0.85, label: "MAIN", size: 24)
+            SettingsLink { Text("⚙︎").font(Theme.mono(14)).foregroundStyle(Theme.bone) }
+                .buttonStyle(.borderless)
+                .help("Einstellungen (⌘,)")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Rectangle().fill(Theme.deck))
+        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
     }
 }

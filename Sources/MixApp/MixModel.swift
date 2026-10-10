@@ -92,7 +92,7 @@ final class MixModel {
     func audio(_ d: Int) -> TrackAudio? { core.trackAudio(d) }
     func phaseError(_ d: Int) -> Double? { core.phaseError(d) }
     var effectiveMaster: Int? { state.effectiveMaster }
-    var masterBPM: Double { state.effectiveMaster.map { state.decks[$0].bpm } ?? 0 }
+    var masterBPM: Double { state.masterTempo }
     var showFourDecks: Bool { prefs.ui.showFourDecks }
 
     func keyText(_ d: Int) -> String {
@@ -136,6 +136,13 @@ final class MixModel {
         UserDefaults.standard.set(v, forKey: "masterVolume")
     }
     func toggleQuantize() { prefs.engine.quantize.toggle() }
+    func toggleSnap() { prefs.engine.snap.toggle() }
+    func setClockMaster(_ on: Bool) { run { core.setClockMaster(on) } }
+    func nudgeClock(_ d: Double) { run { core.nudgeClock(d) } }
+    func setClockBPM(_ v: Double) { run { core.setClockBPM(v) } }
+    func tap() { run { core.tap() } }
+    func setMetronome(_ on: Bool, volume: Double? = nil) { run { core.setMetronome(on, volume: volume) } }
+    func toggleLink() { run { core.setLinkEnabled(!state.linkEnabled) } }
 
     // MARK: - Audio-Setup
 

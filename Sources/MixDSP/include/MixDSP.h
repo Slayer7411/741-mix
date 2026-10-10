@@ -67,6 +67,12 @@ bool mdsp_loop(MDEngine *e, int deck, double *start, double *end);
 bool mdsp_playing(MDEngine *e, int deck);          // false nach Track-Ende
 void mdsp_levels(MDEngine *e, int deck, float *rms, float *peak);
 
+/// Master-Clock im Kern (gleiche Zeitbasis wie das Audio): BPM, Beat-Position, Metronom
+void mdsp_clock_set_bpm(MDEngine *e, double bpm);
+void mdsp_clock_set_beat(MDEngine *e, double beat);   // Phase neu setzen (übernimmt der nächste Block)
+double mdsp_clock_beat(MDEngine *e);
+void mdsp_metronome(MDEngine *e, bool on, float volume, int firstChannel);
+
 /// Direkt rendern (Tests/Offline): out[ch][frame]
 void mdsp_render(MDEngine *e, float **out, int channels, int frames);
 
