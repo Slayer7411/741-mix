@@ -108,7 +108,30 @@ struct DeckView: View {
             Divider().frame(height: 14)
             DeckButton(title: "SET") { mix.setGridAnchorHere(d) }.help("Beat 1 an die aktuelle Position")
             DeckButton(title: "RESET") { mix.resetGrid(d) }.help("Grid aus der Collection")
+            // Anker um ganze Beats/Takte: Raster bleibt, nur Takt- und Phrasenzählung wandert; schmale Decks: weniger Knöpfe
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 3) { Divider().frame(height: 14); anchorButtons([-4, -1, 1, 4]); phraseButton(deck, short: false) }
+                HStack(spacing: 3) { Divider().frame(height: 14); anchorButtons([-1, 1]); phraseButton(deck, short: true) }
+                phraseButton(deck, short: true)
+            }
             Spacer(minLength: 0)
+        }
+    }
+
+    private func anchorButtons(_ steps: [Int]) -> some View {
+        ForEach(steps, id: \.self) { n in
+            DeckButton(title: n < 0 ? "◂\(-n)" : "\(n)▸") { mix.shiftGridBeats(d, n) }
+                .help(LocalizedStringKey(n == -4 ? "Grid-Anker 1 Takt früher (Raster bleibt)" : n == 4 ? "Grid-Anker 1 Takt später (Raster bleibt)"
+                             : n < 0 ? "Grid-Anker 1 Beat früher (Raster bleibt)" : "Grid-Anker 1 Beat später (Raster bleibt)"))
+        }
+    }
+
+    /// Phrasen-Anker-Vorschlag (rot), Klick verschiebt den Anker um die vorgeschlagenen Beats
+    @ViewBuilder private func phraseButton(_ deck: DeckState, short: Bool) -> some View {
+        if let n = deck.phraseSuggestion {
+            let v = n > 0 ? "+\(n)" : "\u{2212}\(-n)"
+            DeckButton(title: short ? "PHR \(v)" : "PHRASE \(v)", active: true, color: Theme.state) { mix.applyPhraseAnchor(d) }
+                .help(String(localized: "Phrasen-Anker: Strukturwechsel liegen \(n) Beats neben den 8-Takt-Grenzen – Klick verschiebt den Anker (Sicherheit \(String(format: "%.2f", deck.phraseConfidence)))"))
         }
     }
 
@@ -341,6 +364,7 @@ enum DeckShot {
         for (w, h, loop) in [(640.0, 300.0, false), (480.0, 260.0, true)] {
             mix.updateDeck(0) {
                 $0.track = t; $0.duration = 300; $0.grid = BeatGrid(anchor: 1, bpm: 128)
+                $0.phraseTarget = 1 - 60.0 / 128   // Phrasen-Vorschlag −1 (roter PHRASE-Knopf in der Grid-Zeile)
                 $0.hotcues = Dictionary(uniqueKeysWithValues: cues.map { ($0.hotcue, $0) })
                 $0.loopSize = 8; $0.jumpSize = 4; $0.loopActive = loop
             }

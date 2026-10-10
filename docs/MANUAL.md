@@ -174,6 +174,18 @@ grid row (`GRID`):
 | ÷2 ×2 | half / double bpm |
 | SET | beat 1 at the play position |
 | RESET | grid from the collection |
+| ◂4 ◂1 1▸ 4▸ | anchor 1 bar / 1 beat earlier or later -> grid lines and bpm stay, only bars and phrases are renumbered |
+| PHRASE +n | (red, only with a suggestion) move the anchor by the suggested beats |
+
+narrow decks show fewer anchor buttons (◂1 1▸, then only `PHR +n`).
+
+phrase anchor:
+
+* the collection anchor often sits on the first audible hit -> a cut first hit or a pickup beat shifts bars and 8-bar phrases by 1-3 beats, the code readout and phrase lines are off
+* on load the track is checked in the background (~0.1 s after decoding): spectrum per beat (13 bands) -> change curve over 1 / 2 / 4 bars -> structural changes (elements in / out, breakdown, drop) -> the anchor shift in whole beats (−15 … +16) that puts most of them on 8-bar boundaries, 4-bar and bar boundaries count less
+* no clear evidence -> no change (confidence < 0.3, fewer than 4 changes or fewer than 3 on phrase boundaries)
+* setting `align grid anchor to phrases`: off / suggest (default, red `PHRASE +n` in the grid row) / automatic (anchor moves on load, `MIX741_DEBUG=1` logs `[phrase] deck n: anchor +k beats (conf x)`)
+* stored like every grid edit in minos's own edits (`edits.json`), never in the collection; bpm and grid lines stay. the start cue stays at the collection anchor
 
 ## ◆ 06 · SYNC / CLOCK / LINK
 

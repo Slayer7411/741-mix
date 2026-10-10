@@ -294,6 +294,13 @@ struct DeckSettings: View {
                 sliderRow("Pitch-Bend-Stärke", $mix.prefs.engine.bendAmount, 0.01...0.12, format: "%.2f")
                 sliderRow("Link-Versatz (ms)", $mix.prefs.engine.linkOffsetMs, -50...50, step: 1, format: "%+.0f", unit: "ms")
             }
+            Section("Phrasen-Anker") {
+                Picker("Grid-Anker auf Phrasen ausrichten", selection: $mix.prefs.engine.phraseAnchor) {
+                    ForEach(PhraseAnchorMode.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                Text("beim laden prüft minos, ob die strukturwechsel des tracks auf 8-takt-grenzen ab dem grid-anker liegen. vorschlagen -> roter phrase-knopf in der grid-zeile, automatisch -> anker wird um ganze beats verschoben. bpm und raster bleiben, gespeichert in den eigenen änderungen, nie in der collection.")
+                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
+            }
             Section("Loops & Beatjump") {
                 Picker("Loopgröße (Standard)", selection: $mix.prefs.engine.defaultLoopSize) {
                     ForEach(BeatSizes.loop, id: \.self) { Text(BeatSizes.label($0)).tag($0) }

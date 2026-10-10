@@ -57,6 +57,8 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var reverbPreDelayMs = 15.0
     /// Track gilt als gespielt (History), wenn er so viele Sekunden hörbar lief
     public var historyThreshold = 30.0
+    /// Grid-Anker beim Laden auf Takt-/Phrasenanfang prüfen (aus / vorschlagen / automatisch verschieben)
+    public var phraseAnchor = PhraseAnchorMode.suggest
     public init() {}
 }
 
@@ -66,6 +68,9 @@ public struct DeckState: Equatable, Sendable {
     public var loading = false
     public var error: String?
     public var grid: BeatGrid?
+    /// Phrasen-Anker-Vorschlag: Ankerzeit (s), auf der die Strukturwechsel auf 8-Takt-Grenzen fallen, und Sicherheit
+    public var phraseTarget: Double?
+    public var phraseConfidence = 0.0
 
     public var playing = false
     public var cuePoint: Double = 0
@@ -324,6 +329,7 @@ public final class MixController: @unchecked Sendable {
             let p = state.prefs
             s.track = t
             s.grid = BeatGrid(track: t)
+            s.phraseTarget = nil
             s.duration = a.duration
             s.hotcues = Dictionary(t.hotcues.map { ($0.hotcue, $0) }, uniquingKeysWith: { x, _ in x })
             let loadCue = (t.cues.first { $0.kind == .load }?.startMs ?? t.gridAnchorMs ?? 0) / 1000
@@ -366,6 +372,34 @@ public final class MixController: @unchecked Sendable {
             return (old, gen)
         }
         releaseWhenFree(old, deck: d, gen: gen)
+        analyzePhrase(d, a)
+    }
+
+    /// Phrasen-Anker im Hintergrund prüfen; gilt nur, solange derselbe Track mit demselben Grid im Deck liegt
+    private func analyzePhrase(_ d: Int, _ a: TrackAudio) {
+        guard let (mode, grid) = locked({ () -> (PhraseAnchorMode, BeatGrid)? in
+            guard state.prefs.phraseAnchor != .off, let g = state.decks[d].grid, g.bpm > 0 else { return nil }
+            return (state.prefs.phraseAnchor, g)
+        }) else { return }
+        DispatchQueue.global(qos: .utility).async { [self] in
+            let r = PhraseAnchor.analyze(a, grid: grid)
+            guard r.suggests else { return }
+            let applied: Bool = locked {
+                guard audio[d] === a, state.decks[d].grid == grid else { return false }
+                if mode == .auto {
+                    state.decks[d].grid?.anchor += Double(r.shiftBeats) * grid.beat
+                } else {
+                    state.decks[d].phraseTarget = grid.anchor + Double(r.shiftBeats) * grid.beat
+                    state.decks[d].phraseConfidence = r.confidence
+                }
+                return true
+            }
+            if applied, ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1" {
+                print(String(format: "[phrase] deck %d: %@ %+d beats (conf %.2f)", d, mode == .auto ? "anchor" : "suggest",
+                             r.shiftBeats, r.confidence))
+                fflush(stdout)
+            }
+        }
     }
 
     /// alten Puffer halten, bis der Audio-Thread den neuen übernommen hat – ohne Zeitlimit
@@ -732,6 +766,23 @@ public final class MixController: @unchecked Sendable {
             } else if let t = state.decks[d].track, t.bpm > 0 {
                 state.decks[d].grid = BeatGrid(anchor: pos, bpm: t.bpm)
             }
+        }
+    }
+
+    /// Anker um ganze Beats verschieben (+ = später): Raster und BPM bleiben, nur die Takt-/Phrasenzählung wandert
+    public func shiftGridBeats(_ d: Int, _ n: Int) {
+        locked {
+            guard var g = state.decks[d].grid, g.bpm > 0 else { return }
+            g.anchor += Double(n) * g.beat
+            state.decks[d].grid = g
+        }
+    }
+
+    /// Phrasen-Anker-Vorschlag übernehmen
+    public func applyPhraseAnchor(_ d: Int) {
+        locked {
+            guard let n = state.decks[d].phraseSuggestion else { return }
+            shiftGridBeats(d, n)
         }
     }
 

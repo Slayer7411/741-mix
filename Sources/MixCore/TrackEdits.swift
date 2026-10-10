@@ -17,6 +17,13 @@ public struct TrackEdit: Codable, Equatable, Sendable {
         var t = t
         if let b = bpm { t.bpm = b }
         if let a = gridAnchorMs {
+            // Anker nur um ganze Beats umnummeriert (Phrasen-Anker): Start-Cue bleibt am alten Anker
+            if let old = t.gridAnchorMs, t.bpm > 0, !t.cues.contains(where: { $0.kind == .load }) {
+                let beats = (a - old) / (60_000 / t.bpm)
+                if abs(beats) >= 0.5, abs(beats - beats.rounded()) * 60_000 / t.bpm < 5 {
+                    t.cues.append(Cue(name: "Load", kind: .load, startMs: old, lengthMs: 0, hotcue: -1))
+                }
+            }
             if let i = t.cues.firstIndex(where: { $0.kind == .grid }) { t.cues[i].startMs = a }
             else { t.cues.append(Cue(name: "Grid", kind: .grid, startMs: a, lengthMs: 0, hotcue: -1)) }
         }
