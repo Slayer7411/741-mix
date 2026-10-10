@@ -431,7 +431,7 @@ BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION. read o
 * window like an old installer: progress `n / total · % · time · ~left`, the current file ticking by, the log rattling down (`OK   …/file.mp3`, `MISS …`), counters per check
 * ABBRECHEN stops at once, the findings so far stay. a file that hangs on a cloud drive finishes in the background, its result is dropped
 * after the run: FINDINGS table, click a counter = filter. right click / double click -> show in browser (selects the track in TRACK COLLECTION), show in finder, copy path. REPORT TXT / CSV
-* the log keeps the last 2000 lines, the findings table keeps all
+* while running the log shows the newest lines (redrawn at most 10× per second), afterwards the last 2000 lines to scroll back. the findings table keeps all
 * paths below the music folder show as `…/`
 
 | tag | check | |

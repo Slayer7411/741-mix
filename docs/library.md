@@ -30,7 +30,7 @@
 
 * ↻ / ⌘O: everything heavy runs in the background (parse, file check, own edits, indices, sorting of the lists both panes show), the main thread only takes the result
 * unchanged tracks and playlists keep their identity -> the lists do not rebuild when nothing changed
-* 14,160 tracks, two panes: longest ui stall 1.3 s -> under 30 ms (unchanged collection), ~0.3 s with changed entries
+* 14,160 tracks, two panes: longest ui stall 1.3 s -> under 30 ms (unchanged collection), 1.5 -> 0.3 s with changed entries
 
 ## ◆ EDIT TRACKS
 
