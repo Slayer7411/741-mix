@@ -20,6 +20,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Resources"
 cp "$BIN/minos741" "$APP/Contents/MacOS/MINOS-741"
 cp -R Sources/MixApp/Resources/. "$APP/Contents/Resources/Resources/"
 cp -R Localization/. "$APP/Contents/Resources/"
+# Lizenzhinweise der fremden Bibliotheken (VST 3 SDK: MIT-Text + Markenhinweis) mit ausliefern
+cp THIRD-PARTY-NOTICES.md "$APP/Contents/Resources/"
 
 # Icon: AppIcon.png -> AppIcon.icns
 ICONSET=build/AppIcon.iconset
