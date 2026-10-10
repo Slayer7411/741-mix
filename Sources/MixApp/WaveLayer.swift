@@ -82,6 +82,7 @@ final class WaveLayerNSView: NSView {
     private var tileGen = 0
 
     private static let ruler: CGFloat = 14
+    private static let playheadWidth: CGFloat = 2.5
     private static let monoBold = CTFontCreateWithName("IBMPlexMono-SemiBold" as CFString, 9, nil)
 
     override init(frame: NSRect) {
@@ -95,9 +96,9 @@ final class WaveLayerNSView: NSView {
         layer?.masksToBounds = true
         layer?.backgroundColor = NSColor(Theme.wave).cgColor
         strip.anchorPoint = .zero
-        loopLayer.backgroundColor = NSColor(Theme.state).withAlphaComponent(0.14).cgColor
+        loopLayer.backgroundColor = NSColor(Theme.state).withAlphaComponent(0.2).cgColor
         loopLayer.borderColor = NSColor(Theme.state).cgColor
-        loopLayer.borderWidth = 1
+        loopLayer.borderWidth = 1.5
         loopLayer.isHidden = true
         dim.backgroundColor = NSColor.black.withAlphaComponent(0.32).cgColor
         playhead.backgroundColor = NSColor(Theme.state).cgColor
@@ -154,7 +155,7 @@ final class WaveLayerNSView: NSView {
         content.frame = bounds
         dim.frame = CGRect(x: 0, y: 0, width: w / 2, height: h)
         dim.isHidden = !scene.dimPlayed || !scene.hasTrack
-        playhead.frame = CGRect(x: (w / 2 - 1).rounded(), y: 0, width: 2, height: h)
+        playhead.frame = CGRect(x: px(Double(w / 2) - Self.playheadWidth / 2), y: 0, width: Self.playheadWidth, height: h)
         playhead.isHidden = !scene.hasTrack
         countdown.isHidden = true
         strip.isHidden = !scene.hasTrack
@@ -184,6 +185,14 @@ final class WaveLayerNSView: NSView {
 
     private func px(_ v: Double) -> CGFloat { (CGFloat(v) * scale).rounded() / scale }
 
+    /// senkrechte Linie um x: Breite in Punkten auf ganze Gerätepixel gerundet, an Pixelkanten ausgerichtet
+    /// (x liegt auf einer Kante; eine halb überlappende Haarlinie würde sonst auf zwei Pixel verwischen)
+    private func line(_ x: CGFloat, width: CGFloat, y: CGFloat, height: CGFloat) -> CGRect {
+        let hair = 1 / scale
+        let n = max(1, (width * scale).rounded())
+        return CGRect(x: x - (n / 2).rounded(.down) * hair, y: y, width: n * hair, height: height)
+    }
+
     private func shape(_ path: CGPath, _ color: NSColor) -> CAShapeLayer {
         let s = CAShapeLayer()
         s.actions = Self.noAnimation
@@ -206,7 +215,7 @@ final class WaveLayerNSView: NSView {
 
     private func buildGrid(_ g: BeatGrid, h: CGFloat) {
         let r = Self.ruler
-        let bone = NSColor(Theme.bone), lila = NSColor(Theme.secondary), muted = NSColor(Theme.muted)
+        let bone = NSColor(Theme.bone), lila = NSColor(Theme.secondary)
         let phrase = max(4, scene.phraseBeats)
         let first = Int(g.beatPosition(at: 0).rounded(.up))
         let last = Int(g.beatPosition(at: scene.duration).rounded(.down))
@@ -214,7 +223,6 @@ final class WaveLayerNSView: NSView {
         let bands = CGMutablePath(), beats = CGMutablePath(), bars = CGMutablePath(), phrases = CGMutablePath()
         let tris = CGMutablePath(), ptris = CGMutablePath(), ticks = CGMutablePath()
         let caps = CGMutablePath(), barCaps = CGMutablePath()
-        let hair = 1 / scale   // ein Gerätepixel
         let m8 = CGMutablePath(), m16 = CGMutablePath(), m32 = CGMutablePath()
         let magenta = NSColor(srgbRed: 0.88, green: 0.22, blue: 0.78, alpha: 1)
         let labels = CALayer()
@@ -230,33 +238,33 @@ final class WaveLayerNSView: NSView {
             let barIdx = b / 4
             let mark = scene.barMarkers && inBar == 0 ? (barIdx % 32 == 0 ? 32 : barIdx % 16 == 0 ? 16 : barIdx % 8 == 0 ? 8 : 0) : 0
             if mark > 0 {
-                let mw: CGFloat = mark == 32 ? 4 : mark == 16 ? 3 : 2
-                (mark == 32 ? m32 : mark == 16 ? m16 : m8).addRect(CGRect(x: x - mw / 2, y: r, width: mw, height: h - r))
+                let mw: CGFloat = mark == 32 ? 4.5 : mark == 16 ? 3.5 : 2.5
+                (mark == 32 ? m32 : mark == 16 ? m16 : m8).addRect(line(x, width: mw, y: r, height: h - r))
             } else if isPhrase {
-                phrases.addRect(CGRect(x: x - 1, y: r, width: 2, height: h - r))
+                phrases.addRect(line(x, width: 2.5, y: r, height: h - r))
             } else if inBar == 0 {
-                bars.addRect(CGRect(x: x - hair, y: r, width: hair * 2, height: h - r))
+                bars.addRect(line(x, width: 1.5, y: r, height: h - r))
             } else {
-                beats.addRect(CGRect(x: x - hair / 2, y: r, width: hair, height: h - r))
+                beats.addRect(line(x, width: 1, y: r, height: h - r))
             }
             if inBar == 0 {
                 let tp = isPhrase ? ptris : tris
-                tp.move(to: CGPoint(x: x - 5, y: r)); tp.addLine(to: CGPoint(x: x + 5, y: r))
-                tp.addLine(to: CGPoint(x: x, y: r + 6)); tp.closeSubpath()
+                tp.move(to: CGPoint(x: x - 6, y: r)); tp.addLine(to: CGPoint(x: x + 6, y: r))
+                tp.addLine(to: CGPoint(x: x, y: r + 7)); tp.closeSubpath()
                 let perPhrase = phrase / 4
                 let barInPhrase = (((b / 4) % perPhrase) + perPhrase) % perPhrase + 1
                 let label = mark > 0 ? "\(mark)" : isPhrase ? "P\(b / phrase + 1)" : (scene.barNumbers ? "\(barInPhrase)" : "")
                 if !label.isEmpty {
-                    labels.addSublayer(text(label, mark > 0 ? magenta : isPhrase ? lila : bone.withAlphaComponent(0.85), at: CGPoint(x: x + 3, y: 1)))
+                    labels.addSublayer(text(label, mark > 0 ? magenta : isPhrase ? lila : bone, at: CGPoint(x: x + 3, y: 1)))
                 }
             } else {
-                ticks.addRect(CGRect(x: x - 0.5, y: r - 4, width: 1, height: 4))
+                ticks.addRect(line(x, width: 1, y: r - 5, height: 5))
             }
             // Kappen oben und unten (Takt breiter)
-            let cw: CGFloat = inBar == 0 ? 7 : 5
+            let cw: CGFloat = inBar == 0 ? 8 : 6
             let cap = inBar == 0 ? barCaps : caps
-            cap.addRect(CGRect(x: x - cw / 2, y: r, width: cw, height: 1.5))
-            cap.addRect(CGRect(x: x - cw / 2, y: h - 1.5, width: cw, height: 1.5))
+            cap.addRect(CGRect(x: x - cw / 2, y: r, width: cw, height: 2))
+            cap.addRect(CGRect(x: x - cw / 2, y: h - 2, width: cw, height: 2))
         }
         let rulerBG = CALayer()
         rulerBG.actions = Self.noAnimation
@@ -264,22 +272,22 @@ final class WaveLayerNSView: NSView {
         rulerBG.frame = CGRect(x: 0, y: 0, width: strip.bounds.width, height: r)
         gridLayer.addSublayer(shape(bands, lila.withAlphaComponent(0.08)))
         gridLayer.addSublayer(rulerBG)
-        gridLayer.addSublayer(shape(beats, bone.withAlphaComponent(0.55)))
+        gridLayer.addSublayer(shape(beats, bone.withAlphaComponent(0.6)))
         gridLayer.addSublayer(shape(bars, bone))
-        gridLayer.addSublayer(shape(caps, bone.withAlphaComponent(0.7)))
+        gridLayer.addSublayer(shape(caps, bone.withAlphaComponent(0.85)))
         gridLayer.addSublayer(shape(barCaps, bone))
         gridLayer.addSublayer(shape(phrases, lila))
-        gridLayer.addSublayer(shape(m8, magenta.withAlphaComponent(0.7)))
-        gridLayer.addSublayer(shape(m16, magenta.withAlphaComponent(0.9)))
+        gridLayer.addSublayer(shape(m8, magenta.withAlphaComponent(0.8)))
+        gridLayer.addSublayer(shape(m16, magenta.withAlphaComponent(0.95)))
         gridLayer.addSublayer(shape(m32, magenta))
-        gridLayer.addSublayer(shape(ticks, muted))
+        gridLayer.addSublayer(shape(ticks, bone.withAlphaComponent(0.6)))
         gridLayer.addSublayer(shape(tris, bone))
         gridLayer.addSublayer(shape(ptris, lila))
         gridLayer.addSublayer(labels)
         // Grid-Anker
         let ax = px(g.anchor * pps)
         let anchor = CGMutablePath()
-        anchor.addRect(CGRect(x: ax - 1, y: 0, width: 2, height: h))
+        anchor.addRect(line(ax, width: 2.5, y: 0, height: h))
         anchor.addRect(CGRect(x: ax, y: r, width: 10, height: 10))
         gridLayer.addSublayer(shape(anchor, bone))
         gridLayer.addSublayer(text("G", .black, at: CGPoint(x: ax + 1.5, y: r - 1), size: 8))
@@ -290,15 +298,15 @@ final class WaveLayerNSView: NSView {
         for c in scene.cues {
             let x = px(c.t * pps)
             let p = CGMutablePath()
-            p.addRect(CGRect(x: x - 1, y: 0, width: 2, height: h))
+            p.addRect(line(x, width: 2.5, y: 0, height: h))
             p.addRect(CGRect(x: x, y: h - 26, width: 13, height: 12))
             cueLayer.addSublayer(shape(p, c.color))
             cueLayer.addSublayer(text("\(c.number)", .black, at: CGPoint(x: x + 3, y: h - 27), size: 9))
         }
         let cx = px(scene.cuePoint * pps)
         let tri = CGMutablePath()
-        tri.move(to: CGPoint(x: cx - 5, y: h)); tri.addLine(to: CGPoint(x: cx + 5, y: h))
-        tri.addLine(to: CGPoint(x: cx, y: h - 8)); tri.closeSubpath()
+        tri.move(to: CGPoint(x: cx - 6, y: h)); tri.addLine(to: CGPoint(x: cx + 6, y: h))
+        tri.addLine(to: CGPoint(x: cx, y: h - 9)); tri.closeSubpath()
         cueLayer.addSublayer(shape(tri, NSColor(Theme.bone)))
     }
 
@@ -381,7 +389,8 @@ final class WaveLayerNSView: NSView {
             lastLoop = (l.active, l.start, l.end)
             loopLayer.isHidden = !l.active
             if l.active {
-                loopLayer.frame = CGRect(x: CGFloat(l.start * pps), y: 0, width: CGFloat((l.end - l.start) * pps), height: bounds.height)
+                let x0 = px(l.start * pps), x1 = px(l.end * pps)
+                loopLayer.frame = CGRect(x: x0, y: 0, width: x1 - x0, height: bounds.height)
             }
         }
         if !countdown.isHidden, let g = scene.grid {

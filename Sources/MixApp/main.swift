@@ -324,6 +324,11 @@ default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
 }
 Theme.registerFonts()
 
+// Selbsttest, nur Bild: MIX741_SHOT=wave:<png> rendert die Wellenform-Ebene offscreen und beendet – kein Fenster
+if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("wave:") {
+    MainActor.assumeIsolated { WaveShot.run(path: String(shot.dropFirst(5))) }
+}
+
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.
 NSApplication.shared.setActivationPolicy(.regular)
 NSApplication.shared.activate(ignoringOtherApps: true)

@@ -19,6 +19,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ### changed
 * reverb softer: input diffusion, damped and slowly modulated comb filters, gentle lowpass at the output -> no metallic ringing, made for blends
+* waveform: markers slightly stronger -> loop frame 1.5 pt + denser tint, play head, cues, phrases, anchor and 8/16/32 markers +0.5 pt, beat lines on whole pixels, ruler ticks, caps and bar numbers brighter. check without a window: selftest + `MIX741_SHOT=wave:<png>`
 * waveform: highs layer more visible (flat mapping of the high band, hats stay visible under kick and bass)
 * waveform: rendered as bitmap tiles around the playhead on a background thread, grid and cues stay vector layers -> the render server no longer redraws thousands of path points per frame (main thread spent ~65 % waiting for it, now ~0 %)
 * decks get an explicit height -> swiftui layout per state change 190 ms -> ~50 ms with 4 decks (two flexible decks per column made every button press freeze the ui); each deck mirrors its own state -> a change on deck A no longer re-renders B, C, D

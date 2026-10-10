@@ -155,7 +155,8 @@ A  title                 FX1 FX2    -1:10  130.00   11m   ±8 ▾
 
 beatgrid:
 
-* hairline beats, bar lines with caps top and bottom, bar numbers on the ruler
+* thin beat lines, stronger bar lines with caps top and bottom, bar numbers on the ruler
+* loop: red frame + tint, cues: line in their color + numbered flag, play head red
 * phrases (16 / 32 / 64 / 128 beats) in purple, phrase countdown at the play head (`P3 · 16 T`)
 * magenta markers every 8 / 16 / 32 bars (setting)
 
@@ -341,6 +342,8 @@ self test (silent, ends by itself):
 ```
 MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 ```
+
+waveform still without a window: `MIX741_SHOT=wave:/tmp/wave.png` in addition -> one deck with loop and hotcues as png, then exit.
 
 bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) with version, macos, device, mode, controller.
 

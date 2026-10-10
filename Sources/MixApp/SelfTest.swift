@@ -1,4 +1,7 @@
+import AppKit
+import AVFoundation
 import Foundation
+import UniformTypeIdentifiers
 import MixCore
 import MixEngine
 
@@ -163,5 +166,70 @@ enum SelfTest {
     static func log(_ s: String) {
         print("[selftest] \(s)")
         fflush(stdout)
+    }
+}
+
+/// Nur Bild (MIX741_SHOT=wave:<png>, Selbsttest): die Wellenform-Ebene eines Decks offscreen rendern – kein Fenster,
+/// kein Audio, keine Controller. Oben der Zoom aus den Einstellungen, unten 4× weiter heraus; Grid-Anker links im Bild,
+/// Spielkopf in einem 4-Beat-Loop, zwei Hotcues. Erster Track der Collection mit 120–140 BPM und Grid, wie im Selbsttest.
+@MainActor
+enum WaveShot {
+    static func run(path: String) -> Never {
+        do {
+            try render(to: URL(fileURLWithPath: path))
+            SelfTest.log("SHOT \(path)")
+            exit(0)
+        } catch {
+            SelfTest.log("SHOT Fehler: \(error)")
+            exit(1)
+        }
+    }
+
+    enum ShotError: Error { case noTrack, context, png }
+
+    private static func render(to url: URL) throws {
+        let ui = AppPrefs.load().ui
+        let tracks = try NMLParser.parse(url: LibraryStore.defaultNML).tracks
+        guard let t = tracks.first(where: { $0.bpm > 120 && $0.bpm < 140 && $0.gridAnchorMs != nil && FileManager.default.fileExists(atPath: $0.path) }),
+              let grid = BeatGrid(track: t) else { throw ShotError.noTrack }
+        SelfTest.log("Track: \(t.artist) – \(t.title) \(t.bpm) BPM")
+        let file = URL(fileURLWithPath: t.path)
+        let rate = try AVAudioFile(forReading: file).processingFormat.sampleRate   // Dateirate: keine Wandlung nötig
+        let audio = try TrackAudio.decode(url: file, sampleRate: rate)
+        let wf = RenderedWaveform.render(audio, style: ui.waveformStyle, palette: ui.waveformPalette)
+        var scene = WaveScene(
+            waveID: ObjectIdentifier(wf), duration: audio.duration, grid: grid, span: ui.waveformSeconds,
+            showGrid: true, colorful: ui.colorfulGrid, phraseBeats: ui.phraseBeats, barNumbers: ui.showBarNumbers, barMarkers: ui.barMarkers,
+            dimPlayed: ui.dimPlayed,
+            cues: [WaveScene.Mark(t: grid.time(ofBeat: 2), number: 1, color: NSColor(Theme.cueColor(.cue))),
+                   WaveScene.Mark(t: grid.time(ofBeat: 12), number: 2, color: NSColor(Theme.cueColor(.loop)))],
+            cuePoint: grid.anchor, hasTrack: true)
+        let pos = grid.time(ofBeat: 6.3)
+        let loop = (active: true, start: grid.time(ofBeat: 4), end: grid.time(ofBeat: 8))
+        let w: CGFloat = 1200, h: CGFloat = 180, gap: CGFloat = 8, scale: CGFloat = 2
+        let view = WaveLayerNSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
+        view.position = { pos }
+        view.loop = { loop }
+        view.wave = wf
+        guard let ctx = CGContext(data: nil, width: Int(w * scale), height: Int((h * 2 + gap) * scale), bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw ShotError.context }
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.setFillColor(NSColor(Theme.background).cgColor)
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h * 2 + gap))
+        let tick = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in }   // hält den Run-Loop wach
+        defer { tick.invalidate() }
+        for (i, span) in [ui.waveformSeconds, ui.waveformSeconds * 4].enumerated() {
+            scene.span = span
+            view.scene = scene
+            RunLoop.main.run(until: Date() + 1.5)   // Kacheln kommen von der Hintergrund-Queue auf den Hauptthread
+            ctx.saveGState()
+            ctx.translateBy(x: 0, y: CGFloat(1 - i) * (h + gap))   // CG: y nach oben, erster Streifen oben
+            view.layer?.render(in: ctx)
+            ctx.restoreGState()
+        }
+        guard let img = ctx.makeImage(),
+              let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { throw ShotError.png }
+        CGImageDestinationAddImage(dest, img, nil)
+        guard CGImageDestinationFinalize(dest) else { throw ShotError.png }
     }
 }
