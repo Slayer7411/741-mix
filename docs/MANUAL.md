@@ -272,7 +272,27 @@ any installed audio unit effect (apple or third-party, v2 and v3) in the single 
 * EDIT -> window with the plugin's own view (or a generic one) · changes go to every deck on that unit
 * one instance per deck · loads in the background, the deck plays on dry meanwhile
 * plugin and its settings are saved with the session
-* newly installed plugins -> menu -> rescan plugin list
+* newly installed plugins -> menu -> rescan plugin list (the PLUGINS tab rescans on its own)
+* the menu lists only plugins that are enabled and not blocked -> ⌘, -> PLUGINS
+
+### manage plugins (⌘, -> PLUGINS)
+
+* list of every effect plugin: name, manufacturer, version, AUv2 / AUv3 / VST3, source (system / user / own folder / app), status, search field
+* square left = use in MINOS-741. off -> not in the fx menu (a loaded one keeps playing until you pick another)
+* PRÜFEN / ALLE PRÜFEN -> apple's `auval` in its own process, pass / fail + the last lines of its log (click the row). cached per plugin and version, cancel any time
+* status: ok · ungeprüft (not validated) · prüfung fehlgeschlagen (failed) · blockiert (crashed before) · nicht ladbar · VST3 – not supported yet
+* folders always scanned: `/Library/Audio/Plug-Ins/Components`, `~/Library/Audio/Plug-Ins/Components`, AUv3 from apps (system registry)
+* ORDNER HINZUFÜGEN … -> own folders. `.component` bundles in there (subfolders too) are loaded into MINOS-741 and registered for this app only, nothing is installed. folder changes trigger a rescan
+* PLUGIN INSTALLIEREN … -> pick `.component` bundles, folders or a `.zip` -> copied to `~/Library/Audio/Plug-Ins/Components` (created if missing, never `/Library`). an installed bundle with another version -> asks before replacing
+* downloads carry a quarantine flag. gatekeeper may block unsigned or unnotarized plugins -> MINOS-741 asks before removing the flag, only say yes for sources you trust
+* `.vst3` bundles (vst3 folders, own folders) are listed with status VST3 – not supported yet, no hosting so far
+
+#### crash safety
+
+* isolated loading: third-party plugins run in a separate system service (default on, ⌘, -> PLUGINS -> load third-party plugins isolated, per plugin: default / isolated / in-process). a crash there kills only the service -> the unit goes dry, the plugin gets blocked, the set plays on
+* apple plugins and plugins from own folders always load in-process
+* cost of isolation, AUMatrixReverb, 512 frames at 48 kHz (budget 10.7 ms): no added latency, ~0.04 ms -> ~0.05 ms per block on the audio thread (mean), p99 0.06-0.16 ms -> 0.08-0.27 ms
+* crash marker: before an in-process plugin (or its window, or a bundle from an own folder) opens, MINOS-741 notes it. if the app dies right there, the next start blocks that plugin and shows it in the PLUGINS tab. a blocked plugin never loads, also not from a saved session -> BLOCK AUFHEBEN to try again
 
 ## ◆ 09 · BROWSER
 

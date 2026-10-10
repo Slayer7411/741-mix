@@ -49,6 +49,18 @@ fx unit × deck -> PluginInstance (swift, control thread) -> MDPlugin (c, AUHost
 * off = input closed, the tail rings out until 1 s below -100 dB, then the plugin is no longer rendered
 * parameters and state (ClassInfo) from the control thread, the plugin window mirrors its changes to the other decks
 
+plugin list and loading (`PluginCatalog`, `PluginInstaller`, `PluginValidator` in MixEngine):
+
+* list = system registry (`AudioComponentFindNext` over `aufx` / `aumf`) + bundles scanned in the standard folders (source, path) + own folders + `.vst3` (listed only)
+* own folders: Info.plist `AudioComponents` (type, subtype, manufacturer, name, version, factoryFunction) -> `CFBundleLoadExecutable` -> `CFBundleGetFunctionPointerForName` -> `AudioComponentRegister`. once per bundle path and process, ids already in the system are not registered twice. a removed folder hides its plugins, they stay registered until restart
+* fx menu = enabled and not blocked; a blocked or disabled plugin is never instantiated, also not from the session
+* isolated: `AudioComponentInstantiate` with `kAudioComponentInstantiation_LoadOutOfProcess` (v2 and v3) on the plugin queue, waited for (10 s timeout), then `mdplug_wrap` configures it like `mdplug_open`. in-process: `mdplug_open` (`AudioComponentInstanceNew`). both off the audio thread, handed over by the same atomic pointer swap
+* isolated instance gone (`kAudioComponentInstanceInvalidationNotification`) -> its instances are taken out, the plugin is blocked, render errors keep the signal dry until then
+* isolated plugin window: view controller from the service or the generic view, never the v2 view code in-process
+* crash marker: `plugin-opening.json` written before an in-process open (instances, plugin window, own-folder bundle code), removed after. found on start -> plugin (or bundle) blocked
+* `auval -v type subtype manu` as a child process, pass = exit 0 + `AU VALIDATION SUCCEEDED`, tail of the log kept per `id@version`
+* install: copy next to the target, then swap (`replaceItemAt`), quarantine (`com.apple.quarantine`) removed only after asking
+
 ## ◆ SYNC
 
 * master = master deck or the master clock (MASTER mode)

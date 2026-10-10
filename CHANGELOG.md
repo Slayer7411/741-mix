@@ -6,6 +6,12 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* settings: PLUGINS tab -> every effect plugin with manufacturer, version, AUv2 / AUv3 / VST3, source and status, search, per plugin on / off for the fx menu
+* plugins: own plugin folders -> `.component` bundles are loaded and registered for MINOS-741 only. PLUGIN INSTALLIEREN … copies bundles (also from folders or `.zip`) to `~/Library/Audio/Plug-Ins/Components`, asks before replacing another version and before removing the download quarantine flag
+* plugins: validation with apple's `auval` (single or all, progress, cancel), pass / fail and log tail cached per plugin + version
+* plugins: third-party plugins load isolated in a system service by default (per plugin: isolated / in-process). a crash there blocks the plugin and leaves the unit dry, the set plays on. AUMatrixReverb at 512 frames: no added latency, ~0.01-0.02 ms more per block
+* plugins: crash marker -> a plugin that took MINOS-741 down while opening is blocked on the next start, also when a session wants it. unblock in the PLUGINS tab
+* plugins: `.vst3` bundles are listed (not supported yet)
 * controller: flux = pad layer switch. tap -> pads 1-4 play hotcues 5-8 (set / jump, shift = delete, pad colors of 5-8, flux led lit), tap again -> back to 1-4, per side. shift + flux = flux mode, held = layer only while held. setting "flux button": switch pad layer (default) / flux mode (old layout)
 * loop snap (with SNAP): LOOP / LOOP IN takes a stored loop cue starting up to 1 bar ahead or just passed (start + length), else the nearest 4-bar boundary within 1 beat, else the beat snap. never jumps, the playhead runs into the loop. settings under DECKS -> loops & beatjump (both on, window 4 beats, tolerance 1 beat)
 * phrase anchor: on load the track's structural changes are checked against 8-bar boundaries from the grid anchor -> a cut first hit or a pickup beat (anchor 1-3 beats off) is found and the anchor moves by whole beats, bpm and grid lines stay. setting off / suggest (red `PHRASE +n` in the grid row) / automatic, stored in minos's own edits, never in the collection

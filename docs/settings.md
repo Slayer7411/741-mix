@@ -5,7 +5,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 ## ◆ LAYOUT
 
 * window resizable, min 720 × 520, default 820 × 640
-* sidebar left: DECKS · MIXER & FX · DISPLAY · AUDIO · CONTROLLER · TAGS, active section with red bar
+* sidebar left: DECKS · MIXER & FX · PLUGINS · DISPLAY · AUDIO · CONTROLLER · TAGS · KEYBOARD, active section with red bar
 * page right, scrolls: `◆ SECTION` heading with hairline, rows with fixed label column left, control right
 * toggles as squares (red = on), sliders with value + unit (s, ms, pt), hints in small mono
 * controller: one block per unit (left / right deck, browser pane, fx unit, blink)
@@ -36,6 +36,16 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * channel filter resonance
 * show fx units, 2 or 4 units, delay feedback, fx filter resonance
 * reverb level (dB, 0 = reverb ~4 dB below the track at full d/w), reverb brightness (dark -> bright, 2.5 … 12 kHz), reverb pre-delay (ms)
+
+## ◆ PLUGINS
+
+saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in the user defaults.
+
+* load third-party plugins isolated (on): separate system service, apple plugins always in-process
+* folders: system and user audio unit folders + AUv3 (always), own folders (add / remove), install plugin …, rescan
+* list with search: per plugin use in MINOS-741 (on / off), status, PRÜFEN (auval), click -> path, load default / isolated / in-process, unblock, last auval log
+* ALLE PRÜFEN with progress and cancel, results kept per plugin + version
+* crash marker `plugin-opening.json` next to it, a leftover marker blocks that plugin on the next start -> [manual](MANUAL.md#-08--fx)
 
 ## ◆ DISPLAY
 
