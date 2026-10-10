@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <vector>
 #include <memory>
+#if defined(__x86_64__) || defined(__i386__)
+#include <xmmintrin.h>
+#endif
 
 
 #include "signalsmith-stretch/signalsmith-stretch.h"
@@ -18,6 +21,20 @@ constexpr int kMaxIn = kMaxFrames * 5;   // Eingang je Block bei Tempo bis 4× (
 constexpr double kPi = 3.14159265358979323846;
 
 inline float dbToLin(float db) { return db <= -95.f ? 0.f : std::pow(10.f, db / 20.f); }
+
+/// Denormals im Render-Block auf 0 (ausklingende Filter/Hall: auf Intel sonst bis ×100 Rechenzeit je Sample).
+/// Setzt die Einstellung des Threads am Ende zurück (Tests/Offline rufen aus fremden Threads).
+struct DenormalGuard {
+#if defined(__aarch64__)
+    uint64_t old;
+    DenormalGuard() { asm volatile("mrs %0, fpcr" : "=r"(old)); uint64_t v = old | (uint64_t(1) << 24); asm volatile("msr fpcr, %0" :: "r"(v)); }
+    ~DenormalGuard() { asm volatile("msr fpcr, %0" :: "r"(old)); }
+#elif defined(__x86_64__) || defined(__i386__)
+    unsigned old;
+    DenormalGuard() { old = _mm_getcsr(); _mm_setcsr(old | 0x8040); }   // FTZ | DAZ
+    ~DenormalGuard() { _mm_setcsr(old); }
+#endif
+};
 
 // ---------- Biquad (RBJ) ----------
 struct Biquad {
@@ -543,6 +560,7 @@ bool mdsp_playing(MDEngine *e, int deck) { return e->decks[deck].p[MD_PLAYING].l
 void mdsp_levels(MDEngine *e, int deck, float *rms, float *peak) { *rms = e->decks[deck].rms.load(); *peak = e->decks[deck].peak.load(); }
 
 void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
+    DenormalGuard ftz;
     for (int c = 0; c < channels; c++) std::memset(out[c], 0, sizeof(float) * frames);
     int done = 0;
     while (done < frames) {
