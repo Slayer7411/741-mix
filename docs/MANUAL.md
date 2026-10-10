@@ -326,9 +326,12 @@ PREVIEW column (after the title, on by default): a mini overview of the whole tr
 * phrase bands from the grid (phrase length = the waveform phrase), thin line every 16 bars, magenta every 32 bars
 * hotcues as short colored ticks, start cue as a triangle on top. own grid / phrase anchor / hotcue edits are drawn too
 * no overview yet -> grid and cues only
-* overview comes from: loading the track into a deck (free, from the deck's waveform) · right click TRACK COLLECTION, PREPARATION, a playlist, smartlist, playlist folder or music folder -> `Vorschauen berechnen` · background job for the whole collection, newest tracks first (setting, on)
-* rule: computing pauses while any deck plays or loads, also in the middle of a file. status bar: `Vorschauen 12/240`, `pausiert (Deck spielt)`, ✕ = cancel
-* the background job skips files that only exist in the cloud (not downloaded), explicit right click reads them
+* overview comes from: loading the track into a deck (free, from the deck's waveform) · right click TRACK COLLECTION, PREPARATION, a playlist, smartlist, playlist folder or music folder -> `Vorschauen berechnen` · background job (setting, `immer (gedrosselt)` by default)
+* background order: rows on screen without an overview first (last shown first), then the whole collection, newest tracks first
+* `immer (gedrosselt)`: runs while decks play: one file at a time, low priority, half the cpu time, 1 s between files. no deck playing -> full speed. `nur wenn kein Deck spielt`: waits while a deck plays. `aus`: only deck loads and right click
+* every mode: computing waits while a deck loads and 4 s after, also in the middle of a file
+* status bar: `Vorschauen 1.234 / 14.160 · gedrosselt` (tracks with overview / tracks with a file), `pausiert (Deck lädt)`, `pausiert (Deck spielt)`, ✕ = stop the background job until the next start. right click batch: `Vorschauen 12/240`, ✕ = cancel
+* files that only exist in the cloud (placeholder, not downloaded) are skipped by the background job and counted: `12 nur online – Rechtsklick lädt`. right click -> `Vorschauen berechnen` reads them (downloads the file)
 * ⌘, -> DISPLAY -> browser preview: own column / behind the title (25 % under the title text) / off
 * overviews are checked against file size and modification time -> a retagged file gets a new one
 
