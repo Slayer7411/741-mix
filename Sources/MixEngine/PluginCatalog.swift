@@ -3,9 +3,9 @@ import Foundation
 
 /// Herkunft eines Plugins
 public enum PluginSource: String, Codable, Sendable {
-    /// /Library/Audio/Plug-Ins/Components und die eingebauten von Apple
+    /// /Library/Audio/Plug-Ins/Components (VST3: …/VST3) und die eingebauten von Apple
     case system
-    /// ~/Library/Audio/Plug-Ins/Components
+    /// ~/Library/Audio/Plug-Ins/Components (VST3: …/VST3)
     case user
     /// eigener Ordner – nur in MINOS-741 registriert
     case folder
@@ -17,7 +17,7 @@ public enum PluginFormat: String, Codable, Sendable { case auv2 = "AUv2", auv3 =
 
 /// Eintrag der Plugin-Liste (Einstellungen → PLUGINS)
 public struct PluginEntry: Identifiable, Hashable, Sendable {
-    /// AU: "aufx:mrev:appl" · VST3: "vst3:<pfad>" · nicht ladbares Bundle: "bundle:<pfad>"
+    /// AU: "aufx:mrev:appl" · VST3: "vst3:<Klassen-ID>" · nicht ladbares Bundle: "bundle:<pfad>"
     public let id: String
     public let name: String
     public let manufacturer: String
@@ -25,16 +25,16 @@ public struct PluginEntry: Identifiable, Hashable, Sendable {
     public let format: PluginFormat
     public let source: PluginSource
     public let path: String?
-    /// nil = nicht ladbar (VST3, Fehler beim Laden eines Bundles)
+    /// nil = nicht ladbar (Fehler beim Laden eines Bundles, blockiert)
     public let info: PluginInfo?
     /// Grund, warum ein Bundle aus einem eigenen Ordner nicht ladbar ist
     public let problem: String?
 
     public var validationKey: String { "\(id)@\(version)" }
-    /// auval findet nur installierte (System-Register), nicht die in MINOS-741 registrierten
-    public var canValidate: Bool { info != nil && source != .folder }
-    /// isoliert laden geht nur für Plugins im System-Register
-    public var canIsolate: Bool { info != nil && source != .folder }
+    /// AU: auval findet nur installierte (System-Register), nicht die in MINOS-741 registrierten. VST3: Selbsttest
+    public var canValidate: Bool { info != nil && (format == .vst3 || source != .folder) }
+    /// isoliert laden geht nur für Audio Units im System-Register (Apples Dienst kennt kein VST3)
+    public var canIsolate: Bool { info != nil && source != .folder && format != .vst3 }
 }
 
 /// ein Eintrag aus dem Feld `AudioComponents` der Info.plist eines .component-Bundles
@@ -82,6 +82,24 @@ public enum PluginBundle {
         if let v = plist?["CFBundleShortVersionString"] as? String, !v.isEmpty { return v }
         if let v = plist?["CFBundleVersion"] as? String, !v.isEmpty { return v }
         return components(bundle).first.map { PluginHost.versionString($0.version) } ?? ""
+    }
+
+    /// Effekt-Klassen aus Contents/Resources/moduleinfo.json (VST 3.7+, ohne den Code zu laden); nil = keine Datei
+    /// oder keine Klassenliste
+    public static func vst3Classes(_ bundle: URL) -> [PluginInfo]? {
+        let mi = bundle.appendingPathComponent("Contents/Resources/moduleinfo.json")
+        guard let d = try? Data(contentsOf: mi),
+              let j = try? JSONSerialization.jsonObject(with: d, options: [.json5Allowed]) as? [String: Any],
+              let classes = j["Classes"] as? [[String: Any]] else { return nil }
+        let vendor = (j["Factory Info"] as? [String: Any])?["Vendor"] as? String ?? ""
+        return classes.compactMap { c in
+            let subs = c["Sub Categories"] as? [String] ?? []
+            guard c["Category"] as? String == "Audio Module Class", subs.contains("Fx"), !subs.contains("Instrument"),
+                  let cid = c["CID"] as? String, cid.count == 32, let name = c["Name"] as? String else { return nil }
+            let v = c["Vendor"] as? String ?? ""
+            return PluginInfo.vst3(classID: cid, name: name, vendor: v.isEmpty ? vendor : v, version: c["Version"] as? String ?? "",
+                                   path: bundle.path)
+        }
     }
 
     /// .component und .vst3 unter `folder` (rekursiv bis `depth`, nie in ein Bundle hinein)
@@ -341,14 +359,36 @@ public final class PluginCatalog: @unchecked Sendable {
             out.append(PluginEntry(id: i.id, name: i.name, manufacturer: i.manufacturer, version: i.versionString,
                                    format: i.isV3 ? .auv3 : .auv2, source: src, path: path, info: i, problem: nil))
         }
-        // 4. VST3: nur anzeigen
-        var seen = Set<String>()
+        // 4. VST3: Effekt-Klassen je Bundle – aus moduleinfo.json, sonst Bundle laden (Absturz-Markierung "bundle:<pfad>")
+        var seen = Set<String>(), seenIDs = Set<String>()
         for b in vst3 where seen.insert(b.standardizedFileURL.path).inserted {
             let v = PluginBundle.vst3Info(b)
             let src: PluginSource = b.path.hasPrefix(Self.home.path + "/Library/Audio") ? .user
                 : (b.path.hasPrefix("/Library/Audio") ? .system : .folder)
-            out.append(PluginEntry(id: "vst3:" + b.path, name: v.name, manufacturer: v.vendor, version: v.version, format: .vst3,
-                                   source: src, path: b.path, info: nil, problem: nil))
+            let key = "bundle:" + b.path
+            var classes: [PluginInfo] = [], problem: String?
+            if s.blocked[key] == nil {
+                if let c = PluginBundle.vst3Classes(b) {
+                    classes = c
+                } else {
+                    beginOpen(key: key, name: b.lastPathComponent)
+                    let r = PluginHost.vst3Classes(b)
+                    endOpen()
+                    classes = r.classes
+                    problem = r.error.map { String(format: String(localized: "Code nicht ladbar: %@"), $0) }
+                }
+                if classes.isEmpty && problem == nil { problem = String(localized: "keine Effekt-Klasse (Fx) im Bundle") }
+            }
+            let fresh = classes.filter { seenIDs.insert($0.id).inserted }
+            if fresh.isEmpty {
+                if !classes.isEmpty { continue }   // dieselben Klassen liegen schon in einem anderen Ordner
+                out.append(PluginEntry(id: key, name: v.name, manufacturer: v.vendor, version: v.version, format: .vst3,
+                                       source: src, path: b.path, info: nil, problem: problem))
+            }
+            for c in fresh {
+                out.append(PluginEntry(id: c.id, name: c.name, manufacturer: c.manufacturer, version: c.versionString, format: .vst3,
+                                       source: src, path: b.path, info: c, problem: nil))
+            }
         }
         return out.sorted { ($0.manufacturer.lowercased(), $0.name.lowercased()) < ($1.manufacturer.lowercased(), $1.name.lowercased()) }
     }

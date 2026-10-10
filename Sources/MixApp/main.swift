@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import MixCore
+import MixEngine
 
 /// Anordnung der Browser-Bereiche.
 enum BrowserLayout: String, CaseIterable, Identifiable, Codable {
@@ -336,6 +337,15 @@ func setAppIcon() {
        let img = NSImage(contentsOf: url) {
         NSApplication.shared.applicationIconImage = img
     }
+}
+
+// VST3-Selbsttest im eigenen Prozess (Einstellungen → PLUGINS → Prüfen): `<exe> --vst3-check <bundle> <klasse>`
+if CommandLine.arguments.count >= 4, CommandLine.arguments[1] == PluginSelfCheck.argument {
+    let info = PluginInfo.vst3(classID: CommandLine.arguments[3], name: URL(fileURLWithPath: CommandLine.arguments[2]).lastPathComponent,
+                               vendor: "", version: "", path: CommandLine.arguments[2])
+    let r = PluginSelfCheck.run(info)
+    print(r.log)
+    exit(r.passed ? 0 : 1)
 }
 
 AppResources.migrateDefaults()

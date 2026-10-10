@@ -1086,12 +1086,13 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
-    /// Fenster zu: Zuhören beenden, Zustand für die Sitzung merken
+    /// Fenster zu: Zuhören beenden, Zustand für die Sitzung merken (VST3: Zustand auf dem UI-Thread, außerhalb der Sperre)
     public func endPluginEdit(_ u: Int, _ inst: PluginInstance) {
         inst.stopObserving()
+        let st = inst.state
         locked {
             guard plugins[u].contains(where: { $0 === inst }) else { return }
-            if let st = inst.state { state.fx[u].pluginState = st }
+            if let st { state.fx[u].pluginState = st }
         }
     }
 
@@ -1149,7 +1150,8 @@ public final class MixController: @unchecked Sendable {
                         _ = p.parameters
                         return p
                     }
-                    finishPluginLoad(u, gen, insts, restored: saved != nil)
+                    // Zustand hier lesen, nicht unter der Sperre (VST3 fragt den UI-Thread)
+                    finishPluginLoad(u, gen, insts, restored: saved != nil, initialState: saved ?? insts[0].state)
                 } catch {
                     locked {
                         guard gen == pluginGen[u] else { return }
@@ -1178,7 +1180,7 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
-    private func finishPluginLoad(_ u: Int, _ gen: Int, _ insts: [PluginInstance], restored: Bool) {
+    private func finishPluginLoad(_ u: Int, _ gen: Int, _ insts: [PluginInstance], restored: Bool, initialState: Data?) {
         locked {
             // inzwischen anderes Plugin gewählt: die neuen Instanzen waren nie im Kern → einfach verwerfen
             guard gen == pluginGen[u], state.fx[u].pluginID == insts[0].info.id else { return }
@@ -1187,7 +1189,7 @@ public final class MixController: @unchecked Sendable {
             state.pluginParams[u] = insts[0].parameters.prefix(3).map { Self.shortName($0.name) }
             knobsLive[u] = false
             pushKnobsOnActivate[u] = restored
-            if state.fx[u].pluginState == nil { state.fx[u].pluginState = insts[0].state }
+            if state.fx[u].pluginState == nil { state.fx[u].pluginState = initialState }
             applyFX(u)
         }
     }
@@ -1204,6 +1206,24 @@ public final class MixController: @unchecked Sendable {
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { [self] in
             if engine.pluginReleased(unit: u, deck: d, old) || !engine.running { return }
             retirePlugin(old, unit: u, deck: d)
+        }
+    }
+
+    /// NaN im Deck (Kern hat das Deck geheilt): Plugin zurücksetzen, solange rechnet der Kern es nicht. Unter der Sperre
+    private var pluginsResetting = Set<Int>()
+    private func healPlugins() {
+        for u in plugins.indices {
+            for d in plugins[u].indices where engine.pluginNeedsReset(unit: u, deck: d) {
+                let key = u * 16 + d
+                guard !pluginsResetting.contains(key) else { continue }
+                guard let p = plugins[u][d] else { engine.pluginResetDone(unit: u, deck: d); continue }
+                pluginsResetting.insert(key)
+                p.reset { [weak self] in
+                    guard let self else { return }
+                    self.engine.pluginResetDone(unit: u, deck: d)
+                    self.locked { _ = self.pluginsResetting.remove(key) }
+                }
+            }
         }
     }
 
@@ -1310,6 +1330,7 @@ public final class MixController: @unchecked Sendable {
             }
             if !played.isEmpty, let cb = onPlayed { DispatchQueue.global().async { for p in played { cb(p.0, p.1, p.2) } } }
             tickCount += 1
+            if tickCount % 4 == 0 { healPlugins() }
             // beat-synchrones Delay folgt dem Tempo
             if tickCount % 50 == 0, state.fx.contains(where: { $0.slots[1].on }) { applyAllFX() }
             return tickCount % 6 == 0 ? tickHandlers : []
