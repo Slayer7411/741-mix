@@ -1,4 +1,5 @@
 import AVFoundation
+import MixCore
 
 /// Ein komplett dekodierter Track (Stereo, Float32, Engine-Samplerate) plus Wellenform-Zusammenfassung.
 public final class TrackAudio: @unchecked Sendable {
@@ -14,6 +15,8 @@ public final class TrackAudio: @unchecked Sendable {
     public private(set) var low: [Float] = []
     public private(set) var mid: [Float] = []
     public private(set) var high: [Float] = []
+    /// feines Spektrum je Block (6 Bänder + Höhen-Dauer), gleiche Blöcke wie `peak`
+    public private(set) var spectrum = WaveSpectrum.empty
 
     public var duration: Double { Double(frames) / sampleRate }
 
@@ -89,10 +92,20 @@ public final class TrackAudio: @unchecked Sendable {
         frames += n
     }
 
-    /// Einfache 3-Band-Analyse mit Einpol-Filtern (reicht für eine farbige Wellenform).
+    /// Einfache 3-Band-Analyse mit Einpol-Filtern (Schichten-Stil, Browser-Übersicht) und parallel dazu das feine
+    /// Spektrum (6 Bänder) auf einem zweiten Kern – die Ladezeit wächst nur um den Teil, der länger dauert.
     private func analyze() {
         let block = max(1, Int(sampleRate / Self.blocksPerSecond))
         let count = frames / block + 1
+        final class Box: @unchecked Sendable { var spectrum = WaveSpectrum.empty }
+        let box = Box()
+        let group = DispatchGroup()
+        let (l, r, n, rate) = (left, right, frames, sampleRate)
+        DispatchQueue.global(qos: .userInitiated).async(group: group) {
+            let sa = SpectrumAnalyzer(sampleRate: rate, block: block)
+            sa.feed(left: l, right: r, count: n)
+            box.spectrum = sa.finish(blocks: count)
+        }
         peak = .init(repeating: 0, count: count)
         low = .init(repeating: 0, count: count)
         mid = .init(repeating: 0, count: count)
@@ -120,5 +133,7 @@ public final class TrackAudio: @unchecked Sendable {
         }
         // nicht normalisieren: volle Höhe = 0 dBFS der Datei
         for b in 0..<count { peak[b] = min(1, peak[b]) }
+        group.wait()
+        spectrum = box.spectrum
     }
 }
