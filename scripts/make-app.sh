@@ -4,7 +4,8 @@
 #         scripts/make-app.sh --no-install
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="0.$(git rev-list --count HEAD 2>/dev/null || echo 0)"
+VERSION=$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//')
+VERSION=${VERSION:-0.0.0}
 BUILD=$(git rev-parse --short HEAD 2>/dev/null || echo dev)
 APP=build/MINOS-741.app
 
