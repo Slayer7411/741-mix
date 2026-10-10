@@ -14,6 +14,7 @@ struct SettingsView: View {
         SettingsTab("AUDIO") { AudioSettings() },
         SettingsTab("CONTROLLER") { ControllerSettings() },
         SettingsTab("TAGS") { TagColorSettings() },
+        SettingsTab("CLOUD") { CloudSettings() },
         SettingsTab("TASTATUR") { ShortcutSettings() },
     ]
 

@@ -145,6 +145,8 @@ struct AppPrefs: Codable, Equatable {
     var engine = EnginePrefs()
     var ui = UIPrefs()
     var controller = ControllerPrefs()
+    /// Cloud-Library: lokal halten, Downloads (⌘, -> CLOUD)
+    var cloud = CloudPrefs()
     /// eigene Tastenkürzel: Aktion-ID -> Kombination als Text ("" = frei), sonst Standard (ShortcutID.defaultCombo)
     var shortcuts: [String: String] = [:]
 

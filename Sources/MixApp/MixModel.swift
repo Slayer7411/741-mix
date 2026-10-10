@@ -160,6 +160,7 @@ final class MixModel {
     // MARK: - Befehle (weitergeleitet an den Kern)
 
     func load(_ t: Track, deck d: Int) {
+        CloudLibrary.shared.deckWillLoad(t, deck: d)   // nur online -> sofort anfordern, Hinweis
         originals[d] = t
         let e = edits.edit(for: t.key)
         savedEdit[d] = e
