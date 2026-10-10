@@ -122,9 +122,7 @@ traktor and kontrol are trademarks of native instruments. not affiliated, no nat
 
 ## ◆ CONTRIBUTING
 
-* bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues), ideas -> [discussions](https://github.com/Slayer7411/MINOS-741/discussions)
-* commits: lowercase, short, what changed
-* pull requests welcome, same style as the rest
+bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) · ideas -> [discussions](https://github.com/Slayer7411/MINOS-741/discussions) · rules, setup, release checklist -> [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## ◆ LICENSE
 
