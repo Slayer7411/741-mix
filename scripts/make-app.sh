@@ -14,6 +14,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Resources"
 cp "$BIN/minos741" "$APP/Contents/MacOS/MINOS-741"
 cp -R Sources/MixApp/Resources/. "$APP/Contents/Resources/Resources/"
+cp -R Localization/. "$APP/Contents/Resources/"
 
 # Icon: AppIcon.png -> AppIcon.icns
 ICONSET=build/AppIcon.iconset
@@ -31,6 +32,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>MINOS-741</string>
   <key>CFBundleDisplayName</key><string>MINOS-741</string>
   <key>CFBundleIdentifier</key><string>com.github.slayer7411.minos741</string>
+  <key>CFBundleDevelopmentRegion</key><string>de</string>
+  <key>CFBundleLocalizations</key><array><string>de</string><string>en</string></array>
   <key>CFBundleExecutable</key><string>MINOS-741</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>

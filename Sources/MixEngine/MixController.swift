@@ -610,7 +610,7 @@ public final class MixController: @unchecked Sendable {
             if on, !state.clockMaster, let m = state.effectiveMaster, let g = state.decks[m].grid {
                 state.clockBPM = state.decks[m].bpm
                 engine.setClockBPM(state.clockBPM)
-                engine.setClockBeat(g.beatPosition(at: position(m)))
+                jumpClock(to: g.beatPosition(at: position(m)))
             }
             state.clockMaster = on
             if on { state.masterDeck = nil }
@@ -639,7 +639,7 @@ public final class MixController: @unchecked Sendable {
             if span > 0 {
                 setClockBPM(60 / span)
                 if !state.clockMaster { state.clockMaster = true; state.masterDeck = nil }
-                engine.setClockBeat(0)
+                jumpClock(to: 0)
             }
         }
     }
@@ -653,6 +653,22 @@ public final class MixController: @unchecked Sendable {
     }
 
     public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on } }
+
+    // MARK: Bar-Zähler (läuft ab dem ersten Play durch, bleibt beim Master-Wechsel auf dem Beat)
+
+    private var sessionOffset: Double?
+
+    /// Beats seit dem ersten Play (nil = noch nichts gespielt)
+    public var sessionBeat: Double? { locked { sessionOffset.map { engine.clockBeat + $0 } } }
+
+    /// Zähler neu auf Takt 1 setzen (am nächsten Beat)
+    public func resetSession() { locked { sessionOffset = -engine.clockBeat.rounded() } }
+
+    /// Clock-Beat springt (Master-Wechsel, Tap) – der Zähler läuft ohne Sprung weiter, im Beat des neuen Masters
+    private func jumpClock(to v: Double) {
+        if let o = sessionOffset { sessionOffset = o + (engine.clockBeat - v).rounded() }
+        engine.setClockBeat(v)
+    }
 
     /// gespeicherte Sitzung übernehmen (Mixer, FX, Clock)
     public func restore(_ f: (inout MixState) -> Void) {
@@ -769,7 +785,8 @@ public final class MixController: @unchecked Sendable {
                 let target = (state.masterTempo / g.bpm - 1) * 100
                 var changed = abs(target - state.decks[d].tempoPct) > 0.0001
                 state.decks[d].tempoPct = target
-                if state.prefs.phaseLock, let e = phaseErrorLocked(d) {
+                // rückwärts (Flux-Reverse, Reverse) nicht nachziehen – beim Loslassen kommt die Flux-Position, die bleibt in Phase
+                if state.prefs.phaseLock, !state.decks[d].reverse, let e = phaseErrorLocked(d) {
                     // harter Sprung nur, wenn der Fehler groß ist und > 100 ms anhält – sonst weich nachziehen
                     bigError[d] = abs(e) > 0.25 ? bigError[d] + 1 : 0
                     if bigError[d] >= 20 {
@@ -789,8 +806,10 @@ public final class MixController: @unchecked Sendable {
                 let bpm = state.decks[m].bpm
                 if abs(bpm - state.clockBPM) > 0.005 { state.clockBPM = bpm; engine.setClockBPM(bpm) }
                 let want = g.beatPosition(at: position(m))
-                if abs(BeatGrid.phaseError(own: engine.clockBeat, master: want)) > 0.02 { engine.setClockBeat(want) }
+                if abs(BeatGrid.phaseError(own: engine.clockBeat, master: want)) > 0.02 { jumpClock(to: want) }
             }
+            // Bar-Zähler startet mit dem ersten Play
+            if sessionOffset == nil, state.decks.contains(where: { $0.playing }) { sessionOffset = -engine.clockBeat.rounded() }
             // History: hörbare Spielzeit zählen, ab Schwelle als gespielt melden
             var played: [(Int, Track, Date)] = []
             for d in state.decks.indices where state.decks[d].playing {

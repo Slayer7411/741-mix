@@ -29,6 +29,9 @@ public struct Track: Identifiable, Hashable, Sendable {
     public var genre: String = ""
     public var remixer: String = ""
     public var producer: String = ""
+    public var catalogNo: String = ""
+    public var trackNumber: Int = 0
+    public var fileSizeKB: Int = 0
     public var comment: String = ""
     /// Kommentar 2 (NML-Attribut RATING) – Mix-Steckbrief.
     public var comment2: String = ""
@@ -61,6 +64,17 @@ public struct Track: Identifiable, Hashable, Sendable {
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
     public var playsText: String { playCount > 0 ? String(playCount) : "" }
+    /// analysiert = Tempo und Lautheit vorhanden (wie Traktors Analyse)
+    public var analyzed: Bool { bpm > 0 && perceivedDb != nil }
+    public var analyzedSort: Int { analyzed ? 1 : 0 }
+    public var gainSort: Double { perceivedDb ?? -99 }
+    public var lastPlayedSort: Date { lastPlayed ?? .distantPast }
+    public var releaseSort: Date { releaseDate ?? .distantPast }
+    public static func dateText(_ d: Date?) -> String {
+        guard let d else { return "" }
+        let c = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: d)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
 
     public var fileName: String { (path as NSString).lastPathComponent }
     /// einmal beim Laden im Hintergrund geprüft (nil = noch nicht geprüft → als vorhanden behandeln);

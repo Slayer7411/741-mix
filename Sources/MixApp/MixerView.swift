@@ -55,7 +55,7 @@ struct ChannelStrip: View {
                 LevelFader(value: Binding(get: { deck.fader }, set: { v in mix.updateDeck(d) { $0.fader = v } }))
                     .frame(width: 22, height: 84)
                 Picker("", selection: Binding(get: { deck.xf }, set: { v in mix.updateDeck(d) { $0.xf = v } })) {
-                    ForEach(XFAssign.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(XFAssign.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.mini)
@@ -155,6 +155,7 @@ struct TopBar: View {
             if mix.prefs.ui.showFXUnits { FXUnitView(u: 0) }
             Spacer(minLength: 4)
             MasterClockPanel()
+            BarCounter()
             Spacer(minLength: 4)
             if mix.prefs.ui.showFXUnits { FXUnitView(u: 1) }
         }
@@ -224,5 +225,58 @@ struct MasterClockPanel: View {
         .padding(.vertical, 4)
         .background(Rectangle().fill(Theme.deck))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+    }
+}
+
+/// Bar-Zähler neben der Master-Clock: läuft ab dem ersten Play, zeigt die Lage im 4/8/16-Takt-Raster.
+/// Doppelklick = neu auf Takt 1.
+struct BarCounter: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        LiveCanvas(fps: 30) { [mix] ctx, size in
+            ctx.setFillColor(CG.void); ctx.fill(CGRect(origin: .zero, size: size))
+            guard let sb = mix.core.sessionBeat else {
+                CG.text(String(localized: "BARS · ab erstem Play"), size: 10, weight: "Regular", color: NSColor(Theme.muted), rightAt: size.width - 6, y: 15)
+                return
+            }
+            let beat = max(0, sb)
+            let bar = Int(beat / 4), inBar = Int(beat) % 4
+            let frac = beat - beat.rounded(.down)
+            let pulse = CGFloat(max(0, 1 - frac * 2.5))
+            CG.text("\(bar + 1).\(inBar + 1)", size: 15, weight: "SemiBold", color: NSColor(Theme.bone), rightAt: 46, y: 4)
+            let toNext16 = 16 - bar % 16
+            CG.text("16 ▸ \(toNext16)", size: 9, weight: "Regular", color: NSColor(toNext16 == 1 ? Theme.state : Theme.muted), rightAt: 46, y: 26)
+            let x0: CGFloat = 66, w = size.width - x0 - 4
+            for (row, n) in [4, 8, 16].enumerated() {
+                let y = 3 + CGFloat(row) * 13, h: CGFloat = 10
+                let cw = w / CGFloat(n)
+                let cur = bar % n
+                for i in 0..<n {
+                    let r = CGRect(x: x0 + CGFloat(i) * cw + 1, y: y, width: cw - 2, height: h)
+                    let last = cur == n - 1
+                    if i < cur {
+                        ctx.setFillColor(NSColor(Theme.bone).withAlphaComponent(0.55).cgColor)
+                    } else if i == cur {
+                        let c = last ? Theme.state : Theme.bone
+                        ctx.setFillColor(NSColor(c).withAlphaComponent(0.6 + 0.4 * pulse).cgColor)
+                    } else {
+                        ctx.setFillColor(CG.hairline)
+                    }
+                    ctx.fill(r)
+                    if i == cur {   // Beats im aktuellen Takt
+                        ctx.setFillColor(CG.void)
+                        for b in 1..<4 { ctx.fill(CGRect(x: r.minX + r.width * CGFloat(b) / 4, y: r.minY, width: 1, height: r.height)) }
+                        ctx.setFillColor(NSColor.black.withAlphaComponent(0.5).cgColor)
+                        ctx.fill(CGRect(x: r.minX + r.width * CGFloat(inBar + 1) / 4, y: r.minY, width: r.width * CGFloat(3 - inBar) / 4, height: r.height))
+                    }
+                }
+                CG.text("\(n)", size: 8, weight: "Regular", color: NSColor(Theme.muted), rightAt: x0 - 2 + 0, y: y - 1)
+            }
+        }
+        .frame(width: 300, height: 42)
+        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+        .onTapGesture(count: 2) { mix.core.resetSession() }
+        .help("Bar-Zähler: läuft ab dem ersten Play · Doppelklick = neu auf Takt 1")
     }
 }

@@ -11,6 +11,7 @@ struct SettingsView: View {
             WaveformSettings().tabItem { Text("ANZEIGE") }
             AudioSettings().tabItem { Text("AUDIO") }
             ControllerSettings().tabItem { Text("CONTROLLER") }
+            TagColorSettings().tabItem { Text("TAGS") }
         }
         .frame(width: 600, height: 560)
         .preferredColorScheme(.dark)
@@ -40,7 +41,7 @@ struct DeckSettings: View {
                 Toggle("Quant (Sprünge halten die Beat-Phase)", isOn: $mix.prefs.engine.quantize)
                 Toggle("Hotcue-Sprung hält die Beat-Phase", isOn: $mix.prefs.engine.hotcueKeepsPhase)
                 Picker("Beim Laden springen zu", selection: $mix.prefs.engine.loadPosition) {
-                    ForEach(LoadPosition.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(LoadPosition.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 sliderRow("Track-Ende-Warnung (s, 0 = aus)", $mix.prefs.engine.trackEndWarning, 0...90, step: 5, format: "%.0f")
             }
@@ -102,7 +103,7 @@ struct MixerFXSettings: View {
             Section("Mixer-Optionen") {
                 Toggle("EQ-Kill (ganz links = aus)", isOn: $mix.prefs.engine.eqKill)
                 Picker("Crossfader-Kurve", selection: $mix.prefs.engine.crossfaderCurve) {
-                    ForEach(CrossfaderCurve.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(CrossfaderCurve.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 sliderRow("Kanalfilter-Resonanz", $mix.prefs.engine.channelFilterResonance, 0.2...1.5)
             }
@@ -124,10 +125,10 @@ struct WaveformSettings: View {
         Form {
             Section("Wellenform") {
                 Picker("Stil", selection: $mix.prefs.ui.waveformStyle) {
-                    ForEach(WaveformStyle.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(WaveformStyle.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 Picker("Farben", selection: $mix.prefs.ui.waveformPalette) {
-                    ForEach(WaveformPalette.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(WaveformPalette.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 sliderRow("Sichtbare Sekunden je Seite (Zoom)", $mix.prefs.ui.waveformSeconds, 1...16, step: 0.5, format: "%.1f")
                 sliderRow("Mindesthöhe (pt, wächst mit dem Fenster)", $mix.prefs.ui.waveformHeight, 30...200, step: 5, format: "%.0f")
@@ -140,18 +141,24 @@ struct WaveformSettings: View {
                     ForEach([16, 32, 64, 128], id: \.self) { Text("\($0) Beats (\($0 / 4) Takte)").tag($0) }
                 }
                 Toggle("Taktnummern", isOn: $mix.prefs.ui.showBarNumbers)
+                Toggle("Marker alle 8 / 16 / 32 Takte (magenta)", isOn: $mix.prefs.ui.barMarkers)
             }
-            Section("Tags (Kommentar 2)") {
-                LabeledContent("Trennzeichen") {
-                    TextField("", text: $mix.prefs.ui.tagSeparators).font(Theme.mono(13)).frame(width: 80)
+            Section("Sprache") {
+                Picker("Sprache (wirkt nach Neustart)", selection: $mix.prefs.ui.language) {
+                    Text("Systemstandard").tag("system")
+                    Text(verbatim: "Deutsch").tag("de")
+                    Text(verbatim: "English").tag("en")
                 }
-                Text("jedes zeichen trennt -> z. b. '·' oder '·»'. leer = leerzeichen.").font(Theme.mono(10)).foregroundStyle(Theme.muted)
+            }
+            Section("Browser") {
+                Picker("Anordnung", selection: $mix.prefs.ui.browserLayout) { ForEach(BrowserLayout.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Toggle("Ordner-Baum ausblenden, solange Decks sichtbar sind", isOn: $mix.prefs.ui.hideTreeWithDecks)
             }
             Section("Cue-Farben (Bildschirm und X1-Pads)") {
-                Picker("Start-Cue (Load / AutoGrid)", selection: $mix.prefs.x1.colorStartCue) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
-                Picker("Cue", selection: $mix.prefs.x1.colorCue) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
-                Picker("Loop", selection: $mix.prefs.x1.colorLoop) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
-                Picker("Kurzer Loop", selection: $mix.prefs.x1.colorShortLoop) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
+                Picker("Start-Cue (Load / AutoGrid)", selection: $mix.prefs.x1.colorStartCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Picker("Cue", selection: $mix.prefs.x1.colorCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Picker("Loop", selection: $mix.prefs.x1.colorLoop) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Picker("Kurzer Loop", selection: $mix.prefs.x1.colorShortLoop) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
                 Picker("Kurz = bis", selection: $mix.prefs.x1.shortLoopBars) {
                     ForEach([1.0, 2, 4, 8], id: \.self) { Text("\(Int($0)) \($0 == 1 ? "Takt" : "Takte")").tag($0) }
                 }
@@ -244,17 +251,23 @@ struct ControllerSettings: View {
                             Text("rechts").tag(1)
                         }
                         .frame(width: 130)
+                        Picker("FX", selection: Binding(get: { d.fxUnit }, set: { x1.assignFX(d.id, $0) })) {
+                            Text("FX1").tag(0)
+                            Text("FX2").tag(1)
+                            Text("FX1 + FX2").tag(-1)
+                        }
+                        .frame(width: 120)
                         Button("Blinken") { x1.identify(d.id) }.help("Pads dieses X1 leuchten kurz weiß")
                     }
                 }
             }
             Section("Belegung") {
-                Picker("Cue-Taste", selection: $mix.prefs.x1.cueAction) { ForEach(X1CueAction.allCases) { Text($0.rawValue).tag($0) } }
+                Picker("Cue-Taste", selection: $mix.prefs.x1.cueAction) { ForEach(X1CueAction.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
                 Toggle("Flux antippen schaltet Flux-Modus", isOn: $mix.prefs.x1.fluxTapToggles)
                 Picker("Flux halten + Hotcue 3/4 = Beatjump", selection: $mix.prefs.x1.fluxBeatjumpBeats) {
                     ForEach(BeatSizes.jump, id: \.self) { Text("±\(BeatSizes.label($0)) Beat").tag($0) }
                 }
-                Picker("Touchstrip", selection: $mix.prefs.x1.stripMode) { ForEach(X1StripMode.allCases) { Text($0.rawValue).tag($0) } }
+                Picker("Touchstrip", selection: $mix.prefs.x1.stripMode) { ForEach(X1StripMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
                 sliderRow("Touchstrip-Empfindlichkeit", $mix.prefs.x1.stripSensitivity, 0.2...3, format: "%.1f")
                 Stepper("Browse mit Shift: \(mix.prefs.x1.browseFastStep) Zeilen", value: $mix.prefs.x1.browseFastStep, in: 2...50)
             }

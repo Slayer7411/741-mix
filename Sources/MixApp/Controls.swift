@@ -66,7 +66,7 @@ struct DeckButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .font(Theme.label(10, .bold))
                 .frame(minWidth: width ?? 0)
                 .frame(height: 18)
@@ -91,7 +91,7 @@ struct PressButton: View {
     @State private var pressed = false
 
     var body: some View {
-        Text(title)
+        Text(LocalizedStringKey(title))
             .font(Theme.label(10, .bold))
             .frame(minWidth: width ?? 0)
             .frame(height: 18)

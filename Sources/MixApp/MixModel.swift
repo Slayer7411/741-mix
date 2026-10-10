@@ -35,7 +35,7 @@ final class MixModel {
     var mixerMode: MixerMode = .internalMixer
     var deviceUID: String?
     var internalPair = 0
-    var deckPairs = [0, 2, 4, 6]
+    var deckPairs = [0, 4, 2, 6]   // A 1/2 · B 5/6 · C 3/4 · D 7/8
 
     /// eigene Änderungen (Grid, Hotcues) dauerhaft je Track – die Traktor-Collection bleibt unangetastet
     @ObservationIgnored let edits = TrackEditStore(url: HistoryStore.baseDir.appendingPathComponent("edits.json"))

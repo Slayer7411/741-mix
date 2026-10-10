@@ -24,17 +24,22 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !browserState.maximized {
-                // Decks oben, Browser unten – Trenner verschiebbar; die Wellenformen bekommen den ganzen Platz
-                deckArea
-                    .frame(maxHeight: .infinity)
-                    .layoutPriority(1)
+            // Decks oben, Browser unten – Trenner verschiebbar. Browser groß: Decks nur zusammengeklappt,
+            // nicht neu aufgebaut (sonst dauert das Umschalten mit 14k Zeilen spürbar)
+            let big = browserState.maximized
+            deckArea
+                .frame(maxHeight: big ? 0 : .infinity)
+                .opacity(big ? 0 : 1)
+                .allowsHitTesting(!big)
+                .clipped()
+                .layoutPriority(big ? 0 : 1)
+            if !big {
                 SplitHandle(height: Binding(get: { mix.prefs.ui.browserHeight }, set: { mix.prefs.ui.browserHeight = $0 }))
-                browsers
-                    .frame(height: mix.prefs.ui.browserHeight)
-            } else {
-                browsers
             }
+            browsers
+                .frame(height: big ? nil : mix.prefs.ui.browserHeight)
+                .frame(maxHeight: big ? .infinity : nil)
+                .layoutPriority(big ? 1 : 0)
             statusBar
         }
         .background(Theme.background)
@@ -167,6 +172,7 @@ struct MixApp: App {
         Settings {
             SettingsView()
                 .environment(mix)
+                .environment(store)
                 .environment(x1Status)
         }
         .commands {
@@ -186,7 +192,7 @@ struct MixApp: App {
                 Toggle("Browser groß", isOn: Binding(get: { browser.maximized }, set: { browser.maximized = $0 }))
                     .keyboardShortcut("b", modifiers: [.command, .option])
                 Picker("Browser-Anordnung", selection: Binding(get: { mix.prefs.ui.browserLayout }, set: { mix.prefs.ui.browserLayout = $0 })) {
-                    ForEach(BrowserLayout.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(BrowserLayout.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 Divider()
             }
@@ -233,7 +239,8 @@ extension MixApp {
                 store.preparation = []
             }
         }
-        guard x1 == nil else { return }
+        // Selbsttest: keine Controller anfassen (sonst steuert ein laufendes X1 die Test-Decks und umgekehrt)
+        guard x1 == nil, !Session.isSelfTest else { return }
         let m = X1Manager(core: mix.core, status: x1Status)
         m.prefs = mix.prefs.x1
         m.onBrowse = { [browser] pane, step in browser.moveSelection(by: step, pane: pane) }
@@ -261,6 +268,11 @@ func setAppIcon() {
 }
 
 AppResources.migrateDefaults()
+// Sprache aus den Einstellungen (vor dem ersten Fenster)
+switch AppPrefs.load().ui.language {
+case "de", "en": UserDefaults.standard.set([AppPrefs.load().ui.language], forKey: "AppleLanguages")
+default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+}
 Theme.registerFonts()
 
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.

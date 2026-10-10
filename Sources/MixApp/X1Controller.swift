@@ -14,6 +14,8 @@ final class X1Status {
         var right: Int
         /// welcher Browser-Bereich: 0 = links/oben, 1 = rechts/unten
         var pane: Int = 0
+        /// FX-Regler: -1 = links FX1 / rechts FX2, sonst beide Sektionen auf diese Unit
+        var fxUnit: Int = -1
     }
     var devices: [Info] = []
     var lastEvent = ""
@@ -32,6 +34,13 @@ final class X1Status {
         devices[i].pane = pane
         UserDefaults.standard.set(pane, forKey: "x1pane.\(serial)")
         manager?.assignPane(serial, pane)
+    }
+
+    func assignFX(_ serial: String, _ unit: Int) {
+        guard let i = devices.firstIndex(where: { $0.id == serial }) else { return }
+        devices[i].fxUnit = unit
+        UserDefaults.standard.set(unit, forKey: "x1fx.\(serial)")
+        manager?.assignFX(serial, unit)
     }
 
     func identify(_ serial: String) { manager?.identify(serial) }
@@ -59,8 +68,8 @@ final class X1Manager: @unchecked Sendable {
     var onPreview: (@MainActor (_ pane: Int) -> Void)?
     var onToggleBrowser: (@MainActor () -> Void)?
 
-    /// Standard: erstes X1 (nach USB-Position) steuert A/D, das zweite C/B – pro Gerät in den Einstellungen änderbar.
-    static let defaultAssignments: [(Int, Int)] = [(0, 3), (2, 1), (0, 1), (2, 3)]
+    /// Standard: erstes X1 (nach USB-Position) steuert A/C, das zweite B/D – pro Gerät in den Einstellungen änderbar.
+    static let defaultAssignments: [(Int, Int)] = [(0, 2), (1, 3), (0, 1), (2, 3)]
 
     var prefs: X1Prefs {
         get { lock.lock(); defer { lock.unlock() }; return _prefs }
@@ -107,8 +116,11 @@ final class X1Manager: @unchecked Sendable {
         let saved = UserDefaults.standard.array(forKey: "x1.\(serial)") as? [Int]
         let def = Self.defaultAssignments[min(units.count, Self.defaultAssignments.count - 1)]
         let savedPane = UserDefaults.standard.object(forKey: "x1pane.\(serial)") as? Int
-        let info = X1Status.Info(id: serial, location: loc, left: saved?.first ?? def.0, right: saved?.last ?? def.1,
+        var info = X1Status.Info(id: serial, location: loc, left: saved?.first ?? def.0, right: saved?.last ?? def.1,
                                  pane: savedPane ?? min(units.count, 1))
+        // Standard: Seite mit A/C steuert FX1, mit B/D FX2
+        info.fxUnit = UserDefaults.standard.object(forKey: "x1fx.\(serial)") as? Int
+            ?? ([0, 2].contains(info.left) || [0, 2].contains(info.right) ? 0 : 1)
         units[serial] = X1Unit(device: device, info: info, manager: self)
         DispatchQueue.main.async {
             self.status.devices.append(info)
@@ -132,6 +144,10 @@ final class X1Manager: @unchecked Sendable {
 
     func assignPane(_ serial: String, _ pane: Int) {
         core.controlQueue.async { self.units[serial]?.info.pane = pane }
+    }
+
+    func assignFX(_ serial: String, _ unit: Int) {
+        core.controlQueue.async { self.units[serial]?.info.fxUnit = unit }
     }
 
     func identify(_ serial: String) {
@@ -217,12 +233,12 @@ final class X1Manager: @unchecked Sendable {
             else { DispatchQueue.main.async { self.onToggleBrowser?() } }
         case let .fxKnob(u, k, v):
             // D/W + Regler 1–3 = Stärke der Slots Filter · Delay · Reverb
-            core.updateFX(u) { fx in
+            core.updateFX(unit.info.fxUnit >= 0 ? unit.info.fxUnit : u) { fx in
                 if k == 0 { fx.dryWet = v } else { fx.slots[k - 1].amount = v }
             }
         case let .fxButton(u, b, down):
             guard down else { return }
-            core.updateFX(u) { fx in
+            core.updateFX(unit.info.fxUnit >= 0 ? unit.info.fxUnit : u) { fx in
                 if b == 0 {
                     // Mode-Taste: alle Slots aus, sonst Delay-Zeit weiterschalten
                     if fx.anyOn { for i in fx.slots.indices { fx.slots[i].on = false } }
@@ -381,7 +397,7 @@ final class X1Unit {
         }
         r[0x12] = shift ? on : dim
         for u in 0..<2 {
-            let fx = state.fx[u]
+            let fx = state.fx[info.fxUnit >= 0 ? info.fxUnit : u]
             r[0x01 + u * 4] = fx.anyOn ? on : dim
             for i in 0..<3 { r[0x02 + u * 4 + i] = fx.slots[i].on ? on : dim }
         }

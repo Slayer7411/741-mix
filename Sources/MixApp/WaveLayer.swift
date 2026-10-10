@@ -23,6 +23,7 @@ struct WaveScene: Equatable {
     var colorful = true
     var phraseBeats = 64
     var barNumbers = true
+    var barMarkers = true
     var dimPlayed = true
     var cues: [Mark] = []
     var cuePoint: Double = 0
@@ -195,6 +196,8 @@ final class WaveLayerNSView: NSView {
         guard last > first, last - first < 5000 else { return }
         let bands = CGMutablePath(), beats = CGMutablePath(), bars = CGMutablePath(), phrases = CGMutablePath()
         let tris = CGMutablePath(), ptris = CGMutablePath(), ticks = CGMutablePath()
+        let m8 = CGMutablePath(), m16 = CGMutablePath(), m32 = CGMutablePath()
+        let magenta = NSColor(srgbRed: 0.88, green: 0.22, blue: 0.78, alpha: 1)
         let labels = CALayer()
         labels.actions = Self.noAnimation
         for b in first...last {
@@ -205,7 +208,12 @@ final class WaveLayerNSView: NSView {
                 let x1 = px(g.time(ofBeat: Double(b + phrase)) * pps)
                 bands.addRect(CGRect(x: x, y: 0, width: x1 - x, height: h))
             }
-            if isPhrase {
+            let barIdx = b / 4
+            let mark = scene.barMarkers && inBar == 0 ? (barIdx % 32 == 0 ? 32 : barIdx % 16 == 0 ? 16 : barIdx % 8 == 0 ? 8 : 0) : 0
+            if mark > 0 {
+                let mw: CGFloat = mark == 32 ? 4 : mark == 16 ? 3 : 2
+                (mark == 32 ? m32 : mark == 16 ? m16 : m8).addRect(CGRect(x: x - mw / 2, y: r, width: mw, height: h - r))
+            } else if isPhrase {
                 phrases.addRect(CGRect(x: x - 1, y: r, width: 2, height: h - r))
             } else if inBar == 0 {
                 bars.addRect(CGRect(x: x - 0.75, y: r, width: 1.5, height: h - r))
@@ -218,9 +226,9 @@ final class WaveLayerNSView: NSView {
                 tp.addLine(to: CGPoint(x: x, y: r + 6)); tp.closeSubpath()
                 let perPhrase = phrase / 4
                 let barInPhrase = (((b / 4) % perPhrase) + perPhrase) % perPhrase + 1
-                let label = isPhrase ? "P\(b / phrase + 1)" : (scene.barNumbers ? "\(barInPhrase)" : "")
+                let label = mark > 0 ? "\(mark)" : isPhrase ? "P\(b / phrase + 1)" : (scene.barNumbers ? "\(barInPhrase)" : "")
                 if !label.isEmpty {
-                    labels.addSublayer(text(label, isPhrase ? lila : bone.withAlphaComponent(0.85), at: CGPoint(x: x + 3, y: 1)))
+                    labels.addSublayer(text(label, mark > 0 ? magenta : isPhrase ? lila : bone.withAlphaComponent(0.85), at: CGPoint(x: x + 3, y: 1)))
                 }
             } else {
                 ticks.addRect(CGRect(x: x - 0.5, y: r - 4, width: 1, height: 4))
@@ -237,6 +245,9 @@ final class WaveLayerNSView: NSView {
         strip.addSublayer(shape(beats, bone.withAlphaComponent(0.42)))
         strip.addSublayer(shape(bars, bone.withAlphaComponent(0.9)))
         strip.addSublayer(shape(phrases, lila))
+        strip.addSublayer(shape(m8, magenta.withAlphaComponent(0.7)))
+        strip.addSublayer(shape(m16, magenta.withAlphaComponent(0.9)))
+        strip.addSublayer(shape(m32, magenta))
         strip.addSublayer(shape(ticks, muted))
         strip.addSublayer(shape(tris, bone))
         strip.addSublayer(shape(ptris, lila))

@@ -73,6 +73,7 @@ public final class NMLParser: NSObject, XMLParserDelegate {
             current?.path = Self.plainDir(dir) + file
         case "ALBUM" where current != nil:
             current?.album = a["TITLE"] ?? ""
+            current?.trackNumber = Int(a["TRACK"] ?? "") ?? 0
         case "INFO" where current != nil:
             guard var t = current else { return }
             t.genre = a["GENRE"] ?? ""
@@ -82,6 +83,8 @@ public final class NMLParser: NSObject, XMLParserDelegate {
             t.keyText = a["KEY"] ?? ""
             t.remixer = a["REMIXER"] ?? ""
             t.producer = a["PRODUCER"] ?? ""
+            t.catalogNo = a["CATALOG_NO"] ?? ""
+            t.fileSizeKB = Int(a["FILESIZE"] ?? "") ?? 0
             t.duration = Double(a["PLAYTIME_FLOAT"] ?? a["PLAYTIME"] ?? "") ?? 0
             t.bitrate = (Int(a["BITRATE"] ?? "") ?? 0) / 1000
             t.rating = (Int(a["RANKING"] ?? "") ?? 0) / 51

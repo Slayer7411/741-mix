@@ -89,6 +89,15 @@ struct UIPrefs: Codable, Equatable {
     var previewStart = 0.3
     var browserHeight = 240.0
     var browserLayout = BrowserLayout.sideBySide
+    /// Ordner-Baum ausblenden, solange die Decks zu sehen sind (Browser-Listen breiter)
+    var hideTreeWithDecks = false
+    var tagHighlight = true
+    /// Marker alle 8 / 16 / 32 Takte in der Wellenform (magenta)
+    var barMarkers = true
+    /// "system", "de" oder "en" – wirkt nach Neustart
+    var language = "system"
+    /// Tag → Farbe (hex), sonst Standardfarbe aus dem Namen
+    var tagColors: [String: String] = [:]
     /// Grid-Werkzeuge (wie Traktors GRID-Tab) am Deck zeigen
     var showGridTools = true
     /// History zusätzlich in Traktors History-Ordner schreiben (dort im Archiv sichtbar)
@@ -123,8 +132,30 @@ struct AppPrefs: Codable, Equatable {
             }
             return r
         }
-        guard let merged = try? JSONSerialization.data(withJSONObject: merge(defaults, saved)),
-              let p = try? JSONDecoder().decode(AppPrefs.self, from: merged) else { return AppPrefs() }
+        if let merged = try? JSONSerialization.data(withJSONObject: merge(defaults, saved)),
+           let p = try? JSONDecoder().decode(AppPrefs.self, from: merged) { return p }
+        // einzelner Wert passt nicht mehr (z. B. nach Update) → Wert für Wert übernehmen, Rest bleibt erhalten
+        func leaves(_ d: [String: Any], _ path: [String] = []) -> [([String], Any)] {
+            d.flatMap { k, v -> [([String], Any)] in
+                if let o = v as? [String: Any] { return leaves(o, path + [k]) }
+                return [(path + [k], v)]
+            }
+        }
+        func setting(_ d: [String: Any], _ path: [String], _ v: Any) -> [String: Any] {
+            var r = d
+            guard let k = path.first else { return r }
+            if path.count == 1 { if r[k] != nil { r[k] = v } } else if let sub = r[k] as? [String: Any] { r[k] = setting(sub, Array(path.dropFirst()), v) }
+            return r
+        }
+        var good = defaults
+        for (path, v) in leaves(saved) {
+            let trial = setting(good, path, v)
+            if let data = try? JSONSerialization.data(withJSONObject: trial), (try? JSONDecoder().decode(AppPrefs.self, from: data)) != nil {
+                good = trial
+            }
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: good),
+              let p = try? JSONDecoder().decode(AppPrefs.self, from: data) else { return AppPrefs() }
         return p
     }
 

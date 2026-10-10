@@ -39,7 +39,7 @@ struct DeckView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(deck.loading ? "Lade …" : (deck.track?.title ?? "—"))
                     .font(Theme.mono(13, .semibold)).lineLimit(1)
-                Text(deck.error ?? deck.track?.artist ?? "Kein Track geladen")
+                Text(deck.error ?? deck.track?.artist ?? String(localized: "Kein Track geladen"))
                     .font(Theme.mono(11)).foregroundStyle(deck.error == nil ? Color.secondary : Color.red).lineLimit(1)
             }
             Spacer(minLength: 4)
