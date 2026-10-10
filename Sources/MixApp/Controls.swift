@@ -113,3 +113,27 @@ struct PressButton: View {
                 .onEnded { _ in pressed = false; up() })
     }
 }
+
+/// Wie ViewThatFits(in: .horizontal): zeigt den ersten Kandidaten, dessen ideale Breite passt, sonst den letzten.
+/// Die Kandidaten bleiben aber bestehen (ViewThatFits erzeugt sie bei jedem Layout-Durchgang neu); nicht gewählte
+/// liegen weit außerhalb und werden nicht gezeigt.
+struct FirstFit: Layout {
+    private func choice(_ width: CGFloat?, _ subviews: Subviews) -> Int {
+        guard let width else { return 0 }
+        return subviews.indices.first { subviews[$0].sizeThatFits(.unspecified).width <= width } ?? subviews.count - 1
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        return subviews[choice(proposal.width, subviews)].sizeThatFits(proposal)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard !subviews.isEmpty else { return }
+        let i = choice(proposal.width, subviews)
+        for (j, s) in subviews.enumerated() {
+            if j == i { s.place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(bounds.size)) }
+            else { s.place(at: CGPoint(x: -100_000, y: -100_000), anchor: .topLeading, proposal: .unspecified) }
+        }
+    }
+}
