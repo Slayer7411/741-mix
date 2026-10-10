@@ -12,7 +12,7 @@ self test: main thread blocked for 3s -> deck a plays on (3.08 s), deck b follow
 
 ## ◆ MODULES
 
-* `MixCore` -> swift, no audio: track model, nml parser, smartlist queries, beatgrid, history, track edits
+* `MixCore` -> swift, no audio: track model, nml parser, smartlist queries, beatgrid, history, track edits, metadata edits, collection write-back
 * `MixDSP` -> c++17 realtime core with a plain c api (`MixDSP.h`) and the coreaudio render callback
 * `MixEngine` -> swift: device output, routing, decoding, `MixController` (all commands, control thread)
 * `MixApp` -> swiftui: decks, mixer, fx, master clock, browser, settings, controller driver, history store

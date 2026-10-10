@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Observation
 import MixCore
 
@@ -15,6 +15,16 @@ final class LibraryStore {
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedDescending }
         return found.first ?? base.appendingPathComponent("Traktor 3.11.2/collection.nml")
     }()
+
+    /// Collection-Software läuft? Dann nicht in die Collection-Datei schreiben – sie hält die Collection im Speicher
+    /// und überschreibt die Datei beim Beenden.
+    nonisolated static func collectionSoftwareRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            (app.localizedName ?? "").hasPrefix("Traktor")
+                || (app.bundleIdentifier ?? "").localizedCaseInsensitiveContains("traktor")
+                || (app.executableURL?.lastPathComponent ?? "").hasPrefix("Traktor")
+        }
+    }
 
     var tracks: [Track] = [] { didSet { revision += 1 } }
     /// zählt jede Änderung an Collection/Preparation/Smartlists (für Browser-Zwischenspeicher)
@@ -63,8 +73,17 @@ final class LibraryStore {
         }
     }
 
+    /// eigene Metadaten-Änderungen (Browser: Inline, Bearbeiten-Fenster), liegen über der Collection
+    @ObservationIgnored let meta = MetadataStore(url: Session.isSelfTest ? nil : HistoryStore.baseDir.appendingPathComponent("metadata.json"))
+    /// Collection-Stand bearbeiteter Tracks (vor den eigenen Änderungen) – für „Änderungen verwerfen“
+    @ObservationIgnored private var collectionBase: [String: Track] = [:]
+    @ObservationIgnored private var position: [String: Int] = [:]
+    @ObservationIgnored private var writeTask: Task<Void, Never>?
+    @ObservationIgnored private var writing = false
+
     func load(_ url: URL = LibraryStore.defaultNML) {
         status = "Lade \(url.lastPathComponent) …"
+        let meta = meta
         Task.detached(priority: .userInitiated) {
             do {
                 let start = Date()
@@ -79,25 +98,138 @@ final class LibraryStore {
                     }
                 }
                 for i in c.tracks.indices { c.tracks[i].fileMissing = missing[i] }
+                // eigene Metadaten-Änderungen über die Collection legen
+                var collectionBase: [String: Track] = [:]
+                for i in c.tracks.indices {
+                    guard let e = meta.edit(for: c.tracks[i].key) else { continue }
+                    collectionBase[c.tracks[i].key] = c.tracks[i]
+                    c.tracks[i] = e.apply(to: c.tracks[i])
+                }
                 let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
                 let index = NMLEntryIndex(nmlText: text)
                 // MUSIC FOLDERS: Pfad-Index und Standard-Ordner einmal je Collection
                 let folderIndex = MusicFolder.pathIndex(c.tracks)
                 let folderRoot = MusicFolder.defaultRoot(paths: c.tracks.filter(\.fileExists).map(\.path))
+                let base = collectionBase
                 let secs = Date().timeIntervalSince(start)
                 await MainActor.run {
                     self.tracks = c.tracks
                     self.byKey = Dictionary(c.tracks.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+                    self.position = Dictionary(c.tracks.indices.map { (c.tracks[$0].key, $0) }, uniquingKeysWith: { a, _ in a })
+                    self.collectionBase = base
                     self.entryIndex = index
                     self.folders.collectionLoaded(index: folderIndex, defaultRoot: folderRoot)
                     self.onLoaded?()
                     self.root = c.root
                     self.smartCache = [:]
+                    self.customCache = [:]
                     self.sourceURL = url
                     self.status = "\(c.tracks.count) Tracks · \(url.lastPathComponent) · \(String(format: "%.1f", secs)) s"
                 }
             } catch {
                 await MainActor.run { self.status = "Fehler beim Laden: \(error)" }
+            }
+        }
+    }
+
+    // MARK: - Metadaten bearbeiten
+
+    /// Änderungen übernehmen (Track-Schlüssel -> Feld -> kanonischer Wert): sofort in Liste, Suche, Sortierung;
+    /// gespeichert in metadata.json; mit `writeBack` danach (gesammelt, einmal je Stapel) in die Collection-Datei.
+    func applyEdits(_ changes: [String: [TrackField: String]], writeBack: Bool) {
+        var list = tracks
+        var applied: [String: [TrackField: String]] = [:]
+        for (key, fields) in changes {
+            guard let i = position[key], i < list.count, list[i].key == key else { continue }
+            var t = list[i]
+            let valid = fields.filter { f, v in f.isEditable(t) && f.normalize(v) == v && f.value(of: t) != v }
+            guard !valid.isEmpty else { continue }
+            if collectionBase[key] == nil { collectionBase[key] = t }
+            for (f, v) in valid { f.set(v, on: &t) }
+            t.buildSearchText()
+            list[i] = t
+            byKey[key] = t
+            applied[key] = valid
+        }
+        guard !applied.isEmpty else { return }
+        meta.merge(applied, base: collectionBase)
+        replaceRunning(applied.keys)
+        smartCache = [:]
+        customCache = [:]
+        tracks = list
+        if writeBack { scheduleWriteBack() }
+    }
+
+    /// eigene Änderungen verwerfen -> wieder die Werte der Collection
+    func revertEdits(_ keys: [String]) {
+        var list = tracks
+        var reverted: [String] = []
+        for key in keys {
+            guard let b = collectionBase[key], let i = position[key], i < list.count, list[i].key == key else { continue }
+            var t = b
+            t.fileMissing = list[i].fileMissing
+            list[i] = t
+            byKey[key] = t
+            collectionBase[key] = nil
+            reverted.append(key)
+        }
+        meta.remove(keys)
+        guard !reverted.isEmpty else { return }
+        replaceRunning(reverted)
+        smartCache = [:]
+        customCache = [:]
+        tracks = list
+    }
+
+    func hasEdits(_ keys: some Sequence<String>) -> Bool { keys.contains { meta.edit(for: $0) != nil } }
+
+    private func replaceRunning(_ keys: some Sequence<String>) {
+        let set = Set(keys)
+        if running.contains(where: { set.contains($0.key) }) { running = running.map { byKey[$0.key] ?? $0 } }
+    }
+
+    /// Schreiben in die Collection-Datei gesammelt nach kurzer Pause (mehrere Übernahmen = ein Schreibvorgang)
+    func scheduleWriteBack() {
+        writeTask?.cancel()
+        writeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            self?.flushWriteBack()
+        }
+    }
+
+    /// alle noch nicht geschriebenen Änderungen in die Collection-Datei: Sicherung, textgenaues Ersetzen der
+    /// ENTRY-Blöcke, atomar. Geschriebene Felder verlassen danach metadata.json (die Datei hat sie jetzt).
+    func flushWriteBack() {
+        guard !Session.isSelfTest, let url = sourceURL else { return }
+        guard !writing else { scheduleWriteBack(); return }
+        let pending = meta.all.mapValues(\.values).filter { position[$0.key] != nil }
+        guard !pending.isEmpty else { return }
+        if Self.collectionSoftwareRunning() {
+            status = String(localized: "Collection-Datei nicht geschrieben: die Collection-Software läuft. Änderungen bleiben in MINOS-741.")
+            return
+        }
+        writing = true
+        let index = entryIndex
+        let backupDir = url.deletingLastPathComponent().appendingPathComponent("Backup MINOS-741")
+        Task.detached(priority: .utility) {
+            let result = Result { try CollectionWriter.write(url: url, changes: pending, index: index, backupDir: backupDir) }
+            await MainActor.run {
+                self.writing = false
+                switch result {
+                case let .success(r):
+                    self.entryIndex.update(r.blocks)
+                    self.meta.clear(written: r.written)
+                    for k in r.written.keys { self.collectionBase[k] = nil }
+                    var msg = String(localized: "Collection-Datei geschrieben: \(r.written.count) Tracks")
+                    if let b = r.backup { msg += " · " + String(localized: "Sicherung \(b.lastPathComponent)") }
+                    if !r.missing.isEmpty {
+                        msg += " · " + String(localized: "\(r.missing.count) nicht gefunden (Datei inzwischen geändert -> ↻ neu laden)")
+                    }
+                    self.status = msg
+                case let .failure(e):
+                    self.status = String(localized: "Collection-Datei nicht geschrieben: \(String(describing: e))")
+                }
             }
         }
     }

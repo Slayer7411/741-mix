@@ -119,6 +119,8 @@ struct UIPrefs: Codable, Equatable {
     var phraseBeats = 64
     /// MUSIC FOLDERS: eigene Musik-Ordner (leer = automatisch aus der Collection)
     var musicFolders: [String] = []
+    /// Metadaten-Änderungen aus dem Browser auch in die Collection-Datei schreiben (mit Sicherung davor)
+    var writeCollection = false
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.

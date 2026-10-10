@@ -22,6 +22,11 @@ final class BrowserPaneModel: Identifiable {
     var showTree = true
     /// MUSIC FOLDERS: Dateien aus allen Unterordnern zeigen
     var subfolders = false
+    /// Inline-Bearbeitung: Zelle (Track + Feld) und der Text im Feld
+    var inline: InlineEdit?
+    var inlineText = ""
+    /// offenes Bearbeiten-Fenster (⌘E, Rechtsklick -> Bearbeiten …)
+    var editSession: TrackEditSession?
 
     init(name: String, source: BrowserSource = .collection) {
         self.name = name
@@ -61,6 +66,15 @@ final class BrowserPaneModel: Identifiable {
         cachedRows = filtered(sortedBase, separators: separators)
         cacheKey = key
         return cachedRows
+    }
+
+    /// Bearbeiten-Fenster für die gewählten Tracks (Reihenfolge der Liste); ein Track -> PREV/NEXT durch die Liste
+    func openEditor(_ ids: Set<Track.ID>, rows: [Track], store: LibraryStore) {
+        let keys = rows.map(\.key)
+        var sel = keys.filter { ids.contains($0) }
+        if sel.isEmpty { sel = ids.sorted() }
+        guard !sel.isEmpty, inline == nil else { return }
+        editSession = TrackEditSession(selection: sel, list: keys, store: store)
     }
 
     private func filtered(_ base: [Track], separators: String) -> [Track] {
@@ -103,6 +117,21 @@ struct BrowserPane: View {
             }
             .frame(minWidth: 380)
         }
+        .background {
+            // ⌘E: Bearbeiten-Fenster für die Auswahl (nur der zuletzt benutzte Bereich reagiert)
+            if browserState.activePane.id == model.id, !model.source.isHistory {
+                Button("") { model.openEditor(model.selection, rows: rows, store: store) }
+                    .keyboardShortcut("e", modifiers: .command)
+                    .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+            }
+        }
+        .sheet(item: $model.editSession) { session in
+            TrackEditPanel(session: session) { key in
+                model.selection = [key]
+                browserState.scrollRequest = (model.id, key)
+            }
+        }
+        .onChange(of: decks.prefs.ui.writeCollection) { _, on in if on { store.scheduleWriteBack() } }
     }
 
     private var historyEntries: [HistoryEntry] {
@@ -415,6 +444,18 @@ struct TrackTable: View {
     let rows: [Track]
     @Bindable var model: BrowserPaneModel
     @State private var columns = TableColumnCustomization<Track>()
+    @State private var inlineCtl = InlineEditController()
+
+    /// Zelle: im Inline-Modus ein Eingabefeld, sonst die normale Anzeige
+    @ViewBuilder private func cell(_ t: Track, _ f: TrackField, @ViewBuilder _ display: () -> some View) -> some View {
+        if let e = model.inline, e.key == t.key, e.field == f {
+            InlineEditor(model: model, edit: e) { commit, move in inlineCtl.finish(e, commit: commit, move: move) }
+        } else {
+            display()
+        }
+    }
+
+    private func text(_ t: Track, _ f: TrackField) -> some View { cell(t, f) { Text(f.value(of: t)) } }
 
     /// gespeicherte Spaltenreihenfolge: neue Spalten (z. B. „played“) vorne einsetzen statt hinten anhängen
     private static func withNewColumnsFirst(_ data: Data) -> Data {
@@ -435,27 +476,31 @@ struct TrackTable: View {
             .width(16).customizationID("analyzed")
         TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4) }
             .width(6).customizationID("color")
-        TableColumn("Artist", value: \Track.artist) { (t: Track) in Text(t.artist).foregroundStyle(t.loose ? Theme.muted : t.fileExists ? Theme.bone : Theme.state) }
+        TableColumn("Artist", value: \Track.artist) { (t: Track) in
+                cell(t, .artist) { Text(t.artist).foregroundStyle(t.loose ? Theme.muted : t.fileExists ? Theme.bone : Theme.state) }
+            }
             .width(min: 80, ideal: 150).customizationID("artist")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols1: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Title", value: \Track.title) { (t: Track) in Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) }
+        TableColumn("Title", value: \Track.title) { (t: Track) in cell(t, .title) { Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) } }
             .width(min: 80, ideal: 200).customizationID("title")
-        TableColumn("Remixer", value: \Track.remixer)
+        TableColumn("Remixer", value: \Track.remixer) { (t: Track) in text(t, .remixer) }
             .width(min: 60, ideal: 110).customizationID("remixer").defaultVisibility(.hidden)
-        TableColumn("Producer", value: \Track.producer)
+        TableColumn("Producer", value: \Track.producer) { (t: Track) in text(t, .producer) }
             .width(min: 60, ideal: 110).customizationID("producer").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols2: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Release", value: \Track.album)
+        TableColumn("Release", value: \Track.album) { (t: Track) in text(t, .album) }
             .width(min: 60, ideal: 130).customizationID("release").defaultVisibility(.hidden)
-        TableColumn("Track #", value: \Track.trackNumber) { (t: Track) in Text(t.trackNumber > 0 ? "\(t.trackNumber)" : "") }
+        TableColumn("Track #", value: \Track.trackNumber) { (t: Track) in text(t, .trackNumber) }
             .width(40).customizationID("trackno").defaultVisibility(.hidden)
-        TableColumn("BPM", value: \Track.bpm) { (t: Track) in Text(t.bpm > 0 ? String(format: "%.2f", t.bpm) : "").monospacedDigit() }
+        TableColumn("BPM", value: \Track.bpm) { (t: Track) in
+                cell(t, .bpm) { Text(t.bpm > 0 ? String(format: "%.2f", t.bpm) : "").monospacedDigit() }
+            }
             .width(56).customizationID("bpm")
     }
 
@@ -463,7 +508,7 @@ struct TrackTable: View {
     private var cols3: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Key", value: \Track.openKey) { (t: Track) in Text(t.openKey) }
             .width(36).customizationID("key")
-        TableColumn("Key Text", value: \Track.keyText)
+        TableColumn("Key Text", value: \Track.keyText) { (t: Track) in text(t, .keyText) }
             .width(40).customizationID("keytext").defaultVisibility(.hidden)
         TableColumn("Time", value: \Track.duration) { (t: Track) in Text(Theme.time(t.duration)).monospacedDigit() }
             .width(44).customizationID("time")
@@ -473,27 +518,29 @@ struct TrackTable: View {
     private var cols4: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Gain", value: \Track.gainSort) { (t: Track) in Text(t.perceivedDb.map { String(format: "%+.1f", $0) } ?? "").monospacedDigit() }
             .width(42).customizationID("gain").defaultVisibility(.hidden)
-        TableColumn("Rating", value: \Track.rating) { (t: Track) in Text(String(repeating: "★", count: max(0, min(5, t.rating)))) }
+        TableColumn("Rating", value: \Track.rating) { (t: Track) in
+                cell(t, .rating) { Text(String(repeating: "★", count: max(0, min(5, t.rating)))) }
+            }
             .width(56).customizationID("rating").defaultVisibility(.hidden)
-        TableColumn("Comment", value: \Track.comment)
+        TableColumn("Comment", value: \Track.comment) { (t: Track) in text(t, .comment) }
             .width(min: 80, ideal: 170).customizationID("comment")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols5: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Comment 2", value: \Track.comment2) { (t: Track) in
-                TagChips(tags: BrowserPaneModel.tags(of: t, separators: decks.prefs.ui.tagSeparators), ui: decks.prefs.ui)
+                cell(t, .comment2) { TagChips(tags: BrowserPaneModel.tags(of: t, separators: decks.prefs.ui.tagSeparators), ui: decks.prefs.ui) }
             }
             .width(min: 80, ideal: 260).customizationID("comment2")
-        TableColumn("Label", value: \Track.label)
+        TableColumn("Label", value: \Track.label) { (t: Track) in text(t, .label) }
             .width(min: 60, ideal: 110).customizationID("label")
-        TableColumn("Catalog No", value: \Track.catalogNo)
+        TableColumn("Catalog No", value: \Track.catalogNo) { (t: Track) in text(t, .catalogNo) }
             .width(min: 50, ideal: 90).customizationID("catalog").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols6: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Genre", value: \Track.genre)
+        TableColumn("Genre", value: \Track.genre) { (t: Track) in text(t, .genre) }
             .width(min: 50, ideal: 100).customizationID("genre").defaultVisibility(.hidden)
         TableColumn("Plays", value: \Track.playCount) { (t: Track) in Text(t.playsText) }
             .width(38).customizationID("plays")
@@ -505,7 +552,7 @@ struct TrackTable: View {
     private var cols7: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Import", value: \Track.importSort) { (t: Track) in Text(t.importText) }
             .width(74).customizationID("import")
-        TableColumn("Release Date", value: \Track.releaseSort) { (t: Track) in Text(Track.dateText(t.releaseDate)) }
+        TableColumn("Release Date", value: \Track.releaseSort) { (t: Track) in text(t, .releaseDate) }
             .width(74).customizationID("releasedate").defaultVisibility(.hidden)
         TableColumn("Bitrate", value: \Track.bitrate) { (t: Track) in Text(t.bitrate > 0 ? "\(t.bitrate)" : "") }
             .width(44).customizationID("bitrate").defaultVisibility(.hidden)
@@ -515,6 +562,8 @@ struct TrackTable: View {
     private var cols8: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("File Name", value: \Track.fileName)
             .width(min: 80, ideal: 220).customizationID("file").defaultVisibility(.hidden)
+        TableColumn("Mix", value: \Track.mix) { (t: Track) in text(t, .mix) }
+            .width(min: 60, ideal: 110).customizationID("mix").defaultVisibility(.hidden)
     }
 
     var body: some View {
@@ -540,9 +589,26 @@ struct TrackTable: View {
         .font(Theme.mono(11))
         .scrollContentBackground(.hidden)
         .background(Theme.void)
+        .background(TableViewFinder(controller: inlineCtl))
+        .onAppear {
+            inlineCtl.model = model
+            inlineCtl.store = store
+            inlineCtl.rows = { [model, store, history, decks] in
+                model.rows(from: store, history: history, separators: decks.prefs.ui.tagSeparators)
+            }
+            inlineCtl.writeBack = { [decks] in decks.prefs.ui.writeCollection }
+            inlineCtl.install()
+        }
+        .onDisappear { inlineCtl.uninstall() }
         .contextMenu(forSelectionType: Track.ID.self) { ids in
             ForEach(0..<4, id: \.self) { n in
                 Button("In Deck \(["A", "B", "C", "D"][n]) laden") { load(ids, n) }
+            }
+            Divider()
+            Button("Bearbeiten …") { model.openEditor(ids, rows: rows, store: store) }
+                .keyboardShortcut("e", modifiers: .command)
+            if store.hasEdits(ids) {
+                Button("Eigene Änderungen verwerfen") { store.revertEdits(Array(ids)) }
             }
             Divider()
             Button("An Preparation anhängen") { store.preparation.append(contentsOf: ids.filter { !store.preparation.contains($0) }) }
@@ -558,7 +624,8 @@ struct TrackTable: View {
             Divider()
             Button("Reset Played State") { history.resetPlayed() }
         } primaryAction: { ids in
-            load(ids, decks.focusedDeck)
+            // Return = Inline-Bearbeitung der gewählten Zeile, Doppelklick = ins Fokus-Deck laden
+            if NSApp.currentEvent?.type == .keyDown { inlineCtl.beginFromKeyboard(ids) } else { load(ids, decks.focusedDeck) }
         }
         .onChange(of: model.selection) { browser.activePaneID = model.id }
         .onChange(of: browser.scrollRequest?.track) {

@@ -46,6 +46,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * tag separator for comment 2, empty = space
 * browser layout, hide the tree while decks are visible
 * music folders for MUSIC FOLDERS: add / remove, empty = automatic (the folder holding 90 % of the collection's files)
+* write browser edits into the collection file (off): backup at most once per hour into `Backup MINOS-741`, not while the library software runs -> [manual](MANUAL.md#-09--browser)
 * language: system / english / german (after restart)
 
 ## ◆ AUDIO

@@ -29,6 +29,8 @@ public struct Track: Identifiable, Hashable, Sendable {
     public var genre: String = ""
     public var remixer: String = ""
     public var producer: String = ""
+    /// NML INFO MIX (z. B. „Original Mix“)
+    public var mix: String = ""
     public var catalogNo: String = ""
     public var trackNumber: Int = 0
     public var fileSizeKB: Int = 0
@@ -44,6 +46,8 @@ public struct Track: Identifiable, Hashable, Sendable {
     public var rating: Int = 0
     public var color: Int = 0
     public var playCount: Int = 0
+    /// NML ENTRY LOCK="1": BPM, Grid und Key in der Collection gesperrt
+    public var locked = false
     public var importDate: Date?
     public var releaseDate: Date?
     public var lastPlayed: Date?

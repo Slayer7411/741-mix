@@ -52,7 +52,8 @@
 | preparation (archived on start, nml) | ■ | |
 | history + archive (nml in and out) | ■ | |
 | hide / move / save columns | □ p2 | |
-| edit tags, rating, color, comments | □ p2 | own data first, writing the collection only on request |
+| edit metadata: inline, edit window, several tracks | ■ | own file first, writing the collection only on request (setting) |
+| edit track color | □ p2 | |
 | cover art, track info panel, favorites, explorer | □ p3 | |
 
 ## ◆ CONTROLLERS / OTHER

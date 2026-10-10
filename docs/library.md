@@ -18,6 +18,12 @@
 * default folder: deepest folder that holds 90 % of the collection's existing files, e.g. `~/Music/DJ`
 * own folders: ⌘, -> DISPLAY -> browser -> add folder (the automatic one stays in the list)
 * every pane keeps its own folder and the subfolders switch, saved in the session
+## ◆ EDIT TRACKS
+
+* inline: click a selected row again or return, tab = next column, esc = cancel
+* edit window: right click -> `Bearbeiten …` or ⌘E, also for several tracks at once
+* saved in MINOS-741 first, optional write-back into the collection file with backup
+* details: [manual](MANUAL.md#-09--browser), [nml files](nml-files.md)
 
 ## ◆ ROLE CHIPS
 

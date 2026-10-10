@@ -278,6 +278,32 @@ any installed audio unit effect (apple or third-party, v2 and v3) in the single 
 
 role chips `BASIS · SYNTH · DRUMS · VOLL · ATMO` -> filter on the role at the end of comment 2 (`» BASIS`). several chips = any of them.
 
+### edit tracks
+
+editable: title, artist, release, mix, remixer, producer, label, catalog no, genre, comment, comment 2, key text, track #, release date, bpm (not for tracks locked in the collection), rating. not editable: file, time, bitrate, import, plays, played, key (analysis).
+
+* inline: click a selected row again -> the cell turns into a field (double click still loads into the deck). return on a selected row = edit too
+* in the field: return = apply, esc = cancel, tab / ⇧tab = next / previous editable column, click elsewhere = apply
+* rating inline: click a star or type 0-5
+* edit window: right click -> `Bearbeiten …` or ⌘E -> all fields, stars for the rating, PREV / NEXT, RESTORE · CANCEL · APPLY · OK
+* one track: PREV / NEXT walk through the list (the list selection follows), changes of every visited track are applied together
+* several tracks (⌘ / ⇧ click): first view `ALL n` -> equal values are shown, different ones show `‹mehrere›`. typing into a field ticks its box ■ = this value goes to all selected tracks. PREV / NEXT show the tracks one by one: unticked fields change only that track
+* RESTORE = drop the input since opening or the last APPLY. invalid input (date, bpm, track #) turns red and is not applied
+* list, search and sorting update right after APPLY
+* changes live in `metadata.json` (MINOS-741 folder) on top of the collection, also after a reload. right click -> `Eigene Änderungen verwerfen` = back to the collection's values
+
+### write into the collection file
+
+off by default. ⌘, -> ANZEIGE -> browser -> `Änderungen in die Collection-Datei schreiben (Backup davor)`.
+
+* on: 1.5 s after the last APPLY all pending changes go into `collection.nml` in one write
+* before that a backup: `Backup MINOS-741/collection_YYYY-MM-DD_HHMMSS.nml` next to the collection, at most one per hour
+* only the edited `ENTRY` blocks change, the rest of the file stays byte for byte the same. the new file is checked (readable, same track count) and replaces the old one atomically
+* not while the library software is running (it keeps the collection in memory and overwrites the file on quit) -> status bar message, changes stay in MINOS-741 and go out with the next write
+* written fields leave `metadata.json`, the file holds them now. a track whose entry changed in the file meanwhile is skipped (status bar) -> ↻ reload, edit again
+* switching the setting on writes the changes made before
+* tags inside the audio files are not touched
+
 ## ◆ 10 · TAGS + SMARTLISTS
 
 comment 2 is split into tags at a separator (⌘, -> DISPLAY, default space, mine `·`):
@@ -340,6 +366,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | ⌥⌘B | big browser |
 | space | big browser (not while typing in a search field) |
 | ⌘O | open collection |
+| ⌘E | edit the selected tracks (browser) |
 | ⌘, | settings |
 | ⌘W | close window -> main window: quit (asks first) |
 
@@ -352,7 +379,9 @@ controller mapping -> [controllers.md](controllers.md).
 
 | what | where |
 |---|---|
-| collection (read only) | newest `collection.nml` in the library folder |
+| collection (read, write only on request) | newest `collection.nml` in the library folder |
+| collection backups (write-back on) | `Backup MINOS-741` next to `collection.nml` |
+| track metadata edits | `~/Library/Application Support/MINOS-741/metadata.json` |
 | settings | user defaults, key `prefs.v1` |
 | session (decks, fx, clock, browser) | `~/Library/Application Support/MINOS-741/session.json` |
 | hotcue + grid edits | `~/Library/Application Support/MINOS-741/edits.json` |

@@ -8,7 +8,29 @@
 * `MUSICAL_KEY` 0-11 major (c…b), 12-23 minor -> shown as open key (1d…12m)
 * `CUE_V2 TYPE`: 0 cue, 1 fade in, 2 fade out, 3 load, 4 grid, 5 loop. `START` / `LEN` in ms, `HOTCUE` -1 or 0-7
 * `PLAYLISTS/NODE` tree: folder, playlist, smartlist (`SEARCH_EXPRESSION QUERY`)
-* the collection file itself is never written
+* `ENTRY LOCK="1"` = locked track -> bpm not editable
+
+## ◆ COLLECTION.NML (write-back, optional)
+
+off by default (setting). browser edits go to `metadata.json` first; with write-back on they are written into the collection file:
+
+| field | written to |
+|---|---|
+| title, artist | `ENTRY TITLE`, `ENTRY ARTIST` |
+| release, track # | `ALBUM TITLE`, `ALBUM TRACK` |
+| genre, label, comment, comment 2, key text | `INFO GENRE`, `LABEL`, `COMMENT`, `RATING`, `KEY` |
+| remixer, producer, mix, catalog no | `INFO REMIXER`, `PRODUCER`, `MIX`, `CATALOG_NO` |
+| release date | `INFO RELEASE_DATE` (`2011/9/26`) |
+| rating 0-5 | `INFO RANKING` (stars × 51, 0 = attribute removed) |
+| bpm | `TEMPO BPM` (`%.6f`) |
+
+* the raw `ENTRY` text from loading is searched in the current file and replaced, nothing else changes (encoding, line endings, attribute order, cues, `AUDIO_ID`, `MODIFIED_DATE`)
+* changed attributes keep their place, new ones go to the end of the tag, empty values remove the attribute, missing `ALBUM` / `INFO` / `TEMPO` elements are inserted where the collection puts them
+* escaping like the collection: `&amp; &lt; &gt; &quot;`, apostrophes stay raw
+* entry not found (file saved elsewhere meanwhile) -> skipped and reported
+* result is parsed before it replaces the file: must read, same track count. temp file + rename
+* backup first: `Backup MINOS-741/collection_YYYY-MM-DD_HHMMSS.nml`, at most one per hour
+* never while the library software is running
 
 ## ◆ SMARTLIST QUERIES
 
