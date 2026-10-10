@@ -9,12 +9,21 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * browser: RUNNING TRACKS under the collection -> the tracks loaded on the decks
 * bar counter: ↺ button next to it -> current beat = bar 1
 * browser: played column ▶ in front (✓ = played since the last reset), right click on TRACK COLLECTION -> Reset Played State
+* engine tests without an audio device (`swift test`): transport, seek, loop, reverse, keylock, delay tail, limiter, clock, track handoff
+* ci: build + tests on every push and pull request, badge in the readme
 
 ### changed
+* browser search: ~35 ms -> ~1.5 ms per keystroke (14k tracks, prepared search text), accents ignored. the list is sorted once per source, a keystroke only filters (was: sort on every keystroke)
+* track loading: decoded in chunks straight into the deck buffer -> one copy in memory instead of two or three while loading
+* waveform: no core animation transaction while the deck stands still
 * x1: mode = fx on / off instead of cycling effects, shift + mode = next effect / delay time
 * fx off = spillover -> delay and reverb get no new audio but ring out
 * reverb like traktor (single): SIZE / HP / LP, the filters only feed the reverb, the track stays dry, D/W = how much goes in -> bright swipe from the highs, long tail (size 1 ≈ 20 s), full D/W ≈ 5 dB over the track
 * stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
+
+### fixed
+* track handoff to the audio thread: generation counter instead of guessing the free slot -> the old buffer can no longer be freed while the audio thread still reads it
+* level meter: both channels (was left only)
 
 ## ◆ [0.7.0] · 2026-10-10 · DMG
 

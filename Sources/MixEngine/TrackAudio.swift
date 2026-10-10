@@ -4,8 +4,9 @@ import AVFoundation
 public final class TrackAudio: @unchecked Sendable {
     public let left: UnsafeMutablePointer<Float>
     public let right: UnsafeMutablePointer<Float>
-    public let frames: Int
+    public private(set) var frames: Int = 0
     public let sampleRate: Double
+    private let capacity: Int
 
     /// Wellenform: pro Block Spitze (0–1) und Energieanteil Bass/Mitte/Höhe (Summe 1).
     public static let blocksPerSecond = 300.0
@@ -16,11 +17,11 @@ public final class TrackAudio: @unchecked Sendable {
 
     public var duration: Double { Double(frames) / sampleRate }
 
-    init(frames: Int, sampleRate: Double) {
-        self.frames = frames
+    init(capacity: Int, sampleRate: Double) {
+        self.capacity = max(capacity, 1)
         self.sampleRate = sampleRate
-        left = .allocate(capacity: max(frames, 1))
-        right = .allocate(capacity: max(frames, 1))
+        left = .allocate(capacity: self.capacity)
+        right = .allocate(capacity: self.capacity)
     }
 
     deinit {
@@ -30,57 +31,59 @@ public final class TrackAudio: @unchecked Sendable {
 
     public enum DecodeError: Error { case format, convert(String) }
 
-    /// Liest die Datei und wandelt sie auf `sampleRate` / Stereo um.
+    /// Blockweise Dekodierung
+    private static let chunk: AVAudioFrameCount = 1 << 16
+
+    /// Liest die Datei blockweise direkt in den Deck-Puffer (Stereo, `sampleRate`) – keine zweite Kopie des ganzen Tracks.
     public static func decode(url: URL, sampleRate: Double) throws -> TrackAudio {
         let file = try AVAudioFile(forReading: url)
         let inFmt = file.processingFormat
-        guard let inBuf = AVAudioPCMBuffer(pcmFormat: inFmt, frameCapacity: AVAudioFrameCount(file.length)) else {
-            throw DecodeError.format
-        }
-        try file.read(into: inBuf)
+        let total = Int(file.length)
+        let mono = inFmt.channelCount == 1
+        let t = TrackAudio(capacity: Int(Double(total) * sampleRate / inFmt.sampleRate) + 8192, sampleRate: sampleRate)
+        guard let inBuf = AVAudioPCMBuffer(pcmFormat: inFmt, frameCapacity: chunk) else { throw DecodeError.format }
 
-        var src = inBuf
-        // Mono → Stereo selbst duplizieren (der Konverter legt Mono sonst nur links an)
-        if inFmt.channelCount == 1 {
-            guard let st = AVAudioFormat(standardFormatWithSampleRate: inFmt.sampleRate, channels: 2),
-                  let b = AVAudioPCMBuffer(pcmFormat: st, frameCapacity: inBuf.frameLength),
-                  let m = inBuf.floatChannelData?[0], let o = b.floatChannelData else { throw DecodeError.format }
-            b.frameLength = inBuf.frameLength
-            o[0].update(from: m, count: Int(inBuf.frameLength))
-            o[1].update(from: m, count: Int(inBuf.frameLength))
-            src = b
-        }
-
-        let outFmt = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
-        let out: AVAudioPCMBuffer
-        if src.format.sampleRate == sampleRate, src.format.commonFormat == .pcmFormatFloat32, !src.format.isInterleaved,
-           src.format.channelCount == 2 {
-            out = src
-        } else {
-            guard let conv = AVAudioConverter(from: src.format, to: outFmt) else { throw DecodeError.format }
-            conv.sampleRateConverterQuality = AVAudioQuality.high.rawValue
-            let cap = AVAudioFrameCount(Double(src.frameLength) * sampleRate / src.format.sampleRate) + 8192
-            guard let o = AVAudioPCMBuffer(pcmFormat: outFmt, frameCapacity: cap) else { throw DecodeError.format }
-            var fed = false
-            var err: NSError?
-            let input = src
-            let status = conv.convert(to: o, error: &err) { _, st in
-                if fed { st.pointee = .endOfStream; return nil }
-                fed = true
-                st.pointee = .haveData
-                return input
+        if inFmt.sampleRate == sampleRate, inFmt.commonFormat == .pcmFormatFloat32, !inFmt.isInterleaved {
+            while file.framePosition < file.length {
+                try file.read(into: inBuf, frameCount: chunk)
+                guard inBuf.frameLength > 0 else { break }
+                t.append(inBuf, mono: mono)
             }
-            if status == .error { throw DecodeError.convert(err?.localizedDescription ?? "?") }
-            out = o
+        } else {
+            // Rate/Format wandeln; Mono bleibt Mono und wird beim Anhängen auf beide Seiten gelegt
+            // (der Konverter legt Mono sonst nur links an)
+            guard let outFmt = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: mono ? 1 : 2),
+                  let conv = AVAudioConverter(from: inFmt, to: outFmt),
+                  let outBuf = AVAudioPCMBuffer(pcmFormat: outFmt, frameCapacity: chunk) else { throw DecodeError.format }
+            conv.sampleRateConverterQuality = AVAudioQuality.high.rawValue
+            var eof = false
+            var readError: Error?
+            while true {
+                var err: NSError?
+                let status = conv.convert(to: outBuf, error: &err) { _, st in
+                    if eof { st.pointee = .endOfStream; return nil }
+                    do { try file.read(into: inBuf, frameCount: chunk) } catch { readError = error }
+                    if readError != nil || inBuf.frameLength == 0 { eof = true; st.pointee = .endOfStream; return nil }
+                    st.pointee = .haveData
+                    return inBuf
+                }
+                if let readError { throw readError }
+                if status == .error { throw DecodeError.convert(err?.localizedDescription ?? "?") }
+                t.append(outBuf, mono: mono)
+                if status == .endOfStream || status == .inputRanDry { break }
+            }
         }
-
-        let n = Int(out.frameLength)
-        let t = TrackAudio(frames: n, sampleRate: sampleRate)
-        guard let ch = out.floatChannelData else { throw DecodeError.format }
-        t.left.update(from: ch[0], count: n)
-        t.right.update(from: ch[out.format.channelCount > 1 ? 1 : 0], count: n)
         t.analyze()
         return t
+    }
+
+    /// Block an den Puffer anhängen (Mono auf beide Seiten)
+    private func append(_ b: AVAudioPCMBuffer, mono: Bool) {
+        let n = min(Int(b.frameLength), capacity - frames)
+        guard n > 0, let ch = b.floatChannelData else { return }
+        (left + frames).update(from: ch[0], count: n)
+        (right + frames).update(from: ch[mono || b.format.channelCount < 2 ? 0 : 1], count: n)
+        frames += n
     }
 
     /// Einfache 3-Band-Analyse mit Einpol-Filtern (reicht für eine farbige Wellenform wie in Traktor).

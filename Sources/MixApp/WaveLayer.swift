@@ -62,6 +62,7 @@ final class WaveLayerNSView: NSView {
     private var builtSize: CGSize = .zero
     private var pps: Double = 1   // Punkte pro Sekunde bei aktuellem Zoom
     private var lastLoop: (Bool, Double, Double) = (false, 0, 0)
+    private var lastPos = Double.nan
     private var lastCountdown = ""
 
     private static let ruler: CGFloat = 14
@@ -160,6 +161,7 @@ final class WaveLayerNSView: NSView {
         }
         strip.addSublayer(loopLayer)
         lastLoop = (false, -1, -1)
+        lastPos = .nan
         if scene.showGrid, let g = scene.grid, g.bpm > 0 { buildGrid(g, h: h) }
         buildCues(h: h)
         step()
@@ -289,13 +291,17 @@ final class WaveLayerNSView: NSView {
 
     @objc private func step() {
         guard scene.hasTrack else { return }
+        let pos = position()
+        let l = loop()
+        let loopChanged = l.active != lastLoop.0 || l.start != lastLoop.1 || l.end != lastLoop.2
+        // Deck steht: nichts verschieben, keine Transaktion (sonst 4 Decks × 120 Hz im Leerlauf)
+        if pos == lastPos, !loopChanged { return }
+        lastPos = pos
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let pos = position()
         let x = Double(bounds.width / 2) - pos * pps
         strip.position = CGPoint(x: (CGFloat(x) * scale).rounded() / scale, y: 0)
-        let l = loop()
-        if l.active != lastLoop.0 || l.start != lastLoop.1 || l.end != lastLoop.2 {
+        if loopChanged {
             lastLoop = (l.active, l.start, l.end)
             loopLayer.isHidden = !l.active
             if l.active {
