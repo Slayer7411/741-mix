@@ -152,6 +152,10 @@ struct UIPrefs: Codable, Equatable {
     var showCoverPreview = true
     /// Last-Anzeigen rechts in der Statusleiste (DSP, Latenz, Aussetzer, Speicher, CPU)
     var showMeters = true
+    /// Collection prüfen: beim Start nach dem Laden automatisch
+    var checkOnStart = false
+    /// Collection prüfen: Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen
+    var checkMusicFolders = true
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.

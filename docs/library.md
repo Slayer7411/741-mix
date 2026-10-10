@@ -18,6 +18,20 @@
 * default folder: deepest folder that holds 90 % of the collection's existing files, e.g. `~/Music/DJ`
 * own folders: ⌘, -> DISPLAY -> browser -> add folder (the automatic one stays in the list)
 * every pane keeps its own folder and the subfolders switch, saved in the session
+## ◆ CHECK THE COLLECTION
+
+* BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION
+* read only: files (missing, permissions, 0 bytes), audio header, duration vs the collection (> 2 s), spelling on disk (case, nfc / nfd), title / artist vs file name, duplicates (same file, same artist + title), analysis (bpm, grid, key, loudness), grid (bpm 60-200, anchor inside the file), playlist entries without a track, files in the music folders without a collection entry
+* installer style: progress, current file, log, counters. ABBRECHEN stops at once and keeps the findings
+* findings table: filter per check, show in browser / finder, copy path, report as txt or csv
+* details: [manual](MANUAL.md#check-the-collection)
+
+## ◆ RELOAD
+
+* ↻ / ⌘O: everything heavy runs in the background (parse, file check, own edits, indices, sorting of the lists both panes show), the main thread only takes the result
+* unchanged tracks and playlists keep their identity -> the lists do not rebuild when nothing changed
+* 14,160 tracks, two panes: longest ui stall 1.3 s -> under 30 ms (unchanged collection), ~0.3 s with changed entries
+
 ## ◆ EDIT TRACKS
 
 * inline: click a selected row again or return, tab = next column, esc = cancel

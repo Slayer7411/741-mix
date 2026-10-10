@@ -265,6 +265,7 @@ struct SourceTree: View {
             row("≣", "TRACK COLLECTION").tag(BrowserSource.collection)
                 .contextMenu {
                     exportMenu(.collection)
+                    Button("Collection prüfen …") { ConsistencyWindow.show(store: store) }
                     Button("Reset Played State") { history.resetPlayed() }
                     OverviewMenuButton { store.tracks }
                 }

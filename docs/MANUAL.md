@@ -394,6 +394,7 @@ a mini overview of the whole track per row. modes (⌘, -> DISPLAY -> browser pr
 * files that only exist in the cloud (placeholder, not downloaded) are skipped by the background job and counted: `12 nur online – Rechtsklick lädt`. right click -> `Vorschauen berechnen` reads them (downloads the file)
 * ⌘, -> DISPLAY -> preview colors: spectrum / like the waveform
 * overviews are checked against file size and modification time -> a retagged file gets a new one
+* reload ↻ / ⌘O during a set: parsing, file check and sorting run in the background, the decks keep drawing. the lists switch in one step when everything is ready
 
 role chips `BASIS · SYNTH · DRUMS · VOLL · ATMO` -> filter on the role at the end of comment 2 (`» BASIS`). several chips = any of them.
 
@@ -422,6 +423,37 @@ off by default. ⌘, -> ANZEIGE -> browser -> `Änderungen in die Collection-Dat
 * written fields leave `metadata.json`, the file holds them now. a track whose entry changed in the file meanwhile is skipped (status bar) -> ↻ reload, edit again
 * switching the setting on writes the changes made before
 * tags inside the audio files are not touched
+
+### check the collection
+
+BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION. read only, nothing is changed.
+
+* window like an old installer: progress `n / total · % · time · ~left`, the current file ticking by, the log rattling down (`OK   …/file.mp3`, `MISS …`), counters per check
+* ABBRECHEN stops at once, the findings so far stay. a file that hangs on a cloud drive finishes in the background, its result is dropped
+* after the run: FINDINGS table, click a counter = filter. right click / double click -> show in browser (selects the track in TRACK COLLECTION), show in finder, copy path. REPORT TXT / CSV
+* the log keeps the last 2000 lines, the findings table keeps all
+* paths below the music folder show as `…/`
+
+| tag | check | |
+|---|---|---|
+| `MISS` | file not found at the collection's path | problem |
+| `PERM` | no read permission | problem |
+| `ZERO` | file is 0 bytes | problem |
+| `BAD ` | no audio header (only the header is opened, nothing is decoded) | problem |
+| `TIME` | file duration differs from the collection by more than 2 s | problem |
+| `CASE` | path differs in upper / lower case on disk | hint |
+| `NFD ` | same name, other unicode form (nfc / nfd). no effect on the mac, can break copies to other systems | hint |
+| `NAME` | file name contains neither title nor artist (case, accents, track numbers, bracket parts ignored) | hint |
+| `DUP ` | the same file twice in the collection | problem |
+| `TWIN` | same artist + title (+ mix) with another file | hint |
+| `ANLZ` | no bpm, grid, key or loudness | hint |
+| `GRID` | bpm outside 60-200, or the grid anchor after the end of the file | hint |
+| `LIST` | playlist / preparation entry without a track in the collection | problem |
+| `NEW ` | audio file in the music folders, not in the collection | hint |
+
+* 6 files at a time. 14,160 tracks on a local drive: ~5 s
+* `NEW` needs the music folder scan (setting, on by default)
+* ⌘, -> DISPLAY -> check collection: check on start (off), scan music folders (on)
 
 ## ◆ 10 · TAGS + SMARTLISTS
 
@@ -525,7 +557,8 @@ backup = copy the `MINOS-741` folder.
 | DSP red | single blocks over 70 %: plugins, 4 decks with keylock, small buffer. average matters, a single peak after loading is normal |
 | latency too high | buffer size in ⌘, -> AUDIO. LATENCY = buffer + device + safety offset; keylock lookahead is compensated and not audible as delay |
 | track won't load | status bar message: `Datei fehlt` = path in the collection wrong; `(4 s) keine Audiodaten` = cloud file not on disk -> make it available offline; otherwise the format reason |
-| artist in red | file missing or moved -> fix the path in the collection, reload ↻ |
+| artist in red | file missing or moved -> fix the path in the collection, reload ↻. all of them at once: BROWSER -> `Collection prüfen …` |
+| check takes long | cloud drive downloads files on first access -> ABBRECHEN keeps what was found, check again later |
 | ui hangs | audio + sync keep running. report it with the version from the title bar |
 
 self test (silent, ends by itself):
@@ -537,6 +570,8 @@ MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 waveform still without a window: `MIX741_SHOT=wave:/tmp/wave.png` in addition -> one deck with loop and hotcues as png, then exit.
 settings as png without a window: add `MIX741_SHOT=settings:<folder>` -> one image per section, then quit.
 status bar, failed and empty deck as png: `MIX741_SHOT=status:<folder>` (add `MIX741_SHOT_AUDIO=1` for live meters, silent on a built-in device).
+collection check without a window: add `MIX741_CHECK=1` -> counts per check and duration, `MIX741_CHECK_LIST=<n>` lists the first n findings each. `MIX741_SHOT=consistency:<png>` renders the check window mid-run and finished.
+reload stall: add `MIX741_BENCH=reload` -> loads and reloads the collection offscreen, prints the longest main-thread gap per reload (`MIX741_BENCH_N` rounds).
 
 bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) with version, macos, device, mode, controller.
 

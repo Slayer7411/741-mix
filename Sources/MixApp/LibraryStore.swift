@@ -124,22 +124,23 @@ final class LibraryStore {
                 // MUSIC FOLDERS: Pfad-Index und Standard-Ordner einmal je Collection
                 let folderIndex = MusicFolder.pathIndex(c.tracks)
                 let folderRoot = MusicFolder.defaultRoot(paths: c.tracks.filter(\.fileExists).map(\.path))
-                var byKey = Dictionary(c.tracks.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+                let parsedByKey = Dictionary(c.tracks.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
                 let base = collectionBase
-                var tracks = c.tracks
-                var root = c.root
+                let parsedRoot = c.root
                 let parsed = CACurrentMediaTime()
                 // erster Start: Playlists und Sitzung (Quellen, Sortierung der Bereiche) vorab, damit gleich die
                 // richtigen Listen vorsortiert werden; Neu-Laden: nur nachsehen, was die Bereiche gerade zeigen
                 let (targets, old, oldByKey, previous, oldRoot): ([PresortKey], [Track], [String: Track], [PresortKey: [Track]], PlaylistNode) = await MainActor.run {
                     if first {
-                        self.root = root
-                        self.byKey = byKey
+                        self.root = parsedRoot
+                        self.byKey = parsedByKey
                         self.entryIndex = index
                         self.onLoaded?()
+                        return (self.presortTargets(), [], [:], [:], parsedRoot)
                     }
                     return (self.presortTargets(), self.tracks, self.byKey, self.presorted, self.root)
                 }
+                var tracks = c.tracks, byKey = parsedByKey, root = parsedRoot
                 // Neu-Laden: unveränderte Tracks als dieselben Werte übernehmen (gleicher Speicher). SwiftUI vergleicht
                 // die alte mit der neuen Liste – mit geteilten Texten ist das ein Zeigervergleich statt 14k Textvergleichen
                 if !oldByKey.isEmpty {
@@ -160,14 +161,15 @@ final class LibraryStore {
                 let position = Dictionary(tracks.indices.map { (tracks[$0].key, $0) }, uniquingKeysWith: { a, _ in a })
                 let pre = Self.presort(targets, tracks: tracks, byKey: byKey, nodes: nodes, previous: previous)
                 let sorted = CACurrentMediaTime()
+                let newTracks = tracks, newByKey = byKey, newRoot = root, newNodes = nodes
                 await MainActor.run {
                     guard generation == self.loadGeneration else { return }   // inzwischen neuer Ladevorgang
                     let t0 = CACurrentMediaTime()
                     // alte Liste und Indizes nicht hier freigeben (14k Tracks freigeben kostet den Hauptthread ~50 ms)
                     Self.releaseLater((self.tracks, self.byKey, self.position, self.collectionBase, self.entryIndex,
                                        self.smartCache, self.customCache, self.presorted))
-                    self.tracks = tracks
-                    self.byKey = byKey
+                    self.tracks = newTracks
+                    self.byKey = newByKey
                     self.position = position
                     self.collectionBase = base
                     self.entryIndex = index
@@ -177,14 +179,15 @@ final class LibraryStore {
                     self.presortRevision = self.revision
                     self.folders.collectionLoaded(index: folderIndex, defaultRoot: folderRoot)
                     self.onLoaded?()   // einmal je Start (prüft selbst)
-                    if self.root !== root { self.root = root }
-                    self.nodes = nodes
+                    if first, !Session.isSelfTest, AppPrefs.load().ui.checkOnStart { ConsistencyWindow.show(store: self) }
+                    if self.root !== newRoot { self.root = newRoot }
+                    self.nodes = newNodes
                     self.sourceURL = url
-                    self.status = "\(tracks.count) Tracks · \(url.lastPathComponent) · \(String(format: "%.1f", parsed - start)) s"
-                    StatusCenter.post(.ok, String(localized: "Collection geladen: \(tracks.count) Tracks"), detail: url.path, key: "collection")
+                    self.status = "\(newTracks.count) Tracks · \(url.lastPathComponent) · \(String(format: "%.1f", parsed - start)) s"
+                    StatusCenter.post(.ok, String(localized: "Collection geladen: \(newTracks.count) Tracks"), detail: url.path, key: "collection")
                     if Self.debug {
                         print(String(format: "[load] %d tracks · parsen+indizes %.0f ms · vorsortieren %d listen %.0f ms (hintergrund) · übergabe %.1f ms (hauptthread)",
-                                     tracks.count, (parsed - start) * 1000, pre.lists.count, (sorted - parsed) * 1000, (CACurrentMediaTime() - t0) * 1000))
+                                     newTracks.count, (parsed - start) * 1000, pre.lists.count, (sorted - parsed) * 1000, (CACurrentMediaTime() - t0) * 1000))
                         fflush(stdout)
                     }
                 }

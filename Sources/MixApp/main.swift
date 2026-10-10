@@ -266,6 +266,7 @@ struct MixApp: App {
                 ForEach([ShortcutID.resetPlayed, .loadSelected, .previewSelected, .reloadCollection]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
+                Button(String(localized: "Collection prüfen …")) { ConsistencyWindow.show(store: store) }
                 Divider()
                 Button(ShortcutID.reconnectAudio.title) { run(.reconnectAudio) }.shortcut(keys.combo(.reconnectAudio))
             }
@@ -371,6 +372,10 @@ MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit
 
 if ToggleBench.requested { MainActor.assumeIsolated { ToggleBench.run() } }   // Messung offscreen, ohne Fenster
 if ReloadBench.requested { MainActor.assumeIsolated { ReloadBench.run() } }   // Neu-Laden der Collection messen, offscreen
+if ConsistencyCLI.requested { MainActor.assumeIsolated { ConsistencyCLI.run() } }   // Collection prüfen ohne Fenster, nur lesen
+if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("consistency:") {
+    MainActor.assumeIsolated { ConsistencyShot.run(shot) }
+}
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.
 NSApplication.shared.setActivationPolicy(.regular)
 if ProcessInfo.processInfo.environment["MIX741_SHOT"] == nil { NSApplication.shared.activate(ignoringOtherApps: true) }

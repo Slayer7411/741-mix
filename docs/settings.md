@@ -65,6 +65,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * browser preview: full row, two lines (default) / own column / behind the title / off
 * preview colors: spectrum red / green / blue (default) / like the waveform
 * compute previews in the background: always, throttled while a deck plays (default) / only while no deck plays / off -> [manual](MANUAL.md#preview)
+* collection check: check on start (off), scan the music folders for files without a collection entry (on) -> [manual](MANUAL.md#check-the-collection)
 * language: system / english / german (after restart)
 * status bar: load meters DSP · latency · dropouts · memory · cpu (on) -> [manual](MANUAL.md#status-bar)
 * cancel loading after x s without audio data (4 s, 2-15)
