@@ -697,6 +697,7 @@ struct TrackTable: View {
                 let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: decks.prefs.ui.tagSeparators).tags
                 return TagChipsText.spans(tags: tags).firstIndex { $0.contains(x) && $0.upperBound <= width }.map { tags[$0] }
             }
+            inlineCtl.twoLine = { [decks] in decks.prefs.ui.previewMode == .fullRow }
             inlineCtl.install()
             rowBand.inline = inlineCtl
         }

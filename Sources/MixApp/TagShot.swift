@@ -7,7 +7,8 @@ import MixEngine
 /// Selbsttest-Bild + Messung der Tag-Chips (MIX741_SELFTEST=1 MIX741_SHOT=tags:<ordner>), offscreen:
 /// Browser-Bereich mit zwei gewählten und einem ausgeschlossenen Tag als PNG, Klicks auf Chip / neben den Chip
 /// (Filter, Auswahl, Inline-Bearbeitung), Filterzeit, Blättern durch die Collection (ms je Seite) ohne Spalte,
-/// mit schlichtem Text und mit Chips. Trennzeichen MIX741_SHOT_SEPS (Standard „·“), Tags MIX741_SHOT_TAGS („a|b“).
+/// mit schlichtem Text und mit Chips. Trennzeichen MIX741_SHOT_SEPS (Standard „·“), Tags MIX741_SHOT_TAGS („a|b“),
+/// MIX741_SHOT_FULLROW=1: Zeilen zweizeilig (Vorschau „ganze Zeile“), Klick ins Band darf nicht filtern.
 /// Collection nur gelesen, ohne Audio.
 @MainActor
 enum TagShot {
@@ -55,7 +56,8 @@ enum TagShot {
         mix.engine.stop()
         d.removeVolatileDomain(forName: UserDefaults.argumentDomain)
         restore()
-        mix.prefs.ui.previewMode = .off
+        let fullRow = env["MIX741_SHOT_FULLROW"] == "1"
+        mix.prefs.ui.previewMode = fullRow ? .fullRow : .off
         mix.prefs.ui.previewBackground = false
         mix.prefs.ui.tagHighlight = true
         let seps = env["MIX741_SHOT_SEPS"] ?? "·"
@@ -145,6 +147,8 @@ enum TagShot {
             log("bild \(url.path)")
             return rep
         }
+        /// Höhe der Textzeile in einer Zelle (zweizeilig: oben)
+        func lineY(_ r: NSRect) -> CGFloat { fullRow ? r.minY + 8 : r.midY }
         func table(_ v: NSView) -> NSTableView? {
             if let t = v as? NSTableView, t.tableColumns.count > 1 { return t }
             for s in v.subviews { if let t = table(s) { return t } }
@@ -162,12 +166,12 @@ enum TagShot {
         var ok = true
         if let tv = table(h), let col = tv.tableColumns.indices.first(where: { InlineEditController().field(ofColumn: $0, in: tv) == .comment2 }), tv.numberOfRows > 1 {
             var clickSerial = 100
-            func click(_ p: NSPoint, flags: NSEvent.ModifierFlags = []) {
+            func click(_ p: NSPoint, flags: NSEvent.ModifierFlags = [], count: Int = 1) {
                 let w = tv.convert(p, to: nil)
                 clickSerial += 1
                 for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                     if let e = NSEvent.mouseEvent(with: type, location: w, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
-                                                  windowNumber: win.windowNumber, context: nil, eventNumber: clickSerial, clickCount: 1, pressure: 1) {
+                                                  windowNumber: win.windowNumber, context: nil, eventNumber: clickSerial, clickCount: count, pressure: 1) {
                         NSApp.postEvent(e, atStart: false)
                     }
                 }
@@ -179,7 +183,7 @@ enum TagShot {
                 let tags0 = Self.tags(model.rows(from: store, history: history, separators: seps)[0], seps)
                 let sx = CGFloat(shot.pixelsWide) / h.bounds.width
                 func px(_ x: CGFloat) -> NSColor? {
-                    let p = h.convert(NSPoint(x: cvf.minX + x, y: cvf.midY), from: tv)
+                    let p = h.convert(NSPoint(x: cvf.minX + x, y: lineY(cvf)), from: tv)
                     let y = h.isFlipped ? p.y : h.bounds.height - p.y
                     return shot.colorAt(x: Int(p.x * sx), y: Int(y * sx))?.usingColorSpace(.sRGB)
                 }
@@ -198,7 +202,7 @@ enum TagShot {
                 if let n = spans0.lastIndex(where: { $0.upperBound <= cvf.width }) {
                     let sp = spans0[n], last = tags0[n]
                     let f0 = model.tagFilter
-                    click(NSPoint(x: cvf.minX + (sp.lowerBound + sp.upperBound) / 2, y: cvf.midY))
+                    click(NSPoint(x: cvf.minX + (sp.lowerBound + sp.upperBound) / 2, y: lineY(cvf)))
                     let hit = model.tagFilter.mark(last) != f0.mark(last)
                     log("klick mitten auf den letzten ganz sichtbaren chip „\(last)“: \(hit ? "umgeschaltet" : "NICHT umgeschaltet")")
                     ok = ok && hit
@@ -211,21 +215,40 @@ enum TagShot {
             let row0 = tv.frameOfCell(atColumn: col, row: 0)
             let first = Self.tags(model.rows(from: store, history: history, separators: seps)[0], seps).first ?? ""
             // Chip 1 beginnt am linken Rand der Zelle
-            click(NSPoint(x: row0.minX + 6, y: row0.midY))
+            click(NSPoint(x: row0.minX + 6, y: lineY(row0)))
             let afterChip = model.tagFilter
             let chipOK = afterChip != before && afterChip.mark(first) == (before.mark(first) == .include ? .none : .include)
             log("klick auf chip „\(first)“: filter \(chipOK ? "umgeschaltet" : "NICHT umgeschaltet") · auswahl \(model.selection.count) · ein=\(afterChip.include.sorted()) aus=\(afterChip.exclude.sorted())")
             ok = ok && chipOK
-            click(NSPoint(x: row0.minX + 6, y: row0.midY))   // zurück
+            click(NSPoint(x: row0.minX + 6, y: lineY(row0)))   // zurück
             log("zweiter klick: filter \(model.tagFilter == before ? "wie vorher" : "ANDERS")")
             ok = ok && model.tagFilter == before
             for _ in 0..<4 { h.layoutSubtreeIfNeeded(); spin(0.1) }
+            // Doppelklick auf einen Chip: nur der erste Klick schaltet, der zweite lädt nicht und schaltet nicht zurück
+            click(NSPoint(x: row0.minX + 6, y: lineY(row0)))
+            click(NSPoint(x: row0.minX + 6, y: lineY(row0)), count: 2)
+            let dbl = model.tagFilter != before && model.tagFilter.mark(first) == afterChip.mark(first)
+            log("doppelklick auf chip „\(first)“: \(dbl ? "einmal umgeschaltet" : "FEHLER")")
+            ok = ok && dbl
+            model.tags = before.include
+            model.excludedTags = before.exclude
+            spin(NSEvent.doubleClickInterval + 0.1)
+            for _ in 0..<4 { h.layoutSubtreeIfNeeded(); spin(0.1) }
+            if fullRow {
+                // untere Hälfte der Zeile (Band) unter dem ersten Chip: kein Filter
+                click(NSPoint(x: row0.minX + 6, y: row0.maxY - 4))
+                let bandOK = model.tagFilter == before
+                log("klick ins band unter dem chip: filter \(bandOK ? "unverändert" : "UMGESCHALTET")")
+                ok = ok && bandOK
+                spin(NSEvent.doubleClickInterval + 0.1)
+                model.selection = []
+            }
             // ⌥-Klick auf einen nicht gewählten Chip -> ausgeschlossen
             let rows = model.rows(from: store, history: history, separators: seps)
             if let r = rows.prefix(30).firstIndex(where: { Self.tags($0, seps).first.map { model.tagFilter.mark($0) == .none } ?? false }) {
                 let tag = Self.tags(rows[r], seps)[0]
                 let c = tv.frameOfCell(atColumn: col, row: r)
-                click(NSPoint(x: c.minX + 6, y: c.midY), flags: .option)
+                click(NSPoint(x: c.minX + 6, y: lineY(c)), flags: .option)
                 let ex = model.tagFilter.mark(tag) == .exclude
                 log("⌥-klick auf „\(tag)“: \(ex ? "ausgeschlossen" : "NICHT ausgeschlossen")")
                 ok = ok && ex
@@ -242,7 +265,7 @@ enum TagShot {
                 guard let cell = tv.view(atColumn: col, row: r, makeIfNecessary: false) else { continue }
                 let cvf = tv.convert(cell.bounds, from: cell)
                 let end = TagChipsText.spans(tags: Self.tags(rowsNow[r], seps)).last?.upperBound ?? 0
-                if end + 12 < cvf.width, cvf.minX + (end + cvf.width) / 2 < tv.visibleRect.maxX - 4 { emptyRow = r; empty = NSPoint(x: cvf.minX + (end + cvf.width) / 2, y: cvf.midY); break }
+                if end + 12 < cvf.width, cvf.minX + (end + cvf.width) / 2 < tv.visibleRect.maxX - 4 { emptyRow = r; empty = NSPoint(x: cvf.minX + (end + cvf.width) / 2, y: lineY(cvf)); break }
             }
             let key1 = rowsNow[emptyRow].key
             log("leere stelle: zeile \(emptyRow + 1) bei \(empty) · zeile laut tabelle \(tv.row(at: empty)) spalte \(tv.column(at: empty))")
@@ -260,7 +283,7 @@ enum TagShot {
             // Chip in der gewählten Zeile: Filter statt Bearbeitung
             let c1 = tv.frameOfCell(atColumn: col, row: emptyRow)
             let f1 = model.tagFilter
-            click(NSPoint(x: c1.minX + 6, y: c1.midY))
+            click(NSPoint(x: c1.minX + 6, y: lineY(c1)))
             spin(NSEvent.doubleClickInterval + 0.3)
             let noEdit = model.inline == nil && model.tagFilter != f1
             log("klick auf chip der gewählten zeile: \(noEdit ? "filter, keine bearbeitung" : "FEHLER (inline \(model.inline != nil), filter gleich \(model.tagFilter == f1))")")
