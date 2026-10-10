@@ -207,12 +207,12 @@ private func expected(_ rig: Rig, from p: Double, bars: Int) -> Double {
     a.parse(report(left: Bit.pad4)); a.parse(report())   // A: Pad 4 auf Deck A = Hotcue 4 setzen, kein Sprung
     #expect(near(rig.core.position(0), p0) && rig.deck0.hotcues[3] != nil)
     b.parse(report(left: Bit.sync | Bit.pad4)); b.parse(report(left: Bit.sync)); b.parse(report())
-    #expect(near(rig.core.position(1), p1 + bar))
+    #expect(near(rig.core.position(1), p1 + beat))
     #expect(near(rig.core.position(0), p0))
     #expect(rig.core.snapshot().decks[1].sync == false)   // Kombination benutzt: Sync bleibt aus
     // rechte Seite von B steuert ebenfalls Deck A
     b.parse(report(right: Bit.sync)); b.parse(report(right: Bit.sync | Bit.pad3)); b.parse(report())
-    #expect(near(rig.core.position(0), p0 - bar))
+    #expect(near(rig.core.position(0), p0 - beat))
 }
 
 // MARK: - mit Render: laufende Decks, Keylock, Phasen-Lock
@@ -254,7 +254,7 @@ private func expected(_ rig: Rig, from p: Double, bars: Int) -> Double {
         u.parse(report(left: Bit.sync)); u.parse(report())
         ran += render(0.3)
         let moved = (core.position(0) - from - ran) / beat
-        #expect(abs(moved - Double(bars * 4)) < tol, "\(bars): \(moved) Beats")
+        #expect(abs(moved - Double(bars)) < tol, "\(bars): \(moved) Beats")   // Sync + Pad = ein Beat
         #expect(abs(core.phaseError(0) ?? 1) < tol, "\(bars): Phase \(core.phaseError(0) ?? .nan)")
         #expect(core.snapshot().decks[0].sync)
     }
