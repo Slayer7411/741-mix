@@ -75,6 +75,10 @@ K tief kurz · B sub leicht roll · H off » BASIS
 
 * "tags ▾" lists all tags of the source with counts
 * click = filter, several tags = all must match
+* ⌥-click = exclude, none of the excluded tags may be there
+* comment 2 column shows the tags as chips -> click / ⌥-click works there too
+* whole tags only, case and accents ignored
+* active filter in the pane header, ✕ TAGS clears it, kept in the session
 
 ## ◆ SMARTLISTS
 

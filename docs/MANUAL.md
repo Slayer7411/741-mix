@@ -468,9 +468,12 @@ K tief kurz · B sub leicht roll · H off » BASIS
 -> K tief kurz | B sub leicht roll | H off » BASIS
 ```
 
-* TAGS ▾ -> all tags of the source with counts, click = filter, several = all must match
+* TAGS ▾ -> all tags of the source with counts, click = filter, ⌥-click = exclude, several = all must match
+* comment 2 column: tags as chips -> click = filter by that tag, again = off, ⌥-click = exclude. click next to the chips selects / edits as before
+* active filter as chips in the pane header (included filled, excluded struck through) -> click removes one, ✕ TAGS clears all. saved per pane in the session
+* whole tags, case and accents ignored (`Kühl` = `kuhl`)
 * tags get highlight colors
-* "smartlist from tags" -> saves the current tag filter as smartlist
+* "smartlist from tags" -> saves the current tag filter as smartlist (excluded tags as `!%`)
 
 smartlists:
 
@@ -580,6 +583,7 @@ status bar, failed and empty deck as png: `MIX741_SHOT=status:<folder>` (add `MI
 collection check without a window: add `MIX741_CHECK=1` -> counts per check and duration, `MIX741_CHECK_LIST=<n>` lists the first n findings each. `MIX741_SHOT=consistency:<png>` renders the check window mid-run and finished.
 reload stall: add `MIX741_BENCH=reload` -> loads and reloads the collection offscreen, prints the longest main-thread gap per reload (`MIX741_BENCH_N` rounds).
 cloud column + set-check as png: `MIX741_SHOT=cloud:<folder>` -> real check of the collection in the log, images with real and with set states, nothing downloaded.
+tag chips as png: `MIX741_SHOT=tags:<folder>` -> pane with tag filter, chip click checks, filter and paging times (`MIX741_SHOT_FULLROW=1` two-line rows, `MIX741_SHOT_PAGES=<n>`).
 
 bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) with version, macos, device, mode, controller.
 
