@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import MixCore
 
 /// Anordnung der Browser-Bereiche.
 enum BrowserLayout: String, CaseIterable, Identifiable, Codable {
@@ -73,6 +74,7 @@ struct ContentView: View {
             }
         }
         .windowToolbarFullScreenVisibility(.onHover)
+        .background(MainWindowHook())
         .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
             store.running = keys.filter { !$0.isEmpty }.compactMap { store.byKey[$0] }
         }
@@ -168,6 +170,9 @@ struct ContentView: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var onQuit: (@MainActor () -> Void)?
 
+    /// Fenster weg (auf welchem Weg auch immer) -> Beenden mit Rückfrage statt App ohne Fenster
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !Session.isSelfTest else { return .terminateNow }
         let a = NSAlert()
@@ -220,45 +225,57 @@ struct MixApp: App {
                 .environment(controllerStatus)
         }
         .commands {
+            // alle Kürzel aus den Einstellungen (⌘, -> Tastatur); ausgelöst werden sie vom KeyMonitor
+            let keys = mix.prefs.keys
+            let run = actions
             CommandGroup(after: .newItem) {
-                Button("Collection öffnen …") {
-                    let panel = NSOpenPanel()
-                    panel.allowedContentTypes = [.init(filenameExtension: "nml")!]
-                    if panel.runModal() == .OK, let url = panel.url { store.load(url) }
-                }
-                .keyboardShortcut("o")
+                Button(ShortcutID.openCollection.title) { run(.openCollection) }
+                    .shortcut(keys.combo(.openCollection))
+            }
+            CommandGroup(replacing: .appSettings) {
+                SettingsLink { Text(ShortcutID.settings.title) }
+                    .shortcut(keys.combo(.settings))
+            }
+            CommandGroup(replacing: .saveItem) {
+                Button(String(localized: "Fenster schließen")) { run(.closeWindow) }
+                    .shortcut(keys.combo(.closeWindow))
             }
             CommandGroup(before: .toolbar) {
                 Toggle("Mixer", isOn: Binding(get: { mix.prefs.ui.showMixer }, set: { mix.prefs.ui.showMixer = $0 }))
-                    .keyboardShortcut("m", modifiers: [.command, .option])
+                    .shortcut(keys.combo(.toggleMixer))
                 Toggle("4 Decks", isOn: Binding(get: { mix.prefs.ui.showFourDecks }, set: { mix.prefs.ui.showFourDecks = $0 }))
-                    .keyboardShortcut("4", modifiers: [.command, .option])
+                    .shortcut(keys.combo(.toggleFourDecks))
                 Toggle("Browser groß", isOn: Binding(get: { browser.maximized }, set: { browser.maximized = $0 }))
-                    .keyboardShortcut("b", modifiers: [.command, .option])
+                    .shortcut(keys.combo(.bigBrowser))
                 Picker("Browser-Anordnung", selection: Binding(get: { mix.prefs.ui.browserLayout }, set: { mix.prefs.ui.browserLayout = $0 })) {
                     ForEach(BrowserLayout.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 Divider()
             }
             CommandMenu("Decks") {
-                ForEach(0..<4, id: \.self) { n in
-                    Button("Deck \(["A", "B", "C", "D"][n]) fokussieren") { mix.focusedDeck = n }
-                        .keyboardShortcut(KeyEquivalent(Character(String(n + 1))))
+                ForEach([ShortcutID.focusDeckA, .focusDeckB, .focusDeckC, .focusDeckD]) { a in
+                    Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
                 Divider()
-                Button("Play/Pause (Fokus-Deck)") { mix.togglePlay(mix.focusedDeck) }
-                    .keyboardShortcut(.space, modifiers: [.command])
-                Button("Sync (Fokus-Deck)") { mix.toggleSync(mix.focusedDeck) }
-                    .keyboardShortcut("y", modifiers: [.command])
-                Button("Loop (Fokus-Deck)") { mix.autoLoop(mix.focusedDeck) }
-                    .keyboardShortcut("l", modifiers: [.command])
-                Button("Beatjump zurück") { mix.beatjump(mix.focusedDeck, beats: -mix.deck(mix.focusedDeck).jumpSize) }
-                    .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
-                Button("Beatjump vor") { mix.beatjump(mix.focusedDeck, beats: mix.deck(mix.focusedDeck).jumpSize) }
-                    .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                ForEach([ShortcutID.play, .cue, .cup, .sync, .master, .keylock, .loop, .reloop, .beatjumpBack, .beatjumpForward]) { a in
+                    Button(a.title) { run(a) }.shortcut(keys.combo(a))
+                }
+                Divider()
+                ForEach([ShortcutID.hotcue1, .hotcue2, .hotcue3, .hotcue4, .hotcue5, .hotcue6, .hotcue7, .hotcue8]) { a in
+                    Button(a.title) { run(a) }.shortcut(keys.combo(a))
+                }
+            }
+            CommandMenu("Browser") {
+                ForEach([ShortcutID.resetPlayed, .loadSelected, .previewSelected, .reloadCollection]) { a in
+                    Button(a.title) { run(a) }.shortcut(keys.combo(a))
+                }
+                Divider()
+                Button(ShortcutID.reconnectAudio.title) { run(.reconnectAudio) }.shortcut(keys.combo(.reconnectAudio))
             }
         }
     }
+
+    private var actions: AppActions { AppActions(mix: mix, browser: browser, store: store, history: history) }
 }
 
 extension MixApp {
@@ -296,13 +313,8 @@ extension MixApp {
         m.onLoad = { [browser, mix] pane, d in if let t = browser.selectedTrack(pane: pane) { mix.load(t, deck: d) } }
         m.onPreview = { [browser, mix] pane in if let t = browser.selectedTrack(pane: pane) { mix.togglePreview(t) } }
         m.onToggleBrowser = { [browser] in browser.maximized.toggle() }
-        // Leertaste = Browser groß/klein (nicht beim Tippen in Suchfeldern)
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [browser] e in
-            guard e.keyCode == 49, e.modifierFlags.intersection([.command, .option, .control]).isEmpty,
-                  !(NSApp.keyWindow?.firstResponder is NSText) else { return e }
-            browser.maximized.toggle()
-            return nil
-        }
+        // alle Tastenkürzel (Belegung unter ⌘, -> Tastatur); Leertaste = Browser groß/klein, nicht beim Tippen in Suchfeldern
+        KeyMonitor.install(actions)
         m.start()
         controller = m
     }
@@ -331,6 +343,11 @@ if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SH
 }
 if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("wave:") {
     MainActor.assumeIsolated { WaveShot.run(path: String(shot.dropFirst(5))) }
+}
+
+// Selbsttest-Bild des Tastatur-Tabs: offscreen rendern und beenden (kein Fenster, keine Aktivierung, kein Audio)
+if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("keys:") {
+    exit(MainActor.assumeIsolated { ShortcutShot.render(to: String(shot.dropFirst(5))) } ? 0 : 1)
 }
 
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.

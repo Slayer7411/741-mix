@@ -547,6 +547,8 @@ struct TrackTable: View {
                 let urls = ids.compactMap { store.byKey[$0] }.map { URL(fileURLWithPath: $0.path) }
                 NSWorkspace.shared.activateFileViewerSelecting(urls)
             }
+            Divider()
+            Button("Reset Played State") { history.resetPlayed() }
         } primaryAction: { ids in
             load(ids, decks.focusedDeck)
         }

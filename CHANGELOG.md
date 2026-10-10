@@ -7,6 +7,9 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ### added
 * code readout above each deck: bar of the track in its phrase (`5/16`) against the bar counter. purple `◆ CODE` = in the code, red `+2 BARS` / `−3 BEATS` = how far it is off, grey = deck stopped. phrase start = grid anchor, phrase length = the waveform phrase (4 / 8 / 16 / 32 bars)
+* settings: KEYBOARD tab -> every shortcut can be changed (click, press the new key), removed or reset, a key used twice turns red; changes apply right away
+* browser: right click a track -> Reset Played State (any source), shortcut ⌥⌘P, also in the new BROWSER menu
+* new shortcuts on the focused deck: cue ⌥⌘C (hold), cup ⌥⌘V, hotcues 1-8 ⌃⌘1-8; assignable without default: master, keylock, reloop, load / preview selection, reload collection, reconnect audio
 * key readout above each deck: open key of the track, the audible key in red as soon as it deviates (`8m → 3m`), the deviation in semitones below (keylock off: from the tempo, keylock on: from the key shift)
 * SEMI in the master clock: every newly loaded track takes the tempo of the current master (clock or master deck, nearest half / double ratio), no phase lock
 * SEMI: an unsynced deck starts in phase with the running master (play, cup, cue preview) -> one jump to the nearest beat at start, then it runs free with its own tempo
@@ -39,6 +42,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
 
 ### fixed
+* closing the main window (red button, ⌘W) quits after the confirmation instead of leaving minos running without a window
+* tag colors were lost after a restart (empty map in the defaults dropped the saved entries)
 * auto master sticks to the running master deck: starting another deck no longer makes it master (the lowest deck letter won before)
 * track handoff to the audio thread: generation counter instead of guessing the free slot -> the old buffer can no longer be freed while the audio thread still reads it
 * level meter: both channels (was left only)
