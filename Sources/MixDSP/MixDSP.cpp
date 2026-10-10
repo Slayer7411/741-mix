@@ -350,7 +350,10 @@ static void readResampled(Deck &d, float *L, float *R, int n, double step) {
 /// dauerhaft stumm. Läuft im Audio-Thread – nur Füllen vorhandener Puffer.
 static void healDeck(Deck &d) {
     for (Biquad *b : {&d.eqL, &d.eqM, &d.eqH, &d.chanFilter.bq}) b->clearState();
-    for (auto &c : d.fx) { c.filter.bq.clearState(); c.delay.clear(); c.reverb.clear(); }
+    for (auto &c : d.fx) {
+        c.filter.bq.clearState(); c.delay.clear(); c.reverb.clear();
+        for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp}) b->clearState();   // Reverb::clear() lässt die Filter stehen
+    }
     d.stretch.reset();
     d.wasStretching = false; d.latSm = 0; d.inAcc = 0;
     if (!std::isfinite(d.pos)) d.pos = 0;

@@ -58,6 +58,14 @@ private final class Engine {
 
 @inline(never) private func opaque(_ v: Float) -> Float { v }
 
+/// mittlerer RMS nach dem Einschwingen (Blöcke 10…40 nach dem Fehler)
+private func recoveredLevel(_ c: Engine) -> Float {
+    for _ in 0..<10 { _ = c.render(512) }
+    var acc: Float = 0
+    for _ in 0..<30 { let o = c.render(512); acc += (o[0].reduce(0) { $0 + $1 * $1 } / 512).squareRoot() }
+    return acc / 30
+}
+
 private func allFinite(_ blocks: [[Float]]) -> Bool { blocks.allSatisfy { $0.allSatisfy { $0.isFinite } } }
 
 /// NaN im Track (kaputte Datei, Dekoder) darf nicht zum Ausgang durchschlagen und das Deck nicht dauerhaft stumm schalten
@@ -71,9 +79,7 @@ private func allFinite(_ blocks: [[Float]]) -> Bool { blocks.allSatisfy { $0.all
     for _ in 0..<Int(1.5 * 44100 / 512) { finite = finite && allFinite(c.render(512)) }
     #expect(finite)
     // nach dem Fehler klingt das Deck wieder (Zustand zurückgesetzt, Pegel da)
-    var rms: Float = 0
-    for _ in 0..<40 { let o = c.render(512); rms = max(rms, (o[0].reduce(0) { $0 + $1 * $1 } / 512).squareRoot()) }
-    #expect(rms > 0.05)
+    #expect(recoveredLevel(c) > 0.25)
     var r: Float = 0, p: Float = 0
     mdsp_levels(c.e, 0, &r, &p)
     #expect(r.isFinite && p.isFinite)
@@ -176,4 +182,19 @@ func benchRenderCPU() {
                      Double(times.reduce(0, +)) / Double(count) / 1000, Double(sorted[count * 99 / 100]) / 1000,
                      Double(sorted.last ?? 0) / 1000, deadline))
     }
+}
+
+/// NaN mit eingeschaltetem Hall (Filter vor dem Hall halten NaN fest, wenn sie nicht zurückgesetzt werden)
+@Test func nanWithReverbRecovers() {
+    let c = Engine()
+    c.load(deck: 0, seconds: 4) { i, t in (t > 1.0 && t < 1.01) ? .nan : Float(sin(2 * .pi * 220 * Double(i) / 44100)) * 0.5 }
+    c.set(0, MD_PLAYING, 1)
+    c.set(0, MD_FX1_ASSIGN, 1)
+    mdsp_set_fx(c.e, 0, MDFX_REVERB_ON, 1)
+    mdsp_set_fx(c.e, 0, MDFX_REVERB_HP, 0.5)
+    mdsp_set_fx(c.e, 0, MDFX_REVERB_LP, 0.5)
+    var finite = true
+    for _ in 0..<Int(1.5 * 44100 / 512) { finite = finite && allFinite(c.render(512)) }
+    #expect(finite)
+    #expect(recoveredLevel(c) > 0.25)   // Sinus 0.5 -> RMS 0.35; ohne Rücksetzen der Hall-Filter ~0.1 mit Aussetzern
 }
