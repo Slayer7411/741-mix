@@ -344,3 +344,8 @@
 "Vorschauen: %lld offen" = "Previews: %lld left";
 "pausiert (Deck spielt)" = "paused (deck playing)";
 "mini-übersicht je track: wellenform, phrasen, marker alle 16 / 32 takte, hotcues, start-cue. entsteht beim laden ins deck, per rechtsklick auf eine quelle -> vorschauen berechnen, oder im hintergrund. pausiert, solange ein deck spielt oder lädt. gespeichert in ~/Library/Application Support/MINOS-741/overviews." = "mini overview per track: waveform, phrases, markers every 16 / 32 bars, hotcues, start cue. made when loading into a deck, by right click on a source -> compute previews, or in the background. paused while a deck plays or loads. stored in ~/Library/Application Support/MINOS-741/overviews.";
+"Cover" = "Cover";
+"Cover im Deck anzeigen" = "Show cover in the deck";
+"Cover-Vorschau im Browser" = "Cover preview in the browser";
+"◆ KEIN COVER" = "◆ NO COVER";
+"vorschau unter dem baum (gewählter track). spalte „Cover“ in der liste: rechtsklick auf die spaltenköpfe. bild aus der datei, sonst cover / folder / front.jpg im ordner, zwischengespeichert in ~/Library/Caches/MINOS-741/artwork." = "preview below the tree (selected track). “Cover” column in the list: right click on the column headers. image from the file, else cover / folder / front.jpg in the folder, cached in ~/Library/Caches/MINOS-741/artwork.";

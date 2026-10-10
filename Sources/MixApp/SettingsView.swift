@@ -417,6 +417,12 @@ struct WaveformSettings: View {
                     .font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
             PreviewSettings()
+            Section("Cover") {
+                Toggle("Cover im Deck anzeigen", isOn: $mix.prefs.ui.showDeckCover)
+                Toggle("Cover-Vorschau im Browser", isOn: $mix.prefs.ui.showCoverPreview)
+                Text("vorschau unter dem baum (gewählter track). spalte „Cover“ in der liste: rechtsklick auf die spaltenköpfe. bild aus der datei, sonst cover / folder / front.jpg im ordner, zwischengespeichert in ~/Library/Caches/MINOS-741/artwork.")
+                    .settingsHint()
+            }
             Section("Cue-Farben (Bildschirm und Controller-Pads)") {
                 Picker("Start-Cue (Load / AutoGrid)", selection: $mix.prefs.controller.colorStartCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
                 Picker("Cue", selection: $mix.prefs.controller.colorCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }

@@ -57,6 +57,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * magenta markers every 8 / 16 / 32 bars
 * tag separator for comment 2, empty = space
 * browser layout, hide the tree while decks are visible
+* cover: in the deck header (on), preview of the selected track below the browser tree (on). the browser column `Cover` is switched via right click on the list header
 * music folders for MUSIC FOLDERS: add / remove, empty = automatic (the folder holding 90 % of the collection's files)
 * write browser edits into the collection file (off): backup at most once per hour into `Backup MINOS-741`, not while the library software runs -> [manual](MANUAL.md#-09--browser)
 * browser preview: own column (default) / behind the title / off
