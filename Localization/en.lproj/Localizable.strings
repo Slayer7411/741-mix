@@ -55,7 +55,7 @@
 "FX-Units anzeigen" = "Show FX units";
 "Farben" = "Colors";
 "Farbig (Phrasen, Takte, Beats)" = "Colorful (phrases, bars, beats)";
-"Feste Belegung (Standard)" = "Fixed mapping (NI default)";
+"Feste Belegung (Standard)" = "Fixed mapping (default)";
 "Filtern" = "Filter";
 "Flux antippen schaltet Flux-Modus" = "Tap flux toggles flux mode";
 "Beatjump-Größe (Flux + Pad 3/4)" = "Hold flux + hotcue 3/4 = beatjump";
