@@ -67,14 +67,17 @@ final class MixModel {
         outputDevices = MixEngine.outputDevices()
         applyRouting()
         engine.onConfigurationChange = { [weak self] in
-            print("[audio] Konfigurationswechsel gemeldet")
             Task { @MainActor in
-                guard let self, !self.reroutePending else { return }
+                // Selbsttest: nie selbst umleiten (sonst landet der Test mit gespeicherter Lautstärke auf dem Live-Interface)
+                guard let self, !self.reroutePending, !Session.isSelfTest else { return }
                 self.reroutePending = true
                 try? await Task.sleep(for: .milliseconds(300))
                 self.reroutePending = false
                 self.refreshDevices()
-                self.applyRouting()
+                if let why = self.rerouteReason() {
+                    print("[audio] Geräteliste geändert: \(why) -> neu verbinden")
+                    self.applyRouting()
+                }
             }
         }
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
@@ -233,6 +236,16 @@ final class MixModel {
     var deviceChannels: Int { currentDevice?.channels ?? 2 }
 
     func refreshDevices() { outputDevices = MixEngine.outputDevices() }
+
+    /// Geräteliste hat sich geändert: neu verbinden, wenn unser Gerät weg ist, die Ausgabe steht oder das gewählte
+    /// Interface (USB-Aussetzer) wieder da ist. Folgt die Ausgabe dem Systemstandard, bleibt sie, solange ihr Gerät da ist.
+    private func rerouteReason() -> String? {
+        let cur = engine.routing.device
+        if !engine.running { return "Ausgabe steht" }
+        if let cur, !outputDevices.contains(where: { $0.id == cur }) { return "Gerät weg" }
+        if let uid = deviceUID, let want = outputDevices.first(where: { $0.uid == uid }), want.id != cur { return "\(want.name) wieder da" }
+        return nil
+    }
 
     /// Routing an die Engine geben (startet die Deck-Ausgänge neu) und speichern.
     func applyRouting(restart: Bool = false) {
