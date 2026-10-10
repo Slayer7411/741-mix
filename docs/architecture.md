@@ -5,7 +5,7 @@ same split as traktor -> sound first, ui last.
 ```
  audio thread (coreaudio, one per deck)      reads sample buffers + a few control values, no locks
         ▲
- control thread (741mix.control, 200 hz)     deck logic, sync, phase lock, x1 hid input + leds, history timing
+ control thread (minos741.control, 200 hz)     deck logic, sync, phase lock, x1 hid input + leds, history timing
         ▲
  ui / main thread (30 hz mirror)             swiftui, browser, settings -> may hang, nothing above stops
 ```

@@ -62,7 +62,7 @@ struct DeckSettings: View {
             Section("History & Preparation") {
                 sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f")
                 Toggle("History zusätzlich in Traktors History-Ordner schreiben", isOn: $mix.prefs.ui.historyToTraktor)
-                Text("history und preparation werden als traktor-nml gespeichert (~/Library/Application Support/741-mix) -> in traktor direkt importierbar. preparation wird bei jedem start archiviert und geleert.")
+                Text("history und preparation werden als traktor-nml gespeichert (~/Library/Application Support/MINOS-741) -> in traktor direkt importierbar. preparation wird bei jedem start archiviert und geleert.")
                     .font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
             Section("Ansicht") {
@@ -159,7 +159,7 @@ struct AudioSettings: View {
             }
             Section("Mixer") {
                 Picker("Modus", selection: Binding(get: { mix.mixerMode }, set: { mix.mixerMode = $0; mix.applyRouting() })) {
-                    Text("Intern – Mixer in 741-mix").tag(MixerMode.internalMixer)
+                    Text("Intern – Mixer in MINOS-741").tag(MixerMode.internalMixer)
                     Text("Extern – Mischpult (z. B. Xone:96)").tag(MixerMode.external)
                 }
                 .pickerStyle(.radioGroup)
@@ -175,7 +175,7 @@ struct AudioSettings: View {
                             get: { mix.deckPairs[d] }, set: { mix.deckPairs[d] = $0; mix.applyRouting() }))
                     }
                     Button("Standard: A 1/2 · B 3/4 · C 5/6 · D 7/8") { mix.deckPairs = [0, 2, 4, 6]; mix.applyRouting() }
-                    Text("Am Mischpult die Kanal-Eingänge auf USB stellen. EQ, Fader, Crossfader und Kopfhörer-Cue macht dann das Pult; Filter, FX und Gain bleiben in 741-mix.")
+                    Text("Am Mischpult die Kanal-Eingänge auf USB stellen. EQ, Fader, Crossfader und Kopfhörer-Cue macht dann das Pult; Filter, FX und Gain bleiben in MINOS-741.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
             }

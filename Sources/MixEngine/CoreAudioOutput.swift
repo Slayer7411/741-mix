@@ -57,8 +57,8 @@ final class CoreAudioOutput {
 
     deinit { stop() }
 
-    private func err(_ s: String) -> NSError { NSError(domain: "741mix.audio", code: 1, userInfo: [NSLocalizedDescriptionKey: s]) }
+    private func err(_ s: String) -> NSError { NSError(domain: "minos741.audio", code: 1, userInfo: [NSLocalizedDescriptionKey: s]) }
     private func check(_ st: OSStatus, _ what: String) throws {
-        if st != noErr { throw NSError(domain: "741mix.audio", code: Int(st), userInfo: [NSLocalizedDescriptionKey: "\(what) (\(st))"]) }
+        if st != noErr { throw NSError(domain: "minos741.audio", code: Int(st), userInfo: [NSLocalizedDescriptionKey: "\(what) (\(st))"]) }
     }
 }

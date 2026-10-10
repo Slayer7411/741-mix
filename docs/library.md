@@ -53,7 +53,7 @@ syntax details in [traktor files](traktor-files.md).
 * right click a track -> "an preparation anhängen"
 * the list survives a crash or quit
 * on the next start it gets archived and cleared
-* archive = traktor playlist nml (`TYPE="LIST"`) in `~/Library/Application Support/741-mix/Preparation`
+* archive = traktor playlist nml (`TYPE="LIST"`) in `~/Library/Application Support/MINOS-741/Preparation`
 * shows up under "preparation archiv" in the tree -> import into traktor via playlist import
 
 ## ◆ HISTORY
@@ -63,6 +63,6 @@ syntax details in [traktor files](traktor-files.md).
 * internal mode: only with fader / crossfader open
 * written as traktor history nml (`history_2026y10m10d_21h05m07s.nml`) with deck, start time and play duration
 * the collection entries get copied 1:1 -> cues, tags and audio id stay intact
-* saved in `~/Library/Application Support/741-mix/History`, optional copy into traktors history folder
+* saved in `~/Library/Application Support/MINOS-741/History`, optional copy into traktors history folder
 * "history" = current session, "history archiv" = own sessions plus all traktor sessions
 * history view: start, deck, artist, title, bpm, key, duration -> double click loads into the focused deck

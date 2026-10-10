@@ -1,4 +1,4 @@
-// MixDSP – schlanker Echtzeit-Audiokern von 741-mix.
+// MixDSP – schlanker Echtzeit-Audiokern von MINOS-741.
 // Ein einziger Render-Callback rechnet alle Decks: Abspielen (Tempo/Keylock/Loop/Reverse/Flux),
 // Kanalzug (Gain, EQ, Filter), 2 FX-Units (Filter, Delay, Reverb), Fader/Crossfader, Routing auf Kanalpaare.
 // Der Audio-Thread nimmt keine Sperren und fordert keinen Speicher an. Steuerwerte sind atomar.

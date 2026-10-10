@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "741-mix",
+    name: "MINOS-741",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "741mix", targets: ["MixApp"]),
+        .executable(name: "minos741", targets: ["MixApp"]),
         .library(name: "MixCore", targets: ["MixCore"]),
     ],
     targets: [

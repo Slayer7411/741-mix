@@ -1,6 +1,6 @@
 # TRAKTOR FILES
 
-741-mix reads and writes traktors own file formats -> no export step, no conversion.
+MINOS-741 reads and writes traktors own file formats -> no export step, no conversion.
 
 ## ◆ COLLECTION.NML (read)
 
@@ -25,7 +25,7 @@ $FILEPATH STARTS_WITH "/Users/me/Music/2023"
 * fields: `$ARTIST $TITLE $COMMENT $COMMENT2 $LABEL $GENRE $KEY $BPM $COLOR $RATING $PLAYCOUNT $PLAYED $IMPORTDATE $FILEPATH $FILESTATE` and a few more
 * operators: `%` contains, `!%` not contains, `== != >= <= > <`, `STARTS_WITH`, `&` and, `|` or, `!` not, brackets
 * functions: `MONTHS_AGO(n)`, `DAYS_AGO(n)`, `TRUE` / `FALSE`
-* own smartlists in 741-mix use the same syntax
+* own smartlists in MINOS-741 use the same syntax
 
 ## ◆ HISTORY (read + write)
 
@@ -40,13 +40,13 @@ file name like traktor: `history_2026y10m10d_21h05m07s.nml`
 
 * `STARTDATE` = year << 16 | month << 8 | day, `STARTTIME` = seconds since midnight, `DECK` 0-3
 * a track counts as played after 30s audible (setting) -> in external mode always audible, internal mode needs the fader up
-* own sessions: `~/Library/Application Support/741-mix/History`, optional copy into traktors `History` folder
+* own sessions: `~/Library/Application Support/MINOS-741/History`, optional copy into traktors `History` folder
 * the history archive shows own sessions and all traktor sessions
 
 ## ◆ PREPARATION (write)
 
 * the preparation list survives a crash but gets archived and cleared on every start
-* archive = normal traktor playlist nml (`TYPE="LIST"`) in `~/Library/Application Support/741-mix/Preparation` -> import in traktor via the playlist import
+* archive = normal traktor playlist nml (`TYPE="LIST"`) in `~/Library/Application Support/MINOS-741/Preparation` -> import in traktor via the playlist import
 
 ## ◆ TRAKTOR SETTINGS.TSI (read, tools only)
 

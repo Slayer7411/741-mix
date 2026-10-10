@@ -7,7 +7,7 @@ import MixEngine
 @MainActor @Observable
 final class HistoryStore {
     static let baseDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("741-mix")
+        .appendingPathComponent("MINOS-741")
     static let historyDir = baseDir.appendingPathComponent("History")
     static let prepDir = baseDir.appendingPathComponent("Preparation")
     static let traktorHistoryDir = LibraryStore.defaultNML.deletingLastPathComponent().appendingPathComponent("History")

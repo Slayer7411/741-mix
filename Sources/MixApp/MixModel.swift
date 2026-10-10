@@ -63,10 +63,24 @@ final class MixModel {
     }
 
     /// Zustand vom Kern holen
+    @ObservationIgnored private var changeCount = 0
+    @ObservationIgnored private var lastReport = Date()
+
     func pull() {
         var s = core.snapshot()
         for i in s.decks.indices { s.decks[i].nudge = 0 }
-        if s != state { state = s }
+        if s != state {
+            if ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1" {
+                changeCount += 1
+                if Date().timeIntervalSince(lastReport) > 2 {
+                    let diff = s.decks.indices.filter { s.decks[$0] != state.decks[$0] }
+                    print("[debug] zustand geändert \(changeCount)× in 2 s, decks: \(diff), fx: \(s.fx != state.fx), rest: \(s.prefs != state.prefs) \(s.crossfader) \(s.masterVolume)")
+                    fflush(stdout)
+                    changeCount = 0; lastReport = Date()
+                }
+            }
+            state = s
+        }
     }
 
     private func run(_ f: () -> Void) { f(); pull() }

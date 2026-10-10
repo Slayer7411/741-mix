@@ -149,7 +149,7 @@ struct MixApp: App {
     @State private var x1: X1Manager?
 
     var body: some Scene {
-        WindowGroup("741-mix") {
+        WindowGroup("MINOS-741") {
             ContentView()
                 .environment(store)
                 .environment(mix)

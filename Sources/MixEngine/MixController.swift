@@ -127,7 +127,7 @@ public struct MixState: Equatable, Sendable {
 /// Der Audio-Thread nimmt die Sperre nie – er liest nur `DeckPlayer`.
 public final class MixController: @unchecked Sendable {
     public let engine = MixEngine()
-    public let controlQueue = DispatchQueue(label: "741mix.control", qos: .userInteractive)
+    public let controlQueue = DispatchQueue(label: "minos741.control", qos: .userInteractive)
 
     private let lock = NSRecursiveLock()
     private var state = MixState()

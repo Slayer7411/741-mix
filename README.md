@@ -1,8 +1,8 @@
-<p align="center"><img src="docs/assets/banner.svg" alt="741 · MIX" width="100%"></p>
+<p align="center"><img src="docs/assets/banner.svg" alt="MINOS-741" width="100%"></p>
 
 native dj software for macos. built to replace traktor for my own sets -> same workflow, same files, but with the browser and tag system i actually want.
 
-<p align="center"><img src="docs/assets/screenshot.png" alt="741-mix with 4 decks, external mixer mode and dual browser" width="100%"></p>
+<p align="center"><img src="docs/assets/screenshot.png" alt="MINOS-741 with 4 decks, external mixer mode and dual browser" width="100%"></p>
 
 ## ◆ WHAT IT DOES
 
@@ -28,9 +28,9 @@ whats missing compared to traktor 3/4 is listed in [docs/feature-parity.md](docs
 needs macos 15+ and xcode / swift 6.
 
 ```
-git clone https://github.com/Slayer7411/741-mix.git
-cd 741-mix
-swift run 741mix
+git clone https://github.com/Slayer7411/MINOS-741.git
+cd MINOS-741
+swift run minos741
 ```
 
 build a real app and install it to /Applications (release build, icon, ad hoc signed):
@@ -45,7 +45,7 @@ tests: `swift test` (parses a sample nml, all smartlists of a real collection if
 silent self test of the engine (no sound, plays two tracks, checks sync / loop / beatjump / fx levels and blocks the main thread for 3s):
 
 ```
-MIX741_SELFTEST=1 MIX741_NOXONE=1 swift run 741mix
+MIX741_SELFTEST=1 MIX741_NOXONE=1 swift run minos741
 ```
 
 ## ◆ DOCS

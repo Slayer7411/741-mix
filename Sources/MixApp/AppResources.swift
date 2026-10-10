@@ -9,14 +9,23 @@ enum AppResources {
         return Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Resources")
     }
 
-    /// Einstellungen aus der Zeit vor dem App-Paket übernehmen (Domain „741mix“ → Bundle-ID), einmalig
+    /// Einstellungen und Daten aus alten Namen übernehmen (741mix, 741-mix-App), einmalig
     static func migrateDefaults() {
-        guard let id = Bundle.main.bundleIdentifier, id != "741mix" else { return }
         let d = UserDefaults.standard
-        guard !d.bool(forKey: "migrated.from.741mix"), let old = UserDefaults(suiteName: "741mix") else { return }
-        for (k, v) in old.dictionaryRepresentation() where !k.hasPrefix("NS") && !k.hasPrefix("Apple") && d.object(forKey: k) == nil {
-            d.set(v, forKey: k)
+        if !d.bool(forKey: "migrated.v2") {
+            for suite in ["com.github.slayer7411.741mix", "741mix"] where suite != Bundle.main.bundleIdentifier {
+                guard let old = UserDefaults(suiteName: suite) else { continue }
+                for (k, v) in old.dictionaryRepresentation()
+                where !k.hasPrefix("NS") && !k.hasPrefix("Apple") && !k.hasPrefix("migrated") && d.object(forKey: k) == nil {
+                    d.set(v, forKey: k)
+                }
+            }
+            d.set(true, forKey: "migrated.v2")
         }
-        d.set(true, forKey: "migrated.from.741mix")
+        // Datenordner (History, Preparation) vom alten Namen übernehmen
+        let fm = FileManager.default
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let old = base.appendingPathComponent("741-mix"), new = base.appendingPathComponent("MINOS-741")
+        if fm.fileExists(atPath: old.path), !fm.fileExists(atPath: new.path) { try? fm.moveItem(at: old, to: new) }
     }
 }
