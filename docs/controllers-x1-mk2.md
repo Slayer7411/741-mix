@@ -1,14 +1,12 @@
 # KONTROL X1 MK2
 
-native hid mode (vid `0x17cc`, pid `0x1220`, usage page `0xff01`). no midi mode needed, no controller editor.
-traktor has to be closed -> it grabs the device.
+native hid mode (vid `0x17cc`, pid `0x1220`, usage page `0xff01`). traktor has to be closed.
 
 ## ◆ SETUP
 
 * two x1 at the same time, each with a left and a right deck
 * default: first x1 (usb position) = a / d, second = c / b -> change per device under ⌘, -> controller
-* "blink" button lights the pads of one unit white -> to see which one is which
-* hid runs on the control thread (`IOHIDManagerSetDispatchQueue`), input callback registered on the manager
+* "blink" lights the pads of one unit white
 
 ## ◆ MAPPING
 
@@ -16,8 +14,8 @@ ni default layout:
 * play (shift: cup), sync (shift: master)
 * hotcue 1-4 (shift: delete)
 * loop encoder: turn = loop size, push = loop on / off, shift + turn = beatjump, shift + push = reloop
-* load -> loads the selected track of the last used browser pane
-* browse encoder -> moves the selection (shift: x10), push = preview
+* load -> selected track of the own browser pane
+* browse encoder -> selection (shift: x10), push = big browser, shift + push = preview
 * fx: d/w knob, knob 1-3 = filter / delay / reverb amount, button 1-3 = on / off, mode = all off or next delay time
 * fx assign buttons per side
 * touch strip: pitch bend (shift: seek), split left / right side
@@ -28,7 +26,7 @@ my traktor custom mappings (decoded from `Traktor Settings.tsi`):
 * flux held + hotcue 3 / 4 = beatjump -1 / +1 beat (pads 3/4 light up grey while flux is held)
 * flux tap = flux mode on / off
 
-all of it can be changed under ⌘, -> controller (cue action, beatjump size, strip mode and sensitivity, led brightness, pad colors).
+all of it under ⌘, -> controller.
 
 ## ◆ HID LAYOUT
 
@@ -61,5 +59,3 @@ output report `0x80` (leds, 0-127 brightness):
 | 0x2E 0x2F 0x32 0x33 | right flux, sync, cue, play |
 
 output report `0x81`: 7 segment displays (left from 0x01, right from 0x19, 3 digits x 8 segments) and the touch strip (0x31+, red / blue per segment).
-
-leds get sent at about 33 hz, only when something changed.

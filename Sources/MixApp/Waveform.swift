@@ -243,7 +243,7 @@ struct WaveformView: View {
                 for c in deck.hotcues.values {
                     let cx = x(c.startMs / 1000)
                     guard cx > -20, cx < w + 20 else { continue }
-                    let col = Theme.cueColor(c.kind, prefs: mix.prefs)
+                    let col = Theme.cueColor(c, deck: deck, prefs: mix.prefs)
                     ctx.fill(Path(CGRect(x: cx - 1, y: 0, width: 2, height: h)), with: .color(col))
                     ctx.fill(Path(roundedRect: CGRect(x: cx, y: 0, width: 13, height: 12), cornerRadius: 2), with: .color(col))
                     ctx.draw(Text("\(c.hotcue + 1)").font(Theme.label(9, .heavy)).foregroundStyle(.black),
@@ -305,7 +305,7 @@ struct OverviewView: View {
                     }
                     for c in deck.hotcues.values {
                         ctx.fill(Path(CGRect(x: c.startMs / 1000 / deck.duration * size.width, y: 0, width: 2, height: size.height)),
-                                 with: .color(Theme.cueColor(c.kind, prefs: mix.prefs)))
+                                 with: .color(Theme.cueColor(c, deck: deck, prefs: mix.prefs)))
                     }
                     ctx.fill(Path(CGRect(x: size.width * f - 1, y: 0, width: 2, height: size.height)), with: .color(Theme.state))
                 }

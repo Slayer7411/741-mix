@@ -168,6 +168,8 @@ struct Deck {
     double pos = 0, flux = 0, inAcc = 0;
     bool loopActive = false; double loopStart = 0, loopEnd = 0; int seenLoop = 0;
     bool wasStretching = false;
+    double latSm = 0;   // geglättete Keylock-Latenz (sonst springt die Position bei Tempowechseln)
+    int latDir = 1;     // Richtung, in die der Lesekopf der Latenz vorausläuft
     int tailFrames = 0;
     float gainSm = 1, volSm = 0;
     Biquad eqL, eqM, eqH; float lastEq[3] = {999, 999, 999};
@@ -283,6 +285,12 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     }
 
     bool playing = d.p[MD_PLAYING].load() > 0.5f && d.cur.frames > 0;
+    // Keylock aus oder Stopp: Lesekopf (läuft der Stretch-Latenz voraus) auf die hörbare Position zurück
+    bool stretchNow = playing && (d.p[MD_KEYLOCK].load() > 0.5f || d.p[MD_KEYSHIFT].load() != 0);
+    if (d.wasStretching && !stretchNow) {
+        if (!jumped) { d.pos = std::max(0.0, d.pos - d.latSm * d.latDir); d.flux = std::max(0.0, d.flux - d.latSm * d.latDir); }
+        d.latSm = 0; d.wasStretching = false;
+    }
     bool fxTail = false;
     for (int u = 0; u < MDSP_FX_UNITS; u++) {
         bool assigned = d.p[MD_FX1_ASSIGN + u].load() > 0.5f;
@@ -310,7 +318,17 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     if (!playing) {
         std::memset(L, 0, sizeof(float) * n); std::memset(R, 0, sizeof(float) * n);
     } else if (stretching) {
-        if (!d.wasStretching || jumped) primeStretch(d, dir, rate * srcRatio);
+        if (d.wasStretching && !jumped && dir != d.latDir) {   // Reverse umgeschaltet: von der hörbaren Position aus neu
+            d.pos = std::max(0.0, d.pos - d.latSm * d.latDir); d.flux = std::max(0.0, d.flux - d.latSm * d.latDir);
+            d.wasStretching = false;
+        }
+        if (!d.wasStretching || jumped) {
+            // Eingang um die Latenz vorauslesen → hörbar exakt an der Zielposition
+            d.latSm = d.stretch.inputLatency() + d.stretch.outputLatency() * rate * srcRatio;
+            d.latDir = dir;
+            d.pos += d.latSm * dir; d.flux += d.latSm * dir;
+            primeStretch(d, dir, rate * srcRatio);
+        }
         // Eingangslänge für dieses Ausgangsfenster (gebrochen aufsummiert)
         d.inAcc += n * rate * srcRatio;
         int nIn = std::clamp(int(d.inAcc), 0, kMaxIn);
@@ -382,9 +400,10 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     d.peak.store(std::max(pk, d.peak.load() * 0.85f));
 
     // Zustand nach außen: hörbare Position (Keylock-Latenz abgezogen)
-    double heard = std::max(0.0, d.pos - (stretching ? latencySrc * dir : 0));
+    if (stretching) d.latSm += (latencySrc - d.latSm) * 0.02;   // Latenz hängt leicht vom Tempo ab → glätten
+    double heard = std::max(0.0, d.pos - d.latSm * d.latDir);
     d.posOut.store(heard / d.cur.rate);
-    d.fluxOut.store(d.flux / d.cur.rate);
+    d.fluxOut.store(std::max(0.0, d.flux - d.latSm * d.latDir) / d.cur.rate);
     d.playingOut.store(d.p[MD_PLAYING].load() > 0.5f);
     d.loopActiveOut.store(d.loopActive);
     d.loopStartOut.store(d.loopStart); d.loopEndOut.store(d.loopEnd);

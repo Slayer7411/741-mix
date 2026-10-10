@@ -1,8 +1,8 @@
 import Foundation
 
 /// Ein Cue-Punkt wie in Traktor (CUE_V2). Positionen in Millisekunden.
-public struct Cue: Hashable, Sendable {
-    public enum Kind: Int, Sendable {
+public struct Cue: Hashable, Sendable, Codable {
+    public enum Kind: Int, Sendable, Codable {
         case cue = 0, fadeIn = 1, fadeOut = 2, load = 3, grid = 4, loop = 5
     }
     public var name: String

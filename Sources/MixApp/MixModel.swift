@@ -37,6 +37,10 @@ final class MixModel {
     var internalPair = 0
     var deckPairs = [0, 2, 4, 6]
 
+    /// eigene Änderungen (Grid, Hotcues) dauerhaft je Track – die Traktor-Collection bleibt unangetastet
+    @ObservationIgnored let edits = TrackEditStore(url: HistoryStore.baseDir.appendingPathComponent("edits.json"))
+    @ObservationIgnored private var originals: [Int: Track] = [:]
+    @ObservationIgnored private var savedEdit: [Int: TrackEdit?] = [:]
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var previewPlayer: AVAudioPlayer?
     @ObservationIgnored private var reroutePending = false
@@ -80,6 +84,7 @@ final class MixModel {
                 }
             }
             state = s
+            persistEdits()
         }
     }
 
@@ -103,7 +108,43 @@ final class MixModel {
 
     // MARK: - Befehle (weitergeleitet an den Kern)
 
-    func load(_ t: Track, deck d: Int) { core.load(t, deck: d); focusedDeck = d; pull() }
+    func load(_ t: Track, deck d: Int) {
+        originals[d] = t
+        let e = edits.edit(for: t.key)
+        savedEdit[d] = e
+        core.load(e?.apply(to: t) ?? t, deck: d)
+        focusedDeck = d
+        pull()
+    }
+
+    /// Grid/Hotcue-Änderungen eines Decks gegenüber der Collection speichern (nur wenn sich etwas geändert hat)
+    private func persistEdits() {
+        for d in state.decks.indices {
+            guard let orig = originals[d], let t = state.decks[d].track, t.key == orig.key, !state.decks[d].loading else { continue }
+            let deck = state.decks[d]
+            var e = TrackEdit()
+            if let g = deck.grid, let og = BeatGrid(track: orig) {
+                if abs(g.bpm - og.bpm) > 0.0001 { e.bpm = g.bpm }
+                if abs(g.anchor - og.anchor) > 0.0001 { e.gridAnchorMs = g.anchor * 1000 }
+            } else if let g = deck.grid {
+                e.bpm = g.bpm; e.gridAnchorMs = g.anchor * 1000
+            }
+            let cues = deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }
+            if cues != orig.hotcues { e.hotcues = cues }
+            let newEdit: TrackEdit? = (e.bpm == nil && e.gridAnchorMs == nil && e.hotcues == nil) ? nil : e
+            let old = savedEdit[d] ?? nil
+            if newEdit?.bpm != old?.bpm || newEdit?.gridAnchorMs != old?.gridAnchorMs || newEdit?.hotcues != old?.hotcues {
+                edits.set(newEdit, for: orig.key)
+                savedEdit[d] = newEdit
+            }
+        }
+    }
+
+    func shiftGrid(_ d: Int, ms: Double) { run { core.shiftGrid(d, ms: ms) } }
+    func setGridBPM(_ d: Int, _ v: Double) { run { core.setGridBPM(d, v) } }
+    func scaleGridBPM(_ d: Int, _ f: Double) { run { core.scaleGridBPM(d, f) } }
+    func setGridAnchorHere(_ d: Int) { run { core.setGridAnchorHere(d) } }
+    func resetGrid(_ d: Int) { if let o = originals[d] { run { core.resetGrid(d, original: o) } } }
     func togglePlay(_ d: Int) { run { core.togglePlay(d) } }
     func cueDown(_ d: Int) { run { core.cueDown(d) } }
     func cueUp(_ d: Int) { run { core.cueUp(d) } }

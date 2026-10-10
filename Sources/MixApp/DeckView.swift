@@ -10,19 +10,25 @@ struct DeckView: View {
     var body: some View {
         let deck = mix.deck(d)
         let focused = mix.focusedDeck == d
-        VStack(alignment: .leading, spacing: 4) {
-            header(deck)
-            WaveformView(d: d)
-                .frame(minHeight: mix.prefs.ui.waveformHeight, maxHeight: .infinity)
-            OverviewView(d: d)
-                .frame(height: 18)
-            transportRow(deck)
-            cueLoopRow(deck)
+        HStack(alignment: .top, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
+                header(deck)
+                WaveformView(d: d)
+                    .frame(minHeight: mix.prefs.ui.waveformHeight, maxHeight: .infinity)
+                PhaseBar(d: d).frame(height: 8)
+                OverviewView(d: d)
+                    .frame(height: 18)
+                transportRow(deck)
+                cueLoopRow(deck)
+                if mix.prefs.ui.showGridTools { gridRow(deck) }
+            }
+            TempoColumn(d: d)
         }
         .padding(6)
         .frame(maxHeight: .infinity)
         .background(Rectangle().fill(focused ? Theme.deckFocused : Theme.deck))
-        .overlay(Rectangle().stroke(focused ? Theme.bone.opacity(0.5) : Theme.hairline, lineWidth: 1))
+        .overlay(Rectangle().stroke(mix.effectiveMaster == d ? Theme.gold : (focused ? Theme.bone.opacity(0.5) : Theme.hairline),
+                                    lineWidth: 1))
         .contentShape(Rectangle())
         .onTapGesture { mix.focusedDeck = d }
     }
@@ -74,21 +80,27 @@ struct DeckView: View {
             DeckButton(title: "REV", active: deck.reverse, color: Theme.state) { mix.toggleReverse(d) }
             DeckButton(title: "FLUX", active: deck.flux, color: Theme.state) { mix.toggleFlux(d) }
             Spacer(minLength: 2)
-            PressButton(title: "‹", width: 14, down: { mix.bend(d, -1) }, up: { mix.bend(d, 0) })
-            Slider(value: Binding(get: { deck.tempoPct }, set: { mix.setTempo(d, $0) }),
-                   in: -deck.tempoRange...deck.tempoRange)
-                .controlSize(.mini)
-                .frame(minWidth: 30)
-                .disabled(deck.sync && mix.effectiveMaster != d)
-            PressButton(title: "›", width: 14, down: { mix.bend(d, 1) }, up: { mix.bend(d, 0) })
-            Menu(String(format: "±%g", deck.tempoRange)) {
-                ForEach([6.0, 8, 10, 16, 50, 100], id: \.self) { r in Button(String(format: "±%g %%", r)) { mix.setTempoRange(d, r) } }
-                Divider()
-                Button("Tempo zurücksetzen") { mix.setTempo(d, 0) }
-            }
-            .menuStyle(.borderlessButton)
-            .font(Theme.mono(10))
-            .fixedSize()
+        }
+    }
+
+    /// Grid-Werkzeuge wie Traktors GRID-Tab: verschieben, BPM, ×2/÷2, Marker setzen, zurücksetzen
+    private func gridRow(_ deck: DeckState) -> some View {
+        HStack(spacing: 3) {
+            Text("GRID").font(Theme.label(9, .bold)).foregroundStyle(Theme.muted).frame(width: 30, alignment: .leading)
+            DeckButton(title: "◂◂") { mix.shiftGrid(d, ms: -10) }.help("Grid 10 ms früher")
+            DeckButton(title: "◂") { mix.shiftGrid(d, ms: -1) }.help("Grid 1 ms früher")
+            DeckButton(title: "▸") { mix.shiftGrid(d, ms: 1) }.help("Grid 1 ms später")
+            DeckButton(title: "▸▸") { mix.shiftGrid(d, ms: 10) }.help("Grid 10 ms später")
+            Divider().frame(height: 14)
+            DeckButton(title: "BPM −") { mix.setGridBPM(d, (deck.grid?.bpm ?? 0) - 0.01) }
+            Text(deck.grid.map { String(format: "%.3f", $0.bpm) } ?? "—").font(Theme.mono(10)).frame(width: 52)
+            DeckButton(title: "+") { mix.setGridBPM(d, (deck.grid?.bpm ?? 0) + 0.01) }
+            DeckButton(title: "÷2") { mix.scaleGridBPM(d, 0.5) }
+            DeckButton(title: "×2") { mix.scaleGridBPM(d, 2) }
+            Divider().frame(height: 14)
+            DeckButton(title: "SET") { mix.setGridAnchorHere(d) }.help("Beat 1 an die aktuelle Position")
+            DeckButton(title: "RESET") { mix.resetGrid(d) }.help("Grid aus der Collection")
+            Spacer(minLength: 0)
         }
     }
 
@@ -97,7 +109,7 @@ struct DeckView: View {
             ForEach(0..<8, id: \.self) { n in
                 let c = deck.hotcues[n]
                 DeckButton(title: "\(n + 1)", active: c != nil,
-                           color: c.map { Theme.cueColor($0.kind, prefs: mix.prefs) } ?? .gray, width: 14) {
+                           color: c.map { Theme.cueColor($0, deck: deck, prefs: mix.prefs) } ?? .gray, width: 14) {
                     mix.hotcue(d, n, delete: NSEvent.modifierFlags.contains(.option))
                 }
                 .help("Klick: springen/setzen · ⌥-Klick: löschen")
@@ -169,5 +181,70 @@ struct PhaseMeter: View {
                 }
             }
         }
+    }
+}
+
+/// Großer Phasen-Anzeiger unter der Wellenform (wie Traktor): Abstand zum Master in Beats, Mitte = synchron
+struct PhaseBar: View {
+    @Environment(MixModel.self) private var mix
+    let d: Int
+
+    var body: some View {
+        let active = mix.deck(d).playing && (mix.state.clockMaster || mix.effectiveMaster != nil)
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !active)) { _ in
+            Canvas { ctx, size in
+                let w = size.width, h = size.height
+                ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.void))
+                ctx.fill(Path(CGRect(x: w / 2 - 0.5, y: 0, width: 1, height: h)), with: .color(Theme.muted))
+                for q in [0.25, 0.75] { ctx.fill(Path(CGRect(x: w * q, y: h / 2, width: 1, height: h / 2)), with: .color(Theme.hairline)) }
+                guard let e = mix.phaseError(d) else { return }
+                let x = w / 2 + CGFloat(e) * w
+                let r = CGRect(x: min(w / 2, x), y: 1, width: max(2, abs(x - w / 2)), height: h - 2)
+                ctx.fill(Path(r), with: .color(abs(e) < 0.02 ? Theme.bone : Theme.state))
+            }
+        }
+        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+    }
+}
+
+/// Senkrechter Tempo-Fader rechts am Deck (wie Traktor), mit Bereich, Reset und Pitch-Bend
+struct TempoColumn: View {
+    @Environment(MixModel.self) private var mix
+    let d: Int
+
+    var body: some View {
+        let deck = mix.deck(d)
+        VStack(spacing: 3) {
+            Menu(String(format: "±%g", deck.tempoRange)) {
+                ForEach([6.0, 8, 10, 16, 50, 100], id: \.self) { r in Button(String(format: "±%g %%", r)) { mix.setTempoRange(d, r) } }
+            }
+            .menuStyle(.borderlessButton).font(Theme.mono(9)).fixedSize()
+            GeometryReader { geo in
+                let h = geo.size.height
+                let f = (deck.tempoPct / deck.tempoRange + 1) / 2   // 0 = schneller oben? Traktor: unten = schneller
+                ZStack(alignment: .top) {
+                    Rectangle().fill(Theme.void).frame(width: 4).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+                    Rectangle().fill(Theme.muted).frame(width: 14, height: 1).offset(y: h / 2)
+                    Rectangle().fill(deck.sync ? Theme.secondary : Theme.bone)
+                        .frame(width: geo.size.width, height: 8)
+                        .offset(y: (h - 8) * CGFloat(f))
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0).onChanged { g in
+                    guard !(deck.sync && mix.effectiveMaster != d) else { return }
+                    let v = max(0, min(1, g.location.y / h)) * 2 - 1
+                    mix.setTempo(d, v * deck.tempoRange)
+                })
+                .onTapGesture(count: 2) { mix.setTempo(d, 0) }
+            }
+            .frame(width: 22)
+            HStack(spacing: 1) {
+                PressButton(title: "‹", width: 8, down: { mix.bend(d, -1) }, up: { mix.bend(d, 0) })
+                PressButton(title: "›", width: 8, down: { mix.bend(d, 1) }, up: { mix.bend(d, 0) })
+            }
+            DeckButton(title: "0", width: 10) { mix.setTempo(d, 0) }.help("Tempo zurücksetzen")
+        }
+        .frame(width: 34)
     }
 }

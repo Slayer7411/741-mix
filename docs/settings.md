@@ -1,10 +1,10 @@
 # SETTINGS
 
-everything lives under ⌘, and gets saved as json in the user defaults (`prefs.v1`). new fields fall back to their default -> old settings survive updates.
+everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 
 ## ◆ DECKS
 
-* quantize -> cues, loops and jumps snap to beats
+* snap (cues, loops) and quant (jumps keep the phase)
 * hotcue jump keeps the beat phase
 * load position: load cue / grid, track start or hotcue 1
 * track end warning (seconds, 0 = off)
@@ -29,8 +29,8 @@ everything lives under ⌘, and gets saved as json in the user defaults (`prefs.
 * palette: 741 bone, orange, blue / white, traktor
 * zoom (seconds per side), minimum height (grows with the window), dim the played part
 * beatgrid: on / off, colorful (phrases, bars, beats), phrase length 16 / 32 / 64 / 128 beats, bar numbers
-* cue and loop colors (screen and x1 pads)
-* tag separator for comment 2 -> every character splits, e.g. `·` or `·»`. empty = space
+* cue colors: start cue red, cues white, loops green, 1-2 bar loops magenta
+* tag separator for comment 2, empty = space
 
 ## ◆ AUDIO
 

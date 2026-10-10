@@ -1,4 +1,5 @@
 import Foundation
+import MixCore
 import MixEngine
 
 /// Darstellung der Wellenform
@@ -48,8 +49,30 @@ struct X1Prefs: Codable, Equatable {
     var browseFastStep = 10
     var ledOn = 127
     var ledOff = 5
+    // alte Felder (nicht mehr benutzt, bleiben für gespeicherte Einstellungen)
     var cuePadColor = PadColor.red
     var loopPadColor = PadColor.green
+    // Cue-Farben (Bildschirm + X1-Pads)
+    var colorStartCue = PadColor.red
+    var colorCue = PadColor.white
+    var colorLoop = PadColor.green
+    var colorShortLoop = PadColor.magenta
+    /// Loops bis zu so vielen Takten gelten als kurz (magenta)
+    var shortLoopBars = 2.0
+
+    /// Farbe eines Cues: Start-Cue (Load/AutoGrid), sonstige Cues, Loops, kurze Loops
+    func color(for c: Cue, startMs: Double?, bpm: Double) -> PadColor {
+        switch c.kind {
+        case .loop:
+            let bars = bpm > 0 ? c.lengthMs / 1000 / (60 / bpm) / 4 : 99
+            return bars <= shortLoopBars + 0.01 ? colorShortLoop : colorLoop
+        case .load, .grid:
+            return colorStartCue
+        default:
+            if let s = startMs, abs(c.startMs - s) < 5 { return colorStartCue }
+            return colorCue
+        }
+    }
 }
 
 struct UIPrefs: Codable, Equatable {
@@ -65,6 +88,9 @@ struct UIPrefs: Codable, Equatable {
     var waveformHeight = 60.0
     var previewStart = 0.3
     var browserHeight = 240.0
+    var browserLayout = BrowserLayout.sideBySide
+    /// Grid-Werkzeuge (wie Traktors GRID-Tab) am Deck zeigen
+    var showGridTools = true
     /// History zusätzlich in Traktors History-Ordner schreiben (dort im Archiv sichtbar)
     var historyToTraktor = false
     /// Trennzeichen für Tags in Kommentar 2 (jedes Zeichen trennt; Standard Leerzeichen)

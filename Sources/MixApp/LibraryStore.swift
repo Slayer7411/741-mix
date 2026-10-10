@@ -158,15 +158,21 @@ final class BrowserState {
     @ObservationIgnored var separators: () -> String = { " " }
 
     var activePane: BrowserPaneModel { activePaneID == paneB.id ? paneB : paneA }
+    /// Browser groß (Decks ausgeblendet) – Leertaste oder Browse-Knopf am X1
+    var maximized = false
 
-    func selectedTrack() -> Track? {
-        guard let store, let id = activePane.selection.first else { return nil }
+    func pane(_ i: Int) -> BrowserPaneModel { i == 1 ? paneB : paneA }
+
+    func selectedTrack(pane i: Int? = nil) -> Track? {
+        let p = i.map(pane) ?? activePane
+        guard let store, let id = p.selection.first else { return nil }
         return store.byKey[id]
     }
 
-    func moveSelection(by delta: Int) {
+    func moveSelection(by delta: Int, pane i: Int? = nil) {
         guard let store else { return }
-        let pane = activePane
+        let pane = i.map(self.pane) ?? activePane
+        activePaneID = pane.id
         let rows = pane.rows(from: store, history: history, separators: separators())
         guard !rows.isEmpty else { return }
         let current = pane.selection.first.flatMap { id in rows.firstIndex { $0.id == id } } ?? -1

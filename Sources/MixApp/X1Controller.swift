@@ -12,6 +12,8 @@ final class X1Status {
         let location: Int
         var left: Int           // Deck-Index der linken Seite
         var right: Int
+        /// welcher Browser-Bereich: 0 = links/oben, 1 = rechts/unten
+        var pane: Int = 0
     }
     var devices: [Info] = []
     var lastEvent = ""
@@ -23,6 +25,13 @@ final class X1Status {
         devices[i].right = right
         UserDefaults.standard.set([left, right], forKey: "x1.\(serial)")
         manager?.assign(serial, left: left, right: right)
+    }
+
+    func assignPane(_ serial: String, _ pane: Int) {
+        guard let i = devices.firstIndex(where: { $0.id == serial }) else { return }
+        devices[i].pane = pane
+        UserDefaults.standard.set(pane, forKey: "x1pane.\(serial)")
+        manager?.assignPane(serial, pane)
     }
 
     func identify(_ serial: String) { manager?.identify(serial) }
@@ -41,12 +50,14 @@ final class X1Manager: @unchecked Sendable {
     private let lock = NSLock()
     private var _prefs = X1Prefs()
     // gebündelte Browse-Schritte (nur auf der Steuer-Queue anfassen)
-    private var pendingBrowse = 0
+    private var pendingBrowse: [Int: Int] = [:]
     private var browseScheduled = false
     /// Browser-Aktionen (laufen auf dem Hauptthread)
-    var onBrowse: (@MainActor (Int) -> Void)?
-    var onLoad: (@MainActor (Int) -> Void)?
-    var onPreview: (@MainActor () -> Void)?
+    /// Browser-Aktionen je Bereich (pane), laufen auf dem Hauptthread
+    var onBrowse: (@MainActor (_ pane: Int, _ step: Int) -> Void)?
+    var onLoad: (@MainActor (_ pane: Int, _ deck: Int) -> Void)?
+    var onPreview: (@MainActor (_ pane: Int) -> Void)?
+    var onToggleBrowser: (@MainActor () -> Void)?
 
     /// Standard: erstes X1 (nach USB-Position) steuert A/D, das zweite C/B – pro Gerät in den Einstellungen änderbar.
     static let defaultAssignments: [(Int, Int)] = [(0, 3), (2, 1), (0, 1), (2, 3)]
@@ -95,7 +106,9 @@ final class X1Manager: @unchecked Sendable {
         guard units[serial] == nil else { return }
         let saved = UserDefaults.standard.array(forKey: "x1.\(serial)") as? [Int]
         let def = Self.defaultAssignments[min(units.count, Self.defaultAssignments.count - 1)]
-        let info = X1Status.Info(id: serial, location: loc, left: saved?.first ?? def.0, right: saved?.last ?? def.1)
+        let savedPane = UserDefaults.standard.object(forKey: "x1pane.\(serial)") as? Int
+        let info = X1Status.Info(id: serial, location: loc, left: saved?.first ?? def.0, right: saved?.last ?? def.1,
+                                 pane: savedPane ?? min(units.count, 1))
         units[serial] = X1Unit(device: device, info: info, manager: self)
         DispatchQueue.main.async {
             self.status.devices.append(info)
@@ -115,6 +128,10 @@ final class X1Manager: @unchecked Sendable {
 
     func assign(_ serial: String, left: Int, right: Int) {
         core.controlQueue.async { self.units[serial]?.info.left = left; self.units[serial]?.info.right = right }
+    }
+
+    func assignPane(_ serial: String, _ pane: Int) {
+        core.controlQueue.async { self.units[serial]?.info.pane = pane }
     }
 
     func identify(_ serial: String) {
@@ -175,24 +192,29 @@ final class X1Manager: @unchecked Sendable {
         case let .loopPush(s, down):
             if down { unit.shift ? core.reloop(deck(s)) : core.autoLoop(deck(s)) }
         case let .load(s, down):
-            if down { let d = deck(s); DispatchQueue.main.async { self.onLoad?(d) } }
+            if down { let d = deck(s), pane = unit.info.pane; DispatchQueue.main.async { self.onLoad?(pane, d) } }
         case let .browseTurn(delta):
             // Schritte sammeln und gebündelt an die Oberfläche geben (kein Stau bei schnellem Drehen)
-            pendingBrowse += delta * (unit.shift ? p.browseFastStep : 1)
+            let pane = unit.info.pane
+            pendingBrowse[pane, default: 0] += delta * (unit.shift ? p.browseFastStep : 1)
             if !browseScheduled {
                 browseScheduled = true
                 DispatchQueue.main.async {
-                    let step = self.core.controlQueue.sync { () -> Int in
+                    let steps = self.core.controlQueue.sync { () -> [Int: Int] in
                         let s = self.pendingBrowse
-                        self.pendingBrowse = 0
+                        self.pendingBrowse = [:]
                         self.browseScheduled = false
                         return s
                     }
-                    if step != 0 { self.onBrowse?(step) }
+                    for (pn, st) in steps where st != 0 { self.onBrowse?(pn, st) }
                 }
             }
         case let .browsePush(down):
-            if down { DispatchQueue.main.async { self.onPreview?() } }
+            // Drücken = Browser groß/klein (wie Traktor), Shift + Drücken = Vorhören
+            guard down else { return }
+            let pane = unit.info.pane
+            if unit.shift { DispatchQueue.main.async { self.onPreview?(pane) } }
+            else { DispatchQueue.main.async { self.onToggleBrowser?() } }
         case let .fxKnob(u, k, v):
             // D/W + Regler 1–3 = Stärke der Slots Filter · Delay · Reverb
             core.updateFX(u) { fx in
@@ -351,13 +373,8 @@ final class X1Unit {
                 } else if fluxHeld[s] == true, n >= 2 {
                     c = (on / 2, on / 2, on / 2)               // Beatjump-Ebene sichtbar machen
                 } else if let cue = deck.hotcues[n] {
-                    switch cue.kind {
-                    case .cue: c = scale(prefs.cuePadColor.rgb)
-                    case .loop: c = scale(prefs.loopPadColor.rgb)
-                    case .load: c = scale((0x7f, 0x7f, 0))
-                    case .fadeIn, .fadeOut: c = scale((0x7f, 0x30, 0))
-                    case .grid: c = scale((0x50, 0x50, 0x50))
-                    }
+                    let start = deck.track.flatMap { t in t.cues.first { $0.kind == .load }?.startMs ?? t.gridAnchorMs }
+                    c = scale(prefs.color(for: cue, startMs: start, bpm: deck.grid?.bpm ?? deck.track?.bpm ?? 0).rgb)
                 }
                 r[base] = c.0; r[base + 1] = c.1; r[base + 2] = c.2
             }

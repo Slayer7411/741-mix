@@ -1,5 +1,6 @@
 import SwiftUI
 import MixCore
+import MixEngine
 
 /// CI-741: Void/Chitin-Schwarz, Knochenweiß, Rot nur als Zustand, Cinzel versal für Labels,
 /// IBM Plex Mono für Daten, Radius 0, 1-px-Haarlinien, Unicode statt Icons.
@@ -17,6 +18,8 @@ enum Theme {
     /// Lila – zweiter Zustand (Master)
     static let secondary = rgb(150, 70, 210)
 
+    /// Gold – Rahmen des Master-Decks
+    static let gold = rgb(212, 175, 55)
     static let accent = bone
     static let background = void
     static let deck = chitin
@@ -63,12 +66,15 @@ enum Theme {
     }
 
     /// Cue-Farbe mit Einstellungen (Cue/Loop-Farbe wählbar, Standard: Cue rot)
-    static func cueColor(_ k: Cue.Kind, prefs: AppPrefs) -> Color {
-        switch k {
-        case .cue: color(prefs.x1.cuePadColor)
-        case .loop: color(prefs.x1.loopPadColor)
-        default: cueColor(k)
-        }
+    /// Cue-Farbe nach Rolle (Start-Cue, Cue, Loop, kurzer Loop) – einstellbar unter ⌘, → Anzeige
+    static func cueColor(_ c: Cue, deck: DeckState, prefs: AppPrefs) -> Color {
+        color(prefs.x1.color(for: c, startMs: startCueMs(deck.track), bpm: deck.grid?.bpm ?? deck.track?.bpm ?? 0))
+    }
+
+    /// Start-Cue eines Tracks: Load-Cue, sonst AutoGrid
+    static func startCueMs(_ t: Track?) -> Double? {
+        guard let t else { return nil }
+        return t.cues.first { $0.kind == .load }?.startMs ?? t.gridAnchorMs
     }
 
     static func color(_ p: PadColor) -> Color {

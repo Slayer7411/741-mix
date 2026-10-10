@@ -207,22 +207,28 @@ struct SourceTree: View {
     var body: some View {
         List(selection: Binding<BrowserSource?>(get: { selection }, set: { if let s = $0 { selection = s } })) {
             row("≣", "TRACK COLLECTION").tag(BrowserSource.collection)
+                .contextMenu { exportMenu(.collection) }
             row("▤", "PREPARATION").tag(BrowserSource.preparation)
+                .contextMenu { exportMenu(.preparation) }
             DisclosureGroup {
                 ForEach(history.prepArchive) { s in
                     row("▤", Theme.dateTimeFormat.string(from: s.date)).tag(BrowserSource.prepArchive(s))
+                        .contextMenu { exportMenu(.prepArchive(s)) }
                 }
             } label: { row("▸", "PREPARATION ARCHIV") }
             row("◷", "HISTORY").tag(BrowserSource.historyLive)
+                .contextMenu { exportMenu(.historyLive) }
             DisclosureGroup {
                 ForEach(history.archive) { s in
                     row(s.source == .traktor ? "◷" : "◴", Theme.dateTimeFormat.string(from: s.date)).tag(BrowserSource.history(s))
+                        .contextMenu { exportMenu(.history(s)) }
                 }
             } label: { row("▸", "HISTORY ARCHIV") }
             DisclosureGroup {
                 ForEach(store.customSmartlists) { sl in
                     row("◆", sl.name).tag(BrowserSource.custom(sl))
                         .contextMenu {
+                            exportMenu(.custom(sl))
                             Button("Bearbeiten …") { editing = sl }
                             Button("Löschen") { store.customSmartlists.removeAll { $0.id == sl.id } }
                         }
@@ -237,6 +243,7 @@ struct SourceTree: View {
                     row(icon(node), node.name)
                         .tag(BrowserSource.node(node))
                         .lineLimit(1)
+                        .contextMenu { if node.kind != .folder { exportMenu(.node(node)) } }
                 }
             }
         }
@@ -250,6 +257,26 @@ struct SourceTree: View {
                 selection = .custom(saved)
             }
         }
+    }
+
+    /// Kontextmenü „Exportieren“ für eine Quelle
+    @ViewBuilder private func exportMenu(_ src: BrowserSource) -> some View {
+        Menu("Exportieren") {
+            Button("Traktor-NML …") { export(.nml, src) }
+            Button("M3U …") { export(.m3u, src) }
+            Button("Ordner mit Audiodateien …") { export(.folder, src) }
+        }
+    }
+
+    private func export(_ f: PlaylistExport.Format, _ src: BrowserSource) {
+        let tracks: [Track]
+        switch src {
+        case .historyLive: tracks = history.live.compactMap { store.byKey[$0.key] }
+        case let .history(s): tracks = history.entries(s).compactMap { store.byKey[$0.key] }
+        case let .prepArchive(s): tracks = history.prepKeys(s).compactMap { store.byKey[$0] }
+        default: tracks = store.tracks(for: src)
+        }
+        PlaylistExport.run(f, name: src.title, tracks: tracks, store: store)
     }
 
     private func icon(_ n: PlaylistNode) -> String {

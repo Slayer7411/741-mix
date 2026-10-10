@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Anordnung der Browser-Bereiche.
-enum BrowserLayout: String, CaseIterable, Identifiable {
+enum BrowserLayout: String, CaseIterable, Identifiable, Codable {
     case single = "Einzeln", sideBySide = "Nebeneinander", stacked = "Übereinander"
     var id: String { rawValue }
     var icon: String {
@@ -17,15 +17,15 @@ enum BrowserLayout: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @Environment(LibraryStore.self) private var store
     @Environment(MixModel.self) private var mix
-    @State private var layout: BrowserLayout = .sideBySide
+    @State private var fullScreen = false
+    private var layout: BrowserLayout { mix.prefs.ui.browserLayout }
     @Environment(BrowserState.self) private var browserState
     private var paneA: BrowserPaneModel { browserState.paneA }
     private var paneB: BrowserPaneModel { browserState.paneB }
-    @State private var showDecks = true
 
     var body: some View {
         VStack(spacing: 0) {
-            if showDecks {
+            if !browserState.maximized {
                 // Decks oben, Browser unten – Trenner verschiebbar; die Wellenformen bekommen den ganzen Platz
                 deckArea
                     .frame(maxHeight: .infinity)
@@ -53,12 +53,14 @@ struct ContentView: View {
                     Text("4 Decks").tag(true)
                 }
                 .pickerStyle(.segmented)
-                Picker("Browser", selection: $layout) {
+                Picker("Browser", selection: Binding(get: { mix.prefs.ui.browserLayout }, set: { mix.prefs.ui.browserLayout = $0 })) {
                     ForEach(BrowserLayout.allCases) { Text($0.icon).help($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .help("Browser-Anordnung")
-                Toggle(isOn: $showDecks) { Text("DECKS").font(Theme.label(11)) }
+                Toggle(isOn: Binding(get: { !browserState.maximized }, set: { browserState.maximized = !$0 })) {
+                    Text("DECKS").font(Theme.label(11))
+                }
                     .help("Decks ein-/ausblenden (Browser groß)")
                 Button { store.load(store.sourceURL ?? LibraryStore.defaultNML) } label: {
                     Text("↻")
@@ -66,6 +68,9 @@ struct ContentView: View {
                 .help("Collection neu laden")
             }
         }
+        .toolbar(fullScreen ? .hidden : .visible, for: .windowToolbar)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in fullScreen = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in fullScreen = false }
         .onAppear {
             if store.tracks.isEmpty { store.load() }
             SelfTest.run(store: store, mix: mix)
@@ -175,6 +180,18 @@ struct MixApp: App {
                 }
                 .keyboardShortcut("o")
             }
+            CommandGroup(before: .toolbar) {
+                Toggle("Mixer", isOn: Binding(get: { mix.prefs.ui.showMixer }, set: { mix.prefs.ui.showMixer = $0 }))
+                    .keyboardShortcut("m", modifiers: [.command, .option])
+                Toggle("4 Decks", isOn: Binding(get: { mix.prefs.ui.showFourDecks }, set: { mix.prefs.ui.showFourDecks = $0 }))
+                    .keyboardShortcut("4", modifiers: [.command, .option])
+                Toggle("Browser groß", isOn: Binding(get: { browser.maximized }, set: { browser.maximized = $0 }))
+                    .keyboardShortcut("b", modifiers: [.command, .option])
+                Picker("Browser-Anordnung", selection: Binding(get: { mix.prefs.ui.browserLayout }, set: { mix.prefs.ui.browserLayout = $0 })) {
+                    ForEach(BrowserLayout.allCases) { Text($0.rawValue).tag($0) }
+                }
+                Divider()
+            }
             CommandMenu("Decks") {
                 ForEach(0..<4, id: \.self) { n in
                     Button("Deck \(["A", "B", "C", "D"][n]) fokussieren") { mix.focusedDeck = n }
@@ -215,9 +232,17 @@ extension MixApp {
         guard x1 == nil else { return }
         let m = X1Manager(core: mix.core, status: x1Status)
         m.prefs = mix.prefs.x1
-        m.onBrowse = { [browser] step in browser.moveSelection(by: step) }
-        m.onLoad = { [browser, mix] d in if let t = browser.selectedTrack() { mix.load(t, deck: d) } }
-        m.onPreview = { [browser, mix] in if let t = browser.selectedTrack() { mix.togglePreview(t) } }
+        m.onBrowse = { [browser] pane, step in browser.moveSelection(by: step, pane: pane) }
+        m.onLoad = { [browser, mix] pane, d in if let t = browser.selectedTrack(pane: pane) { mix.load(t, deck: d) } }
+        m.onPreview = { [browser, mix] pane in if let t = browser.selectedTrack(pane: pane) { mix.togglePreview(t) } }
+        m.onToggleBrowser = { [browser] in browser.maximized.toggle() }
+        // Leertaste = Browser groß/klein (nicht beim Tippen in Suchfeldern)
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [browser] e in
+            guard e.keyCode == 49, e.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+                  !(NSApp.keyWindow?.firstResponder is NSText) else { return e }
+            browser.maximized.toggle()
+            return nil
+        }
         m.start()
         x1 = m
     }

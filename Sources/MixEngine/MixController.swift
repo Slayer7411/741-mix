@@ -153,6 +153,7 @@ public final class MixController: @unchecked Sendable {
     private var fluxReverseRestore: [Int: Bool] = [:]
     private var timer: DispatchSourceTimer?
     private var tickCount = 0
+    private var bigError = [Int](repeating: 0, count: MixEngine.deckCount)
     // History: hörbare Spielzeit je Deck seit dem Laden
     private var playedTime = [Double](repeating: 0, count: MixEngine.deckCount)
     private var playedLogged = [Bool](repeating: false, count: MixEngine.deckCount)
@@ -556,6 +557,45 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
+    // MARK: Beatgrid bearbeiten (wie Traktors GRID-Tab)
+
+    /// Grid verschieben (ms, + = später)
+    public func shiftGrid(_ d: Int, ms: Double) {
+        locked {
+            guard var g = state.decks[d].grid else { return }
+            g.anchor += ms / 1000
+            state.decks[d].grid = g
+        }
+    }
+
+    /// BPM des Grids ändern (Anker bleibt)
+    public func setGridBPM(_ d: Int, _ bpm: Double) {
+        locked {
+            guard var g = state.decks[d].grid, bpm > 20, bpm < 400 else { return }
+            g.bpm = bpm
+            state.decks[d].grid = g
+            applyRate(d)
+        }
+    }
+
+    public func scaleGridBPM(_ d: Int, _ f: Double) { locked { if let g = state.decks[d].grid { setGridBPM(d, g.bpm * f) } } }
+
+    /// Grid-Marker an die aktuelle Position (Beat 1 hier)
+    public func setGridAnchorHere(_ d: Int) {
+        locked {
+            let pos = position(d)
+            if var g = state.decks[d].grid {
+                g.anchor = pos
+                state.decks[d].grid = g
+            } else if let t = state.decks[d].track, t.bpm > 0 {
+                state.decks[d].grid = BeatGrid(anchor: pos, bpm: t.bpm)
+            }
+        }
+    }
+
+    /// Grid auf den Wert aus der Collection zurücksetzen
+    public func resetGrid(_ d: Int, original: Track) { locked { state.decks[d].grid = BeatGrid(track: original) } }
+
     // MARK: Master-Clock
 
     /// Clock als Master an/aus. Beim Einschalten übernimmt sie Tempo und Phase des bisherigen Masters (kein Sprung).
@@ -706,11 +746,14 @@ public final class MixController: @unchecked Sendable {
                 var changed = abs(target - state.decks[d].tempoPct) > 0.0001
                 state.decks[d].tempoPct = target
                 if state.prefs.phaseLock, let e = phaseErrorLocked(d) {
-                    if abs(e) > 0.2 {
+                    // harter Sprung nur, wenn der Fehler groß ist und > 100 ms anhält – sonst weich nachziehen
+                    bigError[d] = abs(e) > 0.25 ? bigError[d] + 1 : 0
+                    if bigError[d] >= 20 {
                         engine.seek(d, seconds: position(d) - e * g.beat)
                         state.decks[d].nudge = 0
+                        bigError[d] = 0
                     } else {
-                        let n = abs(e) < 0.004 ? 0 : max(-0.03, min(0.03, -e * 0.6))
+                        let n = abs(e) < 0.004 ? 0 : max(-0.06, min(0.06, -e * 0.6))
                         changed = changed || n != state.decks[d].nudge
                         state.decks[d].nudge = n
                     }

@@ -140,8 +140,13 @@ struct WaveformSettings: View {
                 Text("jedes zeichen trennt -> z. b. '·' oder '·»'. leer = leerzeichen.").font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
             Section("Cue-Farben (Bildschirm und X1-Pads)") {
-                Picker("Cue", selection: $mix.prefs.x1.cuePadColor) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
-                Picker("Loop", selection: $mix.prefs.x1.loopPadColor) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
+                Picker("Start-Cue (Load / AutoGrid)", selection: $mix.prefs.x1.colorStartCue) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
+                Picker("Cue", selection: $mix.prefs.x1.colorCue) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
+                Picker("Loop", selection: $mix.prefs.x1.colorLoop) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
+                Picker("Kurzer Loop", selection: $mix.prefs.x1.colorShortLoop) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
+                Picker("Kurz = bis", selection: $mix.prefs.x1.shortLoopBars) {
+                    ForEach([1.0, 2, 4, 8], id: \.self) { Text("\(Int($0)) \($0 == 1 ? "Takt" : "Takte")").tag($0) }
+                }
             }
         }
         .formStyle(.grouped)
@@ -226,6 +231,11 @@ struct ControllerSettings: View {
                             ForEach(0..<4, id: \.self) { Text(deckLetters[$0]).tag($0) }
                         }
                         .frame(width: 120)
+                        Picker("Browser", selection: Binding(get: { d.pane }, set: { x1.assignPane(d.id, $0) })) {
+                            Text("links").tag(0)
+                            Text("rechts").tag(1)
+                        }
+                        .frame(width: 130)
                         Button("Blinken") { x1.identify(d.id) }.help("Pads dieses X1 leuchten kurz weiß")
                     }
                 }
@@ -245,8 +255,7 @@ struct ControllerSettings: View {
                           10...127, step: 1, format: "%.0f")
                 sliderRow("Helligkeit aus", Binding(get: { Double(mix.prefs.x1.ledOff) }, set: { mix.prefs.x1.ledOff = Int($0) }),
                           0...40, step: 1, format: "%.0f")
-                Picker("Cue-Pads", selection: $mix.prefs.x1.cuePadColor) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
-                Picker("Loop-Pads", selection: $mix.prefs.x1.loopPadColor) { ForEach(PadColor.allCases) { Text($0.rawValue).tag($0) } }
+                Text("pad-farben: ⌘, -> anzeige -> cue-farben (gleich wie auf dem bildschirm)").font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
             Section("Feste Belegung (NI-Standard)") {
                 Text("""
