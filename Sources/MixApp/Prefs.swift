@@ -128,6 +128,14 @@ struct UIPrefs: Codable, Equatable {
     var musicFolders: [String] = []
     /// Metadaten-Änderungen aus dem Browser auch in die Collection-Datei schreiben (mit Sicherung davor)
     var writeCollection = false
+    /// Browser-Vorschau (Mini-Wellenform + Grid + Cues): eigene Spalte, hinter dem Titel oder aus
+    var previewMode = PreviewMode.column
+    /// fehlende Vorschauen im Hintergrund berechnen – nur solange kein Deck spielt
+    var previewBackground = true
+    /// Cover links im Deck-Kopf
+    var showDeckCover = true
+    /// Cover des gewählten Tracks unter dem Baum im Browser
+    var showCoverPreview = true
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.

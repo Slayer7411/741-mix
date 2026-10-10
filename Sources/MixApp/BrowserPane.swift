@@ -107,6 +107,9 @@ struct BrowserPane: View {
         let tree = model.showTree && !(decks.prefs.ui.hideTreeWithDecks && !browserState.maximized)
         HSplitView {
             SourceTree(selection: $model.source)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if tree && decks.prefs.ui.showCoverPreview { CoverPreview(model: model) }   // Cover des gewählten Tracks
+                }
                 .frame(minWidth: tree ? 170 : 0, idealWidth: tree ? 210 : 0, maxWidth: tree ? 320 : 0)
             VStack(spacing: 0) {
                 header(count: model.source.isHistory ? historyEntries.count : rows.count, separators: seps)
@@ -262,10 +265,14 @@ struct SourceTree: View {
                 .contextMenu {
                     exportMenu(.collection)
                     Button("Reset Played State") { history.resetPlayed() }
+                    OverviewMenuButton { store.tracks }
                 }
             row("▶", "RUNNING TRACKS").tag(BrowserSource.running)
             row("▤", "PREPARATION").tag(BrowserSource.preparation)
-                .contextMenu { exportMenu(.preparation) }
+                .contextMenu {
+                    exportMenu(.preparation)
+                    OverviewMenuButton { store.tracks(for: .preparation) }
+                }
             DisclosureGroup {
                 ForEach(history.prepArchive) { s in
                     row("▤", Theme.dateTimeFormat.string(from: s.date)).tag(BrowserSource.prepArchive(s))
@@ -285,6 +292,7 @@ struct SourceTree: View {
                     row("◆", sl.name).tag(BrowserSource.custom(sl))
                         .contextMenu {
                             exportMenu(.custom(sl))
+                            OverviewMenuButton { store.tracks(for: .custom(sl)) }
                             Button("Bearbeiten …") { editing = sl }
                             Button("Löschen") { store.customSmartlists.removeAll { $0.id == sl.id } }
                         }
@@ -300,7 +308,10 @@ struct SourceTree: View {
                     row(icon(node), node.name)
                         .tag(BrowserSource.node(node))
                         .lineLimit(1)
-                        .contextMenu { if node.kind != .folder { exportMenu(.node(node)) } }
+                        .contextMenu {
+                            if node.kind != .folder { exportMenu(.node(node)) }
+                            OverviewMenuButton { nodeTracks(node) }
+                        }
                 }
             }
         }
@@ -334,6 +345,11 @@ struct SourceTree: View {
         default: tracks = store.tracks(for: src)
         }
         PlaylistExport.run(f, name: src.title, tracks: tracks, store: store)
+    }
+
+    /// Tracks eines Knotens, Ordner mit allen Unterknoten
+    private func nodeTracks(_ n: PlaylistNode) -> [Track] {
+        n.kind == .folder ? n.children.flatMap(nodeTracks) : store.tracks(for: .node(n))
     }
 
     private func icon(_ n: PlaylistNode) -> String {
@@ -462,9 +478,14 @@ struct TrackTable: View {
     private static func withNewColumnsFirst(_ data: Data) -> Data {
         guard var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               var order = obj["columnOrder"] as? [Any] else { return data }
-        let ids = order.compactMap { (($0 as? [String: Any])?["base"] as? [String: Any]).flatMap { ($0["explicit"] as? [String: Any])?["_0"] as? String } }
-        guard !ids.contains("played") else { return data }
-        order.insert(["base": ["explicit": ["_0": "played"]]], at: 0)
+        let id = { (e: Any) in ((e as? [String: Any])?["base"] as? [String: Any]).flatMap { ($0["explicit"] as? [String: Any])?["_0"] as? String } }
+        let ids = order.compactMap(id)
+        guard !ids.contains("played") || !ids.contains("cover") else { return data }
+        if !ids.contains("played") { order.insert(["base": ["explicit": ["_0": "played"]]], at: 0) }
+        // Cover-Spalte neben die Farbe statt ans Ende
+        if !ids.contains("cover") {
+            order.insert(["base": ["explicit": ["_0": "cover"]]], at: order.firstIndex { id($0) == "color" }.map { $0 + 1 } ?? min(3, order.count))
+        }
         obj["columnOrder"] = order
         return (try? JSONSerialization.data(withJSONObject: obj)) ?? data
     }
@@ -477,6 +498,8 @@ struct TrackTable: View {
             .width(16).customizationID("analyzed")
         TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4) }
             .width(6).customizationID("color")
+        TableColumn("Cover") { (t: Track) in CoverThumb(path: t.path) }
+            .width(min: 22, ideal: 44).customizationID("cover").defaultVisibility(.hidden)
         TableColumn("Artist", value: \Track.artist) { (t: Track) in
                 cell(t, .artist) { Text(t.artist).foregroundStyle(t.loose ? Theme.muted : t.fileExists ? Theme.bone : Theme.state) }
             }
@@ -485,8 +508,13 @@ struct TrackTable: View {
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols1: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Title", value: \Track.title) { (t: Track) in cell(t, .title) { Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) } }
+        TableColumn("Title", value: \Track.title) { (t: Track) in
+                cell(t, .title) { Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) }.modifier(PreviewBehindTitle(mix: decks, track: t))
+            }
             .width(min: 80, ideal: 200).customizationID("title")
+        // Mini-Übersicht (Wellenform, Phrasen, Cues) – ⌘, → Anzeige → Browser-Vorschau
+        TableColumn("Preview") { (t: Track) in TrackPreviewCell(mix: decks, track: t) }
+            .width(min: 60, ideal: 150, max: 400).customizationID("preview")
         TableColumn("Remixer", value: \Track.remixer) { (t: Track) in text(t, .remixer) }
             .width(min: 60, ideal: 110).customizationID("remixer").defaultVisibility(.hidden)
         TableColumn("Producer", value: \Track.producer) { (t: Track) in text(t, .producer) }
@@ -582,8 +610,10 @@ struct TrackTable: View {
         }
         .onAppear {
             if let d = UserDefaults.standard.data(forKey: "columns.\(model.name)"),
-               let c = try? JSONDecoder().decode(TableColumnCustomization<Track>.self, from: Self.withNewColumnsFirst(d)) { columns = c }
+               let c = try? JSONDecoder().decode(TableColumnCustomization<Track>.self, from: Self.withNewColumnsFirst(PreviewColumn.placed(d))) { columns = c }
+            columns[visibility: "preview"] = decks.prefs.ui.previewMode == .column ? .visible : .hidden
         }
+        .onChange(of: decks.prefs.ui.previewMode) { _, m in columns[visibility: "preview"] = m == .column ? .visible : .hidden }
         .onChange(of: columns) {
             if let d = try? JSONEncoder().encode(columns) { UserDefaults.standard.set(d, forKey: "columns.\(model.name)") }
         }

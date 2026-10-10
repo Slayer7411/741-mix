@@ -248,6 +248,7 @@ public final class MixController: @unchecked Sendable {
     private var tickHandlers: [(MixController) -> Void] = []
 
     public init() {
+        observeInvalidation()
         timer = DispatchSource.makeTimerSource(flags: .strict, queue: controlQueue)
         timer?.schedule(deadline: .now(), repeating: .milliseconds(5), leeway: .milliseconds(1))
         timer?.setEventHandler { [weak self] in self?.tick() }
@@ -1047,15 +1048,14 @@ public final class MixController: @unchecked Sendable {
     private var pushKnobsOnActivate = [Bool](repeating: false, count: MixEngine.fxUnitCount)
     private let pluginQueue = DispatchQueue(label: "minos741.plugins", qos: .userInitiated)
     private let pluginEvents = DispatchQueue(label: "minos741.plugin-events", qos: .userInitiated)
-    private let listLock = NSLock()
-    private var pluginCache: [PluginInfo]?
-
-    /// installierte Effekt-Plugins (einmal eingelesen, `refresh` liest neu)
-    public func pluginList(refresh: Bool = false) -> [PluginInfo] {
-        listLock.lock(); defer { listLock.unlock() }
-        if refresh || pluginCache == nil { pluginCache = PluginHost.installed() }
-        return pluginCache ?? []
+    /// Plugin-Liste, Einstellungen, Absturz-Markierung (die App setzt vor dem ersten Laden eine gespeicherte ein)
+    public var pluginCatalog = PluginCatalog(directory: nil) {
+        didSet { observeInvalidation() }
     }
+    private var invalidationObserver: NSObjectProtocol?
+
+    /// Effekt-Plugins fürs FX-Menü: eingeschaltet und nicht blockiert (einmal eingelesen, `refresh` liest neu)
+    public func pluginList(refresh: Bool = false) -> [PluginInfo] { pluginCatalog.menuList(refresh: refresh) }
 
     /// Namen der Plugin-Parameter auf den 3 Reglern
     public func pluginParamNames(_ u: Int) -> [String] { locked { state.pluginParams[u] } }
@@ -1123,17 +1123,28 @@ public final class MixController: @unchecked Sendable {
         if !loaded {
             knobsLive[u] = false
             guard pluginLoading[u] != want, pluginFailed[u] != want else { return }
+            // blockiert (Absturz) oder abgeschaltet: nicht laden, auch nicht aus einer gespeicherten Sitzung
+            if let why = pluginCatalog.unusableReason(want) {
+                pluginFailed[u] = want
+                state.pluginErrors[u] = why
+                return
+            }
             pluginGen[u] += 1
             let gen = pluginGen[u], saved = fx.pluginState, rate = engine.sampleRate
             pluginLoading[u] = want
-            let info = pluginList().first { $0.id == want } ?? PluginHost.codes(want).map {
-                PluginInfo(id: want, name: PluginHost.fourCC($0.1), manufacturer: PluginHost.fourCC($0.2), type: $0.0, subtype: $0.1, manu: $0.2)
-            }
+            let catalog = pluginCatalog
             pluginQueue.async { [self] in
                 do {
-                    guard let info else { throw NSError(domain: "minos741.plugin", code: 2, userInfo: [NSLocalizedDescriptionKey: want]) }
+                    // Liste ggf. erst hier einlesen (außerhalb der Sperre)
+                    guard let info = catalog.info(want) ?? PluginHost.codes(want).map({
+                        PluginInfo(id: want, name: PluginHost.fourCC($0.1), manufacturer: PluginHost.fourCC($0.2), type: $0.0, subtype: $0.1, manu: $0.2)
+                    }) else { throw NSError(domain: "minos741.plugin", code: 2, userInfo: [NSLocalizedDescriptionKey: want]) }
+                    let isolated = catalog.isolated(want)
+                    // Absturz-Markierung: stürzt MINOS-741 beim Öffnen ab, ist das Plugin beim nächsten Start blockiert
+                    catalog.beginOpen(key: want, name: info.name)
+                    defer { catalog.endOpen() }
                     let insts = try (0..<MixEngine.deckCount).map { _ -> PluginInstance in
-                        let p = try PluginInstance(info, sampleRate: rate)
+                        let p = try PluginInstance(info, sampleRate: rate, outOfProcess: isolated)
                         if let saved { p.state = saved }
                         _ = p.parameters
                         return p
@@ -1193,6 +1204,32 @@ public final class MixController: @unchecked Sendable {
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { [self] in
             if engine.pluginReleased(unit: u, deck: d, old) || !engine.running { return }
             retirePlugin(old, unit: u, deck: d)
+        }
+    }
+
+    /// isoliertes Plugin abgestürzt (der Systemdienst ist weg, MINOS-741 läuft weiter): Instanzen heraus, Plugin blockieren
+    private func observeInvalidation() {
+        if invalidationObserver != nil { return }
+        let name = NSNotification.Name(kAudioComponentInstanceInvalidationNotification as String)
+        invalidationObserver = NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { [weak self] n in
+            guard let self, let v = n.userInfo?["audioUnit"] as? NSValue, let raw = v.pointerValue else { return }
+            self.pluginInvalidated(OpaquePointer(raw))
+        }
+    }
+
+    private func pluginInvalidated(_ au: OpaquePointer) {
+        locked {
+            for u in plugins.indices {
+                guard let hit = plugins[u].compactMap({ $0 }).first(where: { OpaquePointer($0.audioUnit) == au }) else { continue }
+                let id = hit.info.id
+                pluginCatalog.block(id, reason: String(localized: "abgestürzt (isoliert, MINOS-741 lief weiter)"))
+                pluginGen[u] += 1; pluginLoading[u] = nil; pluginFailed[u] = id
+                for d in plugins[u].indices { installPlugin(nil, unit: u, deck: d) }
+                state.pluginParams[u] = []
+                state.pluginErrors[u] = String(format: String(localized: "%@ abgestürzt – blockiert"), hit.info.name)
+                knobsLive[u] = false
+                applyFX(u)
+            }
         }
     }
 

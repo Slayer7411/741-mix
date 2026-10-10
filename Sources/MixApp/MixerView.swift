@@ -181,7 +181,7 @@ struct FXUnitView: View {
     /// Plugin wählen (Name · Hersteller) und sein Fenster öffnen
     @ViewBuilder private func pluginControls(_ fx: FXUnitState) -> some View {
         let list = mix.core.pluginList()
-        let current = list.first { $0.id == fx.pluginID }
+        let current = list.first { $0.id == fx.pluginID } ?? fx.pluginID.flatMap(mix.core.pluginCatalog.info)   // auch abgeschaltet
         let error = mix.state.pluginErrors[u]
         VStack(spacing: 2) {
             Menu {

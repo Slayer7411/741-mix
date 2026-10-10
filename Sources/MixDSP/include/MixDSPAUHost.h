@@ -12,6 +12,9 @@ extern "C" {
 /// Liefert NULL bei Fehler, Grund in `err` (errLen Bytes).
 MDPlugin *mdplug_open(uint32_t type, uint32_t subtype, uint32_t manufacturer, double sampleRate, uint32_t maxFrames,
                       char *err, int errLen);
+/// fertige Instanz übernehmen (z. B. außerhalb des Prozesses über AudioComponentInstantiate angelegt) und einrichten wie
+/// mdplug_open. Das Plugin gehört danach MDPlugin; bei Fehler wird es geschlossen und NULL geliefert.
+MDPlugin *mdplug_wrap(void *audioUnit, double sampleRate, uint32_t maxFrames, char *err, int errLen);
 /// schließen – erst, wenn der Audio-Thread das Plugin sicher nicht mehr nutzt (mdsp_fx_plugin_released)
 void mdplug_close(MDPlugin *p);
 /// die AudioUnit (AudioComponentInstance) für Parameter, Zustand und Ansicht

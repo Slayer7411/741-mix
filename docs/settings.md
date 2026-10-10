@@ -5,7 +5,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 ## ◆ LAYOUT
 
 * window resizable, min 720 × 520, default 820 × 640
-* sidebar left: DECKS · MIXER & FX · DISPLAY · AUDIO · CONTROLLER · TAGS, active section with red bar
+* sidebar left: DECKS · MIXER & FX · PLUGINS · DISPLAY · AUDIO · CONTROLLER · TAGS · KEYBOARD, active section with red bar
 * page right, scrolls: `◆ SECTION` heading with hairline, rows with fixed label column left, control right
 * toggles as squares (red = on), sliders with value + unit (s, ms, pt), hints in small mono
 * controller: one block per unit (left / right deck, browser pane, fx unit, blink)
@@ -37,6 +37,16 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * show fx units, 2 or 4 units, delay feedback, fx filter resonance
 * reverb level (dB, 0 = reverb ~4 dB below the track at full d/w), reverb brightness (dark -> airy: high decay 35 … 90 %, low cut 150 … 400 Hz, high shelf −4 … +6 dB, default 0.6), reverb pre-delay (ms)
 
+## ◆ PLUGINS
+
+saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in the user defaults.
+
+* load third-party plugins isolated (on): separate system service, apple plugins always in-process
+* folders: system and user audio unit folders + AUv3 (always), own folders (add / remove), install plugin …, rescan
+* list with search: per plugin use in MINOS-741 (on / off), status, PRÜFEN (auval), click -> path, load default / isolated / in-process, unblock, last auval log
+* ALLE PRÜFEN with progress and cancel, results kept per plugin + version
+* crash marker `plugin-opening.json` next to it, a leftover marker blocks that plugin on the next start -> [manual](MANUAL.md#-08--fx)
+
 ## ◆ DISPLAY
 
 * waveform style: 3-band layers / spectrum / mono
@@ -47,8 +57,11 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * magenta markers every 8 / 16 / 32 bars
 * tag separator for comment 2, empty = space
 * browser layout, hide the tree while decks are visible
+* cover: in the deck header (on), preview of the selected track below the browser tree (on). the browser column `Cover` is switched via right click on the list header
 * music folders for MUSIC FOLDERS: add / remove, empty = automatic (the folder holding 90 % of the collection's files)
 * write browser edits into the collection file (off): backup at most once per hour into `Backup MINOS-741`, not while the library software runs -> [manual](MANUAL.md#-09--browser)
+* browser preview: own column (default) / behind the title / off
+* compute previews in the background, only while no deck plays (on) -> [manual](MANUAL.md#preview)
 * language: system / english / german (after restart)
 
 ## ◆ AUDIO

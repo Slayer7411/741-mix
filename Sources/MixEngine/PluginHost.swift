@@ -9,6 +9,22 @@ public struct PluginInfo: Identifiable, Hashable, Sendable {
     public let name: String
     public let manufacturer: String
     public let type: UInt32, subtype: UInt32, manu: UInt32
+    /// Komponenten-Version (0xMMMMmmbb)
+    public var version: UInt32 = 0
+    /// AUv3 (App-Erweiterung)
+    public var isV3 = false
+
+    public init(id: String, name: String, manufacturer: String, type: UInt32, subtype: UInt32, manu: UInt32,
+                version: UInt32 = 0, isV3: Bool = false) {
+        self.id = id; self.name = name; self.manufacturer = manufacturer
+        self.type = type; self.subtype = subtype; self.manu = manu
+        self.version = version; self.isV3 = isV3
+    }
+
+    /// von Apple (Hersteller "appl") – läuft immer im Prozess
+    public var isApple: Bool { manu == 0x6170706c }
+    /// "1.6.0"
+    public var versionString: String { PluginHost.versionString(version) }
 }
 
 public enum PluginHost {
@@ -28,9 +44,12 @@ public enum PluginHost {
                     // "Hersteller: Name"
                     let parts = full.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
                     let (manu, name) = parts.count == 2 ? (parts[0], parts[1]) : (fourCC(d.componentManufacturer), full)
+                    var v: UInt32 = 0
+                    AudioComponentGetVersion(c, &v)
                     out.append(PluginInfo(id: id(d.componentType, d.componentSubType, d.componentManufacturer), name: name,
                                           manufacturer: manu, type: d.componentType, subtype: d.componentSubType,
-                                          manu: d.componentManufacturer))
+                                          manu: d.componentManufacturer, version: v,
+                                          isV3: d.componentFlags & AudioComponentFlags.isV3AudioUnit.rawValue != 0))
                 }
                 comp = AudioComponentFindNext(c, &desc)
             }
@@ -49,12 +68,14 @@ public enum PluginHost {
         return (t, s, m)
     }
 
+    public static func versionString(_ v: UInt32) -> String { "\(v >> 16).\((v >> 8) & 0xff).\(v & 0xff)" }
+
     public static func fourCC(_ v: UInt32) -> String {
         let b = [24, 16, 8, 0].map { UInt8((v >> UInt32($0)) & 0xff) }
         return String(bytes: b, encoding: .macOSRoman) ?? String(format: "%08x", v)
     }
 
-    static func code(_ s: String) -> UInt32? {
+    public static func code(_ s: String) -> UInt32? {
         guard let d = s.data(using: .macOSRoman), d.count == 4 else { return nil }
         return d.reduce(0) { $0 << 8 | UInt32($1) }
     }
@@ -72,19 +93,71 @@ public final class PluginInstance: @unchecked Sendable {
     public let info: PluginInfo
     let ptr: OpaquePointer
     public let audioUnit: AudioUnit
+    /// läuft isoliert in einem Systemdienst (Absturz trifft nur den Dienst, nicht MINOS-741)
+    public let outOfProcess: Bool
     /// beschreibbare Parameter (globaler Scope)
     public private(set) lazy var parameters: [Parameter] = readParameters()
 
-    public init(_ info: PluginInfo, sampleRate: Double) throws {
+    /// öffnen (blockiert bis zu `timeout` s – nie auf dem Audio-Thread aufrufen). `outOfProcess`: über
+    /// AudioComponentInstantiate mit kAudioComponentInstantiation_LoadOutOfProcess (v2 und v3, macOS 11+)
+    public init(_ info: PluginInfo, sampleRate: Double, outOfProcess: Bool = false, timeout: Double = 10) throws {
         self.info = info
+        self.outOfProcess = outOfProcess
         var err = [CChar](repeating: 0, count: 256)
-        guard let p = mdplug_open(info.type, info.subtype, info.manu, sampleRate, UInt32(MDSP_MAX_FRAMES), &err, Int32(err.count)),
-              let raw = mdplug_audio_unit(p) else {
-            throw NSError(domain: "minos741.plugin", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "\(info.name): \(String(cString: err))"])
+        let fail = { (why: String) in
+            NSError(domain: "minos741.plugin", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(info.name): \(why)"])
         }
+        let opened: OpaquePointer?
+        if outOfProcess {
+            let au = try Self.instantiate(info, options: .loadOutOfProcess, timeout: timeout, fail: fail)
+            opened = mdplug_wrap(UnsafeMutableRawPointer(au), sampleRate, UInt32(MDSP_MAX_FRAMES), &err, Int32(err.count))
+        } else {
+            opened = mdplug_open(info.type, info.subtype, info.manu, sampleRate, UInt32(MDSP_MAX_FRAMES), &err, Int32(err.count))
+        }
+        guard let p = opened, let raw = mdplug_audio_unit(p) else { throw fail(String(cString: err)) }
         ptr = p
         audioUnit = AudioUnit(OpaquePointer(raw))
+    }
+
+    /// asynchron anlegen und auf das Ergebnis warten; kommt es nach dem Zeitlimit, wird es gleich wieder geschlossen
+    private static func instantiate(_ info: PluginInfo, options: AudioComponentInstantiationOptions, timeout: Double,
+                                    fail: (String) -> NSError) throws -> AudioUnit {
+        var desc = AudioComponentDescription(componentType: info.type, componentSubType: info.subtype,
+                                             componentManufacturer: info.manu, componentFlags: 0, componentFlagsMask: 0)
+        guard let comp = AudioComponentFindNext(nil, &desc) else { throw fail("audio unit not installed") }
+        final class Box: @unchecked Sendable {
+            let lock = NSLock()
+            var unit: AudioUnit?
+            var status: OSStatus = noErr
+            var abandoned = false
+        }
+        let box = Box(), done = DispatchSemaphore(value: 0)
+        AudioComponentInstantiate(comp, options) { unit, st in
+            box.lock.lock(); defer { box.lock.unlock() }
+            if box.abandoned { if let unit { AudioComponentInstanceDispose(unit) }; return }
+            box.unit = unit; box.status = st
+            done.signal()
+        }
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            box.lock.lock(); defer { box.lock.unlock() }
+            if let u = box.unit { return u }   // genau an der Grenze fertig geworden
+            box.abandoned = true
+            throw fail("instantiate timed out")
+        }
+        guard box.status == noErr, let u = box.unit else { throw fail("instance failed (\(box.status))") }
+        return u
+    }
+
+    /// Latenz des Plugins in Sekunden (kAudioUnitProperty_Latency)
+    public var latency: Double {
+        var v: Float64 = 0
+        var s = UInt32(MemoryLayout<Float64>.size)
+        return AudioUnitGetProperty(audioUnit, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0, &v, &s) == noErr ? v : 0
+    }
+
+    /// einen Block durch das Plugin rechnen (Messungen, Tests; im Betrieb rechnet der Kern)
+    public func process(_ l: UnsafeMutablePointer<Float>, _ r: UnsafeMutablePointer<Float>, _ n: Int) {
+        mdplug_process(ptr, l, r, Int32(n))
     }
 
     deinit {

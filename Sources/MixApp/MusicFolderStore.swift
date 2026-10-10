@@ -195,6 +195,7 @@ private struct MusicFolderRow: View {
             .tag(BrowserSource.folder(path))
             .contextMenu {
                 Button("Neu einlesen") { store.folders.rescan(path) }
+                OverviewMenuButton { store.folders.tracks(in: path, recursive: true, library: store) }
                 Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
             }
     }

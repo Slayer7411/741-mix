@@ -61,7 +61,14 @@ final class MixModel {
     @ObservationIgnored private var previewPlayer: AVAudioPlayer?
     @ObservationIgnored private var reroutePending = false
 
+    /// Plugin-Verwaltung (⌘, → PLUGINS); teilt die Liste mit dem Kern
+    @ObservationIgnored lazy var plugins = PluginManager(catalog: core.pluginCatalog)
+
     init() {
+        // gespeicherte Plugin-Einstellungen + Absturz-Markierung vom letzten Lauf, bevor eine Sitzung Plugins lädt.
+        // Selbsttest: nur lesen (keine Markierung, keine Änderungen)
+        core.pluginCatalog = PluginCatalog(directory: HistoryStore.baseDir, readOnly: Session.isSelfTest)
+        if let c = core.pluginCatalog.crashedLastRun { print("[plugin] beim letzten Lauf abgestürzt beim Öffnen: \(c.name) -> blockiert") }
         loadSetup()
         core.setPrefs(prefs.engine)
         outputDevices = MixEngine.outputDevices()

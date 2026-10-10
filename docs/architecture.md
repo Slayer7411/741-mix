@@ -12,7 +12,7 @@ self test: main thread blocked for 3s -> deck a plays on (3.08 s), deck b follow
 
 ## ◆ MODULES
 
-* `MixCore` -> swift, no audio: track model, nml parser, smartlist queries, beatgrid, history, track edits, metadata edits, collection write-back
+* `MixCore` -> swift, no audio: track model, nml parser, smartlist queries, beatgrid, history, track edits, metadata edits, collection write-back, track overviews
 * `MixDSP` -> c++17 realtime core with a plain c api (`MixDSP.h`) and the coreaudio render callback
 * `MixEngine` -> swift: device output, routing, decoding, `MixController` (all commands, control thread)
 * `MixApp` -> swiftui: decks, mixer, fx, master clock, browser, settings, controller driver, history store
@@ -49,12 +49,35 @@ fx unit × deck -> PluginInstance (swift, control thread) -> MDPlugin (c, AUHost
 * off = input closed, the tail rings out until 1 s below -100 dB, then the plugin is no longer rendered
 * parameters and state (ClassInfo) from the control thread, the plugin window mirrors its changes to the other decks
 
+plugin list and loading (`PluginCatalog`, `PluginInstaller`, `PluginValidator` in MixEngine):
+
+* list = system registry (`AudioComponentFindNext` over `aufx` / `aumf`) + bundles scanned in the standard folders (source, path) + own folders + `.vst3` (listed only)
+* own folders: Info.plist `AudioComponents` (type, subtype, manufacturer, name, version, factoryFunction) -> `CFBundleLoadExecutable` -> `CFBundleGetFunctionPointerForName` -> `AudioComponentRegister`. once per bundle path and process, ids already in the system are not registered twice. a removed folder hides its plugins, they stay registered until restart
+* fx menu = enabled and not blocked; a blocked or disabled plugin is never instantiated, also not from the session
+* isolated: `AudioComponentInstantiate` with `kAudioComponentInstantiation_LoadOutOfProcess` (v2 and v3) on the plugin queue, waited for (10 s timeout), then `mdplug_wrap` configures it like `mdplug_open`. in-process: `mdplug_open` (`AudioComponentInstanceNew`). both off the audio thread, handed over by the same atomic pointer swap
+* isolated instance gone (`kAudioComponentInstanceInvalidationNotification`) -> its instances are taken out, the plugin is blocked, render errors keep the signal dry until then
+* isolated plugin window: view controller from the service or the generic view, never the v2 view code in-process
+* crash marker: `plugin-opening.json` written before an in-process open (instances, plugin window, own-folder bundle code), removed after. found on start -> plugin (or bundle) blocked
+* `auval -v type subtype manu` as a child process, pass = exit 0 + `AU VALIDATION SUCCEEDED`, tail of the log kept per `id@version`
+* install: copy next to the target, then swap (`replaceItemAt`), quarantine (`com.apple.quarantine`) removed only after asking
+
 ## ◆ SYNC
 
 * master = master deck or the master clock (MASTER mode)
 * tempo follows every tick, phase via a small rate nudge (max 6%)
 * hard jump only if the error stays above 0.25 beats for 100 ms
 * AUTO mode: clock follows the master deck (metronome, later link)
+
+## ◆ TRACK OVERVIEWS
+
+browser preview column. per track 320 points × 4 bytes (peak, bass / mid / high share) = 1.25 kb, ~1.45 kb on disk with key and stamp.
+
+* `MixCore/TrackOverview.swift` -> `TrackOverview` (reduce waveform blocks to points) + `OverviewStore`: one append-only file `overviews/overviews.bin` (`MOV1`, records `len · key · size · mtime · duration · points`), later records win, rewritten on load when more than half is stale. valid while file size and mtime match, checked once per session per track off the main thread
+* `MixEngine/OverviewAnalyzer.swift` -> overview from a file without decoding it into memory: chunked read, same 3-band filters and 300 blocks/s as the deck waveform
+* sources: deck load (from `TrackAudio` blocks, ~1 ms) · right click batch · idle job (1 worker, newest first, skips cloud-only files)
+* jobs run on own threads (qos utility, max 2), pause while any deck plays or loads (checked between read chunks), cancellable
+* drawing: `PreviewSpec` (overview generation, grid with own edits, cues, palette, phrase) -> 400×34 px cgimage rendered off the main thread, `NSCache` (48 mb). a row only hashes its spec and looks the image up, no work per frame
+* measured (14k collection, offscreen table, 41 rows per page): page scroll 77 ms without previews, 83 ms with previews from cache, 95 ms cold. one image ~1.4 ms in the background. batch 150–330 tracks/min (2 workers, file cache cold / warm)
 
 ## ◆ STATE
 

@@ -81,6 +81,7 @@ struct ContentView: View {
         }
         .windowToolbarFullScreenVisibility(.onHover)
         .background(MainWindowHook())
+        .background(OverviewHook())   // Browser-Vorschau: Deck-Tracks, Pause-Regel, Leerlauf
         .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
             store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
         }
@@ -165,6 +166,7 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .help("Audio-Interface neu verbinden")
             Text("· Preparation: \(store.preparation.count)")
+            OverviewStatus()
         }
         .font(Theme.mono(11))
         .foregroundStyle(.secondary)
@@ -361,6 +363,11 @@ if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SH
 if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("browser:") {
     MainActor.assumeIsolated { BrowserShot.run(shot) }
 }
+// Browser-Vorschau offscreen: Bilder + Messung (MIX741_SELFTEST=1 MIX741_SHOT=preview:<ordner>)
+if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("preview:") {
+    MainActor.assumeIsolated { PreviewShot.run(shot) }
+}
+MainActor.assumeIsolated { CoverShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cover:<ordner>, endet mit exit
 MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
 
 if ToggleBench.requested { MainActor.assumeIsolated { ToggleBench.run() } }   // Messung offscreen, ohne Fenster

@@ -93,11 +93,12 @@ tracks without an analysis in the collection play, but have no grid -> no sync.
 ### header
 
 ```
-A  title                 FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
-   artist                            33.2  +0.00%  ◆ CODE
+A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
+    artist                           33.2  +0.00%  ◆ CODE
 ```
 
 * deck letter turns red while playing
+* ▣ cover of the loaded track (embedded in the file, else `cover` / `folder` / `front` .jpg / .png in its folder), `◆` = no cover. off: ⌘, -> DISPLAY -> cover
 * FX1 / FX2 (… FX4) -> deck on that fx unit
 * code readout: bar of the track in its phrase (`5/16`, phrase start = grid anchor, length = waveform phrase, ⌘, -> DISPLAY) against the bar counter. purple `◆ CODE` -> same bar and beat as the counter, red `+2 BARS` / `−3 BEATS` -> the deck is that far ahead / behind (wrapped to half a phrase), grey -> deck stopped or no counter
 * remaining time, bpm, tempo offset, key readout: open key of the track (e.g. `11m`), next to it the audible key in red as soon as it deviates (`11m → 6m`), below the deviation in semitones (`+0.60`). keylock off -> the tempo detunes, keylock on -> only the key shift counts
@@ -274,7 +275,27 @@ any installed audio unit effect (apple or third-party, v2 and v3) in the single 
 * EDIT -> window with the plugin's own view (or a generic one) · changes go to every deck on that unit
 * one instance per deck · loads in the background, the deck plays on dry meanwhile
 * plugin and its settings are saved with the session
-* newly installed plugins -> menu -> rescan plugin list
+* newly installed plugins -> menu -> rescan plugin list (the PLUGINS tab rescans on its own)
+* the menu lists only plugins that are enabled and not blocked -> ⌘, -> PLUGINS
+
+### manage plugins (⌘, -> PLUGINS)
+
+* list of every effect plugin: name, manufacturer, version, AUv2 / AUv3 / VST3, source (system / user / own folder / app), status, search field
+* square left = use in MINOS-741. off -> not in the fx menu (a loaded one keeps playing until you pick another)
+* PRÜFEN / ALLE PRÜFEN -> apple's `auval` in its own process, pass / fail + the last lines of its log (click the row). cached per plugin and version, cancel any time
+* status: ok · ungeprüft (not validated) · prüfung fehlgeschlagen (failed) · blockiert (crashed before) · nicht ladbar · VST3 – not supported yet
+* folders always scanned: `/Library/Audio/Plug-Ins/Components`, `~/Library/Audio/Plug-Ins/Components`, AUv3 from apps (system registry)
+* ORDNER HINZUFÜGEN … -> own folders. `.component` bundles in there (subfolders too) are loaded into MINOS-741 and registered for this app only, nothing is installed. folder changes trigger a rescan
+* PLUGIN INSTALLIEREN … -> pick `.component` bundles, folders or a `.zip` -> copied to `~/Library/Audio/Plug-Ins/Components` (created if missing, never `/Library`). an installed bundle with another version -> asks before replacing
+* downloads carry a quarantine flag. gatekeeper may block unsigned or unnotarized plugins -> MINOS-741 asks before removing the flag, only say yes for sources you trust
+* `.vst3` bundles (vst3 folders, own folders) are listed with status VST3 – not supported yet, no hosting so far
+
+#### crash safety
+
+* isolated loading: third-party plugins run in a separate system service (default on, ⌘, -> PLUGINS -> load third-party plugins isolated, per plugin: default / isolated / in-process). a crash there kills only the service -> the unit goes dry, the plugin gets blocked, the set plays on
+* apple plugins and plugins from own folders always load in-process
+* cost of isolation, AUMatrixReverb, 512 frames at 48 kHz (budget 10.7 ms): no added latency, ~0.04 ms -> ~0.05 ms per block on the audio thread (mean), p99 0.06-0.16 ms -> 0.08-0.27 ms
+* crash marker: before an in-process plugin (or its window, or a bundle from an own folder) opens, MINOS-741 notes it. if the app dies right there, the next start blocks that plugin and shows it in the PLUGINS tab. a blocked plugin never loads, also not from a saved session -> BLOCK AUFHEBEN to try again
 
 ## ◆ 09 · BROWSER
 
@@ -294,6 +315,22 @@ any installed audio unit effect (apple or third-party, v2 and v3) in the single 
 * played column ▶: ✓ = played since the last reset. reset: right click a track or TRACK COLLECTION -> Reset Played State, or ⌥⌘P
 * the left controller drives the left pane, the right controller the right one
 * tree can hide while decks are visible (setting)
+* cover preview below the tree: cover of the selected track, `◆ KEIN COVER` (`◆ NO COVER`) = none (setting)
+* cover column (hidden by default): right click on the header -> Cover. thumbnails load only for visible rows, in the background
+
+### preview
+
+PREVIEW column (after the title, on by default): a mini overview of the whole track per row.
+
+* waveform (3 bands, palette from the waveform setting), scaled per track -> intro, breaks and drops stand out even on loud masters
+* phrase bands from the grid (phrase length = the waveform phrase), thin line every 16 bars, magenta every 32 bars
+* hotcues as short colored ticks, start cue as a triangle on top. own grid / phrase anchor / hotcue edits are drawn too
+* no overview yet -> grid and cues only
+* overview comes from: loading the track into a deck (free, from the deck's waveform) · right click TRACK COLLECTION, PREPARATION, a playlist, smartlist, playlist folder or music folder -> `Vorschauen berechnen` · background job for the whole collection, newest tracks first (setting, on)
+* rule: computing pauses while any deck plays or loads, also in the middle of a file. status bar: `Vorschauen 12/240`, `pausiert (Deck spielt)`, ✕ = cancel
+* the background job skips files that only exist in the cloud (not downloaded), explicit right click reads them
+* ⌘, -> DISPLAY -> browser preview: own column / behind the title (25 % under the title text) / off
+* overviews are checked against file size and modification time -> a retagged file gets a new one
 
 role chips `BASIS · SYNTH · DRUMS · VOLL · ATMO` -> filter on the role at the end of comment 2 (`» BASIS`). several chips = any of them.
 
@@ -404,8 +441,10 @@ controller mapping -> [controllers.md](controllers.md). flux on the controller =
 | settings | user defaults, key `prefs.v1` |
 | session (decks, fx, clock, browser) | `~/Library/Application Support/MINOS-741/session.json` |
 | hotcue + grid edits | `~/Library/Application Support/MINOS-741/edits.json` |
+| browser previews (track overviews) | `~/Library/Application Support/MINOS-741/overviews/overviews.bin` |
 | history | `~/Library/Application Support/MINOS-741/History` |
 | preparation archive | `~/Library/Application Support/MINOS-741/Preparation` |
+| cover thumbnails (cache, safe to delete) | `~/Library/Caches/MINOS-741/artwork` |
 
 backup = copy the `MINOS-741` folder.
 

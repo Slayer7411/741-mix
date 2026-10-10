@@ -49,7 +49,9 @@ final class PluginWindow: NSObject, NSWindowDelegate {
 
     private func loadView() {
         let au = inst.audioUnit
-        if isV3(au) {
+        // isoliert: Ansicht nur aus dem Dienst (View-Controller) oder generisch – nie den Ansichts-Code eines v2-Plugins
+        // in den Prozess laden. Im Prozess: Absturz-Markierung um das Laden der Ansicht
+        if isV3(au) || inst.outOfProcess {
             // AUv3: der View-Controller kommt asynchron; bleibt er aus, nach 3 s die generische Ansicht
             let block: @convention(block) (NSViewController?) -> Void = { [weak self] vc in
                 DispatchQueue.main.async {
@@ -78,6 +80,9 @@ final class PluginWindow: NSObject, NSWindowDelegate {
                 return
             }
         }
+        if inst.outOfProcess { install(genericView(), size: nil); return }
+        core.pluginCatalog.beginOpen(key: inst.info.id, name: inst.info.name)
+        defer { core.pluginCatalog.endOpen() }
         install(cocoaView(au) ?? genericView(), size: nil)
     }
 

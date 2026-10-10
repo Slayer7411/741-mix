@@ -48,23 +48,16 @@ static void fail(char *err, int errLen, const char *what, OSStatus st) {
 
 extern "C" {
 
-MDPlugin *mdplug_open(uint32_t type, uint32_t subtype, uint32_t manufacturer, double sampleRate, uint32_t maxFrames,
-                      char *err, int errLen) {
-    if (err && errLen > 0) err[0] = 0;
-    AudioComponentDescription desc{};
-    desc.componentType = type; desc.componentSubType = subtype; desc.componentManufacturer = manufacturer;
-    AudioComponent comp = AudioComponentFindNext(nullptr, &desc);
-    if (!comp) { fail(err, errLen, "audio unit not installed", 0); return nullptr; }
+// fertige Instanz einrichten (Formate, Blockgröße, Eingang, Initialize); bei Fehler wird sie geschlossen
+static MDPlugin *configure(AudioUnit au, double sampleRate, uint32_t maxFrames, char *err, int errLen) {
     auto *p = new MDPlugin();
+    p->au = au;
     p->maxFrames = std::max(1u, maxFrames);
-    OSStatus st = AudioComponentInstanceNew(comp, &p->au);
-    if (st != noErr || !p->au) { fail(err, errLen, "instance failed", st); mdplug_close(p); return nullptr; }
-
     AudioStreamBasicDescription fmt{};
     fmt.mSampleRate = sampleRate; fmt.mFormatID = kAudioFormatLinearPCM;
     fmt.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved;
     fmt.mBytesPerPacket = 4; fmt.mFramesPerPacket = 1; fmt.mBytesPerFrame = 4; fmt.mChannelsPerFrame = 2; fmt.mBitsPerChannel = 32;
-    st = AudioUnitSetProperty(p->au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &fmt, sizeof fmt);
+    OSStatus st = AudioUnitSetProperty(p->au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &fmt, sizeof fmt);
     if (st != noErr) { fail(err, errLen, "input format rejected", st); mdplug_close(p); return nullptr; }
     st = AudioUnitSetProperty(p->au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &fmt, sizeof fmt);
     if (st != noErr) { fail(err, errLen, "output format rejected", st); mdplug_close(p); return nullptr; }
@@ -83,6 +76,26 @@ MDPlugin *mdplug_open(uint32_t type, uint32_t subtype, uint32_t manufacturer, do
     p->abl = reinterpret_cast<AudioBufferList *>(p->ablStorage.data());
     p->abl->mNumberBuffers = 2;
     return p;
+}
+
+
+MDPlugin *mdplug_open(uint32_t type, uint32_t subtype, uint32_t manufacturer, double sampleRate, uint32_t maxFrames,
+                      char *err, int errLen) {
+    if (err && errLen > 0) err[0] = 0;
+    AudioComponentDescription desc{};
+    desc.componentType = type; desc.componentSubType = subtype; desc.componentManufacturer = manufacturer;
+    AudioComponent comp = AudioComponentFindNext(nullptr, &desc);
+    if (!comp) { fail(err, errLen, "audio unit not installed", 0); return nullptr; }
+    AudioUnit au = nullptr;
+    OSStatus st = AudioComponentInstanceNew(comp, &au);
+    if (st != noErr || !au) { fail(err, errLen, "instance failed", st); if (au) AudioComponentInstanceDispose(au); return nullptr; }
+    return configure(au, sampleRate, maxFrames, err, errLen);
+}
+
+MDPlugin *mdplug_wrap(void *audioUnit, double sampleRate, uint32_t maxFrames, char *err, int errLen) {
+    if (err && errLen > 0) err[0] = 0;
+    if (!audioUnit) { fail(err, errLen, "no instance", 0); return nullptr; }
+    return configure(static_cast<AudioUnit>(audioUnit), sampleRate, maxFrames, err, errLen);
 }
 
 void mdplug_close(MDPlugin *p) {
