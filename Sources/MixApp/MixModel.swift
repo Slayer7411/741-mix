@@ -163,6 +163,7 @@ final class MixModel {
 
     /// Grid/Hotcue-Änderungen eines Decks gegenüber der Collection speichern (nur wenn sich etwas geändert hat)
     private func persistEdits() {
+        guard !Session.isSelfTest else { return }   // Selbsttest/Messung: Christians edits.json nie anfassen
         for d in state.decks.indices {
             guard let orig = originals[d], let t = state.decks[d].track, t.key == orig.key, !state.decks[d].loading else { continue }
             let deck = state.decks[d]

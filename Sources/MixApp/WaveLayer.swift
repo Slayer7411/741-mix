@@ -372,7 +372,21 @@ final class WaveLayerNSView: NSView {
 
     // MARK: pro Frame: nur verschieben
 
+    /// nur MIX741_BENCH=play: Takte, Verschiebungen, Zeit in step (inkl. Commit)
+    struct BenchStats { var steps = 0, moves = 0, seconds = 0.0 }
+    static var bench = BenchStats()
+    static func benchReset() { bench = BenchStats() }
+    private static let benching = ToggleBench.mode == "play"
+
     @objc private func step() {
+        guard Self.benching else { return stepFrame() }
+        let t0 = CACurrentMediaTime()
+        stepFrame()
+        Self.bench.steps += 1
+        Self.bench.seconds += CACurrentMediaTime() - t0
+    }
+
+    private func stepFrame() {
         guard scene.hasTrack else { return }
         let pos = position()
         let l = loop()
@@ -380,6 +394,7 @@ final class WaveLayerNSView: NSView {
         // Deck steht: nichts verschieben, keine Transaktion (sonst 4 Decks × 120 Hz im Leerlauf)
         if pos == lastPos, !loopChanged, tilesPending.isEmpty { return }
         lastPos = pos
+        if Self.benching { Self.bench.moves += 1 }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let x = Double(bounds.width / 2) - pos * pps
