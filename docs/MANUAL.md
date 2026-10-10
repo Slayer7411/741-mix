@@ -232,6 +232,7 @@ the status bar shows device, mode and routing.
 * SNGL -> single mode: one effect, 3 parameters
 * delay time in beats (`1 ▾`), beat synced to the deck tempo
 * ROOM -> reverb size
+* reverb level, brightness, pre-delay -> ⌘, -> MIXER & FX. level 0 dB: full d/w adds the reverb ~4 dB below the track, same in group and single mode
 * deck assign: FX1 … FX4 in the deck header or the mixer
 * default: FX1 -> A / C, FX2 -> B / D
 

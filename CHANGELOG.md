@@ -16,9 +16,12 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * browser: played column ▶ in front (✓ = played since the last reset), right click on TRACK COLLECTION -> Reset Played State
 * engine tests without an audio device (`swift test`): transport, seek, loop, reverse, keylock, delay tail, limiter, clock, track handoff, decode (direct, mono, rate conversion)
 * ci: build + tests on every push and pull request, badge in the readme
+* reverb settings (⌘, -> MIXER & FX): level (−18 … +6 dB), brightness, pre-delay (0 … 120 ms, default 15 ms)
 
 ### changed
 * reverb softer: input diffusion, damped and slowly modulated comb filters, gentle lowpass at the output -> no metallic ringing, made for blends
+* reverb level: no fixed +10 dB boost in single mode anymore. full d/w on pink noise: track + reverb 4.2× -> 1.2× the dry level (reverb alone +12 dB -> −4 dB), group mode 1.8× -> 1.2×
+* reverb darker by default: 200 Hz low cut before the reverb (no bass build-up), output lowpass 12 dB/oct, ~4.7 kHz at the default brightness
 * waveform: highs layer more visible (flat mapping of the high band, hats stay visible under kick and bass)
 * waveform: rendered as bitmap tiles around the playhead on a background thread, grid and cues stay vector layers -> the render server no longer redraws thousands of path points per frame (main thread spent ~65 % waiting for it, now ~0 %)
 * decks get an explicit height -> swiftui layout per state change 190 ms -> ~50 ms with 4 decks (two flexible decks per column made every button press freeze the ui); each deck mirrors its own state -> a change on deck A no longer re-renders B, C, D

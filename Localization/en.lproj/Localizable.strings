@@ -104,6 +104,9 @@
 "Quant: Sprünge halten die Beat-Phase" = "Quant: jumps keep the beat phase";
 "Rechts" = "Right";
 "Reverse (halten)" = "Reverse (hold)";
+"Reverb-Pegel (dB)" = "Reverb level (dB)";
+"Reverb-Helligkeit" = "Reverb brightness";
+"Reverb-Vorverzögerung (ms)" = "Reverb pre-delay (ms)";
 "Rot" = "Red";
 "Scharf (Cut)" = "Sharp (cut)";
 "Smartlist aus den gewählten Tags anlegen (alle müssen passen)" = "Create a smartlist from the selected tags (all must match)";

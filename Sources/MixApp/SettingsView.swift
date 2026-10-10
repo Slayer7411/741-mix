@@ -120,6 +120,9 @@ struct MixerFXSettings: View {
                 .pickerStyle(.segmented)
                 sliderRow("Delay-Feedback", $mix.prefs.engine.delayFeedback, 0...1)
                 sliderRow("FX-Filter-Resonanz", $mix.prefs.engine.fxFilterResonance, 0...1)
+                sliderRow("Reverb-Pegel (dB)", $mix.prefs.engine.reverbLevelDb, -18...6, step: 1, format: "%+.0f")
+                sliderRow("Reverb-Helligkeit", $mix.prefs.engine.reverbBrightness, 0...1)
+                sliderRow("Reverb-Vorverzögerung (ms)", $mix.prefs.engine.reverbPreDelayMs, 0...120, step: 1, format: "%.0f")
             }
         }
         .formStyle(.grouped)
