@@ -10,10 +10,19 @@ enum SelfTest {
         guard ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" else { return }
         let core = mix.core
         Task { @MainActor in
-            if ProcessInfo.processInfo.environment["MIX741_NOEXT"] == nil,
-               let ext = mix.outputDevices.first(where: { $0.channels >= 8 }) {   // externes Interface, jedes Deck auf ein eigenes Paar
+            let env = ProcessInfo.processInfo.environment
+            for _ in 0..<20 where mix.outputDevices.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
+            core.engine.deviceRate = nil   // Geräterate nie umstellen (ein anderes MINOS könnte gerade darauf spielen)
+            if env["MIX741_NOEXT"] == nil, let ext = mix.outputDevices.first(where: { $0.channels >= 8 }) {   // externes Interface, jedes Deck auf ein eigenes Paar
                 core.engine.apply(.init(device: ext.id, firstChannel: [0, 2, 4, 6]))
                 log("Routing \(ext.name) extern: läuft=\(core.engine.running) Fehler=\(core.engine.lastError ?? "keine")")
+            } else if let dev = mix.outputDevices.first(where: { d in env["MIX741_OUT"].map { d.name.localizedCaseInsensitiveContains($0) } ?? false })
+                        ?? mix.outputDevices.first(where: { $0.channels == 2 && $0.name.localizedCaseInsensitiveContains("speaker") })
+                        ?? mix.outputDevices.first(where: { $0.channels < 8 }) {
+                // MIX741_NOEXT: nie auf das Interface einer laufenden Live-Session, sondern auf ein eingebautes
+                // 2-Kanal-Gerät (MIX741_OUT=<Name> wählt eines); Master-Volume 0 -> stumm
+                core.engine.apply(.init(device: dev.id, firstChannel: [0, 0, 0, 0]))
+                log("Routing \(dev.name) (Selbsttest, stumm): läuft=\(core.engine.running) Fehler=\(core.engine.lastError ?? "keine")")
             }
             core.engine.setMasterVolume(0)   // stumm, Einstellung bleibt unverändert
             log("Audio: Gerät \(core.engine.outputRate) Hz, Kern \(core.engine.sampleRate) Hz, Raten \(MixEngine.availableRates(mix.currentDevice?.id ?? MixEngine.defaultOutputDevice() ?? 0))")
