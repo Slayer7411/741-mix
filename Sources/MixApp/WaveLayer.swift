@@ -144,18 +144,18 @@ final class WaveLayerNSView: NSView {
         let total = CGFloat(scene.duration * pps)
         strip.frame = CGRect(x: 0, y: 0, width: total, height: h)
 
-        // Kacheln: fertige Bilder, die GPU skaliert
+        // Wellenform als Vektoren: in Bildschirmauflösung gezeichnet, pro Frame nur verschoben
         if let wave {
-            let tileSec = Double(RenderedWaveform.tileWidth) / RenderedWaveform.pxPerSec
-            for (i, img) in wave.tiles.enumerated() {
-                let t = CALayer()
-                t.actions = Self.noAnimation
-                t.contents = img
-                t.contentsGravity = .resize
-                t.magnificationFilter = .linear
-                t.frame = CGRect(x: CGFloat(Double(i) * tileSec * pps), y: 0,
-                                 width: CGFloat(Double(img.width) / RenderedWaveform.pxPerSec * pps), height: h)
-                strip.addSublayer(t)
+            for c in wave.chunks {
+                var t = CGAffineTransform(a: CGFloat(pps), b: 0, c: 0, d: h / 2, tx: CGFloat(c.t0 * pps), ty: h / 2)
+                for l in c.layers {
+                    guard let p = l.path.copy(using: &t) else { continue }
+                    let s = CAShapeLayer()
+                    s.actions = Self.noAnimation
+                    s.path = p
+                    s.fillColor = l.color
+                    strip.addSublayer(s)
+                }
             }
         }
         strip.addSublayer(loopLayer)
@@ -196,6 +196,8 @@ final class WaveLayerNSView: NSView {
         guard last > first, last - first < 5000 else { return }
         let bands = CGMutablePath(), beats = CGMutablePath(), bars = CGMutablePath(), phrases = CGMutablePath()
         let tris = CGMutablePath(), ptris = CGMutablePath(), ticks = CGMutablePath()
+        let caps = CGMutablePath(), barCaps = CGMutablePath()
+        let hair = 1 / scale   // ein Gerätepixel
         let m8 = CGMutablePath(), m16 = CGMutablePath(), m32 = CGMutablePath()
         let magenta = NSColor(srgbRed: 0.88, green: 0.22, blue: 0.78, alpha: 1)
         let labels = CALayer()
@@ -216,9 +218,9 @@ final class WaveLayerNSView: NSView {
             } else if isPhrase {
                 phrases.addRect(CGRect(x: x - 1, y: r, width: 2, height: h - r))
             } else if inBar == 0 {
-                bars.addRect(CGRect(x: x - 0.75, y: r, width: 1.5, height: h - r))
+                bars.addRect(CGRect(x: x - hair, y: r, width: hair * 2, height: h - r))
             } else {
-                beats.addRect(CGRect(x: x - 0.5, y: r, width: 1, height: h - r))
+                beats.addRect(CGRect(x: x - hair / 2, y: r, width: hair, height: h - r))
             }
             if inBar == 0 {
                 let tp = isPhrase ? ptris : tris
@@ -233,8 +235,11 @@ final class WaveLayerNSView: NSView {
             } else {
                 ticks.addRect(CGRect(x: x - 0.5, y: r - 4, width: 1, height: 4))
             }
-            let tick: CGFloat = inBar == 0 ? 7 : 3
-            ticks.addRect(CGRect(x: x - 1, y: h - tick, width: 2, height: tick))
+            // Kappen oben und unten wie in Traktor (Takt breiter)
+            let cw: CGFloat = inBar == 0 ? 7 : 5
+            let cap = inBar == 0 ? barCaps : caps
+            cap.addRect(CGRect(x: x - cw / 2, y: r, width: cw, height: 1.5))
+            cap.addRect(CGRect(x: x - cw / 2, y: h - 1.5, width: cw, height: 1.5))
         }
         let rulerBG = CALayer()
         rulerBG.actions = Self.noAnimation
@@ -242,8 +247,10 @@ final class WaveLayerNSView: NSView {
         rulerBG.frame = CGRect(x: 0, y: 0, width: strip.bounds.width, height: r)
         strip.addSublayer(shape(bands, lila.withAlphaComponent(0.08)))
         strip.addSublayer(rulerBG)
-        strip.addSublayer(shape(beats, bone.withAlphaComponent(0.42)))
-        strip.addSublayer(shape(bars, bone.withAlphaComponent(0.9)))
+        strip.addSublayer(shape(beats, bone.withAlphaComponent(0.55)))
+        strip.addSublayer(shape(bars, bone))
+        strip.addSublayer(shape(caps, bone.withAlphaComponent(0.7)))
+        strip.addSublayer(shape(barCaps, bone))
         strip.addSublayer(shape(phrases, lila))
         strip.addSublayer(shape(m8, magenta.withAlphaComponent(0.7)))
         strip.addSublayer(shape(m16, magenta.withAlphaComponent(0.9)))

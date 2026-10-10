@@ -562,6 +562,21 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
+    /// genau einen Takt springen; im Loop bleibt der Loop stehen und die Position läuft darin um
+    /// (so landen beide Tracks auf derselben Takt-Eins im 4/4)
+    public func barJump(_ d: Int, bars: Int) {
+        locked {
+            guard audio[d] != nil else { return }
+            var t = position(d) + Double(bars * 4) * beatLength(d)
+            if state.decks[d].loopActive {
+                let l = engine.loop(d)
+                let len = l.end - l.start
+                if len > 0 { t = l.start + (t - l.start).truncatingRemainder(dividingBy: len); if t < l.start { t += len } }
+            }
+            engine.seek(d, seconds: max(0, t))
+        }
+    }
+
     public func changeJumpSize(_ d: Int, by step: Int) {
         locked {
             let sizes = BeatSizes.jump

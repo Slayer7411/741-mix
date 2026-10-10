@@ -197,7 +197,13 @@ final class X1Manager: @unchecked Sendable {
                 core.fluxReverse(d, on: down)
             }
         case let .sync(s, down):
-            if down { unit.shift ? core.toggleMaster(deck(s)) : core.toggleSync(deck(s)) }
+            // Antippen = Sync; gehalten + 3/4 = einen Takt zurück/vor (Sync schaltet dann nicht)
+            if down {
+                if unit.shift { core.toggleMaster(deck(s)) } else { unit.syncHeld[s] = true; unit.syncComboUsed[s] = false }
+            } else if unit.syncHeld[s] == true {
+                if unit.syncComboUsed[s] != true { core.toggleSync(deck(s)) }
+                unit.syncHeld[s] = false
+            }
         case let .flux(s, down):
             // Antippen = Flux-Modus; gehalten = Ebene für Hotcue 3/4 (Beatjump)
             if down {
@@ -210,7 +216,10 @@ final class X1Manager: @unchecked Sendable {
         case let .hotcue(s, n, down):
             guard down else { return }
             let d = deck(s)
-            if unit.fluxHeld[s] == true, n == 2 || n == 3 {
+            if unit.syncHeld[s] == true, n == 2 || n == 3 {
+                unit.syncComboUsed[s] = true
+                core.barJump(d, bars: n == 2 ? -1 : 1)
+            } else if unit.fluxHeld[s] == true, n == 2 || n == 3 {
                 unit.fluxComboUsed[s] = true
                 core.beatjump(d, beats: (n == 2 ? -1 : 1) * p.fluxBeatjumpBeats)
             } else {
@@ -304,6 +313,8 @@ final class X1Unit {
     var shift = false
     var fluxHeld: [Side: Bool] = [:]
     var fluxComboUsed: [Side: Bool] = [:]
+    var syncHeld: [Side: Bool] = [:]
+    var syncComboUsed: [Side: Bool] = [:]
     var cueAsNormal: [Side: Bool] = [:]
     var stripLast: [Side: Double] = [:]
     var flashUntil: Date?
@@ -409,7 +420,7 @@ final class X1Unit {
                 var c: (UInt8, UInt8, UInt8) = (0, 0, 0)
                 if flash {
                     c = (on, on, on)
-                } else if fluxHeld[s] == true, n >= 2 {
+                } else if fluxHeld[s] == true || syncHeld[s] == true, n >= 2 {
                     c = (on / 2, on / 2, on / 2)               // Beatjump-Ebene sichtbar machen
                 } else if let cue = deck.hotcues[n] {
                     let start = deck.track.flatMap { t in t.cues.first { $0.kind == .load }?.startMs ?? t.gridAnchorMs }

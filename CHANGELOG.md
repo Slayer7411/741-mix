@@ -5,6 +5,17 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ## ◆ [UNRELEASED]
 
+### added
+* x1: sync held + hotcue 3 / 4 = one bar back / forward, inside a loop the loop stays and the position wraps
+
+### changed
+* waveform drawn as vectors at screen resolution -> sharp at any zoom, sharp attack, height = file level (0 dBFS = full)
+* spectrum colors mixed additive like traktor
+* beatgrid: hairline beats, bar lines with caps top and bottom
+
+### fixed
+* link: 251 timeline resets in 15 s with the old build (beat without timestamp) -> now only on real drift
+
 ## ◆ [0.6.0] · 2026-10-10 · LINK
 
 ### added

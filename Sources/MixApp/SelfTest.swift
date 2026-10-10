@@ -32,6 +32,14 @@ enum SelfTest {
                 if let e = s.decks[0].error ?? s.decks[1].error { log(e); exit(1) }
                 try? await Task.sleep(for: .milliseconds(100))
             }
+            // nur Bild: beide Decks auf 1:00 stellen, nicht abspielen, kurz stehen lassen (für Screenshots)
+            if ProcessInfo.processInfo.environment["MIX741_SNAPSHOT"] != nil {
+                core.seek(0, seconds: 60); core.seek(1, seconds: 60)
+                try? await Task.sleep(for: .seconds(2))
+                log("SNAPSHOT bereit")
+                try? await Task.sleep(for: .seconds(8))
+                exit(0)
+            }
             core.togglePlay(0)
             try? await Task.sleep(for: .seconds(2))
             log(String(format: "A läuft: Position %.2f s", core.position(0)))
@@ -59,6 +67,20 @@ enum SelfTest {
             log("Loop aktiv laut Engine: \(l.active), laut Kern: \(core.snapshot().decks[0].loopActive)")
             log(String(format: "Loop A %.2f–%.2f, Position %.2f, im Loop: %@", l.start, l.end, pos,
                        "\(pos >= l.start - 0.01 && pos <= l.end + 0.01)"))
+            // Takt-Sprung im 8-Beat-Loop: Loop bleibt, Position +4 Beats (umlaufend)
+            core.exitLoop(0)
+            core.autoLoop(0, size: 8)
+            try? await Task.sleep(for: .milliseconds(300))
+            let l8 = core.engine.loop(0), q0 = core.position(0), t0 = Date()
+            let ph0 = core.phaseError(1) ?? .nan
+            core.barJump(0, bars: 1)
+            try? await Task.sleep(for: .milliseconds(50))
+            let l8b = core.engine.loop(0), q1 = core.position(0), len = l8.end - l8.start
+            let rate = core.snapshot().decks[0].bpm / 130.000473   // Wiedergabe-Rate, abgelaufene Zeit abziehen
+            var moved = (q1 - q0 - Date().timeIntervalSince(t0) * rate).truncatingRemainder(dividingBy: len); if moved < 0 { moved += len }
+            log(String(format: "Phase B vor/nach Takt-Sprung: %.4f / %.4f Beats", ph0, core.phaseError(1) ?? .nan))
+            log(String(format: "Takt-Sprung im Loop: Loop gleich %@, Versatz %.3f von %.3f Beats (soll 4)",
+                       "\(abs(l8b.start - l8.start) < 0.001)", moved / len * 8, 8.0))
             core.exitLoop(0)
             let before = core.position(0)
             core.beatjump(0, beats: 16)

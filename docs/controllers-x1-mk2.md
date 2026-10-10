@@ -25,6 +25,7 @@ my traktor custom mappings (decoded from `Traktor Settings.tsi`):
 * cue held = flux reverse (shift + cue = normal cue)
 * flux held + hotcue 3 / 4 = beatjump -1 / +1 beat (pads 3/4 light up grey while flux is held)
 * flux tap = flux mode on / off
+* sync held + hotcue 3 / 4 = one bar back / forward, inside a loop the loop stays and the position wraps (sync toggles on release if no pad was hit)
 
 all of it under ⌘, -> controller.
 
