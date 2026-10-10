@@ -38,7 +38,8 @@ public final class TrackAudio: @unchecked Sendable {
     public static func decode(url: URL, sampleRate: Double) throws -> TrackAudio {
         let file = try AVAudioFile(forReading: url)
         let inFmt = file.processingFormat
-        let total = Int(file.length)
+        guard inFmt.sampleRate > 0, sampleRate > 0, inFmt.channelCount > 0 else { throw DecodeError.format }   // sonst Int(inf) beim Anlegen
+        let total = max(0, Int(file.length))
         let mono = inFmt.channelCount == 1
         let t = TrackAudio(capacity: Int(Double(total) * sampleRate / inFmt.sampleRate) + 8192, sampleRate: sampleRate)
         guard let inBuf = AVAudioPCMBuffer(pcmFormat: inFmt, frameCapacity: chunk) else { throw DecodeError.format }

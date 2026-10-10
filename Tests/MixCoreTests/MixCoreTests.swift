@@ -72,6 +72,20 @@ let sampleNML = """
 }
 
 /// Eigene History-NML muss sich mit dem History-Leser wieder lesen lassen (Rundreise) und Roh-Einträge übernehmen.
+/// kaputte Werte aus der Collection (BPM inf/nan, Anker nan) ergeben kein bzw. ein endliches Grid
+@Test func beatGridRejectsNonFiniteValues() {
+    var t = Track(key: "x", path: "/x")
+    for bpm in [Double.infinity, .nan, 0, -120] {
+        t.bpm = bpm
+        #expect(BeatGrid(track: t) == nil, "bpm \(bpm)")
+    }
+    t.bpm = 128
+    t.cues = [Cue(name: "Grid", kind: .grid, startMs: .nan, lengthMs: 0, hotcue: -1)]
+    let g = BeatGrid(track: t)
+    #expect(g?.anchor.isFinite == true)
+    #expect(g.map { $0.barBeat(at: 10).bar } == 6)
+}
+
 @Test func historyRoundTrip() throws {
     let index = NMLEntryIndex(nmlText: sampleNML)
     #expect(index.raw.count == 2)
