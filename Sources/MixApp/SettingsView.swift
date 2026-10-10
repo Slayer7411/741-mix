@@ -569,7 +569,7 @@ struct ControllerSettings: View {
                           0...40, step: 1, format: "%.0f")
                 Text("pad-farben: ⌘, -> anzeige -> cue-farben (gleich wie auf dem bildschirm)").settingsHint()
             }
-            Section("Feste Belegung (NI-Standard)") {
+            Section("Feste Belegung (Standard)") {
                 Text("""
                 Play (Shift: CUP) · Sync (Shift: Master) · Hotcues 1–4 (Shift: löschen) · Loop-Encoder drehen = Loopgröße, \
                 drücken = Loop (Shift: drehen = Beatjump, drücken = Reloop) · Load · Browse (drücken = Vorhören) · \

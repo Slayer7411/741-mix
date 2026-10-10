@@ -418,7 +418,7 @@ static void healDeck(Deck &d) {
     for (Biquad *b : {&d.eqL, &d.eqM, &d.eqH, &d.chanFilter.bq}) b->clearState();
     for (auto &c : d.fx) {
         c.filter.bq.clearState(); c.delay.clear(); c.reverb.clear();
-        for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp}) b->clearState();   // Reverb::clear() lässt die Filter stehen
+        for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp, &c.reverb.lowCut}) b->clearState();   // Reverb::clear() lässt die Filter stehen
     }
     d.stretch.reset();
     d.wasStretching = false; d.latSm = 0; d.inAcc = 0;
