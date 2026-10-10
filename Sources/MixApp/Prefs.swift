@@ -8,6 +8,12 @@ enum WaveformStyle: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Spektrum-Stil: fein (6 Bänder, eigene Farben, Höhen zusätzlich als Ebene darüber), fein nur gemischt, oder einfach (3 Bänder, Palette)
+enum SpectrumDetail: String, CaseIterable, Codable, Identifiable {
+    case fine = "Spektrum fein (6 Bänder)", fineMix = "Spektrum fein, ohne Höhen-Ebene", simple = "Spektrum (3 Bänder)"
+    var id: String { rawValue }
+}
+
 enum WaveformPalette: String, CaseIterable, Codable, Identifiable {
     case bone = "741 Knochen", orange = "Orange", blue = "Blau/Weiß", classic = "Klassisch"
     var id: String { rawValue }
@@ -96,6 +102,10 @@ struct UIPrefs: Codable, Equatable {
     var waveformSeconds = 4.0
     var waveformStyle = WaveformStyle.threeBand
     var waveformPalette = WaveformPalette.bone
+    /// Spektrum-Stil: feine 6-Band-Farben oder die alten 3 Bänder
+    var spectrumDetail = SpectrumDetail.fine
+    /// Höhen-Betonung im feinen Spektrum (0 = neutral, 1 = Standard, 2 = stark)
+    var waveformHighBoost = 1.0
     var showBeatgrid = true
     var showBarNumbers = true
     var dimPlayed = true

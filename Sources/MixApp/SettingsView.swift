@@ -382,11 +382,30 @@ struct WaveformSettings: View {
         @Bindable var mix = mix
         Form {
             Section("Wellenform") {
-                Picker("Stil", selection: $mix.prefs.ui.waveformStyle) {
-                    ForEach(WaveformStyle.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                // Stil und Spektrum-Variante in einer Liste: 3-Band, Spektrum fein / fein ohne Ebene / 3 Bänder, Einfarbig
+                Picker("Stil", selection: Binding(
+                    get: { mix.prefs.ui.waveformStyle == .spectrum ? mix.prefs.ui.spectrumDetail.rawValue : mix.prefs.ui.waveformStyle.rawValue },
+                    set: { v in
+                        if let d = SpectrumDetail(rawValue: v) {
+                            mix.prefs.ui.waveformStyle = .spectrum
+                            mix.prefs.ui.spectrumDetail = d
+                        } else if let st = WaveformStyle(rawValue: v) {
+                            mix.prefs.ui.waveformStyle = st
+                        }
+                    })) {
+                    ForEach([WaveformStyle.threeBand.rawValue] + SpectrumDetail.allCases.map(\.rawValue) + [WaveformStyle.mono.rawValue], id: \.self) {
+                        Text(LocalizedStringKey($0)).tag($0)
+                    }
                 }
+                let fine = mix.prefs.ui.waveformStyle == .spectrum && mix.prefs.ui.spectrumDetail != .simple
                 Picker("Farben", selection: $mix.prefs.ui.waveformPalette) {
                     ForEach(WaveformPalette.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                .disabled(fine)
+                if fine {
+                    sliderRow("Höhen-Betonung", $mix.prefs.ui.waveformHighBoost, 0...2, step: 0.25, format: "%.2f")
+                    Text("Sub orange · Bass/Kick rot · Mitten grün, obere Mitten gelbgrün · kurze Höhen (geschlossene Hats) blau · gehaltene Höhen (offene Hats, Ride) hellblau. Jedes Band gegen den eigenen Track normiert, Höhe = echter Pegel.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 sliderRow("Sichtbare Sekunden je Seite (Zoom)", $mix.prefs.ui.waveformSeconds, 1...16, step: 0.5, format: "%.1f", unit: "s")
                 sliderRow("Mindesthöhe (pt, wächst mit dem Fenster)", $mix.prefs.ui.waveformHeight, 30...200, step: 5, format: "%.0f", unit: "pt")

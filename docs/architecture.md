@@ -68,6 +68,14 @@ plugin list and loading (`PluginCatalog`, `PluginInstaller`, `PluginValidator` i
 * hard jump only if the error stays above 0.25 beats for 100 ms
 * AUTO mode: clock follows the master deck (metronome, later link)
 
+## ◆ WAVEFORM SPECTRUM
+
+* `MixEngine/TrackAudio.swift` -> per block (300/s): peak + 3-band shares (one-pole filters, 3-band layers style, overviews) and, on a second core, `SpectrumAnalyzer`
+* `MixEngine/SpectrumAnalyzer.swift` -> fed in chunks (whole deck buffer or read chunks). lows: mono -> 2nd order low pass 1 kHz -> every 10th sample (~4.4 kHz) -> butterworth bands sub 20-60, bass 60-250, low mids 250-1k. highs: 256-point hann fft (5.8 ms) centered on each block -> high mids 1-4k, highs 4-10k, air 10-20k. hold of the highs: share of ±75 ms with highs within 8 dB of the window peak
+* `MixCore/WaveSpectrum.swift` -> 8 bytes per block: 6 band levels (0.5 dB steps, 255 = 0 dBFS), hold, spare. `reference(percentile:)` per band, `reduced(to:)` -> n columns (mean energy, mean hold) for overviews / the browser preview
+* `MixCore/SpectrumColors.swift` -> color per block: band level minus track reference (95th percentile, kept within -10 / +6 dB of a typical club track), +boost for highs, weight 10^(d / 3.5 dB), mix pulled to full saturation. returns body color, high layer height and color, dominant band
+* `MixApp/Waveform.swift` -> chunks of rects per quantized color (8 steps per channel, ~110 paths per 2048 blocks) + high layer, overview columns from mean band energy
+
 ## ◆ TRACK OVERVIEWS
 
 browser preview column. per track 320 points × 4 bytes (peak, bass / mid / high share) = 1.25 kb, ~1.45 kb on disk with key and stamp.

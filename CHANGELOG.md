@@ -6,6 +6,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* waveform: `spectrum fine (6 bands)` -> new default of the spectrum style. per block (3.3 ms) sub 20-60 Hz, bass 60-250 Hz, low mids 250 Hz-1 kHz, high mids 1-4 kHz, highs 4-10 kHz, air 10-20 kHz + how long the highs hold (~150 ms window). colors: sub orange, bass / kick red, mids green, high mids yellow-green, short highs (closed hats) blue, held highs (open hats, ride) light blue and brighter, highs also as a layer in the middle so hats stay visible next to kick and bass. every band is normalized against the track's own level -> closed -> open hats, drums coming in and breakdowns stand out. height = real level as before. old look: `spectrum fine, no high layer` / `spectrum (3 bands)`
+* settings: DISPLAY -> waveform -> `high emphasis` (0-2, lifts hats up to 10 dB in the color mix), color legend below. palette applies to 3-band, spectrum (3 bands) and mono
 * settings: PLUGINS tab -> every effect plugin with manufacturer, version, AUv2 / AUv3 / VST3, source and status, search, per plugin on / off for the fx menu
 * plugins: own plugin folders -> `.component` bundles are loaded and registered for MINOS-741 only. PLUGIN INSTALLIEREN … copies bundles (also from folders or `.zip`) to `~/Library/Audio/Plug-Ins/Components`, asks before replacing another version and before removing the download quarantine flag
 * plugins: validation with apple's `auval` (single or all, progress, cancel), pass / fail and log tail cached per plugin + version

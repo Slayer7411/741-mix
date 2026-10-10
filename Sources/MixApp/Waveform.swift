@@ -35,6 +35,25 @@ final class RenderedWaveform: @unchecked Sendable {
         }
     }
 
+    /// Feines Spektrum (6 Bänder): Farben aus MixCore.SpectrumColors, optional Höhen als eigene Ebene darüber
+    struct Fine {
+        let colors: SpectrumColors
+        let layers: Bool
+        init(_ s: WaveSpectrum, highBoost: Double, layers: Bool) {
+            colors = SpectrumColors(s, highBoost: highBoost)
+            self.layers = layers
+        }
+        static func rgb(_ c: SpectrumColors.RGB) -> RGB { RGB(r: CGFloat(c.r), g: CGFloat(c.g), b: CGFloat(c.b)) }
+        func color(_ L: [Float], sustain: Float) -> (body: RGB, high: CGFloat, highColor: RGB) {
+            let c = colors.color(L, sustain: sustain)
+            return (Self.rgb(c.body), CGFloat(c.high), Self.rgb(c.highColor))
+        }
+        func color(_ s: WaveSpectrum, _ i: Int) -> (body: RGB, high: CGFloat, highColor: RGB) {
+            let c = colors.color(s, i)
+            return (Self.rgb(c.body), CGFloat(c.high), Self.rgb(c.highColor))
+        }
+    }
+
     /// Höhen-Ebene: Energieanteil flach abgebildet (Exponent 0,35 statt Wurzel), damit Hats auch unter Kick und Bass sichtbar bleiben
     static func highLevel(_ ratio: Float) -> CGFloat { CGFloat(pow(max(0, ratio), 0.35)) * 0.95 }
 
@@ -83,7 +102,37 @@ final class RenderedWaveform: @unchecked Sendable {
         return p
     }
 
-    private static func chunk(_ a: TrackAudio, env: [Float], range: Range<Int>, style: WaveformStyle, colors: Colors) -> [(CGColor, CGPath)] {
+    /// Farbe auf 8 Stufen je Kanal → Schlüssel (wenige Pfade je Abschnitt)
+    private static func quantized(_ c: RGB) -> (Int, RGB) {
+        let q = { (v: CGFloat) in Int((max(0, min(1, v)) * 7).rounded()) }
+        let r = q(c.r), g = q(c.g), b = q(c.b)
+        return (r * 64 + g * 8 + b, RGB(r: CGFloat(r) / 7, g: CGFloat(g) / 7, b: CGFloat(b) / 7))
+    }
+
+    /// feines Spektrum: Blöcke als Rechtecke je Farbe, optional die Höhen als eigene Ebene darüber
+    private static func fineChunk(_ a: TrackAudio, env: [Float], range: Range<Int>, fine: Fine) -> [(CGColor, CGPath)] {
+        let dt = 1 / TrackAudio.blocksPerSecond
+        var body: [Int: (RGB, CGMutablePath)] = [:], highs: [Int: (RGB, CGMutablePath)] = [:]
+        var order: [Int] = []
+        for k in 0..<range.count {
+            let i = range.lowerBound + k
+            let c = fine.color(a.spectrum, i)
+            let v = max(CGFloat(env[i]), 0.004)
+            let (key, qc) = quantized(c.body)
+            if body[key] == nil { body[key] = (qc, CGMutablePath()); order.append(key) }
+            body[key]!.1.addRect(CGRect(x: Double(k) * dt, y: -v, width: dt * 1.02, height: v * 2))
+            if fine.layers, c.high > 0.02 {
+                let (hk, hq) = quantized(c.highColor)
+                if highs[hk] == nil { highs[hk] = (hq, CGMutablePath()) }
+                let h = v * c.high
+                highs[hk]!.1.addRect(CGRect(x: Double(k) * dt, y: -h, width: dt * 1.02, height: h * 2))
+            }
+        }
+        return order.map { (cg(body[$0]!.0), body[$0]!.1 as CGPath) } + highs.values.map { (cg($0.0), $0.1 as CGPath) }
+    }
+
+    private static func chunk(_ a: TrackAudio, env: [Float], range: Range<Int>, style: WaveformStyle, colors: Colors, fine: Fine?) -> [(CGColor, CGPath)] {
+        if let fine { return fineChunk(a, env: env, range: range, fine: fine) }
         let dt = 1 / TrackAudio.blocksPerSecond
         let pk = range.map { CGFloat(env[$0]) }
         switch style {
@@ -136,15 +185,37 @@ final class RenderedWaveform: @unchecked Sendable {
         }
     }
 
-    static func render(_ a: TrackAudio, style: WaveformStyle, palette: WaveformPalette) -> RenderedWaveform {
+    /// Übersichts-Spalte im feinen Spektrum: mittlere Bandenergie und Höhen-Dauer über die Blöcke der Spalte
+    private static func fineColumn(_ a: TrackAudio, env: [Float], from: Int, to: Int, fine: Fine) -> (pk: CGFloat, c: (body: RGB, high: CGFloat, highColor: RGB)) {
+        let s = a.spectrum, n = s.count
+        let lo = max(0, min(n - 1, from)), hi = max(lo + 1, min(n, to))
+        var e = [Float](repeating: 0, count: 6)
+        var pk: Float = 0, sus: Float = 0
+        for i in lo..<hi {
+            pk = max(pk, env[i])
+            for b in 0..<6 {
+                let v = s.data[i * WaveSpectrum.stride + b]
+                if v > 0 { e[b] += powf(10, (Float(v) - 255) / 20) }
+            }
+            sus += s.sustain(i)
+        }
+        let c = Float(hi - lo)
+        let L = e.map { $0 > 0 ? 10 * log10f($0 / c) : -160 }
+        return (CGFloat(pk), fine.color(L, sustain: sus / c))
+    }
+
+    static func render(_ a: TrackAudio, style: WaveformStyle, palette: WaveformPalette,
+                       detail: SpectrumDetail = .fine, highBoost: Double = 1) -> RenderedWaveform {
         let colors = Colors.of(palette)
         let env = envelope(a)
+        let fine = style == .spectrum && detail != .simple && a.spectrum.count >= a.peak.count && !a.peak.isEmpty
+            ? Fine(a.spectrum, highBoost: highBoost, layers: detail == .fine) : nil
         let dt = 1 / TrackAudio.blocksPerSecond
         var chunks: [Chunk] = []
         var b0 = 0
         while b0 < env.count {
             let r = b0..<min(env.count, b0 + chunkBlocks)
-            chunks.append(Chunk(t0: Double(b0) * dt, layers: chunk(a, env: env, range: r, style: style, colors: colors)))
+            chunks.append(Chunk(t0: Double(b0) * dt, layers: chunk(a, env: env, range: r, style: style, colors: colors, fine: fine)))
             b0 = r.upperBound
         }
         // Übersicht
@@ -153,7 +224,19 @@ final class RenderedWaveform: @unchecked Sendable {
         if let ctx = context(width: ow, height: oh), !a.peak.isEmpty {
             let per = Double(a.peak.count) / Double(ow)
             for x in 0..<ow {
-                let col = column(a, env: env, from: Int(Double(x) * per), to: Int(Double(x + 1) * per))
+                let from = Int(Double(x) * per), to = Int(Double(x + 1) * per)
+                if let fine {
+                    let (pk, c) = fineColumn(a, env: env, from: from, to: to, fine: fine)
+                    let mid = CGFloat(oh) / 2
+                    ctx.setFillColor(cg(c.body))
+                    ctx.fill(CGRect(x: CGFloat(x), y: mid - max(0.5, pk * mid), width: 1, height: max(1, pk * mid * 2)))
+                    if fine.layers, c.high > 0.02 {
+                        ctx.setFillColor(cg(c.highColor))
+                        ctx.fill(CGRect(x: CGFloat(x), y: mid - pk * c.high * mid, width: 1, height: pk * c.high * mid * 2))
+                    }
+                    continue
+                }
+                let col = column(a, env: env, from: from, to: to)
                 drawOverview(ctx, x: CGFloat(x), h: CGFloat(oh), col: col, style: style, colors: colors)
             }
             overview = ctx.makeImage()
@@ -172,14 +255,15 @@ final class WaveformCache {
     private var done: [String: Entry] = [:]
     @ObservationIgnored private var running: Set<String> = []
 
-    func waveform(for audio: TrackAudio?, style: WaveformStyle, palette: WaveformPalette) -> RenderedWaveform? {
+    func waveform(for audio: TrackAudio?, ui: UIPrefs) -> RenderedWaveform? {
         guard let audio else { return nil }
-        let key = "\(ObjectIdentifier(audio).hashValue)-\(style.rawValue)-\(palette.rawValue)"
+        let style = ui.waveformStyle, palette = ui.waveformPalette, detail = ui.spectrumDetail, boost = ui.waveformHighBoost
+        let key = "\(ObjectIdentifier(audio).hashValue)-\(style.rawValue)-\(palette.rawValue)-\(detail.rawValue)-\(boost)"
         if let e = done[key], e.audio === audio { return e.wave }
         if !running.contains(key) {
             running.insert(key)
             Task.detached(priority: .userInitiated) {
-                let w = RenderedWaveform.render(audio, style: style, palette: palette)
+                let w = RenderedWaveform.render(audio, style: style, palette: palette, detail: detail, highBoost: boost)
                 await MainActor.run {
                     self.done.removeAll { $0.value.audio == nil }
                     self.done[key] = Entry(audio: audio, wave: w)
@@ -208,7 +292,7 @@ struct WaveformView: View {
     var body: some View {
         let ui = mix.prefs.ui
         let deck = mix.deck(d)
-        let wf = cache.waveform(for: mix.audio(d), style: ui.waveformStyle, palette: ui.waveformPalette)
+        let wf = cache.waveform(for: mix.audio(d), ui: ui)
         let scene = WaveScene(
             waveID: wf.map { ObjectIdentifier($0) }, duration: deck.duration, grid: deck.grid, span: ui.waveformSeconds,
             showGrid: ui.showBeatgrid, colorful: ui.colorfulGrid, phraseBeats: ui.phraseBeats, barNumbers: ui.showBarNumbers, barMarkers: ui.barMarkers,
@@ -248,7 +332,7 @@ struct OverviewView: View {
     var body: some View {
         let ui = mix.prefs.ui
         let deck = mix.deck(d)
-        let wf = cache.waveform(for: mix.audio(d), style: ui.waveformStyle, palette: ui.waveformPalette)
+        let wf = cache.waveform(for: mix.audio(d), ui: ui)
         GeometryReader { geo in
             LiveCanvas(fps: deck.playing ? 15 : 4, running: deck.duration > 0) { [mix, d] ctx, size in
                 ctx.setFillColor(CG.wave); ctx.fill(CGRect(origin: .zero, size: size))

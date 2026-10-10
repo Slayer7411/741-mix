@@ -49,8 +49,9 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 
 ## ◆ DISPLAY
 
-* waveform style: 3-band layers / spectrum / mono
-* palette: 741 bone, orange, blue / white, classic
+* waveform style: 3-band layers / spectrum fine (6 bands) / spectrum fine, no high layer / spectrum (3 bands) / mono
+* palette: 741 bone, orange, blue / white, classic (not for spectrum fine, it has fixed band colors -> [manual](MANUAL.md#-05--waveform--grid))
+* high emphasis (spectrum fine): 0-2, default 1
 * zoom (seconds per side), minimum height (grows with the window), dim the played part
 * beatgrid: on / off, colorful (phrases, bars, beats), phrase length 16 / 32 / 64 / 128 beats, bar numbers
 * cue colors: start cue red, cues white, loops green, 1-2 bar loops magenta

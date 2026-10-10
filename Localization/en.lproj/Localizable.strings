@@ -349,3 +349,8 @@
 "Cover-Vorschau im Browser" = "Cover preview in the browser";
 "◆ KEIN COVER" = "◆ NO COVER";
 "vorschau unter dem baum (gewählter track). spalte „Cover“ in der liste: rechtsklick auf die spaltenköpfe. bild aus der datei, sonst cover / folder / front.jpg im ordner, zwischengespeichert in ~/Library/Caches/MINOS-741/artwork." = "preview below the tree (selected track). “Cover” column in the list: right click on the column headers. image from the file, else cover / folder / front.jpg in the folder, cached in ~/Library/Caches/MINOS-741/artwork.";
+"Spektrum fein (6 Bänder)" = "Spectrum fine (6 bands)";
+"Spektrum fein, ohne Höhen-Ebene" = "Spectrum fine, no high layer";
+"Spektrum (3 Bänder)" = "Spectrum (3 bands)";
+"Höhen-Betonung" = "High emphasis";
+"Sub orange · Bass/Kick rot · Mitten grün, obere Mitten gelbgrün · kurze Höhen (geschlossene Hats) blau · gehaltene Höhen (offene Hats, Ride) hellblau. Jedes Band gegen den eigenen Track normiert, Höhe = echter Pegel." = "Sub orange · bass/kick red · mids green, upper mids yellow-green · short highs (closed hats) blue · sustained highs (open hats, ride) light blue. Each band normalized against the track itself, height = real level.";
