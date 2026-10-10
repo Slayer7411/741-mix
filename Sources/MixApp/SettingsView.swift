@@ -9,6 +9,7 @@ struct SettingsView: View {
     static let tabs: [SettingsTab] = [
         SettingsTab("DECKS") { DeckSettings() },
         SettingsTab("MIXER & FX") { MixerFXSettings() },
+        SettingsTab("PLUGINS") { PluginSettingsView() },
         SettingsTab("ANZEIGE") { WaveformSettings() },
         SettingsTab("AUDIO") { AudioSettings() },
         SettingsTab("CONTROLLER") { ControllerSettings() },
