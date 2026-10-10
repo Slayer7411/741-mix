@@ -19,6 +19,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * ci: build + tests on every push and pull request, badge in the readme
 
 ### changed
+* deck: hotcues, loop sizes 1/32 … 32 and beatjump sizes 1/4 … 64 in three full-width rows, the selected loop and beatjump size red (follows the controller too), LOOP = on / off, white / yellow pads with dark numbers. `MIX741_SHOT=deck:<png>` (selftest only) renders a deck offscreen
 * reverb softer: input diffusion, damped and slowly modulated comb filters, gentle lowpass at the output -> no metallic ringing, made for blends
 * waveform: markers slightly stronger -> loop frame 1.5 pt + denser tint, play head, cues, phrases, anchor and 8/16/32 markers +0.5 pt, beat lines on whole pixels, ruler ticks, caps and bar numbers brighter. check without a window: selftest + `MIX741_SHOT=wave:<png>`
 * waveform: highs layer more visible (flat mapping of the high band, hats stay visible under kick and bass)

@@ -56,27 +56,35 @@ struct Knob: View {
     private func set(_ v: Double) { value = v }
 }
 
-/// Kompakter Schalter
+/// Kompakter Schalter; `fill` = teilt sich mit den Nachbarn die ganze Breite des Stacks (Größenreihen am Deck)
 struct DeckButton: View {
     let title: String
     var active = false
     var color: Color = Theme.state
     var width: CGFloat? = nil
+    var fill = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(LocalizedStringKey(title))
                 .font(Theme.label(10, .bold))
-                .frame(minWidth: width ?? 0)
+                .lineLimit(1)
+                .frame(minWidth: width ?? 0, maxWidth: fill ? .infinity : nil)
                 .frame(height: 18)
                 .padding(.horizontal, 4)
-                .foregroundStyle(active ? Theme.bone : Theme.bone.opacity(0.75))
+                .foregroundStyle(active ? (Self.bright(color) ? Theme.void : Theme.bone) : Theme.bone.opacity(0.75))
                 .background(Rectangle().fill(active ? color.opacity(0.85) : Theme.void))
                 .overlay(Rectangle().stroke(active ? color : Theme.hairline, lineWidth: 1))
-                .fixedSize()
+                .fixedSize(horizontal: !fill, vertical: true)
         }
         .buttonStyle(.plain)
+    }
+
+    /// helle Füllung (weiße/gelbe Cues): Schrift dunkel, sonst unlesbar
+    static func bright(_ c: Color) -> Bool {
+        guard let n = NSColor(c).usingColorSpace(.sRGB) else { return false }
+        return 0.299 * n.redComponent + 0.587 * n.greenComponent + 0.114 * n.blueComponent > 0.6
     }
 }
 

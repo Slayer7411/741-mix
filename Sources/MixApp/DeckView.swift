@@ -19,7 +19,9 @@ struct DeckView: View {
                 OverviewView(d: d)
                     .frame(height: 18)
                 transportRow(deck)
-                cueLoopRow(deck)
+                cueRow(deck)
+                loopRow(deck)
+                jumpRow(deck)
                 if mix.prefs.ui.showGridTools { gridRow(deck) }
             }
             TempoColumn(d: d)
@@ -109,12 +111,13 @@ struct DeckView: View {
         }
     }
 
-    private func cueLoopRow(_ deck: DeckState) -> some View {
+    /// Hotcues über die ganze Breite, rechts manueller Loop (IN / OUT / RE)
+    private func cueRow(_ deck: DeckState) -> some View {
         HStack(spacing: 3) {
             ForEach(0..<8, id: \.self) { n in
                 let c = deck.hotcues[n]
                 DeckButton(title: "\(n + 1)", active: c != nil,
-                           color: c.map { Theme.cueColor($0, deck: deck, prefs: mix.prefs) } ?? .gray, width: 14) {
+                           color: c.map { Theme.cueColor($0, deck: deck, prefs: mix.prefs) } ?? .gray, fill: true) {
                     mix.hotcue(d, n, delete: NSEvent.modifierFlags.contains(.option))
                 }
                 .help("Klick: springen/setzen · ⌥-Klick: löschen")
@@ -122,22 +125,39 @@ struct DeckView: View {
             Divider().frame(height: 14)
             DeckButton(title: "IN", active: deck.loopIn != nil && !deck.loopActive, color: Theme.state) { mix.setLoopIn(d) }
             DeckButton(title: "OUT") { mix.setLoopOut(d) }
-            DeckButton(title: "◂") { mix.changeLoopSize(d, by: -1) }
-            DeckButton(title: BeatSizes.label(deck.loopSize), active: deck.loopActive, color: Theme.state, width: 26) { mix.autoLoop(d) }
-            DeckButton(title: "▸") { mix.changeLoopSize(d, by: 1) }
             DeckButton(title: "RE") { mix.reloop(d) }
-            Divider().frame(height: 14)
-            DeckButton(title: "◀◀") { mix.beatjump(d, beats: -deck.jumpSize) }
-            Menu(BeatSizes.label(deck.jumpSize)) {
-                ForEach(BeatSizes.jump, id: \.self) { s in Button("Beatjump \(BeatSizes.label(s))") { mix.setJumpSize(d, s) } }
-            }
-            .menuStyle(.borderlessButton)
-            .font(Theme.label(10, .bold))
-            .fixedSize()
-            DeckButton(title: "▶▶") { mix.beatjump(d, beats: deck.jumpSize) }
-            Spacer(minLength: 0)
         }
     }
+
+    /// Loopgrößen über die ganze Breite: gewählte Größe rot (auch vom Encoder), LOOP = an/aus.
+    /// Klick auf eine Größe wählt sie; läuft ein Loop, wird er auf die neue Größe gestellt.
+    private func loopRow(_ deck: DeckState) -> some View {
+        HStack(spacing: 3) {
+            DeckButton(title: "LOOP", active: deck.loopActive, color: Theme.state, width: 30) { mix.autoLoop(d) }
+            ForEach(BeatSizes.loop, id: \.self) { s in
+                let selected = Self.same(deck.loopSize, s)
+                DeckButton(title: BeatSizes.label(s), active: selected, color: Theme.state, fill: true) {
+                    if deck.loopActive { if !selected { mix.autoLoop(d, size: s) } }
+                    else { mix.core.setLoopSize(d, s); mix.pull() }
+                }
+            }
+        }
+    }
+
+    /// Beatjump-Größen über die ganze Breite: gewählte Größe rot (auch über Flux + Pads / Encoder), ◀◀ ▶▶ springen
+    private func jumpRow(_ deck: DeckState) -> some View {
+        HStack(spacing: 3) {
+            DeckButton(title: "◀◀", width: 30) { mix.beatjump(d, beats: -deck.jumpSize) }
+            ForEach(BeatSizes.jump, id: \.self) { s in
+                DeckButton(title: BeatSizes.label(s), active: Self.same(deck.jumpSize, s), color: Theme.state, fill: true) {
+                    mix.setJumpSize(d, s)
+                }
+            }
+            DeckButton(title: "▶▶", width: 30) { mix.beatjump(d, beats: deck.jumpSize) }
+        }
+    }
+
+    private static func same(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-9 }
 }
 
 /// Laufzeit / Restzeit mit Track-End-Warnung
@@ -270,5 +290,61 @@ struct TempoColumn: View {
             DeckButton(title: "0", width: 10) { mix.setTempo(d, 0) }.help("Tempo zurücksetzen")
         }
         .frame(width: 34)
+    }
+}
+
+/// Nur Selbsttest: MIX741_SHOT=deck:<pfad.png> rendert Deck A (Track geladen, Loop 8, Beatjump 4) ohne Fenster auf dem
+/// Bildschirm als PNG in zwei Größen (<pfad>-640x300.png Loop aus, <pfad>-480x260.png Loop an) und beendet sich.
+@MainActor
+enum DeckShot {
+    static func runIfRequested() {
+        guard Session.isSelfTest, let spec = ProcessInfo.processInfo.environment["MIX741_SHOT"], spec.hasPrefix("deck:") else { return }
+        var base = String(spec.dropFirst(5))
+        if base.hasSuffix(".png") { base.removeLast(4) }
+        NSApplication.shared.setActivationPolicy(.prohibited)   // kein Dock-Symbol, kein Fokuswechsel
+        let mix = MixModel()
+        mix.engine.stop()   // kein Ton, Gerät sofort wieder frei
+        var t = Track(key: "shot", path: "/dev/null")
+        t.title = "Deck Size Shot"; t.artist = "MINOS-741"; t.bpm = 128; t.musicalKey = 9; t.duration = 300
+        let cues = [Cue(name: "", kind: .cue, startMs: 1000, lengthMs: 0, hotcue: 0),
+                    Cue(name: "", kind: .cue, startMs: 30000, lengthMs: 0, hotcue: 1),
+                    Cue(name: "", kind: .loop, startMs: 60000, lengthMs: 3750, hotcue: 3)]
+        var paths: [String] = []
+        for (w, h, loop) in [(640.0, 300.0, false), (480.0, 260.0, true)] {
+            mix.updateDeck(0) {
+                $0.track = t; $0.duration = 300; $0.grid = BeatGrid(anchor: 1, bpm: 128)
+                $0.hotcues = Dictionary(uniqueKeysWithValues: cues.map { ($0.hotcue, $0) })
+                $0.loopSize = 8; $0.jumpSize = 4; $0.loopActive = loop
+            }
+            let path = "\(base)-\(Int(w))x\(Int(h)).png"
+            render(mix: mix, size: CGSize(width: w, height: h), to: path)
+            paths.append(path)
+        }
+        print("[shot] " + paths.joined(separator: " "))
+        fflush(stdout)
+        exit(0)
+    }
+
+    private static func render(mix: MixModel, size: CGSize, to path: String) {
+        let root = DeckView(d: 0)
+            .environment(mix)
+            .environment(WaveformCache())
+            .frame(width: size.width, height: size.height)
+            .background(Theme.background)
+            .foregroundStyle(Theme.bone)
+            .tint(Theme.state)
+            .preferredColorScheme(.dark)
+        let host = NSHostingView(rootView: root)
+        host.frame = CGRect(origin: .zero, size: size)
+        // Fenster nur als Zeichenfläche, wird nie angezeigt
+        let win = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        win.appearance = NSAppearance(named: .darkAqua)
+        win.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        host.layoutSubtreeIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 }

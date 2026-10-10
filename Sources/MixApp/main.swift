@@ -323,6 +323,7 @@ case "de", "en": UserDefaults.standard.set([AppPrefs.load().ui.language], forKey
 default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
 }
 Theme.registerFonts()
+MainActor.assumeIsolated { DeckShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=deck:…, kehrt dann nicht zurück
 
 // Selbsttest, nur Bild: MIX741_SHOT=wave:<png> rendert die Wellenform-Ebene offscreen und beendet – kein Fenster
 if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("wave:") {
