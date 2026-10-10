@@ -225,6 +225,7 @@ struct MixApp: App {
                 .environment(store)
                 .environment(controllerStatus)
         }
+        .windowResizability(.contentMinSize)
         .commands {
             // alle Kürzel aus den Einstellungen (⌘, -> Tastatur); ausgelöst werden sie vom KeyMonitor
             let keys = mix.prefs.keys
@@ -354,9 +355,10 @@ if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SH
 if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("browser:") {
     MainActor.assumeIsolated { BrowserShot.run(shot) }
 }
+MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
 
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.
 NSApplication.shared.setActivationPolicy(.regular)
-NSApplication.shared.activate(ignoringOtherApps: true)
+if ProcessInfo.processInfo.environment["MIX741_SHOT"] == nil { NSApplication.shared.activate(ignoringOtherApps: true) }
 setAppIcon()
 MixApp.main()

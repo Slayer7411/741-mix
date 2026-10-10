@@ -367,6 +367,7 @@ MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 ```
 
 waveform still without a window: `MIX741_SHOT=wave:/tmp/wave.png` in addition -> one deck with loop and hotcues as png, then exit.
+settings as png without a window: add `MIX741_SHOT=settings:<folder>` -> one image per section, then quit.
 
 bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) with version, macos, device, mode, controller.
 
