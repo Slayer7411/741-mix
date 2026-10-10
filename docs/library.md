@@ -48,6 +48,12 @@ syntax: [traktor files](traktor-files.md).
 * archived and cleared on every start
 * archive = traktor playlist nml (`TYPE="LIST"`) in `~/Library/Application Support/MINOS-741/Preparation`
 
+## ◆ RUNNING TRACKS · PLAYED
+
+* RUNNING TRACKS = the tracks loaded on the decks
+* column ▶: ✓ = played (same rule as history), stays until right click TRACK COLLECTION -> Reset Played State
+* the thin stripe in front = track color from traktor
+
 ## ◆ HISTORY
 
 * a track counts as played after 30s audible (setting: ⌘, -> decks)
