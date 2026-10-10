@@ -10,22 +10,25 @@ struct DeckView: View {
     var body: some View {
         let deck = mix.deck(d)
         let focused = mix.focusedDeck == d
+        let rows = mix.prefs.ui.deckRows
         HStack(alignment: .top, spacing: 6) {
             VStack(alignment: .leading, spacing: 4) {
                 header(deck)
                 WaveformView(d: d)
                     .overlay { DeckIdleView(d: d) }   // leer: Lobster, nach Ladefehler 5 s Totenkopf
                     .frame(minHeight: mix.prefs.ui.waveformHeight, maxHeight: .infinity)
-                PhaseBar(d: d).frame(height: 8)
-                OverviewView(d: d)
-                    .frame(height: 18)
-                transportRow(deck)
-                cueRow(deck)
-                loopRow(deck)
-                jumpRow(deck)
+                if rows.phaseBar { PhaseBar(d: d).frame(height: 8) }
+                if rows.overview {
+                    OverviewView(d: d)
+                        .frame(height: 18)
+                }
+                if rows.transport { transportRow(deck) }
+                if rows.hotcues { cueRow(deck) }
+                if rows.loop { loopRow(deck) }
+                if rows.jump { jumpRow(deck) }
                 if mix.prefs.ui.showGridTools { gridRow(deck) }
             }
-            TempoColumn(d: d)
+            if rows.tempo { TempoColumn(d: d) }
         }
         .padding(6)
         .frame(maxHeight: .infinity)
@@ -61,17 +64,19 @@ struct DeckView: View {
                     }
                 }
             }
-            TimeReadout(d: d)
-            VStack(alignment: .trailing, spacing: 0) {
-                Text(String(format: "%.2f", deck.bpm)).font(Theme.mono(15, .bold))
-                Text(String(format: "%+.2f%%", deck.tempoPct)).font(Theme.mono(10)).foregroundStyle(.secondary)
+            if mix.prefs.ui.deckRows.info {
+                TimeReadout(d: d)
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(String(format: "%.2f", deck.bpm)).font(Theme.mono(15, .bold))
+                    Text(String(format: "%+.2f%%", deck.tempoPct)).font(Theme.mono(10)).foregroundStyle(.secondary)
+                }
+                CodeReadout(d: d)
+                VStack(alignment: .trailing, spacing: 0) {
+                    KeyReadout(d: d)
+                    PhaseMeter(d: d).frame(width: 44, height: 6)
+                }
+                .frame(minWidth: 46)
             }
-            CodeReadout(d: d)
-            VStack(alignment: .trailing, spacing: 0) {
-                KeyReadout(d: d)
-                PhaseMeter(d: d).frame(width: 44, height: 6)
-            }
-            .frame(minWidth: 46)
         }
     }
 

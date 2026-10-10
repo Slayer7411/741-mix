@@ -269,6 +269,16 @@ struct MixApp: App {
                 ForEach([ShortcutID.hotcue1, .hotcue2, .hotcue3, .hotcue4, .hotcue5, .hotcue6, .hotcue7, .hotcue8]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
+                Divider()
+                Menu("Zeilen") {
+                    ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
+                        Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui.deckRows[keyPath: row.0] },
+                                                                      set: { mix.prefs.ui.deckRows[keyPath: row.0] = $0 }))
+                    }
+                    Toggle("Grid-Werkzeuge", isOn: Binding(get: { mix.prefs.ui.showGridTools }, set: { mix.prefs.ui.showGridTools = $0 }))
+                    Divider()
+                    Button("Alle Zeilen") { mix.prefs.ui.deckRows = DeckRows(); mix.prefs.ui.showGridTools = true }
+                }
             }
             CommandMenu("Browser") {
                 ForEach([ShortcutID.resetPlayed, .loadSelected, .previewSelected, .reloadCollection]) { a in
