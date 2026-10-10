@@ -10,13 +10,13 @@ let package = Package(
     ],
     targets: [
         .target(name: "MixCore"),
-        // Echtzeit-Audiokern (C++, plattformneutral) + CoreAudio-Backend; Signalsmith Stretch (MIT) für Keylock
+        // Echtzeit-Audiokern (C++, plattformneutral) + CoreAudio-Backend; Time-Stretch-Bibliothek (MIT) für Keylock
         .target(name: "MixDSP",
                 exclude: ["vendor/signalsmith-stretch/LICENSE.txt", "vendor/signalsmith-linear/LICENSE.txt", "vendor/VERSIONS.txt"],
                 cxxSettings: [.headerSearchPath("vendor"), .define("SIGNALSMITH_USE_ACCELERATE"),
                               .unsafeFlags(["-O3"])],
                 linkerSettings: [.linkedFramework("Accelerate"), .linkedFramework("AudioToolbox")]),
-        // Ableton Link 3.1.5 (GPL-2.0-or-later) über die C-Schnittstelle abl_link
+        // Link 3.1.5 (Netzwerk-Tempo-Sync, GPL-2.0-or-later) über die C-Schnittstelle abl_link
         .target(name: "LinkKit",
                 exclude: ["LICENSE-Link.md", "GNU-GPL-v2.0.md", "VERSION.txt", "asio/LICENSE_1_0.txt", "link", "asio"],
                 sources: ["abl_link.cpp"],

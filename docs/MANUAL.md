@@ -57,17 +57,17 @@ settings, session and history survive updates.
 
 ## ◆ 02 · FIRST START
 
-1. close traktor (the x1 can only talk to one app)
-2. start MINOS-741 -> it loads `~/Native Instruments/Traktor 3.11.2/collection.nml`
+1. close other dj software (the controller can only talk to one app)
+2. start MINOS-741 -> it loads the newest `collection.nml` from your library folder
    other collection -> ⌘O
 3. ⌘, -> AUDIO -> pick the output device and the mode
    * INTERNAL -> mixer in the app, master on one pair
    * EXTERNAL -> every deck on its own usb pair into your desk
-4. ⌘, -> CONTROLLER -> check which x1 drives which decks, BLINK shows the unit
-5. double click a track = load into the focused deck (⌘1-4), right click -> load into deck A-D, or LOAD on the x1
+4. ⌘, -> CONTROLLER -> check which controller drives which decks, BLINK shows the unit
+5. double click a track = load into the focused deck (⌘1-4), right click -> load into deck A-D, or LOAD on the controller
 
-nothing is analyzed. bpm, key, grid, cues and loudness come from the traktor collection.
-tracks without a traktor analysis play, but have no grid -> no sync.
+nothing is analyzed. bpm, key, grid, cues and loudness come from the collection.
+tracks without an analysis in the collection play, but have no grid -> no sync.
 
 ## ◆ 03 · SCREEN
 
@@ -140,16 +140,16 @@ A  title                 FX1 FX2    -1:10  130.00   11m   ±8 ▾
 
 ### load
 
-* double click = focused deck, right click -> load into deck A-D, x1 LOAD = selected track of its own pane
+* double click = focused deck, right click -> load into deck A-D, controller LOAD = selected track of its own pane
 * jumps to load cue / grid, track start or hotcue 1 (⌘, -> DECKS)
 * first load: keylock on (setting)
 * track end warning: remaining time blinks red x seconds before the end (0 = off)
 
 ## ◆ 05 · WAVEFORM + GRID
 
-* drawn on the gpu as vectors -> sharp at any zoom
+* rendered as bitmap tiles in screen resolution (background thread) -> sharp at any zoom, no load on the render server
 * height = real file level, full height = 0 dBFS, no normalizing -> loud masters look loud
-* styles: 3-band layers / spectrum / mono, palettes: 741 bone / orange / blue / traktor
+* styles: 3-band layers / spectrum / mono, palettes: 741 bone / orange / blue / classic
 * drag the waveform = scrub, click the overview = jump
 * played part can be dimmed
 
@@ -191,10 +191,10 @@ sync modes (⌘, -> DECKS):
 
 phase lock runs on its own thread: tempo every tick, phase via a small rate nudge, hard jump only if the error stays > 0.25 beats.
 
-ableton link:
+link (network tempo sync):
 
 * LINK -> join the link session, the number = peers
-* minos leads tempo and bar, ableton follows
+* minos leads tempo and bar, the other apps follow
 * link beat is time stamped in the audio callback -> no drift
 * offset setting for latency between the two apps
 
@@ -204,7 +204,7 @@ bar counter (top right): runs from the first play, 4 / 8 / 16 bars, double click
 
 ### internal mode
 
-per channel (order C · A · B · D like traktor):
+per channel (order C · A · B · D):
 
 * gain + auto-gain (loudness from the collection)
 * eq hi / mid / lo, knob fully left = kill (setting)
@@ -215,9 +215,9 @@ per channel (order C · A · B · D like traktor):
 
 ### external mode
 
-* every deck on its own pair, default A 1/2 · B 3/4 · C 5/6 · D 7/8 (xone:96)
+* every deck on its own pair, default A 1/2 · B 3/4 · C 5/6 · D 7/8
 * gain / eq / fader happen on your desk
-* own headroom and auto-gain setting, main volume off by default (like traktor)
+* own headroom and auto-gain setting, main volume off by default
 * metronome on an own pair
 
 routing is in ⌘, -> AUDIO. the device sample rate is never changed by minos.
@@ -234,18 +234,18 @@ the status bar shows device, mode and routing.
 * deck assign: FX1 … FX4 in the deck header or the mixer
 * default: FX1 -> A / C, FX2 -> B / D
 
-effects so far: filter, delay, reverb. more -> [feature parity](feature-parity.md).
+effects so far: filter, delay, reverb. more -> [roadmap](roadmap.md).
 
 ## ◆ 09 · BROWSER
 
 * one or two panes, side by side or stacked
 * each pane: own tree, search, sort, role chips, tags
-* tree: TRACK COLLECTION, PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, then all traktor playlists + smartlists
-* all traktor columns: move by drag, hide via right click on the header, saved
-* `√` = analyzed in traktor, missing files show the artist in red
+* tree: TRACK COLLECTION, PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, then all playlists + smartlists of the collection
+* all library columns: move by drag, hide via right click on the header, saved
+* `√` = analyzed in the collection, missing files show the artist in red
 * search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match, case and accents ignored
 * right click a track -> load into deck A-D, add to / remove from preparation, preview, show in finder
-* the left x1 drives the left pane, the right x1 the right one
+* the left controller drives the left pane, the right controller the right one
 * tree can hide while decks are visible (setting)
 
 role chips `BASIS · SYNTH · DRUMS · VOLL · ATMO` -> filter on the role at the end of comment 2 (`» BASIS`). several chips = any of them.
@@ -265,14 +265,14 @@ K tief kurz · B sub leicht roll · H off » BASIS
 
 smartlists:
 
-* all traktor smartlists work as they are
+* all smartlists of the collection work as they are
 * own ones under SMARTLISTS 741 -> + new smartlist, same query syntax, live count
 
 ```
 $COMMENT2 % "BASIS" & $BPM >= 128 & $IMPORTDATE >= MONTHS_AGO(6)
 ```
 
-full syntax -> [traktor files](traktor-files.md#-smartlist-queries).
+full syntax -> [nml files](nml-files.md#-smartlist-queries).
 
 ## ◆ 11 · HISTORY + PREPARATION
 
@@ -280,16 +280,17 @@ history:
 
 * a track counts as played after 30 s audible (setting)
 * internal mode: only with fader / crossfader open. external mode: always
-* saved as traktor history nml, optional copy into traktors history folder
-* HISTORY = this session, HISTORY ARCHIV = own + all traktor sessions
+* saved as nml under `history_2026-10-10-01.nml` (day + session number), optional copy into the collection's history folder (time-stamped name)
+* quitting asks first, then session and history are written
+* HISTORY = this session, HISTORY ARCHIV = own + all sessions in that folder
 
 preparation:
 
 * right click -> add to preparation
-* on every start: archived as traktor playlist nml, then cleared
+* on every start: archived as playlist nml, then cleared
 * PREPARATION ARCHIV -> old lists
 
-export: right click collection, preparation, history or a playlist in the tree -> traktor nml, m3u or folder with the audio files.
+export: right click collection, preparation, history or a playlist in the tree -> nml, m3u or folder with the audio files.
 
 ## ◆ 12 · KEYS
 
@@ -306,13 +307,13 @@ export: right click collection, preparation, history or a playlist in the tree -
 | ⌘O | open collection |
 | ⌘, | settings |
 
-kontrol x1 mk2 mapping -> [controllers-x1-mk2.md](controllers-x1-mk2.md).
+controller mapping -> [controllers.md](controllers.md).
 
 ## ◆ 13 · FILES + FOLDERS
 
 | what | where |
 |---|---|
-| collection (read only) | `~/Native Instruments/Traktor 3.11.2/collection.nml` |
+| collection (read only) | newest `collection.nml` in the library folder |
 | settings | user defaults, key `prefs.v1` |
 | session (decks, fx, clock, browser) | `~/Library/Application Support/MINOS-741/session.json` |
 | hotcue + grid edits | `~/Library/Application Support/MINOS-741/edits.json` |
@@ -325,39 +326,39 @@ backup = copy the `MINOS-741` folder.
 
 | problem | fix |
 |---|---|
-| x1 does nothing | close traktor, replug, ⌘, -> CONTROLLER -> BLINK |
+| controller does nothing | close other dj software, replug, ⌘, -> CONTROLLER -> BLINK |
 | no sound | ⌘, -> AUDIO: device + mode + pair, check the status bar |
 | sound on the wrong desk channel | external mode -> deck → channel pairs |
-| sync won't engage | track has no grid -> analyze it in traktor once |
+| sync won't engage | track has no grid -> analyze it in your library software once |
 | link peers but no tempo | LINK on in both apps, same network, firewall |
 | crackles | other apps on the same device, sample rate set in audio midi setup |
-| artist in red | file missing or moved -> fix the path in traktor, reload ↻ |
+| artist in red | file missing or moved -> fix the path in the collection, reload ↻ |
 | ui hangs | audio + sync keep running. report it with the version from the title bar |
 
 self test (silent, ends by itself):
 
 ```
-MIX741_SELFTEST=1 MIX741_NOXONE=1 swift run minos741
+MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 ```
 
 bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) with version, macos, device, mode, controller.
 
 ## ◆ 15 · FAQ
 
-**does it change my traktor collection?**
+**does it change my collection?**
 no. `collection.nml` is only read. edits go to own files.
 
-**do i need traktor?**
+**do i need another dj software?**
 for analysis yes (bpm, key, grid). playing and mixing no.
 
 **windows / ipad?**
 no. macos only, native coreaudio.
 
 **other controllers?**
-only the x1 mk2 so far. midi learn is planned -> [feature parity](feature-parity.md).
+only the 2-deck hid controller so far. midi learn is planned -> [roadmap](roadmap.md).
 
 **why gpl?**
-ableton link is GPL-2.0-or-later -> the whole app is.
+the link library is GPL-2.0-or-later -> the whole app is.
 
 **can i change it for my own setup?**
 fork it. ideas back -> [discussions](https://github.com/Slayer7411/MINOS-741/discussions).

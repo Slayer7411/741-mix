@@ -35,6 +35,13 @@ struct Session: Codable {
               let d = try? JSONEncoder().encode(Session(mix: mix, browser: browser)), d != lastSaved else { return }
         if lastSaved == nil, (try? Data(contentsOf: url)) == d { lastSaved = d; return }
         lastSaved = d
+        DispatchQueue.global(qos: .utility).async { try? d.write(to: url, options: .atomic) }
+    }
+
+    /// beim Beenden: sofort und synchron schreiben
+    @MainActor static func saveNow(mix: MixModel, browser: BrowserState) {
+        guard !isSelfTest, let d = try? JSONEncoder().encode(Session(mix: mix, browser: browser)) else { return }
+        lastSaved = d
         try? d.write(to: url, options: .atomic)
     }
 

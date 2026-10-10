@@ -3,7 +3,7 @@
 ```
  audio thread (coreaudio)          c++ core MixDSP, atomics only, no locks, no allocations
         ▲
- control thread (200 hz)           deck logic, sync, phase lock, master clock, x1 hid, history
+ control thread (200 hz)           deck logic, sync, phase lock, master clock, controller hid, history
         ▲
  ui / main thread (30 hz mirror)   swiftui, browser, settings
 ```
@@ -15,14 +15,14 @@ self test: main thread blocked for 3s -> deck a plays on (3.08 s), deck b follow
 * `MixCore` -> swift, no audio: track model, nml parser, smartlist queries, beatgrid, history, track edits
 * `MixDSP` -> c++17 realtime core with a plain c api (`MixDSP.h`) and the coreaudio render callback
 * `MixEngine` -> swift: device output, routing, decoding, `MixController` (all commands, control thread)
-* `MixApp` -> swiftui: decks, mixer, fx, master clock, browser, settings, x1 driver, history store
+* `MixApp` -> swiftui: decks, mixer, fx, master clock, browser, settings, controller driver, history store
 
 ## ◆ AUDIO CORE
 
 one auhal output on the device with all its channels, render callback in c++.
 
 ```
-track (float, in memory) -> hermite varispeed | signalsmith stretch (keylock / key shift)
+track (float, in memory) -> hermite varispeed | time-stretch (keylock / key shift)
   -> flux -> gain -> 3-band eq -> channel filter -> fx 1 -> fx 2 -> fader -> deck pair
 master clock -> metronome click -> own pair
 ```

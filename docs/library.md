@@ -4,7 +4,7 @@
 
 * one, two side by side or two stacked browser panes (toolbar)
 * every pane has its own tree selection, search, sort, role filter and tags
-* left x1 drives the left pane, right x1 the right one
+* left controller drives the left pane, right controller the right one
 * space / browse push = big browser
 * split line between decks and browser can be dragged
 
@@ -32,34 +32,34 @@ K tief kurz · B sub leicht roll · H off » BASIS
 
 ## ◆ SMARTLISTS
 
-* all traktor smartlists from the collection work as they are
+* all smartlists from the collection work as they are
 * own smartlists under "smartlists 741" in the tree -> "+ neue smartlist"
-* same syntax as traktor, live track count
+* same syntax as the collection's smartlists, live track count
 
 ```
 $COMMENT2 % "BASIS" & $BPM >= 128 & $IMPORTDATE >= MONTHS_AGO(6)
 ```
 
-syntax: [traktor files](traktor-files.md).
+syntax: [nml files](nml-files.md).
 
 ## ◆ PREPARATION
 
 * right click a track -> "an preparation anhängen"
 * archived and cleared on every start
-* archive = traktor playlist nml (`TYPE="LIST"`) in `~/Library/Application Support/MINOS-741/Preparation`
+* archive = playlist nml (`TYPE="LIST"`) in `~/Library/Application Support/MINOS-741/Preparation`
 
 ## ◆ RUNNING TRACKS · PLAYED
 
 * RUNNING TRACKS = the tracks loaded on the decks
 * column ▶: ✓ = played (same rule as history), stays until right click TRACK COLLECTION -> Reset Played State
-* the thin stripe in front = track color from traktor
+* the thin stripe in front = track color from the collection
 
 ## ◆ HISTORY
 
 * a track counts as played after 30s audible (setting: ⌘, -> decks)
 * external mixer mode: always audible, the desk decides
 * internal mode: only with fader / crossfader open
-* written as traktor history nml (`history_2026y10m10d_21h05m07s.nml`) with deck, start time and play duration
-* saved in `~/Library/Application Support/MINOS-741/History`, optional copy into traktors history folder
-* "history" = current session, "history archiv" = own sessions plus all traktor sessions
+* written as history nml (`history_2026-10-10-01.nml`, day + session number) with deck, start time and play duration; quitting asks first and writes everything
+* saved in `~/Library/Application Support/MINOS-741/History`, optional copy into the collection's history folder
+* "history" = current session, "history archiv" = own sessions plus all sessions found in that folder
 

@@ -6,7 +6,7 @@ import MixEngine
 
 /// Anzeige-Seite für die Einstellungen (Hauptthread)
 @MainActor @Observable
-final class X1Status {
+final class ControllerStatus {
     struct Info: Identifiable, Hashable {
         let id: String          // Seriennummer
         let location: Int
@@ -19,7 +19,7 @@ final class X1Status {
     }
     var devices: [Info] = []
     var lastEvent = ""
-    @ObservationIgnored weak var manager: X1Manager?
+    @ObservationIgnored weak var manager: ControllerManager?
 
     func assign(_ serial: String, left: Int, right: Int) {
         guard let i = devices.firstIndex(where: { $0.id == serial }) else { return }
@@ -46,20 +46,19 @@ final class X1Status {
     func identify(_ serial: String) { manager?.identify(serial) }
 }
 
-/// Traktor Kontrol X1 MK2 im nativen HID-Modus (VID 0x17cc, PID 0x1220).
+/// DJ-Controller (2 Deck-Seiten, 2 FX-Sektionen, Browse-Encoder, Touchstrip) im nativen HID-Modus (VID 0x17cc, PID 0x1220).
 /// Läuft komplett auf der Steuer-Queue des Kerns – unabhängig von der Oberfläche.
 /// Protokoll: Input-Report 0x01 (Tasten/Regler), Output 0x80 (Tasten-LEDs, RGB-Pads), 0x81 (7-Segment, Touchstrip).
-/// Byte-Positionen nach dem Mixxx-HID-Mapping von infiniteloop; Belegung nach NI-Standard
-/// plus Christians eigene Traktor-Zuordnungen (aus Traktor Settings.tsi), alles in den Einstellungen änderbar.
-final class X1Manager: @unchecked Sendable {
+/// Byte-Positionen aus einem öffentlichen HID-Mapping; Standardbelegung plus Christians eigene Zuordnungen, alles in den Einstellungen änderbar.
+final class ControllerManager: @unchecked Sendable {
     let core: MixController
-    let status: X1Status
+    let status: ControllerStatus
     private var manager: IOHIDManager?
-    fileprivate var units: [String: X1Unit] = [:]
+    fileprivate var units: [String: ControllerUnit] = [:]
     /// Gruppen-Modus: welche Slots vor dem Ausschalten per Mode-Taste an waren (je FX-Unit)
     fileprivate var groupMemory: [Int: [Bool]] = [:]
     private let lock = NSLock()
-    private var _prefs = X1Prefs()
+    private var _prefs = ControllerPrefs()
     /// 2 oder 4 FX-Units (aus den Einstellungen)
     var fxUnits = 2
     // gebündelte Browse-Schritte (nur auf der Steuer-Queue anfassen)
@@ -72,15 +71,15 @@ final class X1Manager: @unchecked Sendable {
     var onPreview: (@MainActor (_ pane: Int) -> Void)?
     var onToggleBrowser: (@MainActor () -> Void)?
 
-    /// Standard: erstes X1 (nach USB-Position) steuert A/C, das zweite B/D – pro Gerät in den Einstellungen änderbar.
+    /// Standard: erster Controller (nach USB-Position) steuert A/C, der zweite B/D – pro Gerät in den Einstellungen änderbar.
     static let defaultAssignments: [(Int, Int)] = [(0, 2), (1, 3), (0, 1), (2, 3)]
 
-    var prefs: X1Prefs {
+    var prefs: ControllerPrefs {
         get { lock.lock(); defer { lock.unlock() }; return _prefs }
         set { lock.lock(); _prefs = newValue; lock.unlock() }
     }
 
-    @MainActor init(core: MixController, status: X1Status) {
+    @MainActor init(core: MixController, status: ControllerStatus) {
         self.core = core
         self.status = status
         status.manager = self
@@ -91,14 +90,14 @@ final class X1Manager: @unchecked Sendable {
         IOHIDManagerSetDeviceMatching(m, [kIOHIDVendorIDKey: 0x17cc, kIOHIDProductIDKey: 0x1220] as CFDictionary)
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         IOHIDManagerRegisterDeviceMatchingCallback(m, { ctx, _, _, device in
-            Unmanaged<X1Manager>.fromOpaque(ctx!).takeUnretainedValue().attach(device)
+            Unmanaged<ControllerManager>.fromOpaque(ctx!).takeUnretainedValue().attach(device)
         }, ctx)
         IOHIDManagerRegisterDeviceRemovalCallback(m, { ctx, _, _, device in
-            Unmanaged<X1Manager>.fromOpaque(ctx!).takeUnretainedValue().detach(device)
+            Unmanaged<ControllerManager>.fromOpaque(ctx!).takeUnretainedValue().detach(device)
         }, ctx)
         // Reports zentral über den Manager (pro Gerät ist das nach Activate nicht erlaubt)
         IOHIDManagerRegisterInputReportCallback(m, { ctx, _, sender, _, _, report, len in
-            let me = Unmanaged<X1Manager>.fromOpaque(ctx!).takeUnretainedValue()
+            let me = Unmanaged<ControllerManager>.fromOpaque(ctx!).takeUnretainedValue()
             guard let sender else { return }
             let device = Unmanaged<IOHIDDevice>.fromOpaque(sender).takeUnretainedValue()
             me.units.values.first { $0.device == device }?.parse(Array(UnsafeBufferPointer(start: report, count: len)))
@@ -107,7 +106,7 @@ final class X1Manager: @unchecked Sendable {
         IOHIDManagerSetDispatchQueue(m, core.controlQueue)
         // ohne Open kommen keine Input-Reports an
         let st = IOHIDManagerOpen(m, IOOptionBits(kIOHIDOptionsTypeNone))
-        print("[x1] HID-Manager geöffnet: \(st)")
+        print("[hid] HID-Manager geöffnet: \(st)")
         IOHIDManagerActivate(m)
         manager = m
         core.addTickHandler { [weak self] c in self?.refreshLEDs(c) }
@@ -120,16 +119,16 @@ final class X1Manager: @unchecked Sendable {
         let saved = UserDefaults.standard.array(forKey: "x1.\(serial)") as? [Int]
         let def = Self.defaultAssignments[min(units.count, Self.defaultAssignments.count - 1)]
         let savedPane = UserDefaults.standard.object(forKey: "x1pane.\(serial)") as? Int
-        var info = X1Status.Info(id: serial, location: loc, left: saved?.first ?? def.0, right: saved?.last ?? def.1,
+        var info = ControllerStatus.Info(id: serial, location: loc, left: saved?.first ?? def.0, right: saved?.last ?? def.1,
                                  pane: savedPane ?? min(units.count, 1))
-        // Standard wie Traktor mit 2 X1: Seite mit A/C steuert FX1 (+FX3), mit B/D FX2 (+FX4)
+        // Standard mit 2 Controllern: Seite mit A/C steuert FX1 (+FX3), mit B/D FX2 (+FX4)
         info.fxUnit = UserDefaults.standard.object(forKey: "x1fx.\(serial)") as? Int
             ?? ([0, 2].contains(info.left) || [0, 2].contains(info.right) ? 10 : 11)
-        units[serial] = X1Unit(device: device, info: info, manager: self)
+        units[serial] = ControllerUnit(device: device, info: info, manager: self)
         DispatchQueue.main.async {
             self.status.devices.append(info)
             self.status.devices.sort { $0.location < $1.location }
-            self.status.lastEvent = "X1 \(serial) verbunden"
+            self.status.lastEvent = "Controller \(serial) verbunden"
         }
     }
 
@@ -138,7 +137,7 @@ final class X1Manager: @unchecked Sendable {
         units[k] = nil
         DispatchQueue.main.async {
             self.status.devices.removeAll { $0.id == k }
-            self.status.lastEvent = "X1 \(k) getrennt"
+            self.status.lastEvent = "Controller \(k) getrennt"
         }
     }
 
@@ -163,10 +162,10 @@ final class X1Manager: @unchecked Sendable {
         for u in units.values { u.sendLEDs(state: s, prefs: p) }
     }
 
-    // MARK: - Ereignisse von einem X1 (Steuer-Queue)
+    // MARK: - Ereignisse von einem Controller (Steuer-Queue)
 
-    /// welche FX-Unit eine Sektion (0 = links, 1 = rechts) dieses X1 steuert
-    func fxUnit(_ unit: X1Unit, section s: Int) -> Int? {
+    /// welche FX-Unit eine Sektion (0 = links, 1 = rechts) dieses Controllers steuert
+    func fxUnit(_ unit: ControllerUnit, section s: Int) -> Int? {
         let n = fxUnits
         let u: Int = switch unit.info.fxUnit {
         case 0: 0
@@ -178,12 +177,12 @@ final class X1Manager: @unchecked Sendable {
         return u < n ? u : nil
     }
 
-    func handle(_ e: X1Unit.Event, unit: X1Unit) {
+    func handle(_ e: ControllerUnit.Event, unit: ControllerUnit) {
         let p = prefs
-        let deck: (X1Unit.Side) -> Int = { $0 == .left ? unit.info.left : unit.info.right }
-        let text = "\(unit.info.id): " + String(describing: e).replacingOccurrences(of: "MixApp.X1Unit.Side.", with: "")
+        let deck: (ControllerUnit.Side) -> Int = { $0 == .left ? unit.info.left : unit.info.right }
+        let text = "\(unit.info.id): " + String(describing: e).replacingOccurrences(of: "MixApp.ControllerUnit.Side.", with: "")
         DispatchQueue.main.async { self.status.lastEvent = text }
-        print("[x1] \(text)")
+        print("[hid] \(text)")
         fflush(stdout)
         switch e {
         case let .play(s, down):
@@ -207,7 +206,7 @@ final class X1Manager: @unchecked Sendable {
                 unit.syncHeld[s] = false
             }
         case let .flux(s, down):
-            // Antippen = Flux-Modus; gehalten = Ebene für Hotcue 3/4 (Beatjump)
+            // Antippen = Flux-Modus; gehalten = Pad-Ebene (Hotcues 5–8 oder Beatjump)
             if down {
                 unit.fluxHeld[s] = true
                 unit.fluxComboUsed[s] = false
@@ -221,9 +220,11 @@ final class X1Manager: @unchecked Sendable {
             if unit.syncHeld[s] == true, n == 2 || n == 3 {
                 unit.syncComboUsed[s] = true
                 core.barJump(d, bars: n == 2 ? -1 : 1)
-            } else if unit.fluxHeld[s] == true, n == 2 || n == 3 {
+            } else if unit.fluxHeld[s] == true {
+                // Flux gehalten: Pads = Hotcues 5–8 (oder Beatjump auf Pad 3/4)
                 unit.fluxComboUsed[s] = true
-                core.beatjump(d, beats: (n == 2 ? -1 : 1) * p.fluxBeatjumpBeats)
+                if p.fluxPads == .hotcues { core.hotcue(d, n + 4, delete: unit.shift) }
+                else if n == 2 || n == 3 { core.beatjump(d, beats: (n == 2 ? -1 : 1) * p.fluxBeatjumpBeats) }
             } else {
                 core.hotcue(d, n, delete: unit.shift)
             }
@@ -252,7 +253,7 @@ final class X1Manager: @unchecked Sendable {
                 }
             }
         case let .browsePush(down):
-            // Drücken = Browser groß/klein (wie Traktor), Shift + Drücken = Vorhören
+            // Drücken = Browser groß/klein, Shift + Drücken = Vorhören
             guard down else { return }
             let pane = unit.info.pane
             if unit.shift { DispatchQueue.main.async { self.onPreview?(pane) } }
@@ -307,8 +308,8 @@ final class X1Manager: @unchecked Sendable {
     }
 }
 
-/// Ein einzelnes X1 MK2: dekodiert Reports, merkt Zustände, schreibt LEDs.
-final class X1Unit {
+/// Ein einzelner Controller: dekodiert Reports, merkt Zustände, schreibt LEDs.
+final class ControllerUnit {
     enum Side: Hashable { case left, right }
     enum Event {
         case play(Side, Bool), cue(Side, Bool), sync(Side, Bool), flux(Side, Bool), hotcue(Side, Int, Bool)
@@ -319,8 +320,8 @@ final class X1Unit {
     }
 
     let device: IOHIDDevice
-    var info: X1Status.Info
-    weak var manager: X1Manager?
+    var info: ControllerStatus.Info
+    weak var manager: ControllerManager?
     var shift = false
     var fluxHeld: [Side: Bool] = [:]
     var fluxComboUsed: [Side: Bool] = [:]
@@ -334,7 +335,7 @@ final class X1Unit {
     private var lastLED: [UInt8] = []
     private var lastDisplay: [UInt8] = []
 
-    init(device: IOHIDDevice, info: X1Status.Info, manager: X1Manager) {
+    init(device: IOHIDDevice, info: ControllerStatus.Info, manager: ControllerManager) {
         self.device = device
         self.info = info
         self.manager = manager
@@ -407,7 +408,7 @@ final class X1Unit {
 
     // MARK: - LEDs
 
-    func sendLEDs(state: MixState, prefs: X1Prefs) {
+    func sendLEDs(state: MixState, prefs: ControllerPrefs) {
         let on = UInt8(max(0, min(127, prefs.ledOn))), dim = UInt8(max(0, min(127, prefs.ledOff)))
         var r = [UInt8](repeating: 0, count: 0x34)
         r[0] = 0x80
@@ -431,8 +432,13 @@ final class X1Unit {
                 var c: (UInt8, UInt8, UInt8) = (0, 0, 0)
                 if flash {
                     c = (on, on, on)
+                } else if fluxHeld[s] == true, prefs.fluxPads == .hotcues {
+                    if let cue = deck.hotcues[n + 4] {         // zweite Hotcue-Reihe
+                        let start = deck.track.flatMap { t in t.cues.first { $0.kind == .load }?.startMs ?? t.gridAnchorMs }
+                        c = scale(prefs.color(for: cue, startMs: start, bpm: deck.grid?.bpm ?? deck.track?.bpm ?? 0).rgb)
+                    }
                 } else if fluxHeld[s] == true || syncHeld[s] == true, n >= 2 {
-                    c = (on / 2, on / 2, on / 2)               // Beatjump-Ebene sichtbar machen
+                    c = (on / 2, on / 2, on / 2)               // Sprung-Ebene sichtbar machen
                 } else if let cue = deck.hotcues[n] {
                     let start = deck.track.flatMap { t in t.cues.first { $0.kind == .load }?.startMs ?? t.gridAnchorMs }
                     c = scale(prefs.color(for: cue, startMs: start, bpm: deck.grid?.bpm ?? deck.track?.bpm ?? 0).rgb)
@@ -454,7 +460,7 @@ final class X1Unit {
         sendDisplay(state: state)
     }
 
-    /// 7-Segment-Anzeigen: Loopgröße der jeweiligen Seite (wie Traktor)
+    /// 7-Segment-Anzeigen: Loopgröße der jeweiligen Seite
     private func sendDisplay(state: MixState) {
         var r = [UInt8](repeating: 0, count: 0x5B)
         r[0] = 0x81

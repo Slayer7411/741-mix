@@ -4,22 +4,28 @@ import MixEngine
 
 /// Darstellung der Wellenform
 enum WaveformStyle: String, CaseIterable, Codable, Identifiable {
-    case threeBand = "3-Band (Schichten)", spectrum = "Spektrum (Traktor)", mono = "Einfarbig"
+    case threeBand = "3-Band (Schichten)", spectrum = "Spektrum", mono = "Einfarbig"
     var id: String { rawValue }
 }
 
 enum WaveformPalette: String, CaseIterable, Codable, Identifiable {
-    case bone = "741 Knochen", orange = "Orange", blue = "Blau/Weiß", traktor = "Traktor"
+    case bone = "741 Knochen", orange = "Orange", blue = "Blau/Weiß", classic = "Klassisch"
     var id: String { rawValue }
 }
 
-/// Was die Cue-Taste am X1 macht
-enum X1CueAction: String, CaseIterable, Codable, Identifiable {
-    case fluxReverse = "Flux-Reverse (halten)", cue = "Cue (wie Traktor-Standard)", reverse = "Reverse (halten)"
+/// Was die Cue-Taste am Controller macht
+enum ControllerCueAction: String, CaseIterable, Codable, Identifiable {
+    case fluxReverse = "Flux-Reverse (halten)", cue = "Cue (Standard)", reverse = "Reverse (halten)"
     var id: String { rawValue }
 }
 
-enum X1StripMode: String, CaseIterable, Codable, Identifiable {
+/// Flux gehalten + Pads: zweite Hotcue-Reihe oder Beatjump auf Pad 3/4
+enum ControllerFluxPads: String, CaseIterable, Codable, Identifiable {
+    case hotcues = "Hotcues 5–8", beatjump = "Beatjump (Pads 3/4)"
+    var id: String { rawValue }
+}
+
+enum ControllerStripMode: String, CaseIterable, Codable, Identifiable {
     case bend = "Pitch-Bend (Shift: Suchen)", seek = "Suchen (Shift: Pitch-Bend)"
     var id: String { rawValue }
 }
@@ -39,12 +45,13 @@ enum PadColor: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-struct X1Prefs: Codable, Equatable {
-    var cueAction = X1CueAction.fluxReverse
+struct ControllerPrefs: Codable, Equatable {
+    var cueAction = ControllerCueAction.fluxReverse
     /// Flux antippen schaltet Flux-Modus (gehalten = Beatjump-Ebene für Hotcue 3/4)
     var fluxTapToggles = true
     var fluxBeatjumpBeats = 1.0
-    var stripMode = X1StripMode.bend
+    var fluxPads = ControllerFluxPads.hotcues
+    var stripMode = ControllerStripMode.bend
     var stripSensitivity = 1.0
     var browseFastStep = 10
     var ledOn = 127
@@ -52,7 +59,7 @@ struct X1Prefs: Codable, Equatable {
     // alte Felder (nicht mehr benutzt, bleiben für gespeicherte Einstellungen)
     var cuePadColor = PadColor.red
     var loopPadColor = PadColor.green
-    // Cue-Farben (Bildschirm + X1-Pads)
+    // Cue-Farben (Bildschirm + Controller-Pads)
     var colorStartCue = PadColor.red
     var colorCue = PadColor.white
     var colorLoop = PadColor.green
@@ -92,7 +99,7 @@ struct UIPrefs: Codable, Equatable {
     /// Ordner-Baum ausblenden, solange die Decks zu sehen sind (Browser-Listen breiter)
     var hideTreeWithDecks = false
     var tagHighlight = true
-    /// 2 oder 4 FX-Units (wie Traktor)
+    /// 2 oder 4 FX-Units
     var fxUnitCount = 2
     /// Marker alle 8 / 16 / 32 Takte in der Wellenform (magenta)
     var barMarkers = true
@@ -100,10 +107,10 @@ struct UIPrefs: Codable, Equatable {
     var language = "system"
     /// Tag → Farbe (hex), sonst Standardfarbe aus dem Namen
     var tagColors: [String: String] = [:]
-    /// Grid-Werkzeuge (wie Traktors GRID-Tab) am Deck zeigen
+    /// Grid-Werkzeuge am Deck zeigen
     var showGridTools = true
-    /// History zusätzlich in Traktors History-Ordner schreiben (dort im Archiv sichtbar)
-    var historyToTraktor = false
+    /// History zusätzlich in den History-Ordner der Collection schreiben (dort im Archiv sichtbar)
+    var historyToExternal = false
     /// Trennzeichen für Tags in Kommentar 2 (jedes Zeichen trennt; Standard Leerzeichen)
     var tagSeparators = " "
     /// Beatgrid farbig (Phrasen/Takte/Beats) oder schlicht
@@ -116,7 +123,7 @@ struct UIPrefs: Codable, Equatable {
 struct AppPrefs: Codable, Equatable {
     var engine = EnginePrefs()
     var ui = UIPrefs()
-    var x1 = X1Prefs()
+    var controller = ControllerPrefs()
 
     static let key = "prefs.v1"
 
@@ -124,9 +131,10 @@ struct AppPrefs: Codable, Equatable {
     /// statt dass alles auf Standard zurückfällt.
     static func load() -> AppPrefs {
         guard let data = UserDefaults.standard.data(forKey: key),
-              let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let defData = try? JSONEncoder().encode(AppPrefs()),
               let defaults = try? JSONSerialization.jsonObject(with: defData) as? [String: Any] else { return AppPrefs() }
+        if let old = saved["x1"], saved["controller"] == nil { saved["controller"] = old }   // alter Schlüssel
         func merge(_ base: [String: Any], _ over: [String: Any]) -> [String: Any] {
             var r = base
             for (k, v) in over {
@@ -162,6 +170,7 @@ struct AppPrefs: Codable, Equatable {
     }
 
     func save() {
+        guard !Session.isSelfTest else { return }   // Selbsttest darf Christians Einstellungen nicht überschreiben
         if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.key) }
     }
 }

@@ -212,7 +212,7 @@ struct TagPicker: View {
     }
 }
 
-/// Baum wie in Traktor: Collection, Preparation (+ Archiv), History (+ Archiv), eigene Smartlists, Playlists.
+/// Baum: Collection, Preparation (+ Archiv), History (+ Archiv), eigene Smartlists, Playlists.
 struct SourceTree: View {
     @Environment(LibraryStore.self) private var store
     @Environment(HistoryStore.self) private var history
@@ -239,7 +239,7 @@ struct SourceTree: View {
                 .contextMenu { exportMenu(.historyLive) }
             DisclosureGroup {
                 ForEach(history.archive) { s in
-                    row(s.source == .traktor ? "◷" : "◴", Theme.dateTimeFormat.string(from: s.date)).tag(BrowserSource.history(s))
+                    row(s.source == .external ? "◷" : "◴", s.label ?? Theme.dateTimeFormat.string(from: s.date)).tag(BrowserSource.history(s))
                         .contextMenu { exportMenu(.history(s)) }
                 }
             } label: { row("▸", "HISTORY ARCHIV") }
@@ -281,7 +281,7 @@ struct SourceTree: View {
     /// Kontextmenü „Exportieren“ für eine Quelle
     @ViewBuilder private func exportMenu(_ src: BrowserSource) -> some View {
         Menu("Exportieren") {
-            Button("Traktor-NML …") { export(.nml, src) }
+            Button("NML …") { export(.nml, src) }
             Button("M3U …") { export(.m3u, src) }
             Button("Ordner mit Audiodateien …") { export(.folder, src) }
         }
@@ -314,7 +314,7 @@ struct SourceTree: View {
     }
 }
 
-/// Smartlist anlegen/bearbeiten: Regel im Traktor-Syntax, Live-Anzahl und Fehleranzeige.
+/// Smartlist anlegen/bearbeiten: Regel in Smartlist-Syntax, Live-Anzahl und Fehleranzeige.
 struct SmartlistEditor: View {
     @Environment(LibraryStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -353,7 +353,7 @@ struct SmartlistEditor: View {
     }
 }
 
-/// History-Ansicht wie Traktor: Startzeit, Deck, Dauer.
+/// History-Ansicht: Startzeit, Deck, Dauer.
 struct HistoryTable: View {
     @Environment(LibraryStore.self) private var store
     @Environment(MixModel.self) private var mix

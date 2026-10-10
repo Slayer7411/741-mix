@@ -5,7 +5,7 @@ import MixDSP
 
 /// Die Audio-Engine: Swift-Fassade um den C++-Echtzeitkern (MixDSP) und einen einzigen CoreAudio-Ausgang.
 /// Signalweg je Deck (alles im Kern, ein Render-Callback):
-/// Track → Tempo (Varispeed oder Keylock/Signalsmith) → Gain → EQ → Filter → FX 1 → FX 2 → Fader × Crossfader → Kanalpaar
+/// Track → Tempo (Varispeed oder Keylock/Time-Stretch) → Gain → EQ → Filter → FX 1 → FX 2 → Fader × Crossfader → Kanalpaar
 public final class MixEngine: @unchecked Sendable {
     public static let deckCount = Int(MDSP_DECKS)
     public static let fxUnitCount = Int(MDSP_FX_UNITS)
@@ -148,7 +148,7 @@ public final class MixEngine: @unchecked Sendable {
         func set(_ p: MDFXParam, _ v: Double) { mdsp_set_fx(core, un, p, Float(v)) }
         set(MDFX_DRYWET, fx.dryWet)
         if fx.single {
-            // Single-Modus: ein Effekt, die 3 Regler sind seine Parameter (wie Traktor)
+            // Single-Modus: ein Effekt, die 3 Regler sind seine Parameter
             let on = fx.singleOn, p = fx.params
             let filterOn = { (v: Double) in on && abs(v - 0.5) > 0.02 }
             switch FXUnitState.Effect(rawValue: fx.singleType) ?? .delay {
@@ -162,7 +162,7 @@ public final class MixEngine: @unchecked Sendable {
                 set(MDFX_DELAY_SECONDS, min(2, Self.delayBeats[i] * beat))
                 set(MDFX_REVERB_ON, 0)
             case .reverb:
-                // wie Traktor: SIZE, HP, LP – Filter nur vor dem Hall, Track läuft trocken weiter, D/W = wie viel in den Hall geht
+                // SIZE, HP, LP – Filter nur vor dem Hall, Track läuft trocken weiter, D/W = wie viel in den Hall geht
                 set(MDFX_FILTER_ON, 0); set(MDFX_DELAY_ON, 0)
                 set(MDFX_REVERB_ON, on ? 1 : 0); set(MDFX_REVERB_AMOUNT, 1); set(MDFX_REVERB_SIZE, p[0])
                 set(MDFX_REVERB_HP, p[1]); set(MDFX_REVERB_LP, p[2]); set(MDFX_REVERB_DWSEND, 1)

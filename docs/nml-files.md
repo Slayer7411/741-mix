@@ -1,4 +1,4 @@
-# TRAKTOR FILES
+# NML FILES
 
 ## ◆ COLLECTION.NML (read)
 
@@ -24,7 +24,7 @@ $FILEPATH STARTS_WITH "/Users/me/Music/2023"
 
 ## ◆ HISTORY (read + write)
 
-file name like traktor: `history_2026y10m10d_21h05m07s.nml`
+own file name: `history_2026-10-10-01.nml` (day + session number); copies into the collection's history folder: `history_2026y10m10d_21h05m07s.nml`
 
 * `COLLECTION` -> the full `ENTRY` of every played track, copied 1:1 from the collection (cues, tags, audio id stay intact)
 * `PLAYLISTS` -> one playlist `HISTORY`, `TYPE="PROTOCOL"`, each entry with:
@@ -34,22 +34,8 @@ file name like traktor: `history_2026y10m10d_21h05m07s.nml`
 ```
 
 * `STARTDATE` = year << 16 | month << 8 | day, `STARTTIME` = seconds since midnight, `DECK` 0-3
-* own sessions: `~/Library/Application Support/MINOS-741/History`, optional copy into traktors `History` folder
+* own sessions: `~/Library/Application Support/MINOS-741/History`, optional copy into the collection's `History` folder
 
 ## ◆ PREPARATION (write)
 
-* archive and playlist export = traktor playlist nml (`TYPE="LIST"`)
-
-## ◆ TRAKTOR SETTINGS.TSI (read, tools only)
-
-`DeviceIO.Config.Controller` is a base64 blob with a chunk tree (4 byte tag, 4 byte big endian length):
-
-```
-DIOM -> DIOI, DEVS [count] -> DEVI (name utf-16) -> DDAT -> DDIF, DDIV, DDIC (comment), DDPT (port / serial),
-        DDDC (controls: DDCI in, DDCO out, DCDT names), DDCB (bindings: CMAS -> CMAI -> CMAD, DCBM control names)
-```
-
-* `CMAI` = control id, in / out, command id, then `CMAD` with control type, interaction mode, deck, modifiers, values
-* command ids from cmdr, e.g. 874 flux reverse, 2380 beatjump, 2548 modifier 1, 2549 modifier 2
-* beatjump values: ±7 = ±1 beat, ±8 = ±2, ±9 = ±4 … (cmdr `MoveSize`)
-* `tools/tsi_dump.py` prints the chunk tree, `tools/tsi_x1.py` prints the custom x1 bindings
+* archive and playlist export = playlist nml (`TYPE="LIST"`)

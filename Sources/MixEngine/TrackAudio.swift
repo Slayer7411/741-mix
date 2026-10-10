@@ -88,7 +88,7 @@ public final class TrackAudio: @unchecked Sendable {
         frames += n
     }
 
-    /// Einfache 3-Band-Analyse mit Einpol-Filtern (reicht für eine farbige Wellenform wie in Traktor).
+    /// Einfache 3-Band-Analyse mit Einpol-Filtern (reicht für eine farbige Wellenform).
     private func analyze() {
         let block = max(1, Int(sampleRate / Self.blocksPerSecond))
         let count = frames / block + 1

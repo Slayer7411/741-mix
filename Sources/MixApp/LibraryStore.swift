@@ -5,8 +5,16 @@ import MixCore
 /// Hält die geladene Collection; alle Browser-Bereiche lesen daraus.
 @MainActor @Observable
 final class LibraryStore {
-    nonisolated static let defaultNML = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Native Instruments/Traktor 3.11.2/collection.nml")
+    /// Standard-Collection: neueste `collection.nml` im Benutzerordner der Collection-Software
+    nonisolated static let defaultNML: URL = {
+        let base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Native Instruments")
+        let dirs = (try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)) ?? []
+        let found = dirs.filter { $0.lastPathComponent.hasPrefix("Traktor") }
+            .map { $0.appendingPathComponent("collection.nml") }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedDescending }
+        return found.first ?? base.appendingPathComponent("Traktor 3.11.2/collection.nml")
+    }()
 
     var tracks: [Track] = [] { didSet { revision += 1 } }
     /// zählt jede Änderung an Collection/Preparation/Smartlists (für Browser-Zwischenspeicher)
@@ -23,12 +31,12 @@ final class LibraryStore {
     private var smartCache: [UUID: [Track]] = [:]
     @ObservationIgnored private var customCache: [UUID: (query: String, tracks: [Track])] = [:]
 
-    /// Eigene Smartlists (Traktor-Regel-Syntax), gespeichert in UserDefaults
+    /// Eigene Smartlists (Smartlist-Regel-Syntax), gespeichert in UserDefaults
     var customSmartlists: [CustomSmartlist] = CustomSmartlist.load() {
         didSet { revision += 1; CustomSmartlist.save(customSmartlists) }
     }
 
-    /// Preparation (wie Traktor): wird gespeichert, beim nächsten Start archiviert und geleert
+    /// Preparation: wird gespeichert, beim nächsten Start archiviert und geleert
     var preparation: [String] = UserDefaults.standard.stringArray(forKey: "prep.current") ?? [] {
         didSet {
             revision += 1
@@ -68,7 +76,7 @@ final class LibraryStore {
                     self.root = c.root
                     self.smartCache = [:]
                     self.sourceURL = url
-                    self.status = "\(c.tracks.count) Tracks · \(url.path) · \(String(format: "%.1f", secs)) s"
+                    self.status = "\(c.tracks.count) Tracks · \(url.lastPathComponent) · \(String(format: "%.1f", secs)) s"
                 }
             } catch {
                 await MainActor.run { self.status = "Fehler beim Laden: \(error)" }
@@ -121,7 +129,7 @@ enum BrowserSource: Hashable {
         case .running: "Running Tracks"
         case let .node(n): n.name
         case .historyLive: "History"
-        case let .history(s): "History " + Theme.dateTimeFormat.string(from: s.date)
+        case let .history(s): "History " + (s.label ?? Theme.dateTimeFormat.string(from: s.date))
         case let .prepArchive(s): "Preparation " + Theme.dateTimeFormat.string(from: s.date)
         case let .custom(c): c.name
         }
@@ -135,7 +143,7 @@ enum BrowserSource: Hashable {
     }
 }
 
-/// Eigene Smartlist: Name + Regel im Traktor-Syntax (z. B. `$COMMENT2 % "BASIS" & $BPM >= 128`)
+/// Eigene Smartlist: Name + Regel in Smartlist-Syntax (z. B. `$COMMENT2 % "BASIS" & $BPM >= 128`)
 struct CustomSmartlist: Codable, Hashable, Identifiable {
     var id = UUID()
     var name: String
@@ -151,7 +159,7 @@ struct CustomSmartlist: Codable, Hashable, Identifiable {
     }
 }
 
-/// Browser-Bereiche und welcher zuletzt benutzt wurde (Ziel für X1-Browse/Load).
+/// Browser-Bereiche und welcher zuletzt benutzt wurde (Ziel für Controller-Browse/Load).
 @MainActor @Observable
 final class BrowserState {
     let paneA = BrowserPaneModel(name: "Basis")
@@ -164,7 +172,7 @@ final class BrowserState {
     @ObservationIgnored var separators: () -> String = { " " }
 
     var activePane: BrowserPaneModel { activePaneID == paneB.id ? paneB : paneA }
-    /// Browser groß (Decks ausgeblendet) – Leertaste oder Browse-Knopf am X1
+    /// Browser groß (Decks ausgeblendet) – Leertaste oder Browse-Knopf am Controller
     var maximized = false
 
     func pane(_ i: Int) -> BrowserPaneModel { i == 1 ? paneB : paneA }

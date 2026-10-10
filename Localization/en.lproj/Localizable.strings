@@ -4,7 +4,7 @@
 "4 Decks anzeigen" = "Show 4 decks";
 "741 Knochen" = "741 bone";
 "ANZEIGE" = "DISPLAY";
-"Ableton Link: MINOS gibt das Tempo vor" = "Ableton Link: MINOS sets the tempo";
+"Link: MINOS gibt das Tempo vor" = "Link: MINOS sets the tempo";
 "Abspielen" = "Playback";
 "Am Mischpult die Kanal-Eingänge auf USB stellen. EQ, Fader, Crossfader und Kopfhörer-Cue macht dann das Pult; Filter, FX und Gain bleiben in MINOS-741." = "Set the channel inputs on the mixer to USB. EQ, faders, crossfader and headphone cue are done by the mixer; filter, FX and gain stay in MINOS-741.";
 "An Preparation anhängen" = "Add to preparation";
@@ -32,8 +32,8 @@
 "Collection neu laden" = "Reload collection";
 "Collection öffnen …" = "Open collection …";
 "Crossfader-Kurve" = "Crossfader curve";
-"Cue (wie Traktor-Standard)" = "Cue (Traktor default)";
-"Cue-Farben (Bildschirm und X1-Pads)" = "Cue colors (screen and X1 pads)";
+"Cue (Standard)" = "Cue (default)";
+"Cue-Farben (Bildschirm und Controller-Pads)" = "Cue colors (screen and controller pads)";
 "Cue-Taste" = "Cue button";
 "Deck → Kanal" = "Deck → channel";
 "Decks ein-/ausblenden (Browser groß)" = "Show/hide decks (big browser)";
@@ -44,7 +44,7 @@
 "Einstellungen (⌘,)" = "Settings (⌘,)";
 "Einzeln" = "Single";
 "Exportieren" = "Export";
-"Extern – Mischpult (z. B. Xone:96)" = "External – mixing desk (e.g. Xone:96)";
+"Extern – Mischpult (jedes Deck auf eigenem Kanalpaar)" = "External – mixing desk (every deck on its own channel pair)";
 "Extern" = "External";
 "Externer Mixer" = "External mixer";
 "FILTERN" = "FILTER";
@@ -55,7 +55,7 @@
 "Feste Belegung (NI-Standard)" = "Fixed mapping (NI default)";
 "Filtern" = "Filter";
 "Flux antippen schaltet Flux-Modus" = "Tap flux toggles flux mode";
-"Flux halten + Hotcue 3/4 = Beatjump" = "Hold flux + hotcue 3/4 = beatjump";
+"Beatjump-Größe (Flux + Pad 3/4)" = "Hold flux + hotcue 3/4 = beatjump";
 "Flux-Reverse (halten)" = "Flux reverse (hold)";
 "Gerät" = "Device";
 "Geräteliste neu einlesen" = "Rescan devices";
@@ -66,7 +66,7 @@
 "Grid 10 ms später" = "Grid 10 ms later";
 "Grid aus der Collection" = "Grid from the collection";
 "Grün" = "Green";
-"History zusätzlich in Traktors History-Ordner schreiben" = "Also write history into Traktor's history folder";
+"History zusätzlich in den History-Ordner der Collection schreiben" = "Also write history into the collection's history folder";
 "Hotcue-Sprung hält die Beat-Phase" = "Hotcue jump keeps the beat phase";
 "Im Finder zeigen" = "Show in Finder";
 "In Deck %@ laden" = "Load into deck %@";
@@ -75,7 +75,7 @@
 "Internen Mixer anzeigen" = "Show internal mixer";
 "Internen Mixer ein-/ausblenden" = "Show/hide internal mixer";
 "Kanäle" = "Channels";
-"Kein X1 MK2 gefunden. Traktor beenden, falls es läuft." = "No X1 MK2 found. Quit Traktor if it is running.";
+"Kein Controller gefunden. Andere DJ-Software beenden, falls sie läuft." = "No controller found. Quit other dj software if it is running.";
 "Keylock beim ersten Laden an" = "Keylock on for the first load";
 "Klick: springen/setzen · ⌥-Klick: löschen" = "Click: jump/set · ⌥-click: delete";
 "Kurz = bis" = "Short = up to";
@@ -94,7 +94,7 @@
 "Nebeneinander" = "Side by side";
 "Ordner mit Audiodateien …" = "Folder with audio files …";
 "Ordner-Baum ausblenden, solange Decks sichtbar sind" = "Hide folder tree while decks are visible";
-"Pads dieses X1 leuchten kurz weiß" = "Pads of this X1 light up white";
+"Pads dieses Controllers leuchten kurz weiß" = "Pads of this controller light up white";
 "Phase laufend nachführen (Beat-Sync)" = "Keep phase locked (beat sync)";
 "Pitch-Bend (Shift: Suchen)" = "Pitch bend (shift: seek)";
 "Play/Pause (Fokus-Deck)" = "Play/pause (focused deck)";
@@ -107,7 +107,8 @@
 "Smartlist aus den gewählten Tags anlegen (alle müssen passen)" = "Create a smartlist from the selected tags (all must match)";
 "Snap (Cues und Loop-Punkte rasten auf den Beat)" = "Snap (cues and loop points snap to the beat)";
 "Snap: Cues und Loop-Punkte rasten auf den Beat" = "Snap: cues and loop points snap to the beat";
-"Spektrum (Traktor)" = "Spectrum (Traktor)";
+"Spektrum" = "Spectrum";
+"Klassisch" = "Classic";
 "Standardfarbe" = "Default color";
 "Start-Cue (Load / AutoGrid)" = "Start cue (load / autogrid)";
 "Stil" = "Style";
@@ -122,8 +123,8 @@
 "Tempo zurücksetzen" = "Reset tempo";
 "Tempo-Bereich (Standard)" = "Tempo range (default)";
 "Track-Anfang" = "Track start";
-"Traktor Kontrol X1 MK2 (nativ, HID)" = "Traktor Kontrol X1 MK2 (native, HID)";
-"Traktor-NML …" = "Traktor NML …";
+"Controller (nativ, HID)" = "Controller (native, HID)";
+"NML …" = "NML …";
 "Trennzeichen" = "Separator";
 "Vorhören" = "Preview";
 "Weich" = "Smooth";
@@ -148,7 +149,7 @@
 "Externer Mixer" = "External mixer";
 "Main-Volume" = "Main volume";
 "FX" = "FX";
-"history und preparation werden als traktor-nml gespeichert (~/Library/Application Support/MINOS-741) -> in traktor direkt importierbar. preparation wird bei jedem start archiviert und geleert." = "history and preparation are saved as traktor nml (~/Library/Application Support/MINOS-741) -> import them straight into traktor. preparation is archived and cleared on every start.";
+"history und preparation werden als nml gespeichert (~/Library/Application Support/MINOS-741) -> direkt in die collection importierbar. preparation wird bei jedem start archiviert und geleert." = "history and preparation are saved as nml (~/Library/Application Support/MINOS-741) -> import them straight into the collection. preparation is archived and cleared on every start.";
 "im extern-modus z. b. auf das paar vom kopfhörer-cue legen -> klick nur auf dem kopfhörer" = "in external mode e.g. use the headphone cue pair -> click only in the headphones";
 "pad-farben: ⌘, -> anzeige -> cue-farben (gleich wie auf dem bildschirm)" = "pad colors: ⌘, -> display -> cue colors (same as on screen)";
 "Marker alle 8 / 16 / 32 Takte (magenta)" = "Markers every 8 / 16 / 32 bars (magenta)";
@@ -162,12 +163,19 @@
 "Nur Tempo" = "Tempo only";
 "Anzahl FX-Units" = "Number of FX units";
 "Gruppe (3 Effekte) oder Single (1 Effekt, 3 Parameter)" = "Group (3 effects) or single (1 effect, 3 parameters)";
-"Ableton-Link-Versatz (ms)" = "Ableton Link offset (ms)";
+"Link-Versatz (ms)" = "Link offset (ms)";
 "Samplerate" = "Sample rate";
 "wie am Gerät" = "as set on the device";
 "Puffer (Latenz)" = "Buffer (latency)";
 "Neu verbinden" = "Reconnect";
-"startet die Ausgabe neu, z. B. wenn die Xone nach einem USB-Aussetzer stumm bleibt" = "restarts the output, e.g. when the Xone stays silent after a USB dropout";
+"startet die Ausgabe neu, z. B. wenn das Interface nach einem USB-Aussetzer stumm bleibt" = "restarts the output, e.g. when the interface stays silent after a USB dropout";
 "Eine neue Samplerate gilt am Gerät sofort, MINOS-741 rechnet ab dem nächsten Start damit." = "A new sample rate applies to the device right away, MINOS-741 uses it internally from the next start.";
 "Audio-Interface neu verbinden" = "Reconnect audio interface";
 "Takt-Zähler neu starten: der aktuelle Beat wird Takt 1" = "Restart bar counter: the current beat becomes bar 1";
+"Flux halten + Pads" = "Flux held + pads";
+"Hotcues 5–8" = "Hotcues 5–8";
+"Beatjump (Pads 3/4)" = "Beatjump (pads 3/4)";
+"MINOS-741 beenden?" = "Quit MINOS-741?";
+"Sitzung und History werden gespeichert." = "Session and history will be saved.";
+"Beenden" = "Quit";
+"Abbrechen" = "Cancel";

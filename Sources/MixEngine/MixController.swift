@@ -5,7 +5,7 @@ import MixCore
 
 public enum XFAssign: String, CaseIterable, Codable, Sendable { case a = "A", thru = "·", b = "B" }
 
-/// Sync wie Traktor: Beat-Sync zieht auf Phase 0, Fix hält eine von Hand verschobene Phase, Nur Tempo lässt die Phase frei
+/// Sync: Beat-Sync zieht auf Phase 0, Fix hält eine von Hand verschobene Phase, Nur Tempo lässt die Phase frei
 public enum SyncMode: String, CaseIterable, Codable, Sendable {
     case dynamic = "Dynamisch (zurück auf Phase 0)", fixed = "Fix (verschobene Phase bleibt)", tempo = "Nur Tempo"
 }
@@ -30,7 +30,7 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var keylockDefault = true
     public var tempoRangeDefault = 8.0
     public var autoGain = true
-    /// wie Traktor: Headroom und Auto-Gain je Mixer-Modus, Main-Volume im externen Modus optional
+    /// Headroom und Auto-Gain je Mixer-Modus, Main-Volume im externen Modus optional
     public var headroomInternal = 0.0
     public var headroomExternal = -3.0
     public var autoGainExternal = false
@@ -40,7 +40,7 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var bendAmount = 0.04
     public var phaseLock = true
     public var syncMode = SyncMode.dynamic
-    /// Ableton Link: Versatz in ms (positiv = die anderen Teilnehmer spielen später)
+    /// Link: Versatz in ms (positiv = die anderen Teilnehmer spielen später)
     public var linkOffsetMs = 0.0
     public var trackEndWarning = 30.0
     public var crossfaderCurve = CrossfaderCurve.smooth
@@ -97,7 +97,7 @@ public struct DeckState: Equatable, Sendable {
     public var bpm: Double { (grid?.bpm ?? track?.bpm ?? 0) * (1 + tempoPct / 100) }
 }
 
-/// FX-Unit wie Traktor: Gruppenmodus (3 Slots Filter · Delay · Reverb, Regler = Stärke)
+/// FX-Unit: Gruppenmodus (3 Slots Filter · Delay · Reverb, Regler = Stärke)
 /// oder Single-Modus (ein Effekt, die 3 Regler = seine Parameter).
 public struct FXUnitState: Equatable, Sendable, Codable {
     public struct Slot: Equatable, Sendable, Codable {
@@ -160,7 +160,7 @@ public struct MixState: Equatable, Sendable {
     public var metronome = false
     public var metronomeVolume: Double = 0.5
     public var linkEnabled = false
-    /// verbundene Link-Teilnehmer (z. B. Ableton)
+    /// verbundene Link-Teilnehmer
     public var linkPeers = 0
     public var crossfader: Double = 0
     public var masterVolume: Double = 0.85
@@ -436,7 +436,7 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
-    /// Traktor „Flux Reverse“: gehalten rückwärts, beim Loslassen an der Stelle weiter, an der der Track ohne Reverse wäre.
+    /// Flux Reverse: gehalten rückwärts, beim Loslassen an der Stelle weiter, an der der Track ohne Reverse wäre.
     public func fluxReverse(_ d: Int, on: Bool) {
         locked {
             guard audio[d] != nil else { return }
@@ -656,7 +656,7 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
-    // MARK: Beatgrid bearbeiten (wie Traktors GRID-Tab)
+    // MARK: Beatgrid bearbeiten
 
     /// Grid verschieben (ms, + = später)
     public func shiftGrid(_ d: Int, ms: Double) {
@@ -747,7 +747,7 @@ public final class MixController: @unchecked Sendable {
 
     public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on; link.enabled = on } }
 
-    /// Ableton Link – MINOS gibt Tempo und Takt vor
+    /// Link – MINOS gibt Tempo und Takt vor
     public let link = LinkSession()
     private var linkTicks = 0
 
@@ -907,7 +907,7 @@ public final class MixController: @unchecked Sendable {
                 let want = g.beatPosition(at: position(m))
                 if abs(BeatGrid.phaseError(own: engine.clockBeat, master: want)) > 0.02 { jumpClock(to: want) }
             }
-            // Ableton Link: Tempo und Beat der Clock vorgeben, Teilnehmer zählen
+            // Link: Tempo und Beat der Clock vorgeben, Teilnehmer zählen
             if state.linkEnabled {
                 if let st = engine.clockStamp {
                     link.offsetMicros = Int64(state.prefs.linkOffsetMs * 1000)

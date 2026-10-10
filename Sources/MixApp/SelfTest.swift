@@ -10,14 +10,14 @@ enum SelfTest {
         guard ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" else { return }
         let core = mix.core
         Task { @MainActor in
-            if ProcessInfo.processInfo.environment["MIX741_NOXONE"] == nil,
-               let xone = mix.outputDevices.first(where: { $0.name.localizedCaseInsensitiveContains("xone") }) {
-                core.engine.apply(.init(device: xone.id, firstChannel: [0, 2, 4, 6]))
-                log("Routing \(xone.name) extern: läuft=\(core.engine.running) Fehler=\(core.engine.lastError ?? "keine")")
+            if ProcessInfo.processInfo.environment["MIX741_NOEXT"] == nil,
+               let ext = mix.outputDevices.first(where: { $0.channels >= 8 }) {   // externes Interface, jedes Deck auf ein eigenes Paar
+                core.engine.apply(.init(device: ext.id, firstChannel: [0, 2, 4, 6]))
+                log("Routing \(ext.name) extern: läuft=\(core.engine.running) Fehler=\(core.engine.lastError ?? "keine")")
             }
             core.engine.setMasterVolume(0)   // stumm, Einstellung bleibt unverändert
             log("Audio: Gerät \(core.engine.outputRate) Hz, Kern \(core.engine.sampleRate) Hz, Raten \(MixEngine.availableRates(mix.currentDevice?.id ?? MixEngine.defaultOutputDevice() ?? 0))")
-            // Link nur auf Wunsch (sonst würde der Test das Tempo eines laufenden Ableton ändern)
+            // Link nur auf Wunsch (sonst würde der Test das Tempo einer laufenden Link-Session ändern)
             core.setLinkEnabled(ProcessInfo.processInfo.environment["MIX741_LINKTEST"] != nil)
             var p = mix.prefs.engine
             p.historyThreshold = 3            // nur im Test: schnell als gespielt markieren (nicht gespeichert)
@@ -115,7 +115,7 @@ enum SelfTest {
             core.toggleFXAssign(0, 2)
             log(String(format: "FX3 Single-Delay: Echo nach Stopp %.3f (ohne Delay ~0)", tail))
             log(String(format: "FX3 aus: Echo klingt aus %.3f, nach 4 s %.4f", spill, gone))
-            // Reverb wie Traktor (FX4 Single): D/W 0 = trocken unverändert, D/W hoch = Hall aus den Höhen dazu, aus = klingt lange aus
+            // Reverb (FX4 Single): D/W 0 = trocken unverändert, D/W hoch = Hall aus den Höhen dazu, aus = klingt lange aus
             core.togglePlay(0)
             core.toggleFXAssign(0, 3)
             core.updateFX(3) { $0.single = true; $0.singleType = FXUnitState.Effect.reverb.rawValue; $0.singleOn = true

@@ -13,7 +13,7 @@ minos is built around my own setup. focused fixes, tests, docs and controller ma
 ## ◆ CHOOSING A CONTRIBUTION
 
 * name the concrete problem, keep related changes together
-* say what you tested and what you couldn't test (no xone, no x1, …)
+* say what you tested and what you couldn't test (no external mixer, no controller, …)
 * cosmetic-only changes -> collect them in one issue, not single prs
 
 ## ◆ SETUP
@@ -37,8 +37,8 @@ the realtime core has hard rules. a pr that breaks one is not merged.
 * deck logic, sync, controllers -> control thread (`MixController`), never the main thread
 * ui only mirrors state and calls commands
 * the device sample rate is never changed
-* traktor files: read freely, write only history / preparation / exports. `collection.nml` stays untouched
-* no native instruments code. traktor knowledge only from own files, strings and public docs
+* library files: read freely, write only history / preparation / exports. `collection.nml` stays untouched
+* no vendor code. file formats and controller protocols only from own files and public docs
 * new options get a setting (⌘,) and survive a restart
 * ui text in english and german (`Localization/`)
 
@@ -50,7 +50,7 @@ before a pr:
 
 ```
 swift test
-MIX741_SELFTEST=1 MIX741_NOXONE=1 swift run minos741
+MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 ```
 
 `swift test` also renders the audio core offline (no device): transport, seek, loop, reverse, keylock, fx tail, limiter, clock, track handoff, decode -> `Tests/MixEngineTests`. the same runs in ci on every push.

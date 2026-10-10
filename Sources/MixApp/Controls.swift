@@ -56,7 +56,7 @@ struct Knob: View {
     private func set(_ v: Double) { value = v }
 }
 
-/// Kompakter Schalter im Traktor-Stil
+/// Kompakter Schalter
 struct DeckButton: View {
     let title: String
     var active = false

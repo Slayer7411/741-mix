@@ -47,8 +47,7 @@ let sampleNML = """
 
 /// Alle Smartlists der echten Mac-Collection müssen sich parsen lassen (falls vorhanden).
 @Test func parsesAllRealSmartlists() throws {
-    let url = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Native Instruments/Traktor 3.11.2/collection.nml")
+    let url = realCollection()
     guard FileManager.default.fileExists(atPath: url.path) else { return }
     let c = try NMLParser.parse(url: url)
     #expect(c.tracks.count > 10000)
@@ -72,7 +71,7 @@ let sampleNML = """
     #expect(BeatSizes.label(16) == "16")
 }
 
-/// Eigene History-NML muss sich mit dem Traktor-Leser wieder lesen lassen (Rundreise) und Roh-Einträge übernehmen.
+/// Eigene History-NML muss sich mit dem History-Leser wieder lesen lassen (Rundreise) und Roh-Einträge übernehmen.
 @Test func historyRoundTrip() throws {
     let index = NMLEntryIndex(nmlText: sampleNML)
     #expect(index.raw.count == 2)
@@ -82,27 +81,32 @@ let sampleNML = """
                           deck: 2, start: start, duration: 95.5),
              HistoryEntry(key: "Macintosh HD/:Other/:x & y.mp3", title: "Fremd", artist: "X", bpm: 125, keyText: "1d",
                           deck: 1, start: start.addingTimeInterval(120), duration: 60)]
-    let text = TraktorHistoryWriter.nml(entries: e, index: index, uuid: "0123456789abcdef0123456789abcdef")
+    let text = HistoryNMLWriter.nml(entries: e, index: index, uuid: "0123456789abcdef0123456789abcdef")
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("hist-\(UUID().uuidString).nml")
     try text.write(to: url, atomically: true, encoding: .utf8)
-    let back = TraktorHistoryParser.parse(url: url)
+    let back = HistoryNMLParser.parse(url: url)
     #expect(back.count == 2)
     #expect(back[0].title == "Barrier" && back[0].deck == 2 && abs(back[0].duration - 95.5) < 0.001)
     #expect(back[0].start == start)
     #expect(back[1].key == "Macintosh HD/:Other/:x & y.mp3")
-    #expect(TraktorHistoryWriter.fileName(for: start) == "history_2026y10m10d_21h05m07s.nml")
-    // echte Traktor-History lesbar?
-    let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Native Instruments/Traktor 3.11.2/History")
+    #expect(HistoryNMLWriter.fileName(for: start) == "history_2026y10m10d_21h05m07s.nml")
+    // eigene Sitzungsdatei: Tag + Nummer, Reihenfolge über das Datum, Anzeige „2026-10-10 · 02“
+    #expect(HistorySession.sessionFileName(day: start, number: 2) == "history_2026-10-10-02.nml")
+    let s2 = HistorySession(url: URL(fileURLWithPath: "/x/history_2026-10-10-02.nml"), date: HistorySession.date(fromFileName: "history_2026-10-10-02.nml")!, source: .live)
+    #expect(s2.label == "2026-10-10 · 02")
+    #expect(HistorySession.date(fromFileName: "history_2026-10-10-02.nml")! > HistorySession.date(fromFileName: "history_2026-10-10-01.nml")!)
+    #expect(HistorySession.date(fromFileName: "history_2026y10m10d_21h05m07s.nml") != nil)
+    // echte History-Dateien der Collection lesbar?
+    let dir = realCollection().deletingLastPathComponent().appendingPathComponent("History")
     if let f = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil).filter({ $0.pathExtension == "nml" }).sorted(by: { $0.path < $1.path }).last {
-        #expect(!TraktorHistoryParser.parse(url: f).isEmpty)
+        #expect(!HistoryNMLParser.parse(url: f).isEmpty)
     }
 }
 
 /// Browser-Suche über die echte Collection: der vorbereitete Suchtext muss alle Treffer der Feldsuche liefern
 /// (plus akzent-unabhängige) und deutlich schneller sein – läuft nur mit vorhandener Collection.
 @Test func searchTextCoversFieldSearch() throws {
-    let url = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Native Instruments/Traktor 3.11.2/collection.nml")
+    let url = realCollection()
     guard FileManager.default.fileExists(atPath: url.path) else { return }
     let tracks = try NMLParser.parse(url: url).tracks
     for query in ["dettmann ba", "11m", "groove", "d"] {
@@ -121,4 +125,14 @@ let sampleNML = """
         #expect(old.isSubset(of: new))
         #expect(new.count - old.count < 50)
     }
+}
+
+/// echte Collection auf diesem Mac (neuester Versionsordner); Tests überspringen sich ohne sie
+private func realCollection() -> URL {
+    let base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Native Instruments")
+    let dirs = (try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)) ?? []
+    return dirs.filter { $0.lastPathComponent.hasPrefix("Traktor") }.map { $0.appendingPathComponent("collection.nml") }
+        .filter { FileManager.default.fileExists(atPath: $0.path) }
+        .sorted { $0.path.localizedStandardCompare($1.path) == .orderedDescending }.first
+        ?? base.appendingPathComponent("none/collection.nml")
 }

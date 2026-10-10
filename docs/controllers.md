@@ -1,16 +1,16 @@
-# KONTROL X1 MK2
+# CONTROLLERS
 
-native hid mode (vid `0x17cc`, pid `0x1220`, usage page `0xff01`). traktor has to be closed.
+supported: the 2-deck hid controller with vid `0x17cc`, pid `0x1220` (usage page `0xff01`), native hid mode. other dj software has to be closed.
 
 ## ◆ SETUP
 
-* two x1 at the same time, each with a left and a right deck
-* default: first x1 (usb position) = a / d, second = c / b -> change per device under ⌘, -> controller
+* two units at the same time, each with a left and a right deck
+* default: first unit (usb position) = a / d, second = c / b -> change per device under ⌘, -> controller
 * "blink" lights the pads of one unit white
 
 ## ◆ MAPPING
 
-ni default layout:
+default layout:
 * play (shift: cup), sync (shift: master)
 * hotcue 1-4 (shift: delete)
 * loop encoder: turn = loop size, push = loop on / off, shift + turn = beatjump, shift + push = reloop
@@ -24,9 +24,9 @@ ni default layout:
 * touch strip: pitch bend (shift: seek), split left / right side
 * 7 segment display: loop size of each side
 
-my traktor custom mappings (decoded from `Traktor Settings.tsi`):
+my custom mappings:
 * cue held = flux reverse (shift + cue = normal cue)
-* flux held + hotcue 3 / 4 = beatjump -1 / +1 beat (pads 3/4 light up grey while flux is held)
+* flux held + pad 1-4 = hotcue 5-8: set / jump, shift = delete, pads show the colors of hotcues 5-8 while flux is held (setting: beatjump -1 / +1 on pads 3 / 4 instead)
 * flux tap = flux mode on / off
 * sync held + hotcue 3 / 4 = one bar back / forward, inside a loop the loop stays and the position wraps (sync toggles on release if no pad was hit)
 

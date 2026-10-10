@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import MixCore
 
-/// Playlist-Export wie Traktor: NML (Traktor-Import), M3U, oder Ordner mit Audiodateien + NML + M3U.
+/// Playlist-Export: NML (Playlist-Import), M3U, oder Ordner mit Audiodateien + NML + M3U.
 @MainActor
 enum PlaylistExport {
     enum Format { case nml, m3u, folder }
@@ -44,7 +44,7 @@ enum PlaylistExport {
                     if n % 5 == 0 { await MainActor.run { store.status = "export läuft: \(n)/\(tracks.count)" } }
                 }
                 let entries = tracks.map { entry($0) }
-                let nmlText = TraktorPlaylistWriter.nml(name: name, entries: entries, index: index)
+                let nmlText = PlaylistNMLWriter.nml(name: name, entries: entries, index: index)
                 try? nmlText.write(to: dir.appendingPathComponent(safe + ".nml"), atomically: true, encoding: .utf8)
                 let m3uText = await m3u(tracks, relativeTo: dir)
                 try? m3uText.write(to: dir.appendingPathComponent(safe + ".m3u8"), atomically: true, encoding: .utf8)
@@ -60,7 +60,7 @@ enum PlaylistExport {
     }
 
     static func nml(name: String, tracks: [Track], store: LibraryStore) -> String {
-        TraktorPlaylistWriter.nml(name: name, entries: tracks.map(entry), index: store.entryIndex)
+        PlaylistNMLWriter.nml(name: name, entries: tracks.map(entry), index: store.entryIndex)
     }
 
     /// M3U8; mit `relativeTo` zeigen die Pfade auf die kopierten Dateien im Exportordner

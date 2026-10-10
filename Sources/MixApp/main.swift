@@ -78,6 +78,12 @@ struct ContentView: View {
         }
         .onAppear {
             if store.tracks.isEmpty { store.load() }
+            // MIX741_LAYOUT=nomixer,2decks,nobrowser: Teile der Oberfläche für Layout-Messungen abschalten (nur Selbsttest)
+            if Session.isSelfTest, let l = ProcessInfo.processInfo.environment["MIX741_LAYOUT"] {
+                if l.contains("nomixer") { mix.prefs.ui.showMixer = false }
+                if l.contains("2decks") { mix.prefs.ui.showFourDecks = false }
+                if l.contains("nobrowser") { mix.prefs.ui.browserLayout = .single; mix.prefs.ui.browserHeight = 120 }
+            }
             SelfTest.run(store: store, mix: mix)
         }
     }
@@ -103,15 +109,21 @@ struct ContentView: View {
     private var deckArea: some View {
         VStack(spacing: 6) {
             TopBar()
-            HStack(alignment: .top, spacing: 6) {
-                VStack(spacing: 6) {
-                    DeckView(d: 0)
-                    if mix.showFourDecks { DeckView(d: 2) }
-                }
-                if mix.prefs.ui.showMixer { MixerView().fixedSize(horizontal: true, vertical: false) }
-                VStack(spacing: 6) {
-                    DeckView(d: 1)
-                    if mix.showFourDecks { DeckView(d: 3) }
+            // Decks mit fester Höhe: zwei flexible Decks übereinander ließen SwiftUI jede Zustandsänderung
+            // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks)
+            GeometryReader { geo in
+                let rows: CGFloat = mix.showFourDecks ? 2 : 1
+                let deckH = max(120, (geo.size.height - (rows - 1) * 6) / rows)
+                HStack(alignment: .top, spacing: 6) {
+                    VStack(spacing: 6) {
+                        DeckView(d: 0).frame(height: deckH)
+                        if mix.showFourDecks { DeckView(d: 2).frame(height: deckH) }
+                    }
+                    if mix.prefs.ui.showMixer { MixerView().fixedSize(horizontal: true, vertical: false) }
+                    VStack(spacing: 6) {
+                        DeckView(d: 1).frame(height: deckH)
+                        if mix.showFourDecks { DeckView(d: 3).frame(height: deckH) }
+                    }
                 }
             }
         }
@@ -152,14 +164,32 @@ struct ContentView: View {
     }
 }
 
+/// Beenden nur nach Rückfrage (Sicherheit im Set); davor Sitzung und History schreiben
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    var onQuit: (@MainActor () -> Void)?
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !Session.isSelfTest else { return .terminateNow }
+        let a = NSAlert()
+        a.messageText = String(localized: "MINOS-741 beenden?")
+        a.informativeText = String(localized: "Sitzung und History werden gespeichert.")
+        a.addButton(withTitle: String(localized: "Beenden"))
+        a.addButton(withTitle: String(localized: "Abbrechen"))
+        guard a.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        MainActor.assumeIsolated { onQuit?() }
+        return .terminateNow
+    }
+}
+
 struct MixApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var store = LibraryStore()
     @State private var mix = MixModel()
     @State private var browser = BrowserState()
-    @State private var x1Status = X1Status()
+    @State private var controllerStatus = ControllerStatus()
     @State private var waveforms = WaveformCache()
     @State private var history = HistoryStore()
-    @State private var x1: X1Manager?
+    @State private var controller: ControllerManager?
     @State private var sessionTimer: Timer?
 
     private var appTitle: String {
@@ -175,19 +205,19 @@ struct MixApp: App {
                 .environment(store)
                 .environment(mix)
                 .environment(browser)
-                .environment(x1Status)
+                .environment(controllerStatus)
                 .environment(waveforms)
                 .environment(history)
                 .frame(minWidth: 1280, minHeight: 860)
                 .onAppear { startControllers() }
-                .onChange(of: mix.prefs.x1) { x1?.prefs = mix.prefs.x1 }
-                .onChange(of: mix.prefs.ui.fxUnitCount) { x1?.fxUnits = mix.prefs.ui.fxUnitCount }
+                .onChange(of: mix.prefs.controller) { controller?.prefs = mix.prefs.controller }
+                .onChange(of: mix.prefs.ui.fxUnitCount) { controller?.fxUnits = mix.prefs.ui.fxUnitCount }
         }
         Settings {
             SettingsView()
                 .environment(mix)
                 .environment(store)
-                .environment(x1Status)
+                .environment(controllerStatus)
         }
         .commands {
             CommandGroup(after: .newItem) {
@@ -232,12 +262,16 @@ struct MixApp: App {
 }
 
 extension MixApp {
-    /// X1 auf der Steuer-Queue starten; Browser-Aktionen kommen auf dem Hauptthread zurück.
+    /// Controller auf der Steuer-Queue starten; Browser-Aktionen kommen auf dem Hauptthread zurück.
     @MainActor func startControllers() {
         browser.store = store
         browser.history = history
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
         history.start(store: store, mix: mix)
+        appDelegate.onQuit = { [mix, browser, history] in
+            Session.saveNow(mix: mix, browser: browser)
+            history.finish()
+        }
         let session = Session.load()
         session?.applyEngine(to: mix)
         sessionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [mix, browser] _ in
@@ -253,10 +287,10 @@ extension MixApp {
                 store.preparation = []
             }
         }
-        // Selbsttest: keine Controller anfassen (sonst steuert ein laufendes X1 die Test-Decks und umgekehrt)
-        guard x1 == nil, !Session.isSelfTest else { return }
-        let m = X1Manager(core: mix.core, status: x1Status)
-        m.prefs = mix.prefs.x1
+        // Selbsttest: keine Controller anfassen (sonst steuert ein angeschlossener Controller die Test-Decks und umgekehrt)
+        guard controller == nil, !Session.isSelfTest else { return }
+        let m = ControllerManager(core: mix.core, status: controllerStatus)
+        m.prefs = mix.prefs.controller
         m.fxUnits = mix.prefs.ui.fxUnitCount
         m.onBrowse = { [browser] pane, step in browser.moveSelection(by: step, pane: pane) }
         m.onLoad = { [browser, mix] pane, d in if let t = browser.selectedTrack(pane: pane) { mix.load(t, deck: d) } }
@@ -270,7 +304,7 @@ extension MixApp {
             return nil
         }
         m.start()
-        x1 = m
+        controller = m
     }
 }
 

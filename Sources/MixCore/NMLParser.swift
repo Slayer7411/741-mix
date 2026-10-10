@@ -1,6 +1,6 @@
 import Foundation
 
-/// Knoten im Playlist-Baum (wie Traktor: Ordner, Playlist, Smartlist).
+/// Knoten im Playlist-Baum (Ordner, Playlist, Smartlist).
 public final class PlaylistNode: Identifiable, Hashable, @unchecked Sendable {
     public enum Kind: Sendable { case folder, playlist, smartlist }
     public let id = UUID()
@@ -9,7 +9,7 @@ public final class PlaylistNode: Identifiable, Hashable, @unchecked Sendable {
     public var children: [PlaylistNode] = []
     /// Track-Schlüssel (nur Playlist)
     public var trackKeys: [String] = []
-    /// Regel im Traktor-Syntax (nur Smartlist)
+    /// Smartlist-Regel (nur Smartlist)
     public var query: String = ""
 
     public init(name: String, kind: Kind) { self.name = name; self.kind = kind }
@@ -24,7 +24,7 @@ public struct Collection: Sendable {
     public var root: PlaylistNode
 }
 
-/// Liest eine Traktor-`collection.nml` (SAX, ~1 s für 15k Tracks).
+/// Liest eine `collection.nml` (SAX, ~1 s für 15k Tracks).
 public final class NMLParser: NSObject, XMLParserDelegate {
     private var tracks: [Track] = []
     private var current: Track?
@@ -49,7 +49,7 @@ public final class NMLParser: NSObject, XMLParserDelegate {
         return Collection(tracks: d.tracks, root: d.root.children.first ?? d.root)
     }
 
-    /// Traktor-Pfad "/:Users/:x/:" → "/Users/x/"
+    /// NML-Pfad "/:Users/:x/:" → "/Users/x/"
     static func plainDir(_ dir: String) -> String { dir.replacingOccurrences(of: "/:", with: "/") }
 
     static func date(_ s: String?) -> Date? {

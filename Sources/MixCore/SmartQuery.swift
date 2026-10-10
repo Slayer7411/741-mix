@@ -1,6 +1,6 @@
 import Foundation
 
-/// Smartlist-Regeln im Traktor-Syntax, z. B. `$COMMENT % "hain" & $IMPORTDATE >= MONTHS_AGO(12)`.
+/// Smartlist-Regeln (NML-Syntax), z. B. `$COMMENT % "hain" & $IMPORTDATE >= MONTHS_AGO(12)`.
 /// `&` bindet stärker als `|`; Klammern und `!` werden zusätzlich unterstützt.
 public indirect enum SmartQuery: Sendable {
     case and(SmartQuery, SmartQuery)

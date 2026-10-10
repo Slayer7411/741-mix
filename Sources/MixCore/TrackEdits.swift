@@ -1,6 +1,6 @@
 import Foundation
 
-/// Eigene Änderungen an Tracks (Beatgrid, Hotcues) – dauerhaft, ohne die Traktor-Collection anzufassen.
+/// Eigene Änderungen an Tracks (Beatgrid, Hotcues) – dauerhaft, ohne die Collection anzufassen.
 /// Beim Laden eines Tracks werden sie über die Collection-Werte gelegt.
 public struct TrackEdit: Codable, Equatable, Sendable {
     public var bpm: Double?

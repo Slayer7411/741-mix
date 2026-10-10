@@ -1,12 +1,12 @@
 import Foundation
 import LinkKit
 
-/// Ableton Link: MINOS führt – Tempo und Beat-Lage der Master-Clock gehen an alle Teilnehmer (z. B. Ableton).
+/// Link (Netzwerk-Tempo-Sync): MINOS führt – Tempo und Beat-Lage der Master-Clock gehen an alle Teilnehmer.
 /// Läuft auf der Steuer-Queue (App-Seite von Link), nie im Audio-Thread.
 public final class LinkSession: @unchecked Sendable {
     private let link: abl_link
     private let state: abl_link_session_state
-    /// Quantum = ein Takt (4 Beats), damit Abletons Takt mit dem von MINOS zusammenfällt
+    /// Quantum = ein Takt (4 Beats), damit der Takt der Teilnehmer mit dem von MINOS zusammenfällt
     public var quantum = 4.0
     /// Versatz zu den anderen Teilnehmern (positiv = die anderen spielen später)
     public var offsetMicros: Int64 = 0

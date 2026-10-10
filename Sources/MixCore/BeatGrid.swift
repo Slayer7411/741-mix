@@ -43,7 +43,7 @@ public struct BeatGrid: Hashable, Sendable {
         return d
     }
 
-    /// Beats in einem Takt (Traktor rechnet in 4/4)
+    /// Beats in einem Takt (4/4)
     public static let beatsPerBar = 4.0
 
     /// Taktposition „Takt.Beat“ zur Anzeige (1-basiert)
@@ -55,7 +55,7 @@ public struct BeatGrid: Hashable, Sendable {
     }
 }
 
-/// Loop- und Sprunggrößen wie in Traktor (in Beats).
+/// Loop- und Sprunggrößen (in Beats).
 public enum BeatSizes {
     public static let loop: [Double] = [1.0 / 32, 1.0 / 16, 1.0 / 8, 1.0 / 4, 1.0 / 2, 1, 2, 4, 8, 16, 32]
     public static let jump: [Double] = [1.0 / 4, 1.0 / 2, 1, 2, 4, 8, 16, 32, 64]

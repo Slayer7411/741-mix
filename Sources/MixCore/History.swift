@@ -1,6 +1,6 @@
 import Foundation
 
-/// Ein gespielter Track in einer Session (wie Traktors History: Deck, Startzeit, Spieldauer).
+/// Ein gespielter Track in einer Session (Deck, Startzeit, Spieldauer).
 public struct HistoryEntry: Codable, Hashable, Identifiable, Sendable {
     public var id = UUID()
     public var key: String
@@ -19,7 +19,7 @@ public struct HistoryEntry: Codable, Hashable, Identifiable, Sendable {
 }
 
 public struct HistorySession: Identifiable, Hashable, Sendable {
-    public enum Source: String, Sendable { case live = "741", traktor = "Traktor" }
+    public enum Source: String, Sendable { case live = "741", external = "extern" }
     public var id: String { url.path }
     public var url: URL
     public var date: Date
@@ -29,10 +29,32 @@ public struct HistorySession: Identifiable, Hashable, Sendable {
         self.url = url; self.date = date; self.source = source
     }
 
-    /// Datum aus Traktors Dateiname „history_2026y10m10d_09h05m33s.nml“ bzw. eigenem „history_2026-10-10_090533.json“
+    /// eigene Sitzungsdatei „history_2026-10-10-02.nml“ -> „2026-10-10 · 02“, sonst nil (dann Datum + Uhrzeit anzeigen)
+    public var label: String? {
+        let n = url.deletingPathExtension().lastPathComponent
+        guard let m = n.wholeMatch(of: /history_(\d{4}-\d{2}-\d{2})-(\d{2})/) else { return nil }
+        return "\(m.1) · \(m.2)"
+    }
+
+    /// Sitzungsdatei des Tages: history_JJJJ-MM-TT-NN.nml
+    public static func sessionFileName(day: Date, number: Int) -> String {
+        String(format: "history_%@-%02d.nml", dayString(day), number)
+    }
+
+    public static func dayString(_ d: Date) -> String {
+        let c = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: d)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    /// Datum aus dem Dateinamen: „history_2026y10m10d_09h05m33s.nml“, eigene Sitzung „history_2026-10-10-02.nml“
+    /// (Tag + Nummer als Sekunden, damit die Reihenfolge stimmt) oder altes „history_2026-10-10_090533.json“
     public static func date(fromFileName name: String) -> Date? {
         let digits = name.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
-        guard digits.count >= 6 else { return nil }
+        if digits.count == 4, digits[3] < 100 {
+            return DateComponents(calendar: Calendar(identifier: .gregorian), year: digits[0], month: digits[1], day: digits[2],
+                                  hour: 0, minute: 0, second: digits[3]).date
+        }
+        guard digits.count >= 4 else { return nil }
         // eigenes Format: 2026 10 10 090533
         if digits.count == 4, digits[3] > 9999 {
             let t = digits[3]
@@ -44,8 +66,8 @@ public struct HistorySession: Identifiable, Hashable, Sendable {
     }
 }
 
-/// Liest eine Traktor-History-NML (COLLECTION + PLAYLIST mit EXTENDEDDATA: DECK, DURATION, STARTDATE, STARTTIME).
-public final class TraktorHistoryParser: NSObject, XMLParserDelegate {
+/// Liest eine History-NML (COLLECTION + PLAYLIST mit EXTENDEDDATA: DECK, DURATION, STARTDATE, STARTTIME).
+public final class HistoryNMLParser: NSObject, XMLParserDelegate {
     private var tracks: [String: (title: String, artist: String, bpm: Double, key: String)] = [:]
     private var cur: (title: String, artist: String, bpm: Double, key: String, loc: String)?
     private var inCollection = false
@@ -55,7 +77,7 @@ public final class TraktorHistoryParser: NSObject, XMLParserDelegate {
 
     public static func parse(url: URL) -> [HistoryEntry] {
         guard let x = XMLParser(contentsOf: url) else { return [] }
-        let p = TraktorHistoryParser()
+        let p = HistoryNMLParser()
         x.delegate = p
         x.parse()
         return p.entries
@@ -102,7 +124,7 @@ public final class TraktorHistoryParser: NSObject, XMLParserDelegate {
 }
 
 /// Roh-ENTRY-Blöcke einer collection.nml je Track-Schlüssel – damit Exporte (History, Playlists)
-/// die Einträge unverändert übernehmen (Cues, Tags, AUDIO_ID …), genau wie Traktor.
+/// die Einträge unverändert übernehmen (Cues, Tags, AUDIO_ID …).
 public struct NMLEntryIndex: Sendable {
     public private(set) var raw: [String: String] = [:]
 
@@ -147,8 +169,8 @@ enum XMLText {
     }
 }
 
-/// Schreibt eine History-Session im Traktor-Format (history_JJJJyMMmTTd_HHhMMmSSs.nml).
-public enum TraktorHistoryWriter {
+/// Schreibt eine History-Session als NML (history_JJJJyMMmTTd_HHhMMmSSs.nml).
+public enum HistoryNMLWriter {
     public static func fileName(for d: Date) -> String {
         let c = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day, .hour, .minute, .second], from: d)
         return String(format: "history_%04dy%02dm%02dd_%02dh%02dm%02ds.nml", c.year!, c.month!, c.day!, c.hour!, c.minute!, c.second!)
@@ -196,14 +218,14 @@ public enum TraktorHistoryWriter {
     }
 }
 
-/// Schreibt eine normale Playlist (TYPE="LIST") im Traktor-NML-Format – in Traktor per Import öffnen.
-public enum TraktorPlaylistWriter {
+/// Schreibt eine normale Playlist (TYPE="LIST") als NML – per Playlist-Import zu öffnen.
+public enum PlaylistNMLWriter {
     public static func nml(name: String, entries: [HistoryEntry], index: NMLEntryIndex) -> String {
         var seen = Set<String>()
         var collection: [String] = []
         for e in entries where !seen.contains(e.key) {
             seen.insert(e.key)
-            collection.append(index.raw[e.key] ?? TraktorHistoryWriter.fallbackEntry(e))
+            collection.append(index.raw[e.key] ?? HistoryNMLWriter.fallbackEntry(e))
         }
         let uuid = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         var out = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\" ?>\n"

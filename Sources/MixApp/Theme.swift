@@ -41,7 +41,7 @@ enum Theme {
         }
     }
 
-    /// Traktor-Farben 1–7 (rot, orange, gelb, grün, blau, violett, magenta)
+    /// Collection-Farben 1–7 (rot, orange, gelb, grün, blau, violett, magenta)
     static func trackColor(_ c: Int) -> Color {
         switch c {
         case 1: .red
@@ -68,7 +68,7 @@ enum Theme {
     /// Cue-Farbe mit Einstellungen (Cue/Loop-Farbe wählbar, Standard: Cue rot)
     /// Cue-Farbe nach Rolle (Start-Cue, Cue, Loop, kurzer Loop) – einstellbar unter ⌘, → Anzeige
     static func cueColor(_ c: Cue, deck: DeckState, prefs: AppPrefs) -> Color {
-        color(prefs.x1.color(for: c, startMs: startCueMs(deck.track), bpm: deck.grid?.bpm ?? deck.track?.bpm ?? 0))
+        color(prefs.controller.color(for: c, startMs: startCueMs(deck.track), bpm: deck.grid?.bpm ?? deck.track?.bpm ?? 0))
     }
 
     /// Start-Cue eines Tracks: Load-Cue, sonst AutoGrid
@@ -84,7 +84,7 @@ enum Theme {
 
     static func cueColor(_ k: Cue.Kind) -> Color {
         switch k {
-        case .cue: .red          // Christian: Cues rot statt Traktor-blau
+        case .cue: .red          // Christian: Cues rot statt blau
         case .fadeIn, .fadeOut: .pink
         case .load: .yellow
         case .grid: .white
@@ -92,7 +92,7 @@ enum Theme {
         }
     }
 
-    /// Tonart-Farbe nach Quintenzirkel (wie Traktors Key-Farben).
+    /// Tonart-Farbe nach Quintenzirkel.
     static func keyColor(_ k: Int) -> Color {
         guard k >= 0 else { return .secondary }
         let pos = ((k < 12 ? k % 12 : k % 12 + 3) * 7) % 12

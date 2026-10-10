@@ -14,7 +14,7 @@ final class CoreAudioOutput {
 
     /// startet die Ausgabe auf `device` (nil = Systemstandard) mit allen Ausgangskanälen des Geräts
     /// `engineRate` = Rate des Kerns (AUHAL rechnet um, falls das Gerät anders läuft);
-    /// `deviceRate` gesetzt = Gerät auf diese Rate stellen (wie Traktors Audio Setup)
+    /// `deviceRate` gesetzt = Gerät auf diese Rate stellen (wie im Audio-Setup üblich)
     func start(device: AudioDeviceID?, engine: OpaquePointer, engineRate: Double, bufferFrames: UInt32?, setDeviceRate: Double?) throws {
         stop()
         var desc = AudioComponentDescription(componentType: kAudioUnitType_Output, componentSubType: kAudioUnitSubType_HALOutput,

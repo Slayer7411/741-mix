@@ -2,7 +2,7 @@ import SwiftUI
 import MixCore
 import MixEngine
 
-/// Interner Mixer: Kanäle in Traktor-Reihenfolge C A B D, Crossfader. Im Extern-Modus nur Gain/Filter/FX.
+/// Interner Mixer: Kanäle in der Reihenfolge C A B D, Crossfader. Im Extern-Modus nur Gain/Filter/FX.
 struct MixerView: View {
     @Environment(MixModel.self) private var mix
 
@@ -104,8 +104,8 @@ struct LevelFader: View {
     }
 }
 
-/// FX-Unit im Traktor-Gruppenmodus: Dry/Wet + 3 Slots (Filter · Delay · Reverb), je Knopf + Taste.
-/// Am X1: D/W-Regler, Regler 1–3 = Stärke, Tasten 1–3 = an/aus.
+/// FX-Unit im Gruppenmodus: Dry/Wet + 3 Slots (Filter · Delay · Reverb), je Knopf + Taste.
+/// Am Controller: D/W-Regler, Regler 1–3 = Stärke, Tasten 1–3 = an/aus.
 struct FXUnitView: View {
     @Environment(MixModel.self) private var mix
     let u: Int
@@ -176,7 +176,7 @@ struct FXUnitView: View {
     }
 }
 
-/// Obere Leiste: FX 1 · Master-Clock (wie Traktor) · FX 2
+/// Obere Leiste: FX 1 · Master-Clock · FX 2
 struct TopBar: View {
     @Environment(MixModel.self) private var mix
 
@@ -214,7 +214,7 @@ struct MasterClockPanel: View {
         HStack(spacing: 6) {
             DeckButton(title: s.linkEnabled && s.linkPeers > 0 ? "LINK \(s.linkPeers)" : "LINK", active: s.linkEnabled,
                        color: Theme.secondary, width: 38) { mix.toggleLink() }
-                .help("Ableton Link: MINOS gibt das Tempo vor")
+                .help("Link: MINOS gibt das Tempo vor")
             VStack(spacing: 2) {
                 DeckButton(title: "AUTO", active: !s.clockMaster, width: 40) { mix.setClockMaster(false) }
                     .help("Ein Deck ist Master (automatisch oder per MASTER-Taste)")

@@ -1,16 +1,24 @@
 import AVFoundation
 import Foundation
+import QuartzCore
 import Observation
 import MixCore
 import MixEngine
 
-/// Intern: Mixer in der App, alle Decks auf ein Ausgangspaar. Extern: jedes Deck auf eigenes Paar (z. B. Xone:96).
+/// Intern: Mixer in der App, alle Decks auf ein Ausgangspaar. Extern: jedes Deck auf eigenes Paar (USB-Mischpult).
 enum MixerMode: String, CaseIterable, Identifiable {
     case internalMixer = "Intern", external = "Extern"
     var id: String { rawValue }
 }
 
 let deckLetters = ["A", "B", "C", "D"]
+
+/// Zustand eines Decks für die Oberfläche – eigenes Observable, damit eine Änderung an Deck A
+/// nicht die Ansichten von B, C, D neu rendert (SwiftUI-Layout je Deck kostet messbar Zeit)
+@MainActor @Observable
+final class DeckMirror {
+    var state = DeckState()
+}
 
 /// Oberflächen-Seite: spiegelt den Zustand des Steuerkerns (30 Hz) und leitet Befehle weiter.
 /// Hängt die Oberfläche, laufen Audio, Sync und Controller trotzdem weiter (eigene Threads).
@@ -21,6 +29,10 @@ final class MixModel {
 
     /// Gespiegelter Zustand (ohne Sync-Nudge, damit die Oberfläche nicht ständig neu zeichnet)
     private(set) var state = MixState()
+    /// je Deck getrennt gespiegelt (siehe DeckMirror); Master und Clock-Modus ebenfalls einzeln
+    @ObservationIgnored let decks = (0..<MixEngine.deckCount).map { _ in DeckMirror() }
+    private(set) var effectiveMaster: Int?
+    private(set) var clockMaster = false
     var focusedDeck = 0
     var prefs = AppPrefs.load() {
         didSet {
@@ -41,7 +53,7 @@ final class MixModel {
     /// Puffergröße in Frames (0 = Gerätestandard)
     var bufferSize = 0
 
-    /// eigene Änderungen (Grid, Hotcues) dauerhaft je Track – die Traktor-Collection bleibt unangetastet
+    /// eigene Änderungen (Grid, Hotcues) dauerhaft je Track – die Collection bleibt unangetastet
     @ObservationIgnored let edits = TrackEditStore(url: HistoryStore.baseDir.appendingPathComponent("edits.json"))
     @ObservationIgnored private var originals: [Int: Track] = [:]
     @ObservationIgnored private var savedEdit: [Int: TrackEdit?] = [:]
@@ -68,7 +80,17 @@ final class MixModel {
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pull() }
         }
+        // MIX741_DEBUG=1: Hänger des Hauptthreads melden (Lücken zwischen zwei Takten > 30 ms)
+        if ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1" {
+            var last = CACurrentMediaTime()
+            hitchTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120, repeats: true) { _ in
+                let now = CACurrentMediaTime(), gap = now - last
+                last = now
+                if gap > 0.03 { print(String(format: "[hitch] %.1f s: main thread %.0f ms", now, gap * 1000)); fflush(stdout) }
+            }
+        }
     }
+    @ObservationIgnored private var hitchTimer: Timer?
 
     /// Zustand vom Kern holen
     @ObservationIgnored private var changeCount = 0
@@ -88,6 +110,9 @@ final class MixModel {
                 }
             }
             state = s
+            for d in decks.indices where s.decks[d] != decks[d].state { decks[d].state = s.decks[d] }
+            if s.effectiveMaster != effectiveMaster { effectiveMaster = s.effectiveMaster }
+            if s.clockMaster != clockMaster { clockMaster = s.clockMaster }
             persistEdits()
         }
     }
@@ -96,16 +121,15 @@ final class MixModel {
 
     // MARK: - Abfragen
 
-    func deck(_ d: Int) -> DeckState { state.decks[d] }
+    func deck(_ d: Int) -> DeckState { decks[d].state }
     func position(_ d: Int) -> Double { core.position(d) }
     func audio(_ d: Int) -> TrackAudio? { core.trackAudio(d) }
     func phaseError(_ d: Int) -> Double? { core.phaseError(d) }
-    var effectiveMaster: Int? { state.effectiveMaster }
     var masterBPM: Double { state.masterTempo }
     var showFourDecks: Bool { prefs.ui.showFourDecks }
 
     func keyText(_ d: Int) -> String {
-        let s = state.decks[d]
+        let s = decks[d].state
         guard let t = s.track else { return "" }
         return s.keyShift == 0 ? t.openKey : "\(t.openKey) \(s.keyShift > 0 ? "+" : "")\(s.keyShift)"
     }
@@ -245,7 +269,7 @@ final class MixModel {
         applyRouting(restart: true)
     }
 
-    /// Interface neu verbinden (z. B. Xone nach USB-Aussetzer): Geräte neu einlesen, Ausgabe neu starten
+    /// Interface neu verbinden (z. B. nach USB-Aussetzer): Geräte neu einlesen, Ausgabe neu starten
     func reconnect() {
         refreshDevices()
         applyRouting(restart: true)

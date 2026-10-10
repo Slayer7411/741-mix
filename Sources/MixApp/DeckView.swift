@@ -45,7 +45,7 @@ struct DeckView: View {
             Spacer(minLength: 4)
             if !mix.prefs.ui.showMixer {
                 // ohne Mixer-Ansicht: FX-Zuweisung direkt am Deck
-                // FX-Zuweisung wie am Traktor-Kanal: 1 2 (3 4)
+                // FX-Zuweisung am Kanal: 1 2 (3 4)
                 let n = mix.prefs.ui.fxUnitCount
                 VStack(spacing: 2) {
                     ForEach(0..<(n == 4 ? 2 : 1), id: \.self) { row in
@@ -89,7 +89,7 @@ struct DeckView: View {
         }
     }
 
-    /// Grid-Werkzeuge wie Traktors GRID-Tab: verschieben, BPM, ×2/÷2, Marker setzen, zurücksetzen
+    /// Grid-Werkzeuge: verschieben, BPM, ×2/÷2, Marker setzen, zurücksetzen
     private func gridRow(_ deck: DeckState) -> some View {
         HStack(spacing: 3) {
             Text("GRID").font(Theme.label(9, .bold)).foregroundStyle(Theme.muted).frame(width: 30, alignment: .leading)
@@ -170,7 +170,7 @@ struct PhaseMeter: View {
     let d: Int
 
     var body: some View {
-        let active = mix.deck(d).playing && (mix.state.clockMaster || mix.effectiveMaster != nil)
+        let active = mix.deck(d).playing && (mix.clockMaster || mix.effectiveMaster != nil)
         LiveCanvas(fps: 20, running: active) { [mix, d] ctx, size in
             let w = size.width, h = size.height
             ctx.setFillColor(CG.void); ctx.fill(CGRect(origin: .zero, size: size))
@@ -183,13 +183,13 @@ struct PhaseMeter: View {
     }
 }
 
-/// Großer Phasen-Anzeiger unter der Wellenform (wie Traktor): Abstand zum Master in Beats, Mitte = synchron
+/// Großer Phasen-Anzeiger unter der Wellenform: Abstand zum Master in Beats, Mitte = synchron
 struct PhaseBar: View {
     @Environment(MixModel.self) private var mix
     let d: Int
 
     var body: some View {
-        let active = mix.deck(d).playing && (mix.state.clockMaster || mix.effectiveMaster != nil)
+        let active = mix.deck(d).playing && (mix.clockMaster || mix.effectiveMaster != nil)
         LiveCanvas(fps: 30, running: active) { [mix, d] ctx, size in
             let w = size.width, h = size.height
             ctx.setFillColor(CG.void); ctx.fill(CGRect(origin: .zero, size: size))
@@ -205,7 +205,7 @@ struct PhaseBar: View {
     }
 }
 
-/// Senkrechter Tempo-Fader rechts am Deck (wie Traktor), mit Bereich, Reset und Pitch-Bend
+/// Senkrechter Tempo-Fader rechts am Deck, mit Bereich, Reset und Pitch-Bend
 struct TempoColumn: View {
     @Environment(MixModel.self) private var mix
     let d: Int
@@ -219,7 +219,7 @@ struct TempoColumn: View {
             .menuStyle(.borderlessButton).font(Theme.mono(9)).fixedSize()
             GeometryReader { geo in
                 let h = geo.size.height
-                let f = (deck.tempoPct / deck.tempoRange + 1) / 2   // 0 = schneller oben? Traktor: unten = schneller
+                let f = (deck.tempoPct / deck.tempoRange + 1) / 2   // unten = schneller
                 ZStack(alignment: .top) {
                     Rectangle().fill(Theme.void).frame(width: 4).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
                     Rectangle().fill(Theme.muted).frame(width: 14, height: 1).offset(y: h / 2)

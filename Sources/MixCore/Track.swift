@@ -1,6 +1,6 @@
 import Foundation
 
-/// Ein Cue-Punkt wie in Traktor (CUE_V2). Positionen in Millisekunden.
+/// Ein Cue-Punkt (NML CUE_V2). Positionen in Millisekunden.
 public struct Cue: Hashable, Sendable, Codable {
     public enum Kind: Int, Sendable, Codable {
         case cue = 0, fadeIn = 1, fadeOut = 2, load = 3, grid = 4, loop = 5
@@ -17,7 +17,7 @@ public struct Cue: Hashable, Sendable, Codable {
     }
 }
 
-/// Ein Track der Collection. `key` entspricht dem Traktor-Primärschlüssel (VOLUME + DIR + FILE).
+/// Ein Track der Collection. `key` entspricht dem NML-Primärschlüssel (VOLUME + DIR + FILE).
 public struct Track: Identifiable, Hashable, Sendable {
     public var id: String { key }
     public var key: String
@@ -36,7 +36,7 @@ public struct Track: Identifiable, Hashable, Sendable {
     /// Kommentar 2 (NML-Attribut RATING) – Mix-Steckbrief.
     public var comment2: String = ""
     public var keyText: String = ""
-    /// Traktor MUSICAL_KEY 0–23, -1 = unbekannt
+    /// NML MUSICAL_KEY 0–23, -1 = unbekannt
     public var musicalKey: Int = -1
     public var bpm: Double = 0
     public var duration: Double = 0
@@ -83,7 +83,7 @@ public struct Track: Identifiable, Hashable, Sendable {
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
     public var playsText: String { playCount > 0 ? String(playCount) : "" }
-    /// analysiert = Tempo und Lautheit vorhanden (wie Traktors Analyse)
+    /// analysiert = Tempo und Lautheit vorhanden (in der Collection vorhanden)
     public var analyzed: Bool { bpm > 0 && perceivedDb != nil }
     public var analyzedSort: Int { analyzed ? 1 : 0 }
     public var gainSort: Double { perceivedDb ?? -99 }
@@ -105,7 +105,7 @@ public struct Track: Identifiable, Hashable, Sendable {
     public var gridAnchorMs: Double? { cues.first { $0.kind == .grid }?.startMs }
     public var hotcues: [Cue] { cues.filter { $0.hotcue >= 0 }.sorted { $0.hotcue < $1.hotcue } }
 
-    /// Open-Key-Notation (1d…12m) aus MUSICAL_KEY; Traktor: 0–11 Dur (C…B), 12–23 Moll (Cm…Bm).
+    /// Open-Key-Notation (1d…12m) aus MUSICAL_KEY: 0–11 Dur (C…B), 12–23 Moll (Cm…Bm).
     public var openKey: String {
         guard musicalKey >= 0 else { return keyText }
         let major = musicalKey < 12

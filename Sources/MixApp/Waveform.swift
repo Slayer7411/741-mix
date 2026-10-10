@@ -30,10 +30,13 @@ final class RenderedWaveform: @unchecked Sendable {
             case .bone: Colors(low: RGB(r: 0.30, g: 0.27, b: 0.25), mid: RGB(r: 0.58, g: 0.54, b: 0.50), high: RGB(r: 0.90, g: 0.88, b: 0.85))
             case .orange: Colors(low: RGB(r: 0.78, g: 0.22, b: 0.06), mid: RGB(r: 1.0, g: 0.58, b: 0.14), high: RGB(r: 1.0, g: 0.92, b: 0.78))
             case .blue: Colors(low: RGB(r: 0.10, g: 0.32, b: 0.95), mid: RGB(r: 0.98, g: 0.62, b: 0.20), high: RGB(r: 1, g: 1, b: 1))
-            case .traktor: Colors(low: RGB(r: 1.0, g: 0.22, b: 0.10), mid: RGB(r: 0.25, g: 0.90, b: 0.40), high: RGB(r: 0.35, g: 0.45, b: 1.0))
+            case .classic: Colors(low: RGB(r: 1.0, g: 0.22, b: 0.10), mid: RGB(r: 0.25, g: 0.90, b: 0.40), high: RGB(r: 0.35, g: 0.45, b: 1.0))
             }
         }
     }
+
+    /// Höhen-Ebene: Energieanteil flach abgebildet (Exponent 0,35 statt Wurzel), damit Hats auch unter Kick und Bass sichtbar bleiben
+    static func highLevel(_ ratio: Float) -> CGFloat { CGFloat(pow(max(0, ratio), 0.35)) * 0.95 }
 
     /// Hüllkurve: Anschlag sofort, Abklingen ~20 ms (Kicks als klare Spitzen statt Rauschen)
     private static func envelope(_ a: TrackAudio) -> [Float] {
@@ -43,7 +46,7 @@ final class RenderedWaveform: @unchecked Sendable {
         return env
     }
 
-    /// Spektrum-Farbe: Bänder additiv gemischt, auf volle Helligkeit gezogen (wie Traktor)
+    /// Spektrum-Farbe: Bänder additiv gemischt, auf volle Helligkeit gezogen
     private static func spectrum(_ lo: CGFloat, _ mi: CGFloat, _ hi: CGFloat, _ c: Colors) -> RGB {
         let r = c.low.r * lo + c.mid.r * mi + c.high.r * hi
         let g = c.low.g * lo + c.mid.g * mi + c.high.g * hi
@@ -88,7 +91,7 @@ final class RenderedWaveform: @unchecked Sendable {
             return [(cg(colors.mid), outline(pk, dt: dt))]
         case .threeBand:
             let mid = (0..<range.count).map { pk[$0] * CGFloat(a.mid[range.lowerBound + $0] + a.high[range.lowerBound + $0]).squareRoot() }
-            let high = (0..<range.count).map { pk[$0] * CGFloat(a.high[range.lowerBound + $0]).squareRoot() * 0.9 }
+            let high = (0..<range.count).map { pk[$0] * Self.highLevel(a.high[range.lowerBound + $0]) }
             return [(cg(colors.low), outline(pk, dt: dt)), (cg(colors.mid), outline(mid, dt: dt)), (cg(colors.high), outline(high, dt: dt))]
         case .spectrum:
             // Farbe je Block auf 5 Stufen je Kanal gerundet → wenige Pfade, Blöcke als Rechtecke
@@ -125,7 +128,7 @@ final class RenderedWaveform: @unchecked Sendable {
         case .threeBand:
             bar(col.pk, colors.low)
             bar(col.pk * (col.mi + col.hi).squareRoot(), colors.mid)
-            bar(col.pk * col.hi.squareRoot() * 0.9, colors.high)
+            bar(col.pk * highLevel(Float(col.hi)), colors.high)
         case .spectrum:
             bar(col.pk, spectrum(col.lo, col.mi, col.hi, colors))
         case .mono:
@@ -190,7 +193,7 @@ private extension Dictionary {
     }
 }
 
-/// Scrollende Wellenform (Traktor-Stil): Ebenen auf der GPU, pro Frame nur verschoben.
+/// Scrollende Wellenform: Ebenen auf der GPU, pro Frame nur verschoben.
 struct WaveformView: View {
     @Environment(MixModel.self) private var mix
     @Environment(WaveformCache.self) private var cache

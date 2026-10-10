@@ -63,7 +63,7 @@ struct DeckSettings: View {
                     ForEach(SyncMode.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 sliderRow("Pitch-Bend-Stärke", $mix.prefs.engine.bendAmount, 0.01...0.12, format: "%.2f")
-                sliderRow("Ableton-Link-Versatz (ms)", $mix.prefs.engine.linkOffsetMs, -50...50, step: 1, format: "%+.0f")
+                sliderRow("Link-Versatz (ms)", $mix.prefs.engine.linkOffsetMs, -50...50, step: 1, format: "%+.0f")
             }
             Section("Loops & Beatjump") {
                 Picker("Loopgröße (Standard)", selection: $mix.prefs.engine.defaultLoopSize) {
@@ -75,8 +75,8 @@ struct DeckSettings: View {
             }
             Section("History & Preparation") {
                 sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f")
-                Toggle("History zusätzlich in Traktors History-Ordner schreiben", isOn: $mix.prefs.ui.historyToTraktor)
-                Text("history und preparation werden als traktor-nml gespeichert (~/Library/Application Support/MINOS-741) -> in traktor direkt importierbar. preparation wird bei jedem start archiviert und geleert.")
+                Toggle("History zusätzlich in den History-Ordner der Collection schreiben", isOn: $mix.prefs.ui.historyToExternal)
+                Text("history und preparation werden als nml gespeichert (~/Library/Application Support/MINOS-741) -> direkt in die collection importierbar. preparation wird bei jedem start archiviert und geleert.")
                     .font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
             Section("Ansicht") {
@@ -163,12 +163,12 @@ struct WaveformSettings: View {
                 Picker("Anordnung", selection: $mix.prefs.ui.browserLayout) { ForEach(BrowserLayout.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
                 Toggle("Ordner-Baum ausblenden, solange Decks sichtbar sind", isOn: $mix.prefs.ui.hideTreeWithDecks)
             }
-            Section("Cue-Farben (Bildschirm und X1-Pads)") {
-                Picker("Start-Cue (Load / AutoGrid)", selection: $mix.prefs.x1.colorStartCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
-                Picker("Cue", selection: $mix.prefs.x1.colorCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
-                Picker("Loop", selection: $mix.prefs.x1.colorLoop) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
-                Picker("Kurzer Loop", selection: $mix.prefs.x1.colorShortLoop) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
-                Picker("Kurz = bis", selection: $mix.prefs.x1.shortLoopBars) {
+            Section("Cue-Farben (Bildschirm und Controller-Pads)") {
+                Picker("Start-Cue (Load / AutoGrid)", selection: $mix.prefs.controller.colorStartCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Picker("Cue", selection: $mix.prefs.controller.colorCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Picker("Loop", selection: $mix.prefs.controller.colorLoop) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Picker("Kurzer Loop", selection: $mix.prefs.controller.colorShortLoop) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Picker("Kurz = bis", selection: $mix.prefs.controller.shortLoopBars) {
                     ForEach([1.0, 2, 4, 8], id: \.self) { Text("\(Int($0)) \($0 == 1 ? "Takt" : "Takte")").tag($0) }
                 }
             }
@@ -208,7 +208,7 @@ struct AudioSettings: View {
                 }
                 HStack {
                     Button("Neu verbinden") { mix.reconnect() }
-                    Text("startet die Ausgabe neu, z. B. wenn die Xone nach einem USB-Aussetzer stumm bleibt")
+                    Text("startet die Ausgabe neu, z. B. wenn das Interface nach einem USB-Aussetzer stumm bleibt")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Text("Eine neue Samplerate gilt am Gerät sofort, MINOS-741 rechnet ab dem nächsten Start damit.")
@@ -217,7 +217,7 @@ struct AudioSettings: View {
             Section("Mixer") {
                 Picker("Modus", selection: Binding(get: { mix.mixerMode }, set: { mix.mixerMode = $0; mix.applyRouting() })) {
                     Text("Intern – Mixer in MINOS-741").tag(MixerMode.internalMixer)
-                    Text("Extern – Mischpult (z. B. Xone:96)").tag(MixerMode.external)
+                    Text("Extern – Mischpult (jedes Deck auf eigenem Kanalpaar)").tag(MixerMode.external)
                 }
                 .pickerStyle(.radioGroup)
             }
@@ -253,33 +253,33 @@ struct AudioSettings: View {
 
 struct ControllerSettings: View {
     @Environment(MixModel.self) private var mix
-    @Environment(X1Status.self) private var x1
+    @Environment(ControllerStatus.self) private var status
 
     var body: some View {
         @Bindable var mix = mix
         Form {
-            Section("Traktor Kontrol X1 MK2 (nativ, HID)") {
-                if x1.devices.isEmpty {
-                    Text("Kein X1 MK2 gefunden. Traktor beenden, falls es läuft.").foregroundStyle(.secondary)
+            Section("Controller (nativ, HID)") {
+                if status.devices.isEmpty {
+                    Text("Kein Controller gefunden. Andere DJ-Software beenden, falls sie läuft.").foregroundStyle(.secondary)
                 }
-                ForEach(x1.devices) { d in
+                ForEach(status.devices) { d in
                     HStack {
-                        Text("X1 \(d.id)").font(.body.monospaced())
+                        Text("Controller \(d.id)").font(.body.monospaced())
                         Spacer()
-                        Picker("Links", selection: Binding(get: { d.left }, set: { x1.assign(d.id, left: $0, right: d.right) })) {
+                        Picker("Links", selection: Binding(get: { d.left }, set: { status.assign(d.id, left: $0, right: d.right) })) {
                             ForEach(0..<4, id: \.self) { Text(deckLetters[$0]).tag($0) }
                         }
                         .frame(width: 110)
-                        Picker("Rechts", selection: Binding(get: { d.right }, set: { x1.assign(d.id, left: d.left, right: $0) })) {
+                        Picker("Rechts", selection: Binding(get: { d.right }, set: { status.assign(d.id, left: d.left, right: $0) })) {
                             ForEach(0..<4, id: \.self) { Text(deckLetters[$0]).tag($0) }
                         }
                         .frame(width: 120)
-                        Picker("Browser", selection: Binding(get: { d.pane }, set: { x1.assignPane(d.id, $0) })) {
+                        Picker("Browser", selection: Binding(get: { d.pane }, set: { status.assignPane(d.id, $0) })) {
                             Text("links").tag(0)
                             Text("rechts").tag(1)
                         }
                         .frame(width: 130)
-                        Picker("FX", selection: Binding(get: { d.fxUnit }, set: { x1.assignFX(d.id, $0) })) {
+                        Picker("FX", selection: Binding(get: { d.fxUnit }, set: { status.assignFX(d.id, $0) })) {
                             Text(verbatim: "FX1 + FX3").tag(10)
                             Text(verbatim: "FX2 + FX4").tag(11)
                             Text(verbatim: "FX1 + FX2").tag(-1)
@@ -287,24 +287,25 @@ struct ControllerSettings: View {
                             Text(verbatim: "FX2").tag(1)
                         }
                         .frame(width: 120)
-                        Button("Blinken") { x1.identify(d.id) }.help("Pads dieses X1 leuchten kurz weiß")
+                        Button("Blinken") { status.identify(d.id) }.help("Pads dieses Controllers leuchten kurz weiß")
                     }
                 }
             }
             Section("Belegung") {
-                Picker("Cue-Taste", selection: $mix.prefs.x1.cueAction) { ForEach(X1CueAction.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
-                Toggle("Flux antippen schaltet Flux-Modus", isOn: $mix.prefs.x1.fluxTapToggles)
-                Picker("Flux halten + Hotcue 3/4 = Beatjump", selection: $mix.prefs.x1.fluxBeatjumpBeats) {
+                Picker("Cue-Taste", selection: $mix.prefs.controller.cueAction) { ForEach(ControllerCueAction.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Toggle("Flux antippen schaltet Flux-Modus", isOn: $mix.prefs.controller.fluxTapToggles)
+                Picker("Flux halten + Pads", selection: $mix.prefs.controller.fluxPads) { ForEach(ControllerFluxPads.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Picker("Beatjump-Größe (Flux + Pad 3/4)", selection: $mix.prefs.controller.fluxBeatjumpBeats) {
                     ForEach(BeatSizes.jump, id: \.self) { Text("±\(BeatSizes.label($0)) Beat").tag($0) }
                 }
-                Picker("Touchstrip", selection: $mix.prefs.x1.stripMode) { ForEach(X1StripMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
-                sliderRow("Touchstrip-Empfindlichkeit", $mix.prefs.x1.stripSensitivity, 0.2...3, format: "%.1f")
-                Stepper("Browse mit Shift: \(mix.prefs.x1.browseFastStep) Zeilen", value: $mix.prefs.x1.browseFastStep, in: 2...50)
+                Picker("Touchstrip", selection: $mix.prefs.controller.stripMode) { ForEach(ControllerStripMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                sliderRow("Touchstrip-Empfindlichkeit", $mix.prefs.controller.stripSensitivity, 0.2...3, format: "%.1f")
+                Stepper("Browse mit Shift: \(mix.prefs.controller.browseFastStep) Zeilen", value: $mix.prefs.controller.browseFastStep, in: 2...50)
             }
             Section("LEDs") {
-                sliderRow("Helligkeit an", Binding(get: { Double(mix.prefs.x1.ledOn) }, set: { mix.prefs.x1.ledOn = Int($0) }),
+                sliderRow("Helligkeit an", Binding(get: { Double(mix.prefs.controller.ledOn) }, set: { mix.prefs.controller.ledOn = Int($0) }),
                           10...127, step: 1, format: "%.0f")
-                sliderRow("Helligkeit aus", Binding(get: { Double(mix.prefs.x1.ledOff) }, set: { mix.prefs.x1.ledOff = Int($0) }),
+                sliderRow("Helligkeit aus", Binding(get: { Double(mix.prefs.controller.ledOff) }, set: { mix.prefs.controller.ledOff = Int($0) }),
                           0...40, step: 1, format: "%.0f")
                 Text("pad-farben: ⌘, -> anzeige -> cue-farben (gleich wie auf dem bildschirm)").font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
@@ -316,7 +317,7 @@ struct ControllerSettings: View {
                 """)
                 .font(.callout).foregroundStyle(.secondary)
             }
-            Section("Letztes Ereignis") { Text(x1.lastEvent.isEmpty ? "—" : x1.lastEvent).font(.callout.monospaced()) }
+            Section("Letztes Ereignis") { Text(status.lastEvent.isEmpty ? "—" : status.lastEvent).font(.callout.monospaced()) }
         }
         .formStyle(.grouped)
     }

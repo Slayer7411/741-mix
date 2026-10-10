@@ -3,14 +3,14 @@ import Observation
 import MixCore
 import MixEngine
 
-/// History und Preparation-Archiv – gespeichert im Traktor-NML-Format, direkt in Traktor importierbar.
+/// History und Preparation-Archiv – gespeichert als NML, direkt in die Collection importierbar.
 @MainActor @Observable
 final class HistoryStore {
     static let baseDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("MINOS-741")
     static let historyDir = baseDir.appendingPathComponent("History")
     static let prepDir = baseDir.appendingPathComponent("Preparation")
-    static let traktorHistoryDir = LibraryStore.defaultNML.deletingLastPathComponent().appendingPathComponent("History")
+    static let externalHistoryDir = LibraryStore.defaultNML.deletingLastPathComponent().appendingPathComponent("History")
 
     /// laufende Session (beginnt mit dem App-Start)
     private(set) var live: [HistoryEntry] = []
@@ -26,7 +26,10 @@ final class HistoryStore {
     @ObservationIgnored weak var mix: MixModel?
     @ObservationIgnored private var timer: Timer?
 
-    var liveURL: URL { Self.historyDir.appendingPathComponent(TraktorHistoryWriter.fileName(for: sessionStart)) }
+    /// eigene Sitzungsdatei: history_JJJJ-MM-TT-NN.nml (NN = Sitzung des Tages); die Kopie in den History-Ordner
+    /// der Collection behält deren Namensschema mit Uhrzeit
+    private(set) var liveURL: URL = HistoryStore.historyDir
+    private var externalName = ""
 
     init() {
         try? FileManager.default.createDirectory(at: Self.historyDir, withIntermediateDirectories: true)
@@ -34,7 +37,18 @@ final class HistoryStore {
         if !Session.isSelfTest, let d = try? Data(contentsOf: Self.playedURL), let k = try? JSONDecoder().decode([String].self, from: d) {
             played = Set(k)
         }
+        let day = HistorySession.dayString(sessionStart)
+        let used = ((try? FileManager.default.contentsOfDirectory(atPath: Self.historyDir.path)) ?? []).filter { $0.hasPrefix("history_\(day)-") }.count
+        liveURL = Self.historyDir.appendingPathComponent(HistorySession.sessionFileName(day: sessionStart, number: used + 1))
+        externalName = HistoryNMLWriter.fileName(for: sessionStart)
         refreshArchive()
+    }
+
+    /// beim Beenden: Spieldauern nachführen und sofort schreiben
+    func finish() {
+        updateDurations()
+        save(sync: true)
+        savePlayed()
     }
 
     func start(store: LibraryStore, mix: MixModel) {
@@ -66,6 +80,7 @@ final class HistoryStore {
         live.append(HistoryEntry(key: t.key, title: t.title, artist: t.artist, bpm: t.bpm, keyText: t.openKey,
                                  deck: deck, start: start, duration: mix?.core.playedSeconds(deck) ?? 0))
         save()
+        refreshArchive()
     }
 
     private func updateDurations() {
@@ -80,16 +95,18 @@ final class HistoryStore {
         if changed { save() }
     }
 
-    private func save() {
+    /// NML bauen und schreiben im Hintergrund (lief alle 5 s auf dem Hauptthread -> Ruckler); beim Beenden synchron
+    private func save(sync: Bool = false) {
         guard !live.isEmpty else { return }
-        let text = TraktorHistoryWriter.nml(entries: live, index: store?.entryIndex ?? NMLEntryIndex(), uuid: uuid)
-        if ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" { SelfTest.historyURL = liveURL }
-        try? text.write(to: liveURL, atomically: true, encoding: .utf8)
-        if mix?.prefs.ui.historyToTraktor == true {
-            try? text.write(to: Self.traktorHistoryDir.appendingPathComponent(liveURL.lastPathComponent),
-                            atomically: true, encoding: .utf8)
+        let entries = live, index = store?.entryIndex ?? NMLEntryIndex(), uuid = uuid, url = liveURL
+        let external = mix?.prefs.ui.historyToExternal == true ? Self.externalHistoryDir.appendingPathComponent(externalName) : nil
+        if ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" { SelfTest.historyURL = url }
+        let write = {
+            let text = HistoryNMLWriter.nml(entries: entries, index: index, uuid: uuid)
+            try? text.write(to: url, atomically: true, encoding: .utf8)
+            if let external { try? text.write(to: external, atomically: true, encoding: .utf8) }
         }
-        refreshArchive()
+        if sync { write() } else { DispatchQueue.global(qos: .utility).async(execute: write) }
     }
 
     func refreshArchive() {
@@ -100,21 +117,21 @@ final class HistoryStore {
         }
         let own = list(Self.historyDir, .live).filter { $0.url != liveURL }
         let ownNames = Set(own.map(\.url.lastPathComponent))
-        let traktor = list(Self.traktorHistoryDir, .traktor).filter { !ownNames.contains($0.url.lastPathComponent) }
-        archive = (own + traktor).sorted { $0.date > $1.date }
+        let external = list(Self.externalHistoryDir, .external).filter { !ownNames.contains($0.url.lastPathComponent) }
+        archive = (own + external).sorted { $0.date > $1.date }
         prepArchive = list(Self.prepDir, .live).sorted { $0.date > $1.date }
     }
 
     func entries(_ s: HistorySession) -> [HistoryEntry] {
         if let c = cache[s.id] { return c }
-        let e = TraktorHistoryParser.parse(url: s.url)
+        let e = HistoryNMLParser.parse(url: s.url)
         cache[s.id] = e
         return e
     }
 
     // MARK: Preparation-Archiv
 
-    /// Beim Start: Preparation der letzten Session als NML archivieren und leeren (wie Traktor-Workflow, mit Verlauf).
+    /// Beim Start: Preparation der letzten Session als NML archivieren und leeren (mit Verlauf).
     func archivePreparation(keys: [String], date: Date) {
         guard !keys.isEmpty, let store else { return }
         let name = "Preparation " + Theme.dateFormat.string(from: date)
@@ -123,8 +140,8 @@ final class HistoryStore {
             return HistoryEntry(key: k, title: t?.title ?? "", artist: t?.artist ?? "", bpm: t?.bpm ?? 0,
                                 keyText: t?.openKey ?? "", deck: 0, start: date, duration: 0)
         }
-        let text = TraktorPlaylistWriter.nml(name: name, entries: entries, index: store.entryIndex)
-        let file = TraktorHistoryWriter.fileName(for: date).replacingOccurrences(of: "history_", with: "preparation_")
+        let text = PlaylistNMLWriter.nml(name: name, entries: entries, index: store.entryIndex)
+        let file = HistoryNMLWriter.fileName(for: date).replacingOccurrences(of: "history_", with: "preparation_")
         try? text.write(to: Self.prepDir.appendingPathComponent(file), atomically: true, encoding: .utf8)
         refreshArchive()
     }
