@@ -10,16 +10,18 @@ native dj software for macos. traktor workflow and files, own browser and tag sy
 
 * 4 decks with the traktor deck set: cue / cup, 8 hotcues, auto + manual loops, beatjump, sync + master, keylock, key shift, flux, reverse, flux reverse, pitch bend
 * c++ audio core, sync on its own thread -> ui can hang, sound and sync keep running
-* master clock with AUTO / MASTER, tap, metronome, snap and quant
+* master clock with AUTO / MASTER, tap, metronome, snap and quant, ableton link (minos leads)
+* bar counter from the first play (4 / 8 / 16 bars)
+* sync modes: dynamic, fixed (keeps a shifted phase), tempo only
 * waveform with 3-band layers, colored beatgrid, phrase countdown, grid tools
 * internal mixer or external mode -> every deck on its own usb pair (xone:96)
-* 2 fx units in traktor group mode: filter / delay (beat synced) / reverb
+* 2 or 4 fx units, group or single mode, channel assign 1-4
 * two kontrol x1 mk2 in native hid mode, incl. my traktor custom mappings
 * dual browser side by side or stacked
 * reads traktor `collection.nml` directly
 * tag system on comment 2 with a configurable separator
 * history, preparation and playlist export as traktor nml
-* every option has a setting (⌘,)
+* every option has a setting (⌘,), ui in german or english
 
 ## ◆ STATUS
 
@@ -72,5 +74,13 @@ fonts bundled under the sil open font license.
 * x1 mk2 hid byte layout from the mixxx hid mapping by infiniteloop -> [mixxx forum](https://mixxx.discourse.group/t/traktor-kontrol-x1-mk2-hid-mapping-v2-1-mixxx-2-5-x-2-7-alpha-complete-archive/34064)
 * traktor tsi command ids from [cmdr](https://github.com/cmdr-editor/cmdr)
 * fonts: [cinzel](https://fonts.google.com/specimen/Cinzel), [ibm plex mono](https://fonts.google.com/specimen/IBM+Plex+Mono)
+* [ableton link](https://github.com/Ableton/link)
 
 traktor and kontrol are trademarks of native instruments. not affiliated, no native instruments code.
+
+## ◆ LICENSE
+
+GPL-2.0-or-later ([LICENSE.md](LICENSE.md)), because of ableton link.
+* ableton link 3.1.5: GPL-2.0-or-later, `Sources/LinkKit`
+* signalsmith stretch / linear: MIT
+* fonts: SIL open font license

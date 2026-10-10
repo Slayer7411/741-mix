@@ -158,6 +158,8 @@ public struct MixState: Equatable, Sendable {
     public var metronome = false
     public var metronomeVolume: Double = 0.5
     public var linkEnabled = false
+    /// verbundene Link-Teilnehmer (z. B. Ableton)
+    public var linkPeers = 0
     public var crossfader: Double = 0
     public var masterVolume: Double = 0.85
     public var externalMixer = false
@@ -720,7 +722,11 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
-    public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on } }
+    public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on; link.enabled = on } }
+
+    /// Ableton Link – MINOS gibt Tempo und Takt vor
+    public let link = LinkSession()
+    private var linkTicks = 0
 
     // MARK: Bar-Zähler (läuft ab dem ersten Play durch, bleibt beim Master-Wechsel auf dem Beat)
 
@@ -747,6 +753,7 @@ public final class MixController: @unchecked Sendable {
             engine.setClockBPM(state.clockBPM)
             engine.setMetronome(on: state.metronome, volume: state.metronomeVolume, firstChannel: state.prefs.metronomeChannel)
             applyMaster()
+            link.enabled = state.linkEnabled
         }
     }
 
@@ -877,6 +884,12 @@ public final class MixController: @unchecked Sendable {
                 let want = g.beatPosition(at: position(m))
                 if abs(BeatGrid.phaseError(own: engine.clockBeat, master: want)) > 0.02 { jumpClock(to: want) }
             }
+            // Ableton Link: Tempo und Beat der Clock vorgeben, Teilnehmer zählen
+            if state.linkEnabled {
+                link.lead(bpm: state.clockBPM, beat: engine.clockBeat)
+                linkTicks += 1
+                if linkTicks % 100 == 0 { let n = link.peers; if n != state.linkPeers { state.linkPeers = n } }
+            } else if state.linkPeers != 0 { state.linkPeers = 0 }
             // Bar-Zähler startet mit dem ersten Play
             if sessionOffset == nil, state.decks.contains(where: { $0.playing }) { sessionOffset = -engine.clockBeat.rounded() }
             // History: hörbare Spielzeit zählen, ab Schwelle als gespielt melden

@@ -16,6 +16,8 @@ enum SelfTest {
                 log("Routing \(xone.name) extern: läuft=\(core.engine.running) Fehler=\(core.engine.lastError ?? "keine")")
             }
             core.engine.setMasterVolume(0)   // stumm, Einstellung bleibt unverändert
+            // Link nur auf Wunsch (sonst würde der Test das Tempo eines laufenden Ableton ändern)
+            core.setLinkEnabled(ProcessInfo.processInfo.environment["MIX741_LINKTEST"] != nil)
             var p = mix.prefs.engine
             p.historyThreshold = 3            // nur im Test: schnell als gespielt markieren (nicht gespeichert)
             core.setPrefs(p)

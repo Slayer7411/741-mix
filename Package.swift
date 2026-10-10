@@ -16,8 +16,14 @@ let package = Package(
                 cxxSettings: [.headerSearchPath("vendor"), .define("SIGNALSMITH_USE_ACCELERATE"),
                               .unsafeFlags(["-O3"])],
                 linkerSettings: [.linkedFramework("Accelerate"), .linkedFramework("AudioToolbox")]),
+        // Ableton Link 3.1.5 (GPL-2.0-or-later) über die C-Schnittstelle abl_link
+        .target(name: "LinkKit",
+                exclude: ["LICENSE-Link.md", "GNU-GPL-v2.0.md", "VERSION.txt", "asio/LICENSE_1_0.txt", "link", "asio"],
+                sources: ["abl_link.cpp"],
+                cxxSettings: [.headerSearchPath("link/include"), .headerSearchPath("asio/include"),
+                              .define("LINK_PLATFORM_MACOSX", to: "1")]),
         // Audio-Thread-Code arbeitet bewusst mit geteiltem Zustand → Swift-5-Modus
-        .target(name: "MixEngine", dependencies: ["MixCore", "MixDSP"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "MixEngine", dependencies: ["MixCore", "MixDSP", "LinkKit"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "MixApp", dependencies: ["MixCore", "MixEngine"],
                           resources: [.copy("Resources")],
                           swiftSettings: [.swiftLanguageMode(.v5)]),

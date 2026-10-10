@@ -22,7 +22,7 @@
 | sync + master, phase lock on its own thread | ■ | |
 | keylock, key shift ±12, tempo ranges, pitch bend | ■ | signalsmith stretch |
 | master clock: auto / master, tap, metronome | ■ | |
-| ableton link | □ p1 | |
+| ableton link (minos leads tempo and bar) | ■ | |
 | midi clock in / out | □ p2 | |
 | beatgrid editing (shift, bpm, anchor, reset) | ■ | |
 | own bpm / key / grid analysis | □ p2 | values come from the traktor collection |
@@ -38,7 +38,7 @@
 | headphone cue in internal mode | □ p2 | external mode uses the desk |
 | eq types (classic, p600, xone, nuo) | □ p3 | |
 | mixer fx (traktor 3) | □ p2 | |
-| fx units in group mode (filter / delay / reverb) | ◧ | traktor: 4 units, single mode, 40+ effects |
+| 2 / 4 fx units, group + single mode, channel assign | ■ | 3 effects so far |
 | more effects (beatmasher, gater, flanger, ramp delay …) | □ p2 | |
 
 ## ◆ BROWSER / LIBRARY

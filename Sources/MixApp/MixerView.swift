@@ -206,7 +206,8 @@ struct MasterClockPanel: View {
     var body: some View {
         let s = mix.state
         HStack(spacing: 6) {
-            DeckButton(title: "LINK", active: s.linkEnabled, color: Theme.secondary, width: 30) { mix.toggleLink() }
+            DeckButton(title: s.linkEnabled && s.linkPeers > 0 ? "LINK \(s.linkPeers)" : "LINK", active: s.linkEnabled,
+                       color: Theme.secondary, width: 38) { mix.toggleLink() }
                 .help("Ableton Link: MINOS gibt das Tempo vor")
             VStack(spacing: 2) {
                 DeckButton(title: "AUTO", active: !s.clockMaster, width: 40) { mix.setClockMaster(false) }
