@@ -18,6 +18,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * ci: build + tests on every push and pull request, badge in the readme
 
 ### changed
+* big browser ⇄ decks (space / browse push) faster: hidden decks keep their size (no new deck layout, no new waveform tiles), the playlist tree stays in its split at width 0 instead of being removed and re-inserted -> back to decks 939 -> 194 ms, to big browser 328 -> 266 ms (2 browsers side by side, tree only in big browser, 4 decks), 145 / 144 -> 98 / 107 ms with one browser. `MIX741_DEBUG=1` logs `[toggle]` (switch to next frame), `MIX741_BENCH=toggle` measures offscreen without a window
 * reverb softer: input diffusion, damped and slowly modulated comb filters, gentle lowpass at the output -> no metallic ringing, made for blends
 * waveform: highs layer more visible (flat mapping of the high band, hats stay visible under kick and bass)
 * waveform: rendered as bitmap tiles around the playhead on a background thread, grid and cues stay vector layers -> the render server no longer redraws thousands of path points per frame (main thread spent ~65 % waiting for it, now ~0 %)

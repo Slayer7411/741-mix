@@ -173,7 +173,7 @@ final class BrowserState {
 
     var activePane: BrowserPaneModel { activePaneID == paneB.id ? paneB : paneA }
     /// Browser groß (Decks ausgeblendet) – Leertaste oder Browse-Knopf am Controller
-    var maximized = false
+    var maximized = false { didSet { if maximized != oldValue { ToggleProbe.toggled(maximized) } } }
 
     func pane(_ i: Int) -> BrowserPaneModel { i == 1 ? paneB : paneA }
 

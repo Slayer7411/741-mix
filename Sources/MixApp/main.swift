@@ -21,14 +21,20 @@ struct ContentView: View {
     @Environment(BrowserState.self) private var browserState
     private var paneA: BrowserPaneModel { browserState.paneA }
     private var paneB: BrowserPaneModel { browserState.paneB }
+    /// Höhe der Deck-Fläche vor dem Zuklappen – ohne Beobachtung, Messen löst kein neues Layout aus
+    private final class Height { var value: CGFloat = 0 }
+    @State private var deckAreaHeight = Height()
 
     var body: some View {
         VStack(spacing: 0) {
             // Decks oben, Browser unten – Trenner verschiebbar. Browser groß: Decks nur zusammengeklappt,
-            // nicht neu aufgebaut (sonst dauert das Umschalten mit 14k Zeilen spürbar)
+            // nicht neu aufgebaut (sonst dauert das Umschalten mit 14k Zeilen spürbar). Zugeklappt behalten sie
+            // ihre letzte Höhe: kein neues Deck-Layout, keine neuen Wellenform-Kacheln
             let big = browserState.maximized
             deckArea
-                .frame(maxHeight: big ? 0 : .infinity)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if !browserState.maximized { deckAreaHeight.value = $0 } }
+                .frame(height: big && deckAreaHeight.value > 0 ? deckAreaHeight.value : nil)
+                .frame(maxHeight: big ? 0 : .infinity, alignment: .top)
                 .opacity(big ? 0 : 1)
                 .allowsHitTesting(!big)
                 .clipped()
@@ -324,6 +330,7 @@ default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
 }
 Theme.registerFonts()
 
+if ToggleBench.requested { MainActor.assumeIsolated { ToggleBench.run() } }   // Messung offscreen, ohne Fenster
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.
 NSApplication.shared.setActivationPolicy(.regular)
 NSApplication.shared.activate(ignoringOtherApps: true)
