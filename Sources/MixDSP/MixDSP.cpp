@@ -1,7 +1,8 @@
 // MixDSP – Echtzeitkern. Regeln für alles, was in render() läuft:
 // keine Sperren, kein new/delete, keine Systemaufrufe, nur vorab angelegter Speicher.
 #include "MixDSP.h"
-#include "MixDSPAUHost.h"
+#include "MixDSPPlugin.h"
+#include "PluginBackend.h"
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -252,17 +253,24 @@ struct Reverb {
     }
 };
 
-// ---------- Plugin (Audio Unit o. ä., über MixDSPAUHost.h) ----------
-// wie Delay/Reverb: aus = Eingang zu, Ausgang klingt aus; erst nach 1 s unter -100 dB wird nicht mehr gerechnet
+// ---------- Plugin (Audio Unit, VST3 – MixDSPPlugin.h) ----------
+// wie Delay/Reverb: aus = Eingang zu, Ausgang klingt aus; gerechnet wird, bis es 1 s (oder die vom Plugin gemeldete
+// Nachklingzeit, höchstens 30 s) unter -100 dB war
 struct PluginSlot {
     std::atomic<MDPlugin *> plugin{nullptr};
     std::atomic<uint64_t> releaseAt{0};   // Render-Zähler, ab dem das vorherige Plugin frei ist
+    /// NaN im Deck (healDeck): Plugin bis zum Zurücksetzen durch den Steuer-Thread nicht rechnen
+    std::atomic<bool> resetPending{false};
     // nur Audio-Thread
     MDPlugin *last = nullptr;
     float send = 0;
     int quiet = 0x7fffffff;   // Samples in Folge unter der Schwelle
     std::vector<float> dryL, dryR;
-    bool tail(double fs) const { return last && quiet < int(fs); }
+    int quietLimit(double fs) const {
+        double t = last ? double(last->tailFrames.load(std::memory_order_relaxed)) : 0;
+        return int(std::clamp(t, fs, 30 * fs));
+    }
+    bool tail(double fs) const { return last && quiet < quietLimit(fs); }
     bool active(double fs) const { return send > 0.0005f || tail(fs); }
     /// out = dry·(1 − dw·send) + wet·dw – an: klassisches Dry/Wet, aus: trocken + ausklingende Fahne
     void run(MDPlugin *p, float *L, float *R, int n, float dw, bool on, double fs) {
@@ -419,6 +427,7 @@ static void healDeck(Deck &d) {
     for (auto &c : d.fx) {
         c.filter.bq.clearState(); c.delay.clear(); c.reverb.clear();
         for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp, &c.reverb.lowCut}) b->clearState();   // Reverb::clear() lässt die Filter stehen
+        if (c.plug.last) c.plug.resetPending.store(true);   // Plugin zurücksetzen lassen (Steuer-Thread), bis dahin trocken
     }
     d.stretch.reset();
     d.wasStretching = false; d.latSm = 0; d.inAcc = 0;
@@ -558,7 +567,11 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
         MDPlugin *pl = c.plug.plugin.load(std::memory_order_acquire);
         bool plugOn = pl && fp[MDFX_PLUGIN_ON].load() > 0.5f;
         if (pl != c.plug.last) { c.plug.last = pl; c.plug.send = 0; c.plug.quiet = 0x7fffffff; }   // neues Plugin: ohne Fahne
-        if (pl && (plugOn || c.plug.active(e->fs))) c.plug.run(pl, L, R, n, dw, plugOn, e->fs);
+        if (pl && !c.plug.resetPending.load(std::memory_order_acquire) && (plugOn || c.plug.active(e->fs))) {
+            pl->tempo = e->clock.bpm.load(std::memory_order_relaxed);
+            pl->beat = e->clock.beat;
+            c.plug.run(pl, L, R, n, dw, plugOn, e->fs);
+        }
     }
 
     // Lautstärke + Ausgangspaar
@@ -657,6 +670,14 @@ bool mdsp_fx_plugin_released(MDEngine *e, int unit, int deck, MDPlugin *old) {
     if (!old) return true;
     if (s.plugin.load() == old) return false;
     return e->renders.load() >= s.releaseAt.load();
+}
+
+bool mdsp_fx_plugin_needs_reset(MDEngine *e, int unit, int deck) {
+    return e->decks[deck].fx[unit].plug.resetPending.load(std::memory_order_acquire);
+}
+
+void mdsp_fx_plugin_reset_done(MDEngine *e, int unit, int deck) {
+    e->decks[deck].fx[unit].plug.resetPending.store(false, std::memory_order_release);
 }
 void mdsp_seek(MDEngine *e, int deck, double s) { e->decks[deck].pendingSeek.store(s); }
 
