@@ -15,6 +15,7 @@ self test: main thread blocked for 3s -> deck a plays on (3.08 s), deck b follow
 * `MixCore` -> swift, no audio: track model, nml parser, smartlist queries, beatgrid, history, track edits, metadata edits, collection write-back, track overviews
 * `MixDSP` -> c++17 realtime core with a plain c api (`MixDSP.h`) and the coreaudio render callback
 * `MixEngine` -> swift: device output, routing, decoding, `MixController` (all commands, control thread)
+* `LibraryCloud` -> swift, no dependencies: cloud file state, scanner, download scheduler, folder watcher, pin state. later part of the file service
 * `MixApp` -> swiftui: decks, mixer, fx, master clock, browser, settings, controller driver, history store
 
 ## ◆ AUDIO CORE
@@ -93,6 +94,27 @@ browser preview column. per track 320 points × 4 bytes (peak, bass / mid / high
 * jobs run on own threads (qos utility, max 2), pause while any deck plays or loads (checked between read chunks), cancellable
 * drawing: `PreviewSpec` (overview generation, grid with own edits, cues, palette, phrase) -> 400×34 px cgimage rendered off the main thread, `NSCache` (48 mb). a row only hashes its spec and looks the image up, no work per frame
 * measured (14k collection, offscreen table, 41 rows per page): page scroll 77 ms without previews, 83 ms with previews from cache, 95 ms cold. one image ~1.4 ms in the background. batch 150–330 tracks/min (2 workers, file cache cold / warm)
+
+## ◆ CLOUD LIBRARY
+
+`LibraryCloud` (file provider folders, e.g. google drive). `CloudLibrary` in MixApp connects it to the collection, decks, browser and status bar.
+
+```
+CloudScanner (stat, n workers, timeout) ─┐
+CloudWatcher (fsevents, file level) ─────┼─> CloudLibrary (main) -> ☁ column, set-check, status bar
+CloudFetcher (tick 0.5 s, serial queue) ─┘        ▲ deck loading = pause, keep-local set
+```
+
+* state per file: `stat` with materialization off (`setiopolicy_np` `IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES`, per thread, restored after) -> `SF_DATALESS` in `st_flags` = online only, `ENOENT` = missing, other errors = unknown. a stat never downloads
+* not used: url keys (`ubiquitousItemDownloadingStatus`) -> xpc to the provider per file, 14k tracks 12.9 s parallel / 70 s serial, and seconds behind after a download
+* scanner: 4 workers, 2 s per file. a hanging call -> path unknown, worker dropped, new one started; 8 hanging -> run stops, rest unknown
+* fetcher: `FileManager.startDownloadingUbiquitousItem` (returns at once, the provider downloads), done = stat shows local. priorities deck > make ready > keep local (one at a time, only when nothing else waits), paused = only deck. timeout max(60 s, size ÷ 256 kb/s), 3 tries with growing pause, free space floor, budget per batch (bytes / seconds)
+* watcher: fsevents on the common folder of the cloud paths (hidden provider folders left out), changed paths checked again after 0.5 s. eviction = `IsFile | XattrMod | InodeMetaMod` (0x00019000). full check every 10 min
+* pin state: no api for other apps (the provider's finder action). read via `fileproviderctl evaluate <folder>` (~40 ms, undocumented output: `"ACTION_UNPIN" = 1` = pinned, `isRecursivelyDownloaded`), unknown if the format differs
+* quit: open requests are sent to the provider, downloads finish without the app (measured: request, process ends, 9.6 mb file local 2.5 s later)
+* file service later: same interface (`CloudFileSystem`, `CloudScanner`, `CloudFetcher`), state and events over ipc
+
+measured (14,160 collection paths, 14,153 in google drive, macos 26.7): stat scan 0.02-0.14 s · 3 online-only files (0.3 mb) local after 2.8 s · `fileproviderctl evaluate` 43-49 ms.
 
 ## ◆ STATE
 

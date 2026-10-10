@@ -18,6 +18,21 @@
 * default folder: deepest folder that holds 90 % of the collection's existing files, e.g. `~/Music/DJ`
 * own folders: ⌘, -> DISPLAY -> browser -> add folder (the automatic one stays in the list)
 * every pane keeps its own folder and the subfolders switch, saved in the session
+
+## ◆ CLOUD LIBRARIES
+
+library in a cloud folder (google drive for desktop, icloud drive, any file provider under `~/Library/CloudStorage`):
+
+* column ☁: ● local · ☁ online only · ↓ downloading (grey = waiting) · ✕ missing · empty = not in a cloud folder
+* check = file status only (`SF_DATALESS`), nothing gets downloaded. 14k tracks ~0.1 s. on load, on changes in the folder, every 10 min
+* ● LOKAL in the pane header -> local tracks only
+* right click tracks, a playlist, smartlist, playlist folder, PREPARATION or TRACK COLLECTION -> `Bereitmachen (herunterladen)`
+* SET-CHECK in the pane header -> preparation + the pane's list, everything not local listed, `ALLE HOLEN` fetches it
+* keep local while MINOS-741 runs: off / preparation + open playlists + decks (default) / whole library. evicted tracks are fetched again
+* 2 downloads at a time, new ones wait while a deck loads, keep local goes last and one at a time, 3 tries, 10 gb stay free
+* online-only track into a deck -> download requested at once, status bar message
+* quit with open downloads -> handed to the provider, it finishes them without MINOS-741
+* always offline: finder -> right click the library folder -> make available offline. ⌘, -> CLOUD shows whether it is set
 ## ◆ EDIT TRACKS
 
 * inline: click a selected row again or return, tab = next column, esc = cancel

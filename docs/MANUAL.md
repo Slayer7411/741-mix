@@ -340,6 +340,10 @@ any installed audio unit effect (apple or third-party, v2 and v3) in the single 
 * tree can hide while decks are visible (setting)
 * cover preview below the tree: cover of the selected track, `◆ KEIN COVER` (`◆ NO COVER`) = none (setting)
 * cover column (hidden by default): right click on the header -> Cover. thumbnails load only for visible rows, in the background
+* cloud column ☁ (library in a cloud folder): ● local · ☁ online only · ↓ downloading · ✕ missing
+* right click tracks or a source in the tree -> `Bereitmachen (herunterladen)`, progress + ✕ in the status bar
+* ● LOKAL in the header -> local tracks only. SET-CHECK -> preparation + this list: what is not local, `ALLE HOLEN`
+* details: [library · cloud libraries](library.md#-cloud-libraries)
 
 ### preview
 
@@ -484,7 +488,10 @@ backup = copy the `MINOS-741` folder.
 | DROPOUTS counts up | DSP near or above 100 % -> bigger buffer (⌘, -> AUDIO), fewer keylock decks / plugins. DSP low but dropouts -> device or system (other audio apps, usb hub, energy saver) |
 | DSP red | single blocks over 70 %: plugins, 4 decks with keylock, small buffer. average matters, a single peak after loading is normal |
 | latency too high | buffer size in ⌘, -> AUDIO. LATENCY = buffer + device + safety offset; keylock lookahead is compensated and not audible as delay |
-| track won't load | status bar message: `Datei fehlt` = path in the collection wrong; `(4 s) keine Audiodaten` = cloud file not on disk -> make it available offline; otherwise the format reason |
+| track won't load | status bar message: `Datei fehlt` = path in the collection wrong; `(4 s) keine Audiodaten` = cloud file not on disk -> the download is already requested (`Cloud-Datei wird heruntergeladen`), load again when ● shows; otherwise the format reason |
+| ☁ in the list, set-check not clean | right click -> `Bereitmachen`, or `ALLE HOLEN` in the set-check. for good: finder -> right click the library folder -> make available offline |
+| local tracks turn ☁ again | macos evicted them (optimize storage, low disk space) -> keep local in ⌘, -> CLOUD fetches them again; pin the folder, free some space |
+| downloads don't start | a deck is loading (status bar `pausiert`), or less than the free space floor left (⌘, -> CLOUD) |
 | artist in red | file missing or moved -> fix the path in the collection, reload ↻ |
 | ui hangs | audio + sync keep running. report it with the version from the title bar |
 
@@ -497,6 +504,7 @@ MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 waveform still without a window: `MIX741_SHOT=wave:/tmp/wave.png` in addition -> one deck with loop and hotcues as png, then exit.
 settings as png without a window: add `MIX741_SHOT=settings:<folder>` -> one image per section, then quit.
 status bar, failed and empty deck as png: `MIX741_SHOT=status:<folder>` (add `MIX741_SHOT_AUDIO=1` for live meters, silent on a built-in device).
+cloud column + set-check as png: `MIX741_SHOT=cloud:<folder>` -> real check of the collection in the log, images with real and with set states, nothing downloaded.
 
 bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) with version, macos, device, mode, controller.
 
