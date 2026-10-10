@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/assets/banner.svg" alt="MINOS-741" width="100%"></p>
 
-<p align="center"><a href="https://github.com/Slayer7411/MINOS-741/graphs/contributors"><img src="https://img.shields.io/github/contributors/Slayer7411/MINOS-741?style=flat-square&label=CONTRIBUTORS&labelColor=0a0a0a&color=e8e4d8" alt="contributors"></a> <a href="https://github.com/sponsors/Slayer7411"><img src="https://img.shields.io/badge/SPONSOR-%E2%99%A5-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="sponsor"></a></p>
+<p align="center"><a href="https://github.com/Slayer7411/MINOS-741/graphs/contributors"><img src="https://img.shields.io/github/contributors/Slayer7411/MINOS-741?style=flat-square&label=CONTRIBUTORS&labelColor=0a0a0a&color=e8e4d8" alt="contributors"></a> <a href="https://github.com/sponsors/Slayer7411"><img src="https://img.shields.io/badge/SPONSOR-%E2%99%A5-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="sponsor"></a> <a href="https://github.com/Slayer7411/MINOS-741/discussions"><img src="https://img.shields.io/github/discussions/Slayer7411/MINOS-741?style=flat-square&label=DISCUSSIONS&labelColor=0a0a0a&color=e8e4d8" alt="discussions"></a></p>
 
 native dj software for macos. traktor workflow and files, own browser and tag system.
 
