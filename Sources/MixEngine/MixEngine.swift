@@ -23,6 +23,10 @@ public final class MixEngine: @unchecked Sendable {
     public var deviceChannels: Int { output.channels }
     /// Puffergröße in Frames (nil = Gerätestandard)
     public var bufferFrames: UInt32?
+    /// Gerät beim Start auf diese Rate stellen (nil = so lassen)
+    public var deviceRate: Double?
+    /// aktuelle Rate des Geräts
+    public var outputRate: Double { output.deviceRate }
 
     /// Wird gerufen, wenn sich die Geräteliste ändert und unser Gerät weg ist (Hauptthread)
     public var onConfigurationChange: (@Sendable () -> Void)?
@@ -36,9 +40,10 @@ public final class MixEngine: @unchecked Sendable {
         }
     }
 
-    public init() {
+    /// `rate` = gewünschte Rate aus den Einstellungen (Kern rechnet damit), sonst die des Standardgeräts
+    public init(rate: Double? = nil) {
         let dev = Self.defaultOutputDevice() ?? 0
-        sampleRate = Self.nominalRate(dev) ?? 44100
+        sampleRate = rate ?? Self.nominalRate(dev) ?? 44100
         core = mdsp_create(sampleRate)
         players = (0..<Self.deckCount).map { DeckPlayer(core, $0) }
         listenForDeviceChanges()
@@ -56,14 +61,14 @@ public final class MixEngine: @unchecked Sendable {
     public func start() { apply(routing) }
     public func stop() { output.stop() }
 
-    /// Gerät und Kanalpaare setzen. Kanalwechsel ohne Neustart; nur ein Gerätewechsel startet die Ausgabe neu.
-    public func apply(_ r: Routing) {
-        let deviceChanged = r.device != routing.device || !output.running
+    /// Gerät und Kanalpaare setzen. Kanalwechsel ohne Neustart; nur ein Gerätewechsel (oder `restart`) startet die Ausgabe neu.
+    public func apply(_ r: Routing, restart: Bool = false) {
+        let deviceChanged = restart || r.device != routing.device || !output.running
         routing = r
         for d in 0..<Self.deckCount { mdsp_set_param(core, Int32(d), MD_OUT_CHANNEL, Float(r.firstChannel[d])) }
         guard deviceChanged else { return }
         do {
-            try output.start(device: r.device, engine: core, bufferFrames: bufferFrames)
+            try output.start(device: r.device, engine: core, engineRate: sampleRate, bufferFrames: bufferFrames, setDeviceRate: deviceRate)
             lastError = nil
         } catch {
             lastError = error.localizedDescription

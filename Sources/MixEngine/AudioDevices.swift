@@ -22,6 +22,17 @@ extension MixEngine {
         return rate
     }
 
+    /// Raten, die das Gerät kann (aus den Bereichen die üblichen Werte)
+    public static func availableRates(_ id: AudioDeviceID) -> [Double] {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyAvailableNominalSampleRates,
+                                              mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard id != 0, AudioObjectGetPropertyDataSize(id, &addr, 0, nil, &size) == noErr, size > 0 else { return [] }
+        var ranges = [AudioValueRange](repeating: AudioValueRange(), count: Int(size) / MemoryLayout<AudioValueRange>.size)
+        guard AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &ranges) == noErr else { return [] }
+        return [44100.0, 48000, 88200, 96000, 176400, 192000].filter { r in ranges.contains { $0.mMinimum <= r && r <= $0.mMaximum } }
+    }
+
     /// aktuelles Standard-Ausgabegerät des Systems
     public static func defaultOutputDevice() -> AudioDeviceID? {
         var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,

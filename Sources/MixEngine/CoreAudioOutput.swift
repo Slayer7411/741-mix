@@ -13,7 +13,9 @@ final class CoreAudioOutput {
     private(set) var outputLatency: Double = 0
 
     /// startet die Ausgabe auf `device` (nil = Systemstandard) mit allen Ausgangskanälen des Geräts
-    func start(device: AudioDeviceID?, engine: OpaquePointer, bufferFrames: UInt32?) throws {
+    /// `engineRate` = Rate des Kerns (AUHAL rechnet um, falls das Gerät anders läuft);
+    /// `deviceRate` gesetzt = Gerät auf diese Rate stellen (wie Traktors Audio Setup)
+    func start(device: AudioDeviceID?, engine: OpaquePointer, engineRate: Double, bufferFrames: UInt32?, setDeviceRate: Double?) throws {
         stop()
         var desc = AudioComponentDescription(componentType: kAudioUnitType_Output, componentSubType: kAudioUnitSubType_HALOutput,
                                              componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0)
@@ -27,14 +29,21 @@ final class CoreAudioOutput {
         try check(AudioUnitSetProperty(au, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
                                        &dev, UInt32(MemoryLayout<AudioDeviceID>.size)), "Gerät setzen")
         channels = max(2, MixEngine.channelCount(dev))
+        if let want = setDeviceRate, MixEngine.availableRates(dev).contains(want), MixEngine.nominalRate(dev) != want {
+            var r = Float64(want)
+            var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal,
+                                                  mElement: kAudioObjectPropertyElementMain)
+            AudioObjectSetPropertyData(dev, &addr, 0, nil, UInt32(MemoryLayout<Float64>.size), &r)
+            for _ in 0..<50 where MixEngine.nominalRate(dev) != want { usleep(10_000) }   // Gerät schaltet asynchron um
+        }
         deviceRate = MixEngine.nominalRate(dev) ?? 44100
         if var frames = bufferFrames {
             var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyBufferFrameSize, mScope: kAudioObjectPropertyScopeGlobal,
                                                   mElement: kAudioObjectPropertyElementMain)
             AudioObjectSetPropertyData(dev, &addr, 0, nil, UInt32(MemoryLayout<UInt32>.size), &frames)
         }
-        // Float32, nicht verschachtelt, alle Kanäle des Geräts, Geräterate (nie die Rate des Geräts ändern)
-        var fmt = AudioStreamBasicDescription(mSampleRate: deviceRate, mFormatID: kAudioFormatLinearPCM,
+        // Float32, nicht verschachtelt, alle Kanäle des Geräts, Rate des Kerns
+        var fmt = AudioStreamBasicDescription(mSampleRate: engineRate, mFormatID: kAudioFormatLinearPCM,
                                               mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved,
                                               mBytesPerPacket: 4, mFramesPerPacket: 1, mBytesPerFrame: 4,
                                               mChannelsPerFrame: UInt32(channels), mBitsPerChannel: 32, mReserved: 0)

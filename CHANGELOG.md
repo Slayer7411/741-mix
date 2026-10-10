@@ -7,6 +7,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ### added
 * x1: sync held + hotcue 3 / 4 = one bar back / forward, inside a loop the loop stays and the position wraps
+* audio: sample rate (44.1 - 192 khz, what the device offers) and buffer size, reconnect button (settings + status bar)
 * docs: user manual (`docs/MANUAL.md`), docs index, new screenshot
 
 ### changed
@@ -15,6 +16,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * beatgrid: hairline beats, bar lines with caps top and bottom
 
 ### fixed
+* audio: device running at a different rate than the core played too fast (96 vs 44.1 khz) -> coreaudio converts now
 * link: 251 timeline resets in 15 s with the old build (beat without timestamp) -> now only on real drift
 
 ## ◆ [0.6.0] · 2026-10-10 · LINK

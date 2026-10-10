@@ -194,6 +194,25 @@ struct AudioSettings: View {
                         .help("Geräteliste neu einlesen")
                 }
                 LabeledContent("Kanäle", value: "\(mix.deviceChannels)")
+                Picker("Samplerate", selection: Binding(get: { mix.sampleRate }, set: { mix.setAudioFormat(rate: $0) })) {
+                    Text("wie am Gerät").tag(0.0)
+                    ForEach(MixEngine.availableRates(mix.currentDevice?.id ?? 0), id: \.self) { r in
+                        Text(String(format: "%g kHz", r / 1000)).tag(r)
+                    }
+                }
+                Picker("Puffer (Latenz)", selection: Binding(get: { mix.bufferSize }, set: { mix.setAudioFormat(buffer: $0) })) {
+                    Text("wie am Gerät").tag(0)
+                    ForEach([64, 128, 256, 512, 1024, 2048], id: \.self) { n in
+                        Text(String(format: "%d · %.1f ms", n, Double(n) / max(mix.engine.outputRate, 1) * 1000)).tag(n)
+                    }
+                }
+                HStack {
+                    Button("Neu verbinden") { mix.reconnect() }
+                    Text("startet die Ausgabe neu, z. B. wenn die Xone nach einem USB-Aussetzer stumm bleibt")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Text("Eine neue Samplerate gilt am Gerät sofort, MINOS-741 rechnet ab dem nächsten Start damit.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
             Section("Mixer") {
                 Picker("Modus", selection: Binding(get: { mix.mixerMode }, set: { mix.mixerMode = $0; mix.applyRouting() })) {

@@ -137,6 +137,9 @@ struct ContentView: View {
             Text(store.status).lineLimit(1)
             Spacer()
             Text(mix.engineStatus)
+            Button("↻") { mix.reconnect() }
+                .buttonStyle(.plain)
+                .help("Audio-Interface neu verbinden")
             Text("· Preparation: \(store.preparation.count)")
         }
         .font(Theme.mono(11))

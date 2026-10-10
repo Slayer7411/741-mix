@@ -190,7 +190,8 @@ public struct MixState: Equatable, Sendable {
 /// Oberfläche und Controller rufen nur Befehle auf; Zustand ist mit einer Sperre geschützt.
 /// Der Audio-Thread nimmt die Sperre nie – er liest nur `DeckPlayer`.
 public final class MixController: @unchecked Sendable {
-    public let engine = MixEngine()
+    /// Rate aus den Audio-Einstellungen (0 = Gerät) – der Kern rechnet ab dem Start damit
+    public let engine = MixEngine(rate: { let r = UserDefaults.standard.double(forKey: "sampleRate"); return r > 0 ? r : nil }())
     public let controlQueue = DispatchQueue(label: "minos741.control", qos: .userInteractive)
 
     private let lock = NSRecursiveLock()

@@ -36,6 +36,10 @@ final class MixModel {
     var deviceUID: String?
     var internalPair = 0
     var deckPairs = [0, 4, 2, 6]   // A 1/2 · B 5/6 · C 3/4 · D 7/8
+    /// Samplerate fürs Gerät (0 = so lassen); der Kern übernimmt sie beim nächsten Start
+    var sampleRate = 0.0
+    /// Puffergröße in Frames (0 = Gerätestandard)
+    var bufferSize = 0
 
     /// eigene Änderungen (Grid, Hotcues) dauerhaft je Track – die Traktor-Collection bleibt unangetastet
     @ObservationIgnored let edits = TrackEditStore(url: HistoryStore.baseDir.appendingPathComponent("edits.json"))
@@ -198,11 +202,11 @@ final class MixModel {
     func refreshDevices() { outputDevices = MixEngine.outputDevices() }
 
     /// Routing an die Engine geben (startet die Deck-Ausgänge neu) und speichern.
-    func applyRouting() {
+    func applyRouting(restart: Bool = false) {
         print("[audio] Routing wird angewendet")
         let dev = currentDevice
         let firsts = mixerMode == .external ? deckPairs : Array(repeating: internalPair, count: MixEngine.deckCount)
-        engine.apply(MixEngine.Routing(device: dev?.id, firstChannel: firsts))
+        engine.apply(MixEngine.Routing(device: dev?.id, firstChannel: firsts), restart: restart)
         core.setMasterVolume(core.snapshot().masterVolume)
         core.setExternalMixer(mixerMode == .external)
         let route = mixerMode == .external
@@ -211,6 +215,11 @@ final class MixModel {
         engineStatus = engine.running
             ? "\(dev?.name ?? "Standard") · \(mixerMode.rawValue) · \(route)"
             : "Audio-Fehler: \(engine.lastError ?? "?")"
+        if engine.running {
+            let khz = { (r: Double) in String(format: "%g kHz", r / 1000) }
+            engineStatus += " · \(khz(engine.outputRate))"
+            if abs(engine.outputRate - engine.sampleRate) > 1 { engineStatus += " (intern \(khz(engine.sampleRate)) bis Neustart)" }
+        }
         if engine.running, let e = engine.lastError { engineStatus += " · ⚠︎ \(e)" }
         saveSetup()
         pull()
@@ -223,6 +232,23 @@ final class MixModel {
         internalPair = d.integer(forKey: "internalPair")
         if let p = d.array(forKey: "deckPairs") as? [Int], p.count == MixEngine.deckCount { deckPairs = p }
         if d.object(forKey: "masterVolume") != nil { core.setMasterVolume(d.double(forKey: "masterVolume")) }
+        sampleRate = d.double(forKey: "sampleRate")
+        bufferSize = d.integer(forKey: "bufferSize")
+        engine.deviceRate = sampleRate > 0 ? sampleRate : nil
+        engine.bufferFrames = bufferSize > 0 ? UInt32(bufferSize) : nil
+    }
+
+    /// Samplerate/Puffer setzen und die Ausgabe neu starten
+    func setAudioFormat(rate: Double? = nil, buffer: Int? = nil) {
+        if let rate { sampleRate = rate; engine.deviceRate = rate > 0 ? rate : nil }
+        if let buffer { bufferSize = buffer; engine.bufferFrames = buffer > 0 ? UInt32(buffer) : nil }
+        applyRouting(restart: true)
+    }
+
+    /// Interface neu verbinden (z. B. Xone nach USB-Aussetzer): Geräte neu einlesen, Ausgabe neu starten
+    func reconnect() {
+        refreshDevices()
+        applyRouting(restart: true)
     }
 
     private func saveSetup() {
@@ -231,6 +257,8 @@ final class MixModel {
         d.set(deviceUID, forKey: "deviceUID")
         d.set(internalPair, forKey: "internalPair")
         d.set(deckPairs, forKey: "deckPairs")
+        d.set(sampleRate, forKey: "sampleRate")
+        d.set(bufferSize, forKey: "bufferSize")
     }
 
     // MARK: - Vorhören im Browser

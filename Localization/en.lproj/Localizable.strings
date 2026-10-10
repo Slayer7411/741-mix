@@ -163,3 +163,10 @@
 "Anzahl FX-Units" = "Number of FX units";
 "Gruppe (3 Effekte) oder Single (1 Effekt, 3 Parameter)" = "Group (3 effects) or single (1 effect, 3 parameters)";
 "Ableton-Link-Versatz (ms)" = "Ableton Link offset (ms)";
+"Samplerate" = "Sample rate";
+"wie am Gerät" = "as set on the device";
+"Puffer (Latenz)" = "Buffer (latency)";
+"Neu verbinden" = "Reconnect";
+"startet die Ausgabe neu, z. B. wenn die Xone nach einem USB-Aussetzer stumm bleibt" = "restarts the output, e.g. when the Xone stays silent after a USB dropout";
+"Eine neue Samplerate gilt am Gerät sofort, MINOS-741 rechnet ab dem nächsten Start damit." = "A new sample rate applies to the device right away, MINOS-741 uses it internally from the next start.";
+"Audio-Interface neu verbinden" = "Reconnect audio interface";

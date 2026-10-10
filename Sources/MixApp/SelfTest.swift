@@ -16,6 +16,7 @@ enum SelfTest {
                 log("Routing \(xone.name) extern: läuft=\(core.engine.running) Fehler=\(core.engine.lastError ?? "keine")")
             }
             core.engine.setMasterVolume(0)   // stumm, Einstellung bleibt unverändert
+            log("Audio: Gerät \(core.engine.outputRate) Hz, Kern \(core.engine.sampleRate) Hz, Raten \(MixEngine.availableRates(mix.currentDevice?.id ?? MixEngine.defaultOutputDevice() ?? 0))")
             // Link nur auf Wunsch (sonst würde der Test das Tempo eines laufenden Ableton ändern)
             core.setLinkEnabled(ProcessInfo.processInfo.environment["MIX741_LINKTEST"] != nil)
             var p = mix.prefs.engine
