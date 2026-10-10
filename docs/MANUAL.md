@@ -245,7 +245,8 @@ effects so far: filter, delay, reverb. more -> [roadmap](roadmap.md).
 * all library columns: move by drag, hide via right click on the header, saved
 * `√` = analyzed in the collection, missing files show the artist in red
 * search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match, case and accents ignored
-* right click a track -> load into deck A-D, add to / remove from preparation, preview, show in finder
+* right click a track -> load into deck A-D, add to / remove from preparation, preview, show in finder, reset played state
+* played column ▶: ✓ = played since the last reset. reset: right click a track or TRACK COLLECTION -> Reset Played State, or ⌥⌘P
 * the left controller drives the left pane, the right controller the right one
 * tree can hide while decks are visible (setting)
 
@@ -282,7 +283,7 @@ history:
 * a track counts as played after 30 s audible (setting)
 * internal mode: only with fader / crossfader open. external mode: always
 * saved as nml under `history_2026-10-10-01.nml` (day + session number), optional copy into the collection's history folder (time-stamped name)
-* quitting asks first, then session and history are written
+* quitting asks first (also the red close button and ⌘W on the main window), then session and history are written
 * HISTORY = this session, HISTORY ARCHIV = own + all sessions in that folder
 
 preparation:
@@ -295,18 +296,29 @@ export: right click collection, preparation, history or a playlist in the tree -
 
 ## ◆ 12 · KEYS
 
+defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the shortcut, press the new key (esc = cancel), ✕ = none, ↺ = default, RESET ALL. a key used twice turns red, the first action in the list wins. deck keys act on the focused deck.
+
 | key | action |
 |---|---|
 | ⌘1-4 | focus deck A-D |
-| ⌘space | play / pause focused deck |
+| ⌘space | play / pause |
+| ⌥⌘C | cue (hold = cue held) |
+| ⌥⌘V | cup |
 | ⌘Y | sync |
 | ⌘L | auto loop |
 | ⌥⌘← / → | beatjump |
+| ⌃⌘1-8 | hotcue 1-8 |
+| ⌥⌘P | reset played state |
 | ⌥⌘M | mixer on / off |
 | ⌥⌘4 | 2 / 4 decks |
 | ⌥⌘B | big browser |
+| space | big browser (not while typing in a search field) |
 | ⌘O | open collection |
 | ⌘, | settings |
+| ⌘W | close window -> main window: quit (asks first) |
+
+no default, assignable: master, keylock, reloop, load selection into the focused deck, preview selection, reload collection, reconnect audio.
+⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.
 
 controller mapping -> [controllers.md](controllers.md).
 

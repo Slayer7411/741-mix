@@ -124,6 +124,13 @@ struct AppPrefs: Codable, Equatable {
     var engine = EnginePrefs()
     var ui = UIPrefs()
     var controller = ControllerPrefs()
+    /// eigene Tastenkürzel: Aktion-ID -> Kombination als Text ("" = frei), sonst Standard (ShortcutID.defaultCombo)
+    var shortcuts: [String: String] = [:]
+
+    var keys: ShortcutMap {
+        get { ShortcutMap(overrides: shortcuts) }
+        set { shortcuts = newValue.overrides }
+    }
 
     static let key = "prefs.v1"
 
@@ -138,7 +145,8 @@ struct AppPrefs: Codable, Equatable {
         func merge(_ base: [String: Any], _ over: [String: Any]) -> [String: Any] {
             var r = base
             for (k, v) in over {
-                if let b = base[k] as? [String: Any], let o = v as? [String: Any] { r[k] = merge(b, o) } else if base[k] != nil { r[k] = v }
+                // leeres Objekt im Standard = freie Zuordnung (tagColors, shortcuts) -> gespeicherten Inhalt ganz übernehmen
+                if let b = base[k] as? [String: Any], !b.isEmpty, let o = v as? [String: Any] { r[k] = merge(b, o) } else if base[k] != nil { r[k] = v }
             }
             return r
         }

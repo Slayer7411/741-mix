@@ -61,7 +61,7 @@
 |---|---|---|
 | hid controller native, two units | ■ | |
 | midi learn, other controllers | □ p2 | |
-| keyboard mapping | ◧ | a few shortcuts |
+| keyboard mapping | ■ | every shortcut configurable (⌘, -> keyboard) |
 | mix recording | □ p2 | |
 | timecode / dvs | □ p4 | |
 | layouts, deck sizes | ◧ p3 | |

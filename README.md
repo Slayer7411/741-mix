@@ -65,8 +65,11 @@ work in progress, `0.x` -> things still change. missing parts: [docs/roadmap.md]
 | ⌥⌘M | mixer on / off |
 | ⌥⌘4 | 4 decks |
 | ⌥⌘B | big browser |
+| ⌥⌘P | reset played state |
 | ⌘O | open collection |
 | ⌘, | settings |
+
+all keys can be changed under ⌘, -> KEYBOARD. full table -> [MANUAL · keys](docs/MANUAL.md#-12--keys).
 
 ## ◆ INSTALL
 

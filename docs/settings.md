@@ -46,6 +46,15 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * internal: which pair the master goes to
 * external: one pair per deck, default a 1/2 · b 3/4 · c 5/6 · d 7/8
 
+## ◆ KEYBOARD
+
+* every app shortcut, grouped: decks, browser, view, general -> table in [MANUAL · keys](MANUAL.md#-12--keys)
+* click a shortcut, press the new key -> applies right away, esc = cancel
+* ✕ = no shortcut, ↺ = back to default, RESET ALL
+* a key used twice turns red, the first action in the list wins
+* ⌘Q, ⌘H, ⌘M, ⌃⌘F stay with the system
+* saved under `shortcuts` (action id -> key, e.g. `"browser.resetplayed": "opt+cmd+p"`), only keys that differ from the default
+
 ## ◆ CONTROLLER
 
 * controllers: decks per unit (left / right), browser pane and fx unit per unit, blink to identify

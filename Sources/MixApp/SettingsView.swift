@@ -12,6 +12,7 @@ struct SettingsView: View {
             AudioSettings().tabItem { Text("AUDIO") }
             ControllerSettings().tabItem { Text("CONTROLLER") }
             TagColorSettings().tabItem { Text("TAGS") }
+            ShortcutSettings().tabItem { Text("TASTATUR") }
         }
         .frame(width: 600, height: 560)
         .preferredColorScheme(.dark)
