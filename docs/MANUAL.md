@@ -254,8 +254,10 @@ the status bar shows device, mode and routing.
 * GRP -> group mode: FILTER · DELAY · REVERB at once, D/W + one knob + ON each
 * SNGL -> single mode: one effect, 3 parameters
 * delay time in beats (`1 ▾`), beat synced to the deck tempo
-* ROOM -> reverb size
+* ROOM -> reverb size: 0 small room (0.3 s) · 0.5 hall (3.6 s) · 0.6 default (5.6 s) · 0.9 huge (22 s) · 1 near freeze (~3 min)
 * reverb level, brightness, pre-delay -> ⌘, -> MIXER & FX. level 0 dB: full d/w adds the reverb ~4 dB below the track, same in group and single mode
+* brightness -> how long the highs ring: 0 dark, 0.6 default (airy hiss in the tail), 1 bright. below ~150-400 Hz nothing goes into the reverb
+* washes / exits: size 0.8-1, reverb on, reverb off or deck stop -> the tail keeps ringing (spillover)
 * deck assign: FX1 … FX4 in the deck header or the mixer
 * default: FX1 -> A / C, FX2 -> B / D
 

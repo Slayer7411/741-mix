@@ -48,7 +48,7 @@ typedef enum {
     MDFX_REVERB_HP, MDFX_REVERB_LP,         // Filter vor dem Hall: 0…1 (HP 0 = aus, LP 1 = aus)
     MDFX_REVERB_DWSEND,                     // 1 = D/W regelt, wie viel in den Hall geht (Single), 0 = D/W regelt den Hall-Anteil
     MDFX_REVERB_LEVEL,                      // Hall-Pegel, linear (1 = bei vollem D/W Hall ≈ 4 dB unter dem Track)
-    MDFX_REVERB_BRIGHT,                     // Helligkeit 0…1 (Dämpfung der Kammfilter + Tiefpass am Ausgang 2,5…12 kHz)
+    MDFX_REVERB_BRIGHT,                     // Helligkeit 0…1 (Höhen-Nachhall 35…90 %, Hochpass vor dem Hall 150…400 Hz, Höhenregal −4…+6 dB)
     MDFX_REVERB_PREDELAY,                   // Vorverzögerung in Sekunden (0…0,2)
     MDFX_PLUGIN_ON,                         // Plugin der Unit an (aus = Eingang zu, Fahne klingt aus)
     MDFX_PARAM_COUNT

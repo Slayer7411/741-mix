@@ -148,6 +148,17 @@ struct AppPrefs: Codable, Equatable {
     /// Lädt gespeicherte Einstellungen; fehlende (neue) Felder bekommen ihren Standardwert,
     /// statt dass alles auf Standard zurückfällt.
     static func load() -> AppPrefs {
+        var p = loadSaved()
+        // FDN-Hall: neue Standard-Helligkeit 0,6; wer den alten Standard 0,4 nie verändert hat, bekommt den neuen (einmalig)
+        let d = UserDefaults.standard
+        if !Session.isSelfTest, !d.bool(forKey: "migrated.reverb-fdn") {
+            if d.data(forKey: key) != nil, p.engine.reverbBrightness == 0.4 { p.engine.reverbBrightness = EnginePrefs().reverbBrightness; p.save() }
+            d.set(true, forKey: "migrated.reverb-fdn")
+        }
+        return p
+    }
+
+    private static func loadSaved() -> AppPrefs {
         guard let data = UserDefaults.standard.data(forKey: key),
               var saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let defData = try? JSONEncoder().encode(AppPrefs()),
