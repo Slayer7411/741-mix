@@ -156,8 +156,15 @@ struct MixApp: App {
     @State private var x1: X1Manager?
     @State private var sessionTimer: Timer?
 
+    private var appTitle: String {
+        let info = Bundle.main.infoDictionary
+        guard let v = info?["CFBundleShortVersionString"] as? String else { return "MINOS-741 dev" }
+        let b = info?["CFBundleVersion"] as? String ?? ""
+        return "MINOS-741 \(v)" + (b.isEmpty || b == v ? "" : " (\(b))")
+    }
+
     var body: some Scene {
-        WindowGroup("MINOS-741") {
+        WindowGroup(appTitle) {
             ContentView()
                 .environment(store)
                 .environment(mix)

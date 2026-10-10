@@ -4,7 +4,8 @@
 #         scripts/make-app.sh --no-install
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION=$(git describe --tags --always 2>/dev/null || echo dev)
+VERSION="0.$(git rev-list --count HEAD 2>/dev/null || echo 0)"
+BUILD=$(git rev-parse --short HEAD 2>/dev/null || echo dev)
 APP=build/MINOS-741.app
 
 swift build -c release
@@ -39,7 +40,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>${VERSION}</string>
+  <key>CFBundleVersion</key><string>${BUILD}</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -48,7 +49,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 codesign --force --deep --sign - "$APP"
-echo "gebaut: $APP ($VERSION)"
+echo "gebaut: $APP ($VERSION, $BUILD)"
 
 if [[ "${1:-}" != "--no-install" ]]; then
   pkill -x MINOS-741 2>/dev/null || true
