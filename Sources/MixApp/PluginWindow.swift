@@ -45,6 +45,11 @@ final class PluginWindow: NSObject, NSWindowDelegate {
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         window.delegate = self
+        // immer über den MINOS-Fenstern (auch im Vollbild), aber nicht über anderen Apps: blendet sich aus, wenn MINOS
+        // nicht aktiv ist, und kommt beim Zurückwechseln wieder
+        window.level = .floating
+        window.hidesOnDeactivate = true
+        window.collectionBehavior.insert(.fullScreenAuxiliary)
     }
 
     func windowWillClose(_ notification: Notification) {
