@@ -41,6 +41,7 @@ struct Biquad {
     float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
     float z1[2] = {0, 0}, z2[2] = {0, 0};
     void setIdentity() { b0 = 1; b1 = b2 = a1 = a2 = 0; }
+    void clearState() { z1[0] = z1[1] = z2[0] = z2[1] = 0; }
     /// Frequenz unter Nyquist halten: darüber wird der Filter instabil (Geräte mit 16–32 kHz)
     static double safeF(double f, double fs) { return std::clamp(f, 1.0, fs * 0.45); }
     void set(double c0, double c1, double c2, double d0, double d1, double d2) {
@@ -345,6 +346,18 @@ static void readResampled(Deck &d, float *L, float *R, int n, double step) {
     }
 }
 
+/// NaN/Inf im Deck (kaputte Samples, instabiler Zustand): alle rekursiven Zustände zurück, sonst bleibt das Deck
+/// dauerhaft stumm. Läuft im Audio-Thread – nur Füllen vorhandener Puffer.
+static void healDeck(Deck &d) {
+    for (Biquad *b : {&d.eqL, &d.eqM, &d.eqH, &d.chanFilter.bq}) b->clearState();
+    for (auto &c : d.fx) { c.filter.bq.clearState(); c.delay.clear(); c.reverb.clear(); }
+    d.stretch.reset();
+    d.wasStretching = false; d.latSm = 0; d.inAcc = 0;
+    if (!std::isfinite(d.pos)) d.pos = 0;
+    if (!std::isfinite(d.flux)) d.flux = d.pos;
+    d.gainSm = 0; d.volSm = 0;   // weich wieder einblenden
+}
+
 // ---------- ein Deck rendern und in die Ausgänge mischen ----------
 
 static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
@@ -480,8 +493,14 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     for (int i = 0; i < n; i++) {
         d.volSm += (vol - d.volSm) * 0.002f;
         float l = L[i] * d.volSm, r = R[i] * d.volSm;
-        oL[i] += l; oR[i] += r;
+        L[i] = l; R[i] = r;
         sum += (l * l + r * r) * 0.5f; pk = std::max(pk, std::max(std::fabs(l), std::fabs(r)));
+    }
+    if (std::isfinite(sum)) {
+        for (int i = 0; i < n; i++) { oL[i] += L[i]; oR[i] += R[i]; }
+    } else {   // Block verwerfen (andere Decks bleiben hörbar), Deck zurücksetzen
+        healDeck(d);
+        sum = pk = 0;
     }
     float rms = std::sqrt(sum / std::max(1, n));
     d.rms.store(d.rms.load() * 0.7f + rms * 0.3f);
@@ -589,7 +608,7 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
         e->masterSm += (m - e->masterSm) * 0.002f;
         for (int c = 0; c < channels; c++) {
             float x = out[c][i] * e->masterSm;
-            out[c][i] = x > 1.f ? 1.f : (x < -1.f ? -1.f : x);   // harte Begrenzung als letzte Sicherung
+            out[c][i] = x > 1.f ? 1.f : (x < -1.f ? -1.f : (x == x ? x : 0.f));   // harte Begrenzung als letzte Sicherung, NaN → 0
         }
         // Clock weiterzählen, bei jedem Beat klicken (Takt-Eins höher)
         double before = k.beat;

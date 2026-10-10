@@ -60,6 +60,25 @@ private final class Engine {
 
 private func allFinite(_ blocks: [[Float]]) -> Bool { blocks.allSatisfy { $0.allSatisfy { $0.isFinite } } }
 
+/// NaN im Track (kaputte Datei, Dekoder) darf nicht zum Ausgang durchschlagen und das Deck nicht dauerhaft stumm schalten
+@Test func nanInTrackIsContainedAndDeckRecovers() {
+    let c = Engine()
+    c.load(deck: 0, seconds: 4) { i, t in (t > 1.0 && t < 1.01) ? .nan : Float(sin(2 * .pi * 220 * Double(i) / 44100)) * 0.5 }
+    c.set(0, MD_PLAYING, 1)
+    c.set(0, MD_EQ_LOW, 6)            // rekursive Filter halten NaN sonst fest
+    c.set(0, MD_FILTER, -0.3)
+    var finite = true
+    for _ in 0..<Int(1.5 * 44100 / 512) { finite = finite && allFinite(c.render(512)) }
+    #expect(finite)
+    // nach dem Fehler klingt das Deck wieder (Zustand zurückgesetzt, Pegel da)
+    var rms: Float = 0
+    for _ in 0..<40 { let o = c.render(512); rms = max(rms, (o[0].reduce(0) { $0 + $1 * $1 } / 512).squareRoot()) }
+    #expect(rms > 0.05)
+    var r: Float = 0, p: Float = 0
+    mdsp_levels(c.e, 0, &r, &p)
+    #expect(r.isFinite && p.isFinite)
+}
+
 /// Gerät mit niedriger Rate (z. B. 22,05 kHz): Filterfrequenzen über Nyquist dürfen keinen instabilen Filter ergeben
 @Test func filtersStayStableAtLowDeviceRate() {
     for fs in [16000.0, 22050, 32000] {
