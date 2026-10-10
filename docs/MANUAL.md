@@ -176,6 +176,8 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 * first load: keylock on (setting)
 * track end warning: remaining time blinks red x seconds before the end (0 = off)
 * file missing -> fails at once. no audio data for 4 s (cloud file not downloaded, read stuck, setting 2-15 s) -> load cancelled. unreadable format -> fails with the reason
+* failed load: deck empty, reason in red in the header, skull in the waveform for 5 s, message in the status bar. other decks are never touched
+* empty deck -> lobster in the waveform
 
 ## ◆ 05 · WAVEFORM + GRID
 
@@ -494,6 +496,7 @@ MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 
 waveform still without a window: `MIX741_SHOT=wave:/tmp/wave.png` in addition -> one deck with loop and hotcues as png, then exit.
 settings as png without a window: add `MIX741_SHOT=settings:<folder>` -> one image per section, then quit.
+status bar, failed and empty deck as png: `MIX741_SHOT=status:<folder>` (add `MIX741_SHOT_AUDIO=1` for live meters, silent on a built-in device).
 
 bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) with version, macos, device, mode, controller.
 

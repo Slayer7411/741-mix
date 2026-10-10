@@ -14,6 +14,7 @@ struct DeckView: View {
             VStack(alignment: .leading, spacing: 4) {
                 header(deck)
                 WaveformView(d: d)
+                    .overlay { DeckIdleView(d: d) }   // leer: Lobster, nach Ladefehler 5 s Totenkopf
                     .frame(minHeight: mix.prefs.ui.waveformHeight, maxHeight: .infinity)
                 PhaseBar(d: d).frame(height: 8)
                 OverviewView(d: d)
