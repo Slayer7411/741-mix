@@ -128,7 +128,9 @@ final class MixModel {
     var masterBPM: Double { state.masterTempo }
     var showFourDecks: Bool { prefs.ui.showFourDecks }
 
-    func keyText(_ d: Int) -> String {
+    /// hörbare Abweichung von der Tonart des Tracks in Halbtönen: Key-Shift, ohne Keylock zusätzlich das Tempo
+    /// (Kern: transpose = 2^(keyShift/12) · rate ohne Keylock)
+    func keyDeviation(_ d: Int) -> Double {
         let s = decks[d].state
         guard let t = s.track else { return "" }
         return s.keyShift == 0 ? t.openKey : "\(t.openKey) \(s.keyShift > 0 ? "+" : "")\(s.keyShift)"

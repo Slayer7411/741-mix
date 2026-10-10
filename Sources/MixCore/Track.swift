@@ -114,4 +114,13 @@ public struct Track: Identifiable, Hashable, Sendable {
         let n = ((major ? semitone : semitone + 3) * 7) % 12 + 1
         return "\(n)\(major ? "d" : "m")"
     }
+
+    /// Open Key nach einer Verschiebung um ganze Halbtöne (Dur/Moll bleibt), z. B. 8m + 1 = 3m
+    public func openKey(shiftedBy semitones: Int) -> String {
+        guard musicalKey >= 0 else { return openKey }
+        let major = musicalKey < 12
+        let semitone = (((musicalKey % 12) + semitones) % 12 + 12) % 12
+        let n = ((major ? semitone : semitone + 3) * 7) % 12 + 1
+        return "\(n)\(major ? "d" : "m")"
+    }
 }

@@ -136,3 +136,16 @@ private func realCollection() -> URL {
         .sorted { $0.path.localizedStandardCompare($1.path) == .orderedDescending }.first
         ?? base.appendingPathComponent("none/collection.nml")
 }
+
+/// Open Key nach Halbton-Verschiebung: Dur/Moll bleibt, Umlauf bei 12
+@Test func openKeyShift() {
+    var t = Track(key: "k", path: "/x.mp3")
+    t.musicalKey = 16            // Em = 2m
+    #expect(t.openKey == "2m")
+    #expect(t.openKey(shiftedBy: 1) == "9m")     // Fm
+    #expect(t.openKey(shiftedBy: -5) == "3m")    // Bm
+    #expect(t.openKey(shiftedBy: 12) == "2m")
+    t.musicalKey = 0             // C = 1d
+    #expect(t.openKey(shiftedBy: 1) == "8d")     // Db
+    #expect(t.openKey(shiftedBy: -1) == "6d")    // B
+}

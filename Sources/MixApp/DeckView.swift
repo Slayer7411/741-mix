@@ -63,8 +63,7 @@ struct DeckView: View {
                 Text(String(format: "%+.2f%%", deck.tempoPct)).font(Theme.mono(10)).foregroundStyle(.secondary)
             }
             VStack(alignment: .trailing, spacing: 0) {
-                Text(mix.keyText(d)).font(Theme.mono(13, .semibold))
-                    .foregroundStyle(Theme.bone)
+                KeyReadout(d: d)
                 PhaseMeter(d: d).frame(width: 44, height: 6)
             }
             .frame(minWidth: 46)
@@ -165,6 +164,33 @@ struct TimeReadout: View {
 }
 
 /// Phasenanzeige gegenüber dem Master
+/// Tonart über dem Deck: Key des Tracks, daneben der hörbare Key (rot), sobald er abweicht,
+/// darunter die Abweichung in Halbtönen (Keylock aus: aus dem Tempo, Keylock an: aus dem Key-Shift)
+struct KeyReadout: View {
+    @Environment(MixModel.self) private var mix
+    let d: Int
+
+    var body: some View {
+        let track = mix.deck(d).track
+        let dev = mix.keyDeviation(d)
+        let off = track != nil && abs(dev) >= 0.05
+        VStack(alignment: .trailing, spacing: 0) {
+            HStack(spacing: 3) {
+                Text(track?.openKey ?? "").font(Theme.mono(13, .semibold))
+                    .foregroundStyle(off ? Color.secondary : Theme.bone)
+                if off, let track {
+                    Text("→").font(Theme.mono(10)).foregroundStyle(.secondary)
+                    Text(track.openKey(shiftedBy: Int(dev.rounded()))).font(Theme.mono(13, .semibold))
+                        .foregroundStyle(Theme.state)
+                }
+            }
+            Text(track == nil ? " " : String(format: "%+.2f", dev)).font(Theme.mono(10))
+                .foregroundStyle(off ? Theme.state : Color.secondary)
+                .help(String(localized: "Abweichung von der Tonart des Tracks in Halbtönen"))
+        }
+    }
+}
+
 struct PhaseMeter: View {
     @Environment(MixModel.self) private var mix
     let d: Int
