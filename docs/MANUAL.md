@@ -247,7 +247,13 @@ effects so far: filter, delay, reverb. more -> [roadmap](roadmap.md).
 
 * one or two panes, side by side or stacked
 * each pane: own tree, search, sort, role chips, tags
-* tree: TRACK COLLECTION, PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, then all playlists + smartlists of the collection
+* tree: TRACK COLLECTION, PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, MUSIC FOLDERS, then all playlists + smartlists of the collection
+* MUSIC FOLDERS = the music library on disk, folder by folder. click a folder -> its audio files (mp3, m4a, aac, aiff, wav, flac, ogg, opus)
+  * files in the collection show bpm, key, tags, comments like everywhere else
+  * files not in the collection are grey, no grid, load and preview anyway
+  * SUBFOLDERS in the list header -> all files below the folder
+  * right click a folder -> rescan, show in finder. folders that change on disk are rescanned on their own
+  * default folder = the folder holding 90 % of the collection's files, own folders: ⌘, -> DISPLAY -> browser
 * all library columns: move by drag, hide via right click on the header, saved
 * `√` = analyzed in the collection, missing files show the artist in red
 * search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match, case and accents ignored

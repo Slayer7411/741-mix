@@ -11,6 +11,8 @@ struct Session: Codable {
     }
     struct Pane: Codable {
         var source: String?, sort: String?, ascending: Bool?, roles: [String]?, tags: [String]?, showTree: Bool?
+        /// MUSIC FOLDERS: Unterordner einbeziehen
+        var subfolders: Bool?
     }
     var decks: [Deck]?
     var fx: [FXUnitState]?
@@ -60,7 +62,7 @@ struct Session: Codable {
             let c = p.sortOrder.first
             return Pane(source: Session.sourceID(p.source), sort: c.flatMap { Session.sortName($0) },
                         ascending: c.map { $0.order == .forward }, roles: p.roles.map(\.rawValue),
-                        tags: Array(p.tags), showTree: p.showTree)
+                        tags: Array(p.tags), showTree: p.showTree, subfolders: p.subfolders)
         }
         maximized = browser.maximized
     }
@@ -105,6 +107,7 @@ struct Session: Codable {
             if let r = p.roles { pane.roles = Set(r.compactMap(RoleFilter.init(rawValue:))) }
             if let t = p.tags { pane.tags = Set(t) }
             if let v = p.showTree { pane.showTree = v }
+            if let v = p.subfolders { pane.subfolders = v }
         }
     }
 
@@ -118,6 +121,7 @@ struct Session: Codable {
         case .historyLive: "history"
         case .custom(let c): "custom:\(c.id.uuidString)"
         case .node(let n): "node:\(n.name)"
+        case .folder(let p): "folder:" + p
         case .history, .prepArchive: nil
         }
     }
@@ -133,6 +137,11 @@ struct Session: Codable {
         if id.hasPrefix("custom:") {
             let u = String(id.dropFirst(7))
             return store.customSmartlists.first { $0.id.uuidString == u }.map { .custom($0) }
+        }
+        if id.hasPrefix("folder:") {
+            let p = String(id.dropFirst(7))
+            var dir: ObjCBool = false
+            return FileManager.default.fileExists(atPath: p, isDirectory: &dir) && dir.boolValue ? .folder(p) : nil
         }
         if id.hasPrefix("node:") {
             let name = String(id.dropFirst(5))

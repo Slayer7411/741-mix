@@ -117,6 +117,8 @@ struct UIPrefs: Codable, Equatable {
     var colorfulGrid = true
     /// Beats je Phrase (Markierung/Farbwechsel)
     var phraseBeats = 64
+    /// MUSIC FOLDERS: eigene Musik-Ordner (leer = automatisch aus der Collection)
+    var musicFolders: [String] = []
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.

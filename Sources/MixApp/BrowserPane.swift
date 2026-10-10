@@ -20,6 +20,8 @@ final class BrowserPaneModel: Identifiable {
     var sortOrder: [KeyPathComparator<Track>] = [KeyPathComparator(\Track.artist)]
     var selection: Set<Track.ID> = []
     var showTree = true
+    /// MUSIC FOLDERS: Dateien aus allen Unterordnern zeigen
+    var subfolders = false
 
     init(name: String, source: BrowserSource = .collection) {
         self.name = name
@@ -37,6 +39,7 @@ final class BrowserPaneModel: Identifiable {
     /// Tracks der Quelle vor Tag-Filter/Suche (für die Tag-Auswahl)
     func base(from store: LibraryStore, history: HistoryStore?) -> [Track] {
         if case let .prepArchive(s) = source { return (history?.prepKeys(s) ?? []).compactMap { store.byKey[$0] } }
+        if case let .folder(p) = source { return store.folders.tracks(in: p, recursive: subfolders, library: store) }
         return store.tracks(for: source)
     }
 
@@ -48,7 +51,7 @@ final class BrowserPaneModel: Identifiable {
     /// Gefilterte + sortierte Liste. Die Quelle wird einmal sortiert (14k Tracks lokalisiert ≈ 100 ms) und bei
     /// Suche, Tags und Rollen nur noch gefiltert – ein Tastendruck im Suchfeld kostet so ~5 ms statt der Sortierung.
     func rows(from store: LibraryStore, history: HistoryStore?, separators: String) -> [Track] {
-        let baseKey: [AnyHashable] = [source, "\(sortOrder)", store.revision, source == .running ? store.runningRevision : 0]
+        let baseKey: [AnyHashable] = [source, "\(sortOrder)", store.revision, store.sourceRevision(source, subfolders: subfolders), subfolders]
         if baseKey != sortedKey {
             sortedBase = base(from: store, history: history).sorted(using: sortOrder)
             sortedKey = baseKey
@@ -118,6 +121,10 @@ struct BrowserPane: View {
                     .help("Baum ein/aus")
                 Text(model.source.title.uppercased()).font(Theme.label(13, .bold)).lineLimit(1)
                 Text("\(count)").font(Theme.mono(11)).foregroundStyle(Theme.muted).fixedSize()
+                if case .folder = model.source {
+                    DeckButton(title: "UNTERORDNER", active: model.subfolders) { model.subfolders.toggle() }
+                        .help("Dateien aus allen Unterordnern zeigen")
+                }
                 Spacer(minLength: 8)
                 TextField("SUCHEN", text: $model.search)
                     .textFieldStyle(.plain)
@@ -257,6 +264,7 @@ struct SourceTree: View {
                 }
                 .buttonStyle(.plain)
             } label: { row("▸", "SMARTLISTS 741") }
+            MusicFolderTree(selection: $selection)
             Section {
                 OutlineGroup(store.root.children, children: \.childrenOrNil) { node in
                     row(icon(node), node.name)
@@ -427,13 +435,13 @@ struct TrackTable: View {
             .width(16).customizationID("analyzed")
         TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4) }
             .width(6).customizationID("color")
-        TableColumn("Artist", value: \Track.artist) { (t: Track) in Text(t.artist).foregroundStyle(t.fileExists ? Theme.bone : Theme.state) }
+        TableColumn("Artist", value: \Track.artist) { (t: Track) in Text(t.artist).foregroundStyle(t.loose ? Theme.muted : t.fileExists ? Theme.bone : Theme.state) }
             .width(min: 80, ideal: 150).customizationID("artist")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols1: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Title", value: \Track.title)
+        TableColumn("Title", value: \Track.title) { (t: Track) in Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) }
             .width(min: 80, ideal: 200).customizationID("title")
         TableColumn("Remixer", value: \Track.remixer)
             .width(min: 60, ideal: 110).customizationID("remixer").defaultVisibility(.hidden)
@@ -542,9 +550,9 @@ struct TrackTable: View {
                 Button("Aus Preparation entfernen") { store.preparation.removeAll { ids.contains($0) } }
             }
             Divider()
-            Button("Vorhören") { if let id = ids.first, let t = store.byKey[id] { decks.preview(t) } }
+            Button("Vorhören") { if let id = ids.first, let t = store.track(id) { decks.preview(t) } }
             Button("Im Finder zeigen") {
-                let urls = ids.compactMap { store.byKey[$0] }.map { URL(fileURLWithPath: $0.path) }
+                let urls = ids.compactMap { store.track($0) }.map { URL(fileURLWithPath: $0.path) }
                 NSWorkspace.shared.activateFileViewerSelecting(urls)
             }
             Divider()
@@ -560,7 +568,7 @@ struct TrackTable: View {
     }
 
     private func load(_ ids: Set<Track.ID>, _ deck: Int) {
-        guard let id = ids.first, let t = store.byKey[id] else { return }
+        guard let id = ids.first, let t = store.track(id) else { return }
         decks.load(t, deck: deck)
     }
 }

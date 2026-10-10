@@ -76,8 +76,9 @@ struct ContentView: View {
         .windowToolbarFullScreenVisibility(.onHover)
         .background(MainWindowHook())
         .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
-            store.running = keys.filter { !$0.isEmpty }.compactMap { store.byKey[$0] }
+            store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
         }
+        .onChange(of: mix.prefs.ui.musicFolders, initial: true) { _, f in store.folders.configured = f }
         .onAppear {
             if store.tracks.isEmpty { store.load() }
             // MIX741_LAYOUT=nomixer,2decks,nobrowser: Teile der Oberfläche für Layout-Messungen abschalten (nur Selbsttest)
@@ -348,6 +349,10 @@ if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SH
 // Selbsttest-Bild des Tastatur-Tabs: offscreen rendern und beenden (kein Fenster, keine Aktivierung, kein Audio)
 if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("keys:") {
     exit(MainActor.assumeIsolated { ShortcutShot.render(to: String(shot.dropFirst(5))) } ? 0 : 1)
+}
+// Selbsttest-Bild offscreen (kein Fenster, kein Audio): MIX741_SELFTEST=1 MIX741_SHOT=browser:<png>
+if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("browser:") {
+    MainActor.assumeIsolated { BrowserShot.run(shot) }
 }
 
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.

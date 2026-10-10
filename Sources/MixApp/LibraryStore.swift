@@ -48,6 +48,20 @@ final class LibraryStore {
     var preparationDate: Date { UserDefaults.standard.object(forKey: "prep.date") as? Date ?? Date() }
     /// einmal nach dem ersten Laden der Collection
     @ObservationIgnored var onLoaded: (() -> Void)?
+    /// MUSIC FOLDERS (Dateibaum der Musik-Ordner)
+    let folders = MusicFolderStore()
+
+    /// Track zu einem Schlüssel: Collection oder schon angezeigte Datei aus MUSIC FOLDERS
+    func track(_ key: String) -> Track? { byKey[key] ?? folders.loose[key] }
+
+    /// Änderungszähler einer Quelle zusätzlich zu `revision` (Browser-Zwischenspeicher)
+    func sourceRevision(_ s: BrowserSource, subfolders: Bool = false) -> Int {
+        switch s {
+        case .running: runningRevision
+        case let .folder(p): folders.stamp(p, recursive: subfolders)
+        default: 0
+        }
+    }
 
     func load(_ url: URL = LibraryStore.defaultNML) {
         status = "Lade \(url.lastPathComponent) …"
@@ -67,11 +81,15 @@ final class LibraryStore {
                 for i in c.tracks.indices { c.tracks[i].fileMissing = missing[i] }
                 let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
                 let index = NMLEntryIndex(nmlText: text)
+                // MUSIC FOLDERS: Pfad-Index und Standard-Ordner einmal je Collection
+                let folderIndex = MusicFolder.pathIndex(c.tracks)
+                let folderRoot = MusicFolder.defaultRoot(paths: c.tracks.filter(\.fileExists).map(\.path))
                 let secs = Date().timeIntervalSince(start)
                 await MainActor.run {
                     self.tracks = c.tracks
                     self.byKey = Dictionary(c.tracks.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
                     self.entryIndex = index
+                    self.folders.collectionLoaded(index: folderIndex, defaultRoot: folderRoot)
                     self.onLoaded?()
                     self.root = c.root
                     self.smartCache = [:]
@@ -87,7 +105,7 @@ final class LibraryStore {
     func tracks(for source: BrowserSource) -> [Track] {
         switch source {
         case .collection: return tracks
-        case .preparation: return preparation.compactMap { byKey[$0] }
+        case .preparation: return preparation.compactMap { track($0) }
         case .running: return running
         case .history, .historyLive: return []
         case .prepArchive: return []   // löst BrowserPaneModel über den HistoryStore auf
@@ -97,6 +115,7 @@ final class LibraryStore {
             let res = tracks.filter { q.matches($0) }
             customCache[sl.id] = (sl.query, res)
             return res
+        case let .folder(p): return folders.tracks(in: p, recursive: false, library: self)
         case let .node(n):
             switch n.kind {
             case .folder: return []
@@ -121,6 +140,8 @@ enum BrowserSource: Hashable {
     case history(HistorySession)
     case prepArchive(HistorySession)
     case custom(CustomSmartlist)
+    /// Ordner aus MUSIC FOLDERS (absoluter Pfad)
+    case folder(String)
 
     var title: String {
         switch self {
@@ -132,6 +153,7 @@ enum BrowserSource: Hashable {
         case let .history(s): "History " + (s.label ?? Theme.dateTimeFormat.string(from: s.date))
         case let .prepArchive(s): "Preparation " + Theme.dateTimeFormat.string(from: s.date)
         case let .custom(c): c.name
+        case let .folder(p): (p as NSString).lastPathComponent
         }
     }
 
@@ -180,7 +202,7 @@ final class BrowserState {
     func selectedTrack(pane i: Int? = nil) -> Track? {
         let p = i.map(pane) ?? activePane
         guard let store, let id = p.selection.first else { return nil }
-        return store.byKey[id]
+        return store.track(id)
     }
 
     func moveSelection(by delta: Int, pane i: Int? = nil) {

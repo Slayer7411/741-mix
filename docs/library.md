@@ -8,6 +8,17 @@
 * space / browse push = big browser
 * split line between decks and browser can be dragged
 
+## ◆ MUSIC FOLDERS
+
+* tree node MUSIC FOLDERS -> the music library as folders on disk
+* click a folder -> its audio files, SUBFOLDERS -> everything below it
+* files in the collection: all columns (bpm, key, comment 2 / tags, plays …), matched by path
+* files not in the collection: grey, title from the file name (`artist - title`), no grid. load, preview, preparation work anyway
+* folders are read in the background when they open, then cached. right click -> rescan
+* default folder: deepest folder that holds 90 % of the collection's existing files, e.g. `~/Music/DJ`
+* own folders: ⌘, -> DISPLAY -> browser -> add folder (the automatic one stays in the list)
+* every pane keeps its own folder and the subfolders switch, saved in the session
+
 ## ◆ ROLE CHIPS
 
 basis · synth · drums · voll · atmo
