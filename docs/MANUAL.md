@@ -243,7 +243,7 @@ effects so far: filter, delay, reverb. more -> [feature parity](feature-parity.m
 * tree: TRACK COLLECTION, PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, then all traktor playlists + smartlists
 * all traktor columns: move by drag, hide via right click on the header, saved
 * `√` = analyzed in traktor, missing files show the artist in red
-* search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match
+* search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match, case and accents ignored
 * right click a track -> load into deck A-D, add to / remove from preparation, preview, show in finder
 * the left x1 drives the left pane, the right x1 the right one
 * tree can hide while decks are visible (setting)

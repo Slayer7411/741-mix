@@ -129,7 +129,7 @@ public final class NMLParser: NSObject, XMLParserDelegate {
         switch el {
         case "COLLECTION": inCollection = false
         case "ENTRY" where inCollection:
-            if let t = current, !t.key.isEmpty { tracks.append(t) }
+            if var t = current, !t.key.isEmpty { t.buildSearchText(); tracks.append(t) }
             current = nil
         case "NODE": _ = stack.popLast()
         default: break

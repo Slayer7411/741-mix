@@ -97,3 +97,28 @@ let sampleNML = """
         #expect(!TraktorHistoryParser.parse(url: f).isEmpty)
     }
 }
+
+/// Browser-Suche über die echte Collection: der vorbereitete Suchtext muss alle Treffer der Feldsuche liefern
+/// (plus akzent-unabhängige) und deutlich schneller sein – läuft nur mit vorhandener Collection.
+@Test func searchTextCoversFieldSearch() throws {
+    let url = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Native Instruments/Traktor 3.11.2/collection.nml")
+    guard FileManager.default.fileExists(atPath: url.path) else { return }
+    let tracks = try NMLParser.parse(url: url).tracks
+    for query in ["dettmann ba", "11m", "groove", "d"] {
+        let words = query.split(separator: " ").map(String.init)
+        var t0 = Date()
+        let old = Set(tracks.filter { t in
+            let hay = [t.artist, t.title, t.comment, t.comment2, t.label, t.genre, t.album, t.openKey].joined(separator: " ")
+            return words.allSatisfy { hay.localizedCaseInsensitiveContains($0) }
+        }.map(\.key))
+        let oldMs = Date().timeIntervalSince(t0) * 1000
+        let folded = words.map(Track.fold)
+        t0 = Date()
+        let new = Set(tracks.filter { $0.matches(words: folded) }.map(\.key))
+        let newMs = Date().timeIntervalSince(t0) * 1000
+        print(String(format: "[bench] search '%@': fields %.1f ms (%d) · searchText %.2f ms (%d)", query, oldMs, old.count, newMs, new.count))
+        #expect(old.isSubset(of: new))
+        #expect(new.count - old.count < 50)
+    }
+}

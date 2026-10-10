@@ -50,10 +50,29 @@ public struct Track: Identifiable, Hashable, Sendable {
     public var peakDb: Double?
     public var perceivedDb: Double?
     public var cues: [Cue] = []
+    /// Suchtext für den Browser: alle Textfelder klein, ohne Akzente, als UTF-8 – einmal beim Laden gebaut
+    public var searchText: [UInt8] = []
 
     public init(key: String, path: String) {
         self.key = key
         self.path = path
+    }
+
+    public static func fold(_ s: String) -> [UInt8] {
+        Array(s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).utf8)
+    }
+
+    public mutating func buildSearchText() {
+        searchText = Self.fold([artist, title, comment, comment2, label, genre, album, openKey].joined(separator: " "))
+    }
+
+    /// alle Wörter (mit `fold` vorbereitet) kommen im Suchtext vor
+    public func matches(words: [[UInt8]]) -> Bool {
+        words.allSatisfy { w in
+            w.isEmpty || searchText.withUnsafeBufferPointer { h in
+                w.withUnsafeBufferPointer { n in h.count >= n.count && memmem(h.baseAddress, h.count, n.baseAddress, n.count) != nil }
+            }
+        }
     }
 
     /// Sortier-/Anzeigehilfen für Tabellen

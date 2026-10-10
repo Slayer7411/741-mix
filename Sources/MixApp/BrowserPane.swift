@@ -40,37 +40,37 @@ final class BrowserPaneModel: Identifiable {
         return store.tracks(for: source)
     }
 
+    @ObservationIgnored private var sortedKey: [AnyHashable] = []
+    @ObservationIgnored private var sortedBase: [Track] = []
     @ObservationIgnored private var cacheKey: [AnyHashable] = []
     @ObservationIgnored private var cachedRows: [Track] = []
 
-    /// Gefilterte + sortierte Liste – zwischengespeichert, Neuberechnung nur wenn sich etwas ändert
-    /// (14k Tracks lokalisiert zu sortieren dauert ~100 ms → bei jedem Encoder-Schritt hing sonst die Oberfläche).
+    /// Gefilterte + sortierte Liste. Die Quelle wird einmal sortiert (14k Tracks lokalisiert ≈ 100 ms) und bei
+    /// Suche, Tags und Rollen nur noch gefiltert – ein Tastendruck im Suchfeld kostet so ~5 ms statt der Sortierung.
     func rows(from store: LibraryStore, history: HistoryStore?, separators: String) -> [Track] {
-        let key: [AnyHashable] = [source, search, roles, tags, "\(sortOrder)", store.revision, separators,
-                                  source == .running ? store.runningRevision : 0]
+        let baseKey: [AnyHashable] = [source, "\(sortOrder)", store.revision, source == .running ? store.runningRevision : 0]
+        if baseKey != sortedKey {
+            sortedBase = base(from: store, history: history).sorted(using: sortOrder)
+            sortedKey = baseKey
+        }
+        let key = baseKey + [search, roles, tags, separators] as [AnyHashable]
         if key == cacheKey { return cachedRows }
-        let r = computeRows(from: store, history: history, separators: separators)
+        cachedRows = filtered(sortedBase, separators: separators)
         cacheKey = key
-        cachedRows = r
-        return r
+        return cachedRows
     }
 
-    private func computeRows(from store: LibraryStore, history: HistoryStore?, separators: String) -> [Track] {
-        var list = base(from: store, history: history)
+    private func filtered(_ base: [Track], separators: String) -> [Track] {
+        var list = base
         if !roles.isEmpty {
             list = list.filter { t in roles.contains { t.comment2.localizedCaseInsensitiveContains("» " + $0.rawValue) } }
         }
         if !tags.isEmpty {
             list = list.filter { t in tags.isSubset(of: Set(Self.tags(of: t, separators: separators))) }
         }
-        let words = search.split(separator: " ").map(String.init)
-        if !words.isEmpty {
-            list = list.filter { t in
-                let hay = [t.artist, t.title, t.comment, t.comment2, t.label, t.genre, t.album, t.openKey].joined(separator: " ")
-                return words.allSatisfy { hay.localizedCaseInsensitiveContains($0) }
-            }
-        }
-        return list.sorted(using: sortOrder)
+        let words = search.split(separator: " ").map { Track.fold(String($0)) }
+        if !words.isEmpty { list = list.filter { $0.matches(words: words) } }
+        return list
     }
 }
 
