@@ -144,7 +144,7 @@ struct Reverb {
     /// Send-Effekt: das trockene Signal bleibt unverändert, der Hall kommt dazu.
     /// `level` = wie viel hineingeht (aus = Eingang zu, Hall klingt aus), `wet` = Hall-Anteil am Ausgang.
     /// hpP/lpP 0…1: Hochpass 20 Hz…8 kHz (24 dB), Tiefpass 500 Hz…20 kHz – so entsteht z. B. ein heller Swipe aus den Höhen.
-    void run(float *L, float *R, int n, float size, float level, float wet, float hpP, float lpP, double fs, bool on) {
+    void run(float *L, float *R, int n, float size, float level, float wet, float hpP, float lpP, double fs, bool on, bool loud) {
         if (hpP != lastHP) {
             lastHP = hpP;
             if (hpP < 0.01f) { hp1.setIdentity(); hp2.setIdentity(); }
@@ -156,7 +156,8 @@ struct Reverb {
         }
         float fb = 0.75f + 0.235f * size, damp = 0.02f;       // Nachhall ~1 s … ~20 s, kaum Dämpfung → Höhen bleiben (Swipe)
         // gleiche Lautheit über Größe und Hochpass: was der Filter wegnimmt, kommt als Pegel zurück (gemessen: volles D/W ≈ 5 dB über dem Track, max. +45 dB)
-        float g = 0.03f * std::sqrt((1 - fb) / 0.15f) * std::pow(10.f, std::min(45.f, 10 + 34 * hpP + std::max(0.f, hpP - 0.7f) * 30) / 20);
+        float g = 0.03f * std::sqrt((1 - fb) / 0.15f);
+        if (loud) g *= std::pow(10.f, std::min(45.f, 10 + 34 * hpP + std::max(0.f, hpP - 0.7f) * 30) / 20);
         float target = on ? level : 0.f, peak = 0;
         for (int i = 0; i < n; i++) {
             send += (target - send) * 0.002f;
@@ -422,7 +423,7 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
             bool dwSend = fp[MDFX_REVERB_DWSEND].load() > 0.5f;
             float amt = fp[MDFX_REVERB_AMOUNT].load();
             c.reverb.run(L, R, n, fp[MDFX_REVERB_SIZE].load(), dwSend ? dw : 1.f, dwSend ? amt : amt * dw,
-                         fp[MDFX_REVERB_HP].load(), fp[MDFX_REVERB_LP].load(), e->fs, reverbOn);
+                         fp[MDFX_REVERB_HP].load(), fp[MDFX_REVERB_LP].load(), e->fs, reverbOn, dwSend);
         }
     }
 
