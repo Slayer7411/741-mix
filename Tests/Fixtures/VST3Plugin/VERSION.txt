@@ -1,0 +1,4 @@
+VST 3 SDK v3.8.1_build_84 (MIT), gleicher Stand wie Sources/VST3SDK/VERSION.txt.
+Nur für Tests: das Beispiel public.sdk/samples/vst/again_sampleaccurate mit base/ und den Plugin-Hilfsklassen aus
+public.sdk/source/{main,common,vst}. Gebaut von scripts/build-vst3-fixture.sh, nie Teil der App.
+minos/projectversion.h ersetzt die von cmake erzeugte Datei.
