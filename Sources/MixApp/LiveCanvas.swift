@@ -69,6 +69,7 @@ enum CG {
     static let muted = NSColor(Theme.muted).cgColor
     static let hairline = NSColor(Theme.hairline).cgColor
     static let state = NSColor(Theme.state).cgColor
+    static let boneNS = NSColor(Theme.bone), mutedNS = NSColor(Theme.muted), stateNS = NSColor(Theme.state)
 
     static func text(_ s: String, size: CGFloat, weight: String = "SemiBold", color: NSColor, rightAt x: CGFloat, y: CGFloat) {
         let font = NSFont(name: "IBMPlexMono-\(weight)", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .semibold)

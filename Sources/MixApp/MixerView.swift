@@ -15,7 +15,7 @@ struct MixerView: View {
             if mix.mixerMode == .internalMixer {
                 HStack(spacing: 4) {
                     Text("A").font(Theme.label(9, .bold)).foregroundStyle(.secondary)
-                    Slider(value: Binding(get: { mix.state.crossfader }, set: { mix.setCrossfader($0) }), in: -1...1)
+                    Slider(value: Binding(get: { mix.crossfader }, set: { mix.setCrossfader($0) }), in: -1...1)
                         .controlSize(.mini)
                     Text("B").font(Theme.label(9, .bold)).foregroundStyle(.secondary)
                 }
@@ -110,8 +110,10 @@ struct FXUnitView: View {
     @Environment(MixModel.self) private var mix
     let u: Int
 
+    private var unit: FXMirror { mix.fxUnits[u] }
+
     var body: some View {
-        let fx = mix.state.fx[u]
+        let fx = unit.state
         HStack(spacing: 8) {
             VStack(spacing: 2) {
                 Text("FX \(u + 1)").font(Theme.label(11, .heavy)).foregroundStyle(fx.anyOn ? Theme.state : Theme.muted)
@@ -120,7 +122,7 @@ struct FXUnitView: View {
                 }
                 .help("Gruppe (3 Effekte) oder Single (1 Effekt, 3 Parameter)")
             }
-            Knob(value: Binding(get: { mix.state.fx[u].dryWet }, set: { v in mix.updateFX(u) { $0.dryWet = v } }),
+            Knob(value: Binding(get: { unit.state.dryWet }, set: { v in mix.updateFX(u) { $0.dryWet = v } }),
                  range: 0...1, defaultValue: 1, label: "D/W", color: Theme.state, size: 24)
             if fx.single { single(fx) } else { group(fx) }
         }
@@ -133,7 +135,7 @@ struct FXUnitView: View {
     @ViewBuilder private func group(_ fx: FXUnitState) -> some View {
         ForEach(0..<3, id: \.self) { i in
             VStack(spacing: 2) {
-                Knob(value: Binding(get: { mix.state.fx[u].slots[i].amount },
+                Knob(value: Binding(get: { unit.state.slots[i].amount },
                                     set: { v in mix.updateFX(u) { $0.slots[i].amount = v } }),
                      range: 0...1, defaultValue: 0.5, bipolar: i == 0, label: FXUnitState.slotNames[i],
                      color: Theme.state, size: 24)
@@ -151,7 +153,7 @@ struct FXUnitView: View {
         .font(Theme.label(10, .bold))
         .fixedSize()
         .help("Delay-Zeit in Beats")
-        Knob(value: Binding(get: { mix.state.fx[u].reverbSize }, set: { v in mix.updateFX(u) { $0.reverbSize = v } }),
+        Knob(value: Binding(get: { unit.state.reverbSize }, set: { v in mix.updateFX(u) { $0.reverbSize = v } }),
              range: 0...1, defaultValue: 0.6, label: "ROOM", color: Theme.state, size: 20)
     }
 
@@ -169,10 +171,10 @@ struct FXUnitView: View {
             DeckButton(title: "ON", active: fx.singleOn, color: Theme.state, width: 30) { mix.updateFX(u) { $0.singleOn.toggle() } }
         }
         if effect == .plugin { pluginControls(fx) }
-        let names = effect == .plugin ? mix.state.pluginParams[u] : effect.params
+        let names = effect == .plugin ? unit.pluginParams : effect.params
         ForEach(0..<3, id: \.self) { i in
             let label = i < names.count ? names[i] : "—"
-            Knob(value: Binding(get: { mix.state.fx[u].params[i] }, set: { v in mix.updateFX(u) { $0.params[i] = v } }),
+            Knob(value: Binding(get: { unit.state.params[i] }, set: { v in mix.updateFX(u) { $0.params[i] = v } }),
                  range: 0...1, defaultValue: 0.5, bipolar: effect != .plugin && (label == "FILTER" || label == "CUTOFF"),
                  label: label, color: Theme.state, size: 24)
         }
@@ -182,7 +184,7 @@ struct FXUnitView: View {
     @ViewBuilder private func pluginControls(_ fx: FXUnitState) -> some View {
         let list = mix.core.pluginList()
         let current = list.first { $0.id == fx.pluginID }
-        let error = mix.state.pluginErrors[u]
+        let error = unit.pluginError
         VStack(spacing: 2) {
             Menu {
                 ForEach(list) { p in
@@ -237,7 +239,7 @@ struct MasterClockPanel: View {
     @State private var dragStart: Double?
 
     var body: some View {
-        let s = mix.state
+        let s = mix.clock
         HStack(spacing: 6) {
             DeckButton(title: s.linkEnabled && s.linkPeers > 0 ? "LINK \(s.linkPeers)" : "LINK", active: s.linkEnabled,
                        color: Theme.secondary, width: 38) { mix.toggleLink() }
@@ -249,7 +251,7 @@ struct MasterClockPanel: View {
                     .help("Clock ist Master: MINOS gibt das Tempo vor, gesyncte Decks folgen")
             }
             VStack(spacing: 0) {
-                Text(String(format: "%.2f", mix.masterBPM))
+                Text(String(format: "%.2f", s.masterTempo))
                     .font(Theme.mono(17, .semibold))
                     .foregroundStyle(s.clockMaster ? Theme.secondary : Theme.bone)
                     .gesture(DragGesture(minimumDistance: 1)
@@ -278,7 +280,7 @@ struct MasterClockPanel: View {
                 DeckButton(title: "TICK", active: s.metronome, width: 30) { mix.setMetronome(!s.metronome) }
                     .help("Metronom auf dem Beat der Clock")
             }
-            Knob(value: Binding(get: { mix.state.metronomeVolume }, set: { mix.setMetronome(mix.state.metronome, volume: $0) }),
+            Knob(value: Binding(get: { mix.clock.metronomeVolume }, set: { mix.setMetronome(mix.clock.metronome, volume: $0) }),
                  range: 0...1, defaultValue: 0.5, label: "TICK", size: 20)
             Text("│").foregroundStyle(Theme.hairline)
             VStack(spacing: 2) {
@@ -287,7 +289,7 @@ struct MasterClockPanel: View {
                 DeckButton(title: "Q", active: mix.prefs.engine.quantize, width: 14) { mix.toggleQuantize() }
                     .help("Quant: Sprünge halten die Beat-Phase")
             }
-            Knob(value: Binding(get: { mix.state.masterVolume }, set: { mix.setMasterVolume($0) }), range: 0...1,
+            Knob(value: Binding(get: { mix.clock.masterVolume }, set: { mix.setMasterVolume($0) }), range: 0...1,
                  defaultValue: 0.85, label: "MAIN", size: 24)
             SettingsLink { Text("⚙︎").font(Theme.mono(14)).foregroundStyle(Theme.bone) }
                 .buttonStyle(.borderless)
@@ -304,21 +306,24 @@ struct MasterClockPanel: View {
 /// Doppelklick = neu auf Takt 1.
 struct BarCounter: View {
     @Environment(MixModel.self) private var mix
+    /// Farben einmal statt in jedem Frame umrechnen
+    private static let played = CG.bone.copy(alpha: 0.55) ?? CG.bone
+    private static let shade = CGColor(gray: 0, alpha: 0.5)
 
     var body: some View {
         LiveCanvas(fps: 30) { [mix] ctx, size in
             ctx.setFillColor(CG.void); ctx.fill(CGRect(origin: .zero, size: size))
             guard let sb = mix.core.sessionBeat else {
-                CG.text(String(localized: "BARS · ab erstem Play"), size: 10, weight: "Regular", color: NSColor(Theme.muted), rightAt: size.width - 6, y: 15)
+                CG.text(String(localized: "BARS · ab erstem Play"), size: 10, weight: "Regular", color: CG.mutedNS, rightAt: size.width - 6, y: 15)
                 return
             }
             let beat = max(0, sb)
             let bar = Int(beat / 4), inBar = Int(beat) % 4
             let frac = beat - beat.rounded(.down)
             let pulse = CGFloat(max(0, 1 - frac * 2.5))
-            CG.text("\(bar + 1).\(inBar + 1)", size: 15, weight: "SemiBold", color: NSColor(Theme.bone), rightAt: 46, y: 4)
+            CG.text("\(bar + 1).\(inBar + 1)", size: 15, weight: "SemiBold", color: CG.boneNS, rightAt: 46, y: 4)
             let toNext16 = 16 - bar % 16
-            CG.text("16 ▸ \(toNext16)", size: 9, weight: "Regular", color: NSColor(toNext16 == 1 ? Theme.state : Theme.muted), rightAt: 46, y: 26)
+            CG.text("16 ▸ \(toNext16)", size: 9, weight: "Regular", color: toNext16 == 1 ? CG.stateNS : CG.mutedNS, rightAt: 46, y: 26)
             let x0: CGFloat = 66, w = size.width - x0 - 4
             for (row, n) in [4, 8, 16].enumerated() {
                 let y = 3 + CGFloat(row) * 13, h: CGFloat = 10
@@ -328,10 +333,9 @@ struct BarCounter: View {
                     let r = CGRect(x: x0 + CGFloat(i) * cw + 1, y: y, width: cw - 2, height: h)
                     let last = cur == n - 1
                     if i < cur {
-                        ctx.setFillColor(NSColor(Theme.bone).withAlphaComponent(0.55).cgColor)
+                        ctx.setFillColor(Self.played)
                     } else if i == cur {
-                        let c = last ? Theme.state : Theme.bone
-                        ctx.setFillColor(NSColor(c).withAlphaComponent(0.6 + 0.4 * pulse).cgColor)
+                        ctx.setFillColor((last ? CG.state : CG.bone).copy(alpha: 0.6 + 0.4 * pulse) ?? CG.bone)
                     } else {
                         ctx.setFillColor(CG.hairline)
                     }
@@ -339,11 +343,11 @@ struct BarCounter: View {
                     if i == cur {   // Beats im aktuellen Takt
                         ctx.setFillColor(CG.void)
                         for b in 1..<4 { ctx.fill(CGRect(x: r.minX + r.width * CGFloat(b) / 4, y: r.minY, width: 1, height: r.height)) }
-                        ctx.setFillColor(NSColor.black.withAlphaComponent(0.5).cgColor)
+                        ctx.setFillColor(Self.shade)
                         ctx.fill(CGRect(x: r.minX + r.width * CGFloat(inBar + 1) / 4, y: r.minY, width: r.width * CGFloat(3 - inBar) / 4, height: r.height))
                     }
                 }
-                CG.text("\(n)", size: 8, weight: "Regular", color: NSColor(Theme.muted), rightAt: x0 - 2 + 0, y: y - 1)
+                CG.text("\(n)", size: 8, weight: "Regular", color: CG.mutedNS, rightAt: x0 - 2 + 0, y: y - 1)
             }
         }
         .frame(width: 300, height: 42)

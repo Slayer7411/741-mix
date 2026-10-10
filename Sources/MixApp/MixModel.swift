@@ -20,6 +20,28 @@ final class DeckMirror {
     var state = DeckState()
 }
 
+/// FX-Unit für die Oberfläche: eigenes Observable je Unit (FXUnitView liest nur ihre Unit)
+@MainActor @Observable
+final class FXMirror {
+    var state = FXUnitState()
+    var pluginParams: [String] = []
+    var pluginError: String?
+}
+
+/// Was die Master-Clock-Leiste zeigt – nur bei Änderung gesetzt
+struct ClockMirror: Equatable {
+    var clockMaster = false, semiSync = false, metronome = false, linkEnabled = false
+    var metronomeVolume = 0.5, masterVolume = 0.85, masterTempo = 128.0
+    var linkPeers = 0
+
+    init() {}
+    init(_ s: MixState) {
+        clockMaster = s.clockMaster; semiSync = s.semiSync; metronome = s.metronome; linkEnabled = s.linkEnabled
+        metronomeVolume = s.metronomeVolume; masterVolume = s.masterVolume; masterTempo = s.masterTempo
+        linkPeers = s.linkPeers
+    }
+}
+
 /// Oberflächen-Seite: spiegelt den Zustand des Steuerkerns (30 Hz) und leitet Befehle weiter.
 /// Hängt die Oberfläche, laufen Audio, Sync und Controller trotzdem weiter (eigene Threads).
 @MainActor @Observable
@@ -27,10 +49,14 @@ final class MixModel {
     @ObservationIgnored let core = MixController()
     var engine: MixEngine { core.engine }
 
-    /// Gespiegelter Zustand (ohne Sync-Nudge, damit die Oberfläche nicht ständig neu zeichnet)
-    private(set) var state = MixState()
+    /// Gespiegelter Zustand (ohne Sync-Nudge) – nicht beobachtet: Ansichten lesen nur die Teile, die sie zeigen
+    /// (DeckMirror, FXMirror, clock, crossfader), sonst rendert jede Änderung alles neu, was `state` liest
+    @ObservationIgnored private(set) var state = MixState()
     /// je Deck getrennt gespiegelt (siehe DeckMirror); Master und Clock-Modus ebenfalls einzeln
     @ObservationIgnored let decks = (0..<MixEngine.deckCount).map { _ in DeckMirror() }
+    @ObservationIgnored let fxUnits = (0..<MixEngine.fxUnitCount).map { _ in FXMirror() }
+    private(set) var clock = ClockMirror()
+    private(set) var crossfader = 0.0
     private(set) var effectiveMaster: Int?
     private(set) var clockMaster = false
     var focusedDeck = 0
@@ -121,6 +147,14 @@ final class MixModel {
             for d in decks.indices where s.decks[d] != decks[d].state { decks[d].state = s.decks[d] }
             if s.effectiveMaster != effectiveMaster { effectiveMaster = s.effectiveMaster }
             if s.clockMaster != clockMaster { clockMaster = s.clockMaster }
+            for (u, m) in fxUnits.enumerated() {
+                if m.state != s.fx[u] { m.state = s.fx[u] }
+                if m.pluginParams != s.pluginParams[u] { m.pluginParams = s.pluginParams[u] }
+                if m.pluginError != s.pluginErrors[u] { m.pluginError = s.pluginErrors[u] }
+            }
+            let c = ClockMirror(s)
+            if c != clock { clock = c }
+            if s.crossfader != crossfader { crossfader = s.crossfader }
             persistEdits()
         }
     }
@@ -133,7 +167,7 @@ final class MixModel {
     func position(_ d: Int) -> Double { core.position(d) }
     func audio(_ d: Int) -> TrackAudio? { core.trackAudio(d) }
     func phaseError(_ d: Int) -> Double? { core.phaseError(d) }
-    var masterBPM: Double { state.masterTempo }
+    var masterBPM: Double { clock.masterTempo }
     var showFourDecks: Bool { prefs.ui.showFourDecks }
 
     /// hörbare Abweichung von der Tonart des Tracks in Halbtönen: Key-Shift, ohne Keylock zusätzlich das Tempo

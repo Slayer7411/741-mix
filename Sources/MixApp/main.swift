@@ -81,9 +81,7 @@ struct ContentView: View {
         }
         .windowToolbarFullScreenVisibility(.onHover)
         .background(MainWindowHook())
-        .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
-            store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
-        }
+        .background(RunningTracks())
         .onChange(of: mix.prefs.ui.musicFolders, initial: true) { _, f in store.folders.configured = f }
         .onAppear {
             if store.tracks.isEmpty { store.load() }
@@ -94,6 +92,19 @@ struct ContentView: View {
                 if l.contains("nobrowser") { mix.prefs.ui.browserLayout = .single; mix.prefs.ui.browserHeight = 120 }
             }
             SelfTest.run(store: store, mix: mix)
+        }
+    }
+
+    /// RUNNING TRACKS im Browser nachführen – eigene leere Ansicht: liest alle vier Decks, ohne dass
+    /// ContentView bei jeder Deck-Änderung neu ausgewertet wird
+    struct RunningTracks: View {
+        @Environment(LibraryStore.self) private var store
+        @Environment(MixModel.self) private var mix
+        var body: some View {
+            Color.clear
+                .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
+                    store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
+                }
         }
     }
 
