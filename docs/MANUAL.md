@@ -183,9 +183,26 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 
 * rendered as bitmap tiles in screen resolution (background thread) -> sharp at any zoom, no load on the render server
 * height = real file level, full height = 0 dBFS, no normalizing -> loud masters look loud
-* styles: 3-band layers / spectrum / mono, palettes: 741 bone / orange / blue / classic
+* styles: 3-band layers / spectrum fine (6 bands, default for spectrum) / spectrum fine, no high layer / spectrum (3 bands) / mono, palettes (not for spectrum fine): 741 bone / orange / blue / classic
 * drag the waveform = scrub, click the overview = jump
 * played part can be dimmed
+
+spectrum fine, colors:
+
+| color | band | what it shows |
+|---|---|---|
+| orange | sub 20-60 Hz | sub bass, kick tail |
+| red | bass 60-250 Hz | kick body, bass line |
+| green | low mids 250 Hz-1 kHz | synths, vocals, chords |
+| yellow-green | high mids 1-4 kHz | leads, snare / clap body |
+| blue | highs 4-10 kHz, short | closed hats, shakers |
+| light blue, brighter | highs + air, held | open hats, ride, noise, risers |
+
+* each block (3.3 ms) takes the color of the band that is loudest against its own level in this track -> a kick reads red / orange, the hat between two kicks blue, an open hat light blue
+* highs also run as a layer in the middle (height = how strong the highs are) -> hats stay visible on top of kick and bass, also zoomed out. `spectrum fine, no high layer` = color only
+* closed vs open: share of a ~150 ms window in which the highs stay within 8 dB of their peak. short spikes = closed, held = open
+* `high emphasis` (⌘, -> DISPLAY): 0 = neutral, 1 = default (+5 dB for highs in the mix), 2 = strong
+* analysis runs while the track loads, parallel to the waveform blocks: ~0.1 s cpu per 8-minute track on a second core, ~0.03 s longer load. 8 bytes per block, ~1.4 mb per 10 minutes
 
 beatgrid:
 

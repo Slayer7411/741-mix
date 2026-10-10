@@ -398,3 +398,8 @@
 "selbsttest" = "self-check";
 "läuft im Prozess" = "in-process";
 "VST3 läuft im Prozess von MINOS-741 (isolieren geht nur für Audio Units)" = "VST3 runs inside the MINOS-741 process (isolation only for audio units)";
+"Spektrum fein (6 Bänder)" = "Spectrum fine (6 bands)";
+"Spektrum fein, ohne Höhen-Ebene" = "Spectrum fine, no high layer";
+"Spektrum (3 Bänder)" = "Spectrum (3 bands)";
+"Höhen-Betonung" = "High emphasis";
+"Sub orange · Bass/Kick rot · Mitten grün, obere Mitten gelbgrün · kurze Höhen (geschlossene Hats) blau · gehaltene Höhen (offene Hats, Ride) hellblau. Jedes Band gegen den eigenen Track normiert, Höhe = echter Pegel." = "Sub orange · bass/kick red · mids green, upper mids yellow-green · short highs (closed hats) blue · sustained highs (open hats, ride) light blue. Each band normalized against the track itself, height = real level.";
