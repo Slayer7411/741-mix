@@ -2,6 +2,7 @@ import AppKit
 import QuartzCore
 import SwiftUI
 import MixCore
+import MixEngine
 
 /// MIX741_DEBUG=1: Zeit vom Umschalten Browser groß/klein bis zum nächsten Display-Link-Takt (erstes neues Bild)
 @MainActor
@@ -55,6 +56,12 @@ enum ToggleBench {
     static func run() -> Never {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
+        // nie das Interface einer laufenden Live-Session: schon beim Start nur ein eingebautes 2-Kanal-Gerät, stumm
+        let devs = MixEngine.outputDevices()
+        let dev = devs.first { $0.channels == 2 && $0.name.localizedCaseInsensitiveContains("speaker") } ?? devs.first { $0.channels < 8 }
+        UserDefaults.standard.setVolatileDomain(["deviceUID": dev?.uid ?? "-", "mixerMode": MixerMode.internalMixer.rawValue,
+                                                 "sampleRate": 0.0, "bufferSize": 0, "masterVolume": 0.0],
+                                                forName: UserDefaults.argumentDomain)
         let store = LibraryStore(), mix = MixModel(), browser = BrowserState(), history = HistoryStore()
         browser.store = store
         browser.history = history
@@ -227,7 +234,8 @@ enum StateBench {
             ("hotcue", { cueSet.toggle(); mix.hotcue(d, 7, delete: !cueSet) }),
             ("tempo", { tempo.toggle(); mix.setTempo(d, tempo ? 1.5 : 0) }),
             ("keylock", { mix.toggleKeylock(d) }),
-        ]
+            ("gain", { tempo.toggle(); mix.updateDeck(d) { $0.gainDb = tempo ? 1 : 0 } }),   // ohne Mixer unsichtbar: Grundkosten
+        ].filter { a in env["MIX741_BENCH_ONLY"].map { $0.split(separator: ",").contains(Substring(a.0)) } ?? true }
         let sampler = startSample(seconds: max(5, actions.count * n * 2 * 60 / 1000))
         if sampler != nil { try? await Task.sleep(for: .milliseconds(500)) }
         // MIX741_BENCH_PNG=<ordner>: Ausgangszustand und ein Zustand mit allem an (Sync, Keylock, Loop 8, Sprung 16,
