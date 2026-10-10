@@ -262,10 +262,14 @@ struct SourceTree: View {
                 .contextMenu {
                     exportMenu(.collection)
                     Button("Reset Played State") { history.resetPlayed() }
+                    OverviewMenuButton { store.tracks }
                 }
             row("▶", "RUNNING TRACKS").tag(BrowserSource.running)
             row("▤", "PREPARATION").tag(BrowserSource.preparation)
-                .contextMenu { exportMenu(.preparation) }
+                .contextMenu {
+                    exportMenu(.preparation)
+                    OverviewMenuButton { store.tracks(for: .preparation) }
+                }
             DisclosureGroup {
                 ForEach(history.prepArchive) { s in
                     row("▤", Theme.dateTimeFormat.string(from: s.date)).tag(BrowserSource.prepArchive(s))
@@ -285,6 +289,7 @@ struct SourceTree: View {
                     row("◆", sl.name).tag(BrowserSource.custom(sl))
                         .contextMenu {
                             exportMenu(.custom(sl))
+                            OverviewMenuButton { store.tracks(for: .custom(sl)) }
                             Button("Bearbeiten …") { editing = sl }
                             Button("Löschen") { store.customSmartlists.removeAll { $0.id == sl.id } }
                         }
@@ -300,7 +305,10 @@ struct SourceTree: View {
                     row(icon(node), node.name)
                         .tag(BrowserSource.node(node))
                         .lineLimit(1)
-                        .contextMenu { if node.kind != .folder { exportMenu(.node(node)) } }
+                        .contextMenu {
+                            if node.kind != .folder { exportMenu(.node(node)) }
+                            OverviewMenuButton { nodeTracks(node) }
+                        }
                 }
             }
         }
@@ -334,6 +342,11 @@ struct SourceTree: View {
         default: tracks = store.tracks(for: src)
         }
         PlaylistExport.run(f, name: src.title, tracks: tracks, store: store)
+    }
+
+    /// Tracks eines Knotens, Ordner mit allen Unterknoten
+    private func nodeTracks(_ n: PlaylistNode) -> [Track] {
+        n.kind == .folder ? n.children.flatMap(nodeTracks) : store.tracks(for: .node(n))
     }
 
     private func icon(_ n: PlaylistNode) -> String {
@@ -485,8 +498,13 @@ struct TrackTable: View {
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols1: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Title", value: \Track.title) { (t: Track) in cell(t, .title) { Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) } }
+        TableColumn("Title", value: \Track.title) { (t: Track) in
+                cell(t, .title) { Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) }.modifier(PreviewBehindTitle(mix: decks, track: t))
+            }
             .width(min: 80, ideal: 200).customizationID("title")
+        // Mini-Übersicht (Wellenform, Phrasen, Cues) – ⌘, → Anzeige → Browser-Vorschau
+        TableColumn("Preview") { (t: Track) in TrackPreviewCell(mix: decks, track: t) }
+            .width(min: 60, ideal: 150, max: 400).customizationID("preview")
         TableColumn("Remixer", value: \Track.remixer) { (t: Track) in text(t, .remixer) }
             .width(min: 60, ideal: 110).customizationID("remixer").defaultVisibility(.hidden)
         TableColumn("Producer", value: \Track.producer) { (t: Track) in text(t, .producer) }
@@ -582,8 +600,10 @@ struct TrackTable: View {
         }
         .onAppear {
             if let d = UserDefaults.standard.data(forKey: "columns.\(model.name)"),
-               let c = try? JSONDecoder().decode(TableColumnCustomization<Track>.self, from: Self.withNewColumnsFirst(d)) { columns = c }
+               let c = try? JSONDecoder().decode(TableColumnCustomization<Track>.self, from: Self.withNewColumnsFirst(PreviewColumn.placed(d))) { columns = c }
+            columns[visibility: "preview"] = decks.prefs.ui.previewMode == .column ? .visible : .hidden
         }
+        .onChange(of: decks.prefs.ui.previewMode) { _, m in columns[visibility: "preview"] = m == .column ? .visible : .hidden }
         .onChange(of: columns) {
             if let d = try? JSONEncoder().encode(columns) { UserDefaults.standard.set(d, forKey: "columns.\(model.name)") }
         }

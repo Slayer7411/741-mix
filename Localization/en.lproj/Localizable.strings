@@ -333,3 +333,14 @@
 "abgebrochen" = "cancelled";
 "abgestürzt (isoliert, MINOS-741 lief weiter)" = "crashed (isolated, MINOS-741 kept running)";
 "%@ abgestürzt – blockiert" = "%@ crashed – blocked";
+"Browser-Vorschau" = "Browser preview";
+"Vorschau" = "Preview";
+"Eigene Spalte" = "Own column";
+"Hinter dem Titel" = "Behind the title";
+"Vorschauen berechnen" = "Compute previews";
+"Vorschauen berechnen abbrechen" = "Cancel computing previews";
+"Vorschauen im Hintergrund berechnen (nur wenn kein Deck spielt)" = "Compute previews in the background (only while no deck plays)";
+"Vorschauen %lld/%lld" = "Previews %lld/%lld";
+"Vorschauen: %lld offen" = "Previews: %lld left";
+"pausiert (Deck spielt)" = "paused (deck playing)";
+"mini-übersicht je track: wellenform, phrasen, marker alle 16 / 32 takte, hotcues, start-cue. entsteht beim laden ins deck, per rechtsklick auf eine quelle -> vorschauen berechnen, oder im hintergrund. pausiert, solange ein deck spielt oder lädt. gespeichert in ~/Library/Application Support/MINOS-741/overviews." = "mini overview per track: waveform, phrases, markers every 16 / 32 bars, hotcues, start cue. made when loading into a deck, by right click on a source -> compute previews, or in the background. paused while a deck plays or loads. stored in ~/Library/Application Support/MINOS-741/overviews.";
