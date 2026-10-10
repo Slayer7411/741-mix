@@ -23,7 +23,8 @@ struct Session: Codable {
 
     static let url = HistoryStore.baseDir.appendingPathComponent("session.json")
 
-    static var isSelfTest: Bool { ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" }
+    /// Selbsttest oder Messung (MIX741_BENCH): nichts von Christians Einstellungen, Sitzung, History anfassen
+    static var isSelfTest: Bool { ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" || ToggleBench.requested }
 
     static func load() -> Session? {
         guard !isSelfTest, let d = try? Data(contentsOf: url) else { return nil }

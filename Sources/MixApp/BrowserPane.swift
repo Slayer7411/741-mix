@@ -102,11 +102,12 @@ struct BrowserPane: View {
     var body: some View {
         let seps = decks.prefs.ui.tagSeparators
         let rows = model.source.isHistory ? [] : model.rows(from: store, history: history, separators: seps)
+        // Baum bleibt im Split, ausgeblendet = Breite 0 (nur der 1-pt-Trenner bleibt): Entfernen/Einsetzen des
+        // Split-Elements hängte jede Zeile aus dem Fenster aus und wieder ein (~850 ms beim Umschalten Browser groß ⇄ Decks)
+        let tree = model.showTree && !(decks.prefs.ui.hideTreeWithDecks && !browserState.maximized)
         HSplitView {
-            if model.showTree, !(decks.prefs.ui.hideTreeWithDecks && !browserState.maximized) {
-                SourceTree(selection: $model.source)
-                    .frame(minWidth: 170, idealWidth: 210, maxWidth: 320)
-            }
+            SourceTree(selection: $model.source)
+                .frame(minWidth: tree ? 170 : 0, idealWidth: tree ? 210 : 0, maxWidth: tree ? 320 : 0)
             VStack(spacing: 0) {
                 header(count: model.source.isHistory ? historyEntries.count : rows.count, separators: seps)
                 if model.source.isHistory {
