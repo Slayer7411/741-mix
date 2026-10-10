@@ -106,6 +106,7 @@ struct Session: Codable {
         switch s {
         case .collection: "collection"
         case .preparation: "preparation"
+        case .running: "running"
         case .historyLive: "history"
         case .custom(let c): "custom:\(c.id.uuidString)"
         case .node(let n): "node:\(n.name)"
@@ -117,6 +118,7 @@ struct Session: Codable {
         switch id {
         case "collection": return .collection
         case "preparation": return .preparation
+        case "running": return .running
         case "history": return .historyLive
         default: break
         }

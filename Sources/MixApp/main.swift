@@ -73,6 +73,9 @@ struct ContentView: View {
             }
         }
         .windowToolbarFullScreenVisibility(.onHover)
+        .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
+            store.running = keys.filter { !$0.isEmpty }.compactMap { store.byKey[$0] }
+        }
         .onAppear {
             if store.tracks.isEmpty { store.load() }
             SelfTest.run(store: store, mix: mix)

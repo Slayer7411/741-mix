@@ -5,6 +5,10 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ## ◆ [UNRELEASED]
 
+### added
+* browser: RUNNING TRACKS under the collection -> the tracks loaded on the decks
+* browser: played column ▶ in front (✓ = played since the last reset), right click on TRACK COLLECTION -> Reset Played State
+
 ## ◆ [0.7.0] · 2026-10-10 · DMG
 
 ### added

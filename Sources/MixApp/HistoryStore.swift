@@ -14,6 +14,9 @@ final class HistoryStore {
 
     /// laufende Session (beginnt mit dem App-Start)
     private(set) var live: [HistoryEntry] = []
+    /// schon gespielte Tracks (Haken im Browser), bis „Reset Played State“
+    private(set) var played: Set<String> = []
+    static let playedURL = baseDir.appendingPathComponent("played.json")
     let sessionStart = Date()
     private(set) var archive: [HistorySession] = []
     private(set) var prepArchive: [HistorySession] = []
@@ -28,6 +31,9 @@ final class HistoryStore {
     init() {
         try? FileManager.default.createDirectory(at: Self.historyDir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: Self.prepDir, withIntermediateDirectories: true)
+        if !Session.isSelfTest, let d = try? Data(contentsOf: Self.playedURL), let k = try? JSONDecoder().decode([String].self, from: d) {
+            played = Set(k)
+        }
         refreshArchive()
     }
 
@@ -45,7 +51,18 @@ final class HistoryStore {
 
     // MARK: History
 
+    func resetPlayed() {
+        played = []
+        savePlayed()
+    }
+
+    private func savePlayed() {
+        guard !Session.isSelfTest else { return }
+        if let d = try? JSONEncoder().encode(played.sorted()) { try? d.write(to: Self.playedURL, options: .atomic) }
+    }
+
     func record(deck: Int, track t: Track, start: Date) {
+        if played.insert(t.key).inserted { savePlayed() }
         live.append(HistoryEntry(key: t.key, title: t.title, artist: t.artist, bpm: t.bpm, keyText: t.openKey,
                                  deck: deck, start: start, duration: mix?.core.playedSeconds(deck) ?? 0))
         save()

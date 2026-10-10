@@ -12,6 +12,9 @@ final class LibraryStore {
     /// zählt jede Änderung an Collection/Preparation/Smartlists (für Browser-Zwischenspeicher)
     private(set) var revision = 0
     var root = PlaylistNode(name: "Playlists", kind: .folder)
+    /// Tracks, die gerade auf den Decks liegen (A-D) – Quelle RUNNING TRACKS
+    var running: [Track] = [] { didSet { runningRevision += 1 } }
+    private(set) var runningRevision = 0
     var status = "Lade Collection …"
     var sourceURL: URL?
     private(set) var byKey: [String: Track] = [:]
@@ -77,6 +80,7 @@ final class LibraryStore {
         switch source {
         case .collection: return tracks
         case .preparation: return preparation.compactMap { byKey[$0] }
+        case .running: return running
         case .history, .historyLive: return []
         case .prepArchive: return []   // löst BrowserPaneModel über den HistoryStore auf
         case let .custom(sl):
@@ -103,6 +107,7 @@ final class LibraryStore {
 enum BrowserSource: Hashable {
     case collection
     case preparation
+    case running
     case node(PlaylistNode)
     case historyLive
     case history(HistorySession)
@@ -113,6 +118,7 @@ enum BrowserSource: Hashable {
         switch self {
         case .collection: "Track Collection"
         case .preparation: "Preparation"
+        case .running: "Running Tracks"
         case let .node(n): n.name
         case .historyLive: "History"
         case let .history(s): "History " + Theme.dateTimeFormat.string(from: s.date)

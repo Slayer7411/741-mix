@@ -46,7 +46,8 @@ final class BrowserPaneModel: Identifiable {
     /// Gefilterte + sortierte Liste – zwischengespeichert, Neuberechnung nur wenn sich etwas ändert
     /// (14k Tracks lokalisiert zu sortieren dauert ~100 ms → bei jedem Encoder-Schritt hing sonst die Oberfläche).
     func rows(from store: LibraryStore, history: HistoryStore?, separators: String) -> [Track] {
-        let key: [AnyHashable] = [source, search, roles, tags, "\(sortOrder)", store.revision, separators]
+        let key: [AnyHashable] = [source, search, roles, tags, "\(sortOrder)", store.revision, separators,
+                                  source == .running ? store.runningRevision : 0]
         if key == cacheKey { return cachedRows }
         let r = computeRows(from: store, history: history, separators: separators)
         cacheKey = key
@@ -221,7 +222,11 @@ struct SourceTree: View {
     var body: some View {
         List(selection: Binding<BrowserSource?>(get: { selection }, set: { if let s = $0 { selection = s } })) {
             row("≣", "TRACK COLLECTION").tag(BrowserSource.collection)
-                .contextMenu { exportMenu(.collection) }
+                .contextMenu {
+                    exportMenu(.collection)
+                    Button("Reset Played State") { history.resetPlayed() }
+                }
+            row("▶", "RUNNING TRACKS").tag(BrowserSource.running)
             row("▤", "PREPARATION").tag(BrowserSource.preparation)
                 .contextMenu { exportMenu(.preparation) }
             DisclosureGroup {
@@ -398,12 +403,26 @@ struct TrackTable: View {
     @Environment(LibraryStore.self) private var store
     @Environment(BrowserState.self) private var browser
     @Environment(MixModel.self) private var decks
+    @Environment(HistoryStore.self) private var history
     let rows: [Track]
     @Bindable var model: BrowserPaneModel
     @State private var columns = TableColumnCustomization<Track>()
 
+    /// gespeicherte Spaltenreihenfolge: neue Spalten (z. B. „played“) vorne einsetzen statt hinten anhängen
+    private static func withNewColumnsFirst(_ data: Data) -> Data {
+        guard var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var order = obj["columnOrder"] as? [Any] else { return data }
+        let ids = order.compactMap { (($0 as? [String: Any])?["base"] as? [String: Any]).flatMap { ($0["explicit"] as? [String: Any])?["_0"] as? String } }
+        guard !ids.contains("played") else { return data }
+        order.insert(["base": ["explicit": ["_0": "played"]]], at: 0)
+        obj["columnOrder"] = order
+        return (try? JSONSerialization.data(withJSONObject: obj)) ?? data
+    }
+
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols0: some TableColumnContent<Track, KeyPathComparator<Track>> {
+        TableColumn("▶") { (t: Track) in Text(history.played.contains(t.key) ? "✓" : "").foregroundStyle(Theme.secondary) }
+            .width(16).customizationID("played")
         TableColumn("✓", value: \Track.analyzedSort) { (t: Track) in Text(t.analyzed ? "✓" : "").foregroundStyle(Theme.muted) }
             .width(16).customizationID("analyzed")
         TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4) }
@@ -505,7 +524,7 @@ struct TrackTable: View {
         }
         .onAppear {
             if let d = UserDefaults.standard.data(forKey: "columns.\(model.name)"),
-               let c = try? JSONDecoder().decode(TableColumnCustomization<Track>.self, from: d) { columns = c }
+               let c = try? JSONDecoder().decode(TableColumnCustomization<Track>.self, from: Self.withNewColumnsFirst(d)) { columns = c }
         }
         .onChange(of: columns) {
             if let d = try? JSONEncoder().encode(columns) { UserDefaults.standard.set(d, forKey: "columns.\(model.name)") }
