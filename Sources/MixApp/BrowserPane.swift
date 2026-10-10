@@ -58,7 +58,8 @@ final class BrowserPaneModel: Identifiable {
     func rows(from store: LibraryStore, history: HistoryStore?, separators: String) -> [Track] {
         let baseKey: [AnyHashable] = [source, "\(sortOrder)", store.revision, store.sourceRevision(source, subfolders: subfolders), subfolders]
         if baseKey != sortedKey {
-            sortedBase = base(from: store, history: history).sorted(using: sortOrder)
+            // nach dem Laden liegt die Liste meist schon sortiert vor (im Hintergrund, siehe LibraryStore.load)
+            sortedBase = store.presorted(source, order: sortOrder) ?? base(from: store, history: history).sorted(using: sortOrder)
             sortedKey = baseKey
         }
         let key = baseKey + [search, roles, tags, separators] as [AnyHashable]
