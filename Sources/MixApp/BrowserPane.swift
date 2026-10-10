@@ -40,7 +40,21 @@ final class BrowserPaneModel: Identifiable {
         return store.tracks(for: source)
     }
 
+    @ObservationIgnored private var cacheKey: [AnyHashable] = []
+    @ObservationIgnored private var cachedRows: [Track] = []
+
+    /// Gefilterte + sortierte Liste – zwischengespeichert, Neuberechnung nur wenn sich etwas ändert
+    /// (14k Tracks lokalisiert zu sortieren dauert ~100 ms → bei jedem Encoder-Schritt hing sonst die Oberfläche).
     func rows(from store: LibraryStore, history: HistoryStore?, separators: String) -> [Track] {
+        let key: [AnyHashable] = [source, search, roles, tags, "\(sortOrder)", store.revision, separators]
+        if key == cacheKey { return cachedRows }
+        let r = computeRows(from: store, history: history, separators: separators)
+        cacheKey = key
+        cachedRows = r
+        return r
+    }
+
+    private func computeRows(from store: LibraryStore, history: HistoryStore?, separators: String) -> [Track] {
         var list = base(from: store, history: history)
         if !roles.isEmpty {
             list = list.filter { t in roles.contains { t.comment2.localizedCaseInsensitiveContains("» " + $0.rawValue) } }

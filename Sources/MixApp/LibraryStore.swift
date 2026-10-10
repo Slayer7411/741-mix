@@ -8,7 +8,9 @@ final class LibraryStore {
     nonisolated static let defaultNML = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Native Instruments/Traktor 3.11.2/collection.nml")
 
-    var tracks: [Track] = []
+    var tracks: [Track] = [] { didSet { revision += 1 } }
+    /// zählt jede Änderung an Collection/Preparation/Smartlists (für Browser-Zwischenspeicher)
+    private(set) var revision = 0
     var root = PlaylistNode(name: "Playlists", kind: .folder)
     var status = "Lade Collection …"
     var sourceURL: URL?
@@ -20,12 +22,13 @@ final class LibraryStore {
 
     /// Eigene Smartlists (Traktor-Regel-Syntax), gespeichert in UserDefaults
     var customSmartlists: [CustomSmartlist] = CustomSmartlist.load() {
-        didSet { CustomSmartlist.save(customSmartlists) }
+        didSet { revision += 1; CustomSmartlist.save(customSmartlists) }
     }
 
     /// Preparation (wie Traktor): wird gespeichert, beim nächsten Start archiviert und geleert
     var preparation: [String] = UserDefaults.standard.stringArray(forKey: "prep.current") ?? [] {
         didSet {
+            revision += 1
             UserDefaults.standard.set(preparation, forKey: "prep.current")
             UserDefaults.standard.set(Date(), forKey: "prep.date")
         }
@@ -40,7 +43,17 @@ final class LibraryStore {
         Task.detached(priority: .userInitiated) {
             do {
                 let start = Date()
-                let c = try NMLParser.parse(url: url)
+                var c = try NMLParser.parse(url: url)
+                // Datei-Existenz einmal parallel prüfen (statt pro Tabellenzeile)
+                let paths = c.tracks.map(\.path)
+                var missing = [Bool](repeating: false, count: paths.count)
+                missing.withUnsafeMutableBufferPointer { buf in
+                    let b = buf
+                    DispatchQueue.concurrentPerform(iterations: paths.count) { i in
+                        b[i] = !FileManager.default.fileExists(atPath: paths[i])
+                    }
+                }
+                for i in c.tracks.indices { c.tracks[i].fileMissing = missing[i] }
                 let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
                 let index = NMLEntryIndex(nmlText: text)
                 let secs = Date().timeIntervalSince(start)

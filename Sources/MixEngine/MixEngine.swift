@@ -220,10 +220,13 @@ public final class MixEngine: @unchecked Sendable {
     }
 
     /// Tempo als Faktor (1 = Originaltempo). Keylock: Tonhöhe bleibt (TimePitch), sonst Varispeed.
-    public func setRate(_ d: Int, rate: Double, keylock: Bool, keyShift: Double) {
+    public func setRate(_ d: Int, rate: Double, keylock: Bool, keyShift: Double, idle: Bool = false) {
         let c = chains[d]
         let r = Float(max(0.03, min(4, rate)))
-        if keylock || keyShift != 0 {
+        if idle {
+            c.timePitch.bypass = true
+            c.varispeed.bypass = true
+        } else if keylock || keyShift != 0 {
             c.varispeed.rate = 1
             c.varispeed.bypass = true
             c.timePitch.bypass = false

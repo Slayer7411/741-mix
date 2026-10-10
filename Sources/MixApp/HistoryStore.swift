@@ -66,6 +66,7 @@ final class HistoryStore {
     private func save() {
         guard !live.isEmpty else { return }
         let text = TraktorHistoryWriter.nml(entries: live, index: store?.entryIndex ?? NMLEntryIndex(), uuid: uuid)
+        if ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" { SelfTest.historyURL = liveURL }
         try? text.write(to: liveURL, atomically: true, encoding: .utf8)
         if mix?.prefs.ui.historyToTraktor == true {
             try? text.write(to: Self.traktorHistoryDir.appendingPathComponent(liveURL.lastPathComponent),

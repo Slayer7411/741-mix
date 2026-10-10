@@ -70,9 +70,17 @@ enum SelfTest {
             core.updateFX(0) { $0.slots[2].on = false }
             log(String(format: "Pegel A: trocken %.3f · Filter HP %.3f (%.0f %%) · Reverb %.3f (%.0f %%)",
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
+            // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
+            if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
+                try? FileManager.default.removeItem(at: url)
+                log("Test-History entfernt: \(url.lastPathComponent)")
+            }
             log("SELFTEST OK")
         }
     }
+
+    /// wird vom HistoryStore gesetzt, damit der Test genau seine eigene Datei entfernen kann
+    nonisolated(unsafe) static var historyURL: URL?
 
     static func log(_ s: String) {
         print("[selftest] \(s)")

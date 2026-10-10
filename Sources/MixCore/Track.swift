@@ -63,7 +63,10 @@ public struct Track: Identifiable, Hashable, Sendable {
     public var playsText: String { playCount > 0 ? String(playCount) : "" }
 
     public var fileName: String { (path as NSString).lastPathComponent }
-    public var fileExists: Bool { FileManager.default.fileExists(atPath: path) }
+    /// einmal beim Laden im Hintergrund geprüft (nil = noch nicht geprüft → als vorhanden behandeln);
+    /// nie live prüfen – auf Google Drive dauert jeder Zugriff, bei 14k Tracks hängt sonst die Oberfläche
+    public var fileMissing: Bool?
+    public var fileExists: Bool { !(fileMissing ?? false) }
 
     /// Erster Grid-Marker (Beat 1) in ms.
     public var gridAnchorMs: Double? { cues.first { $0.kind == .grid }?.startMs }

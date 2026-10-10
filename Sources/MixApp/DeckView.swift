@@ -155,7 +155,7 @@ struct PhaseMeter: View {
     let d: Int
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
+        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !mix.deck(d).sync && mix.effectiveMaster == nil)) { _ in
             GeometryReader { geo in
                 let e = mix.phaseError(d)
                 ZStack {

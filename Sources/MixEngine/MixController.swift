@@ -266,6 +266,7 @@ public final class MixController: @unchecked Sendable {
             }
             state.decks[d].cueHeld = false
             state.decks[d].playing = p.playing
+            applyRate(d)
         }
     }
 
@@ -284,6 +285,7 @@ public final class MixController: @unchecked Sendable {
                 engine.seek(d, seconds: state.decks[d].cuePoint)
             }
             state.decks[d].playing = p.playing
+            applyRate(d)
         }
     }
 
@@ -294,6 +296,7 @@ public final class MixController: @unchecked Sendable {
             engine.seek(d, seconds: state.decks[d].cuePoint)
             state.decks[d].cueHeld = false
             state.decks[d].playing = false
+            applyRate(d)
         }
     }
 
@@ -303,6 +306,7 @@ public final class MixController: @unchecked Sendable {
             engine.seek(d, seconds: state.decks[d].cuePoint)
             engine.player(d).playing = true
             state.decks[d].playing = true
+            applyRate(d)
         }
     }
 
@@ -516,9 +520,10 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
+    /// Tempo an die Engine; steht das Deck, laufen Time-Stretch/Varispeed im Bypass (spart viel CPU im Leerlauf)
     private func applyRate(_ d: Int) {
         let s = state.decks[d]
-        engine.setRate(d, rate: s.rate, keylock: s.keylock, keyShift: Double(s.keyShift))
+        engine.setRate(d, rate: s.rate, keylock: s.keylock, keyShift: Double(s.keyShift), idle: !engine.player(d).playing)
     }
 
     // MARK: Mixer
@@ -599,7 +604,10 @@ public final class MixController: @unchecked Sendable {
             let master = state.effectiveMaster
             for d in state.decks.indices {
                 let p = engine.player(d)
-                if state.decks[d].playing != p.playing, !state.decks[d].cueHeld { state.decks[d].playing = p.playing }
+                if state.decks[d].playing != p.playing, !state.decks[d].cueHeld {
+                    state.decks[d].playing = p.playing
+                    applyRate(d)
+                }
                 guard state.decks[d].sync, state.decks[d].playing, let m = master, m != d,
                       let g = state.decks[d].grid, g.bpm > 0 else {
                     if state.decks[d].nudge != 0, !state.decks[d].sync { state.decks[d].nudge = 0; applyRate(d) }

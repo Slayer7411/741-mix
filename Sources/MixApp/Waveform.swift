@@ -153,8 +153,8 @@ struct WaveformView: View {
         let deck = mix.deck(d)
         let wf = cache.waveform(for: mix.audio(d), style: ui.waveformStyle, palette: ui.waveformPalette)
         let tileImages = wf?.tiles.map { Image(decorative: $0, scale: 1) } ?? []
-        TimelineView(.animation) { _ in
-            Canvas { ctx, size in
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: deck.track == nil)) { _ in
+            Canvas(rendersAsynchronously: true) { ctx, size in
                 let w = size.width, h = size.height
                 ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.wave))
                 guard deck.track != nil else { return }
@@ -260,6 +260,7 @@ struct WaveformView: View {
                 ctx.fill(Path(CGRect(x: w / 2 - 1, y: 0, width: 2, height: h)), with: .color(Theme.state))
             }
         }
+        .drawingGroup()
         .clipShape(Rectangle())
         .overlay {
             GeometryReader { geo in
@@ -289,8 +290,8 @@ struct OverviewView: View {
         let wf = cache.waveform(for: mix.audio(d), style: ui.waveformStyle, palette: ui.waveformPalette)
         let img = wf?.overview.map { Image(decorative: $0, scale: 1) }
         GeometryReader { geo in
-            TimelineView(.animation(minimumInterval: 1.0 / 20)) { _ in
-                Canvas { ctx, size in
+            TimelineView(.animation(minimumInterval: 1.0 / 15, paused: deck.track == nil)) { _ in
+                Canvas(rendersAsynchronously: true) { ctx, size in
                     ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.wave))
                     guard deck.duration > 0 else { return }
                     if let img { ctx.draw(img, in: CGRect(origin: .zero, size: size)) }

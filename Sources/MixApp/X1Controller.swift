@@ -40,6 +40,9 @@ final class X1Manager: @unchecked Sendable {
     fileprivate var units: [String: X1Unit] = [:]
     private let lock = NSLock()
     private var _prefs = X1Prefs()
+    // gebündelte Browse-Schritte (nur auf der Steuer-Queue anfassen)
+    private var pendingBrowse = 0
+    private var browseScheduled = false
     /// Browser-Aktionen (laufen auf dem Hauptthread)
     var onBrowse: (@MainActor (Int) -> Void)?
     var onLoad: (@MainActor (Int) -> Void)?
@@ -174,8 +177,20 @@ final class X1Manager: @unchecked Sendable {
         case let .load(s, down):
             if down { let d = deck(s); DispatchQueue.main.async { self.onLoad?(d) } }
         case let .browseTurn(delta):
-            let step = delta * (unit.shift ? p.browseFastStep : 1)
-            DispatchQueue.main.async { self.onBrowse?(step) }
+            // Schritte sammeln und gebündelt an die Oberfläche geben (kein Stau bei schnellem Drehen)
+            pendingBrowse += delta * (unit.shift ? p.browseFastStep : 1)
+            if !browseScheduled {
+                browseScheduled = true
+                DispatchQueue.main.async {
+                    let step = self.core.controlQueue.sync { () -> Int in
+                        let s = self.pendingBrowse
+                        self.pendingBrowse = 0
+                        self.browseScheduled = false
+                        return s
+                    }
+                    if step != 0 { self.onBrowse?(step) }
+                }
+            }
         case let .browsePush(down):
             if down { DispatchQueue.main.async { self.onPreview?() } }
         case let .fxKnob(u, k, v):
