@@ -263,3 +263,7 @@
 "Phrasen-Anker" = "Phrase anchor";
 "Phrasen-Anker: Strukturwechsel liegen %lld Beats neben den 8-Takt-Grenzen – Klick verschiebt den Anker (Sicherheit %@)" = "Phrase anchor: structural changes sit %lld beats off the 8-bar boundaries – click moves the anchor (confidence %@)";
 "Vorschlagen" = "Suggest";
+"Flux-Taste" = "Flux button";
+"Pad-Ebene umschalten (Hotcues 5–8)" = "Switch pad layer (hotcues 5–8)";
+"Flux-Modus" = "Flux mode";
+"antippen -> pads 1–4 spielen hotcues 5–8, flux-led an; nochmal -> zurück. shift + flux = flux-modus." = "tap -> pads 1–4 play hotcues 5–8, flux led on; tap again -> back. shift + flux = flux mode.";

@@ -19,6 +19,12 @@ enum ControllerCueAction: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Was die Flux-Taste am Controller macht: Pad-Ebene umschalten (Hotcues 5–8, Shift + Flux = Flux-Modus) oder Flux-Modus
+enum ControllerFluxButton: String, CaseIterable, Codable, Identifiable {
+    case padLayer = "Pad-Ebene umschalten (Hotcues 5–8)", fluxMode = "Flux-Modus"
+    var id: String { rawValue }
+}
+
 /// Flux gehalten + Pads: zweite Hotcue-Reihe oder Beatjump auf Pad 3/4
 enum ControllerFluxPads: String, CaseIterable, Codable, Identifiable {
     case hotcues = "Hotcues 5–8", beatjump = "Beatjump (Pads 3/4)"
@@ -47,7 +53,8 @@ enum PadColor: String, CaseIterable, Codable, Identifiable {
 
 struct ControllerPrefs: Codable, Equatable {
     var cueAction = ControllerCueAction.fluxReverse
-    /// Flux antippen schaltet Flux-Modus (gehalten = Beatjump-Ebene für Hotcue 3/4)
+    var fluxButton = ControllerFluxButton.padLayer
+    /// nur im Flux-Modus: Flux antippen schaltet Flux-Modus (gehalten = Pad-Ebene)
     var fluxTapToggles = true
     var fluxBeatjumpBeats = 1.0
     var fluxPads = ControllerFluxPads.hotcues

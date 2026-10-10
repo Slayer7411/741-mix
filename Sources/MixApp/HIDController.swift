@@ -205,12 +205,17 @@ final class ControllerManager: @unchecked Sendable {
                 unit.syncHeld[s] = false
             }
         case let .flux(s, down):
-            // Antippen = Flux-Modus; gehalten = Pad-Ebene (Hotcues 5–8 oder Beatjump)
+            // Pad-Ebene: antippen = Hotcues 5–8 an/aus (bleibt), Shift + Flux = Flux-Modus;
+            // Flux-Modus: antippen = Flux-Modus. In beiden gehalten = Pad-Ebene nur solange gedrückt
             if down {
+                if p.fluxButton == .padLayer, unit.shift { core.toggleFlux(deck(s)); return }
                 unit.fluxHeld[s] = true
                 unit.fluxComboUsed[s] = false
-            } else {
-                if p.fluxTapToggles, unit.fluxComboUsed[s] != true { core.toggleFlux(deck(s)) }
+            } else if unit.fluxHeld[s] == true {
+                if unit.fluxComboUsed[s] != true {
+                    if p.fluxButton == .padLayer { unit.padLayer[s] = unit.padLayer[s] != true }
+                    else if p.fluxTapToggles { core.toggleFlux(deck(s)) }
+                }
                 unit.fluxHeld[s] = false
             }
         case let .hotcue(s, n, down):
@@ -224,6 +229,8 @@ final class ControllerManager: @unchecked Sendable {
                 unit.fluxComboUsed[s] = true
                 if p.fluxPads == .hotcues { core.hotcue(d, n + 4, delete: unit.shift) }
                 else if n == 2 || n == 3 { core.beatjump(d, beats: (n == 2 ? -1 : 1) * p.fluxBeatjumpBeats) }
+            } else if unit.layerOn(s, p) {
+                core.hotcue(d, n + 4, delete: unit.shift)   // Pad-Ebene eingerastet: Hotcues 5–8
             } else {
                 core.hotcue(d, n, delete: unit.shift)
             }
@@ -324,6 +331,8 @@ final class ControllerUnit {
     var shift = false
     var fluxHeld: [Side: Bool] = [:]
     var fluxComboUsed: [Side: Bool] = [:]
+    /// Flux-Taste als Schalter: Pads dieser Seite auf Hotcues 5–8
+    var padLayer: [Side: Bool] = [:]
     var syncHeld: [Side: Bool] = [:]
     var syncComboUsed: [Side: Bool] = [:]
     var cueAsNormal: [Side: Bool] = [:]
@@ -405,6 +414,9 @@ final class ControllerUnit {
         }
     }
 
+    /// Pad-Ebene 5–8 eingerastet (nur mit Flux-Taste = Pad-Ebene)
+    func layerOn(_ s: Side, _ p: ControllerPrefs) -> Bool { p.fluxButton == .padLayer && padLayer[s] == true }
+
     // MARK: - LEDs
 
     func sendLEDs(state: MixState, prefs: ControllerPrefs) {
@@ -421,24 +433,23 @@ final class ControllerUnit {
             r[left ? 0x31 : 0x33] = deck.playing ? on : dim
             r[left ? 0x30 : 0x32] = deck.reverse || deck.cueHeld ? on : dim
             r[left ? 0x2D : 0x2F] = deck.sync ? on : dim
-            r[left ? 0x2C : 0x2E] = deck.flux || fluxHeld[s] == true ? on : dim
+            // Pad-Ebene: Flux-LED zeigt die Ebene 5–8, Flux-Modus allein halb hell
+            r[left ? 0x2C : 0x2E] = fluxHeld[s] == true || layerOn(s, prefs) || (deck.flux && prefs.fluxButton == .fluxMode) ? on
+                : deck.flux ? max(dim, on / 3) : dim
             r[left ? 0x11 : 0x13] = deck.track != nil ? on : dim
             let f0 = manager?.fxUnit(self, section: 0), f1 = manager?.fxUnit(self, section: 1)
             r[left ? 0x09 : 0x0F] = f0.map { deck.fxAssign[$0] } == true ? on : dim
             r[left ? 0x0A : 0x10] = f1.map { deck.fxAssign[$0] } == true ? on : dim
             let pads = left ? [0x14, 0x17, 0x20, 0x23] : [0x1A, 0x1D, 0x26, 0x29]
+            // Pads zeigen Hotcues 5–8: Flux gehalten (Pads = Hotcues) oder Ebene eingerastet
+            let layer = fluxHeld[s] == true ? prefs.fluxPads == .hotcues : layerOn(s, prefs)
             for (n, base) in pads.enumerated() {
                 var c: (UInt8, UInt8, UInt8) = (0, 0, 0)
                 if flash {
                     c = (on, on, on)
-                } else if fluxHeld[s] == true, prefs.fluxPads == .hotcues {
-                    if let cue = deck.hotcues[n + 4] {         // zweite Hotcue-Reihe
-                        let start = deck.track.flatMap { t in t.cues.first { $0.kind == .load }?.startMs ?? t.gridAnchorMs }
-                        c = scale(prefs.color(for: cue, startMs: start, bpm: deck.grid?.bpm ?? deck.track?.bpm ?? 0).rgb)
-                    }
-                } else if fluxHeld[s] == true || syncHeld[s] == true, n >= 2 {
+                } else if (fluxHeld[s] == true && !layer) || syncHeld[s] == true, n >= 2 {
                     c = (on / 2, on / 2, on / 2)               // Sprung-Ebene sichtbar machen
-                } else if let cue = deck.hotcues[n] {
+                } else if let cue = deck.hotcues[layer ? n + 4 : n] {   // Ebene 5–8: zweite Hotcue-Reihe
                     let start = deck.track.flatMap { t in t.cues.first { $0.kind == .load }?.startMs ?? t.gridAnchorMs }
                     c = scale(prefs.color(for: cue, startMs: start, bpm: deck.grid?.bpm ?? deck.track?.bpm ?? 0).rgb)
                 }

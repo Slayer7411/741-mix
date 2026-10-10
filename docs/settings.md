@@ -72,7 +72,8 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 
 * controllers: decks per unit (left / right), browser pane and fx unit per unit, blink to identify
 * cue action: flux reverse / cue / reverse
-* flux tap toggles flux mode, beatjump size for flux + hotcue 3 / 4
+* flux button: switch pad layer (hotcues 5-8, default; shift + flux = flux mode) / flux mode (tap toggles flux mode if enabled)
+* flux held + pads: hotcues 5-8 or beatjump on pads 3 / 4, beatjump size for flux + hotcue 3 / 4
 * touch strip: bend or seek, sensitivity
 * browse step with shift
 * led brightness on / off, cue and loop pad colors

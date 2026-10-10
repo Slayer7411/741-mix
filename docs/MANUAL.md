@@ -385,7 +385,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 no default, assignable: master, keylock, reloop, load selection into the focused deck, preview selection, reload collection, reconnect audio.
 ⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.
 
-controller mapping -> [controllers.md](controllers.md).
+controller mapping -> [controllers.md](controllers.md). flux on the controller = pad layer switch: tap -> pads 1-4 play hotcues 5-8 (flux led lit), tap again -> back, shift + flux = flux mode. old layout under ⌘, -> CONTROLLER -> flux button.
 
 ## ◆ 13 · FILES + FOLDERS
 

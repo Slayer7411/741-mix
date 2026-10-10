@@ -553,7 +553,12 @@ struct ControllerSettings: View {
             }
             Section("Belegung") {
                 Picker("Cue-Taste", selection: $mix.prefs.controller.cueAction) { ForEach(ControllerCueAction.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
-                Toggle("Flux antippen schaltet Flux-Modus", isOn: $mix.prefs.controller.fluxTapToggles)
+                Picker("Flux-Taste", selection: $mix.prefs.controller.fluxButton) { ForEach(ControllerFluxButton.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                if mix.prefs.controller.fluxButton == .fluxMode {
+                    Toggle("Flux antippen schaltet Flux-Modus", isOn: $mix.prefs.controller.fluxTapToggles)
+                } else {
+                    Text("antippen -> pads 1–4 spielen hotcues 5–8, flux-led an; nochmal -> zurück. shift + flux = flux-modus.").settingsHint()
+                }
                 Picker("Flux halten + Pads", selection: $mix.prefs.controller.fluxPads) { ForEach(ControllerFluxPads.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
                 Picker("Beatjump-Größe (Flux + Pad 3/4)", selection: $mix.prefs.controller.fluxBeatjumpBeats) {
                     ForEach(BeatSizes.jump, id: \.self) { Text("±\(BeatSizes.label($0)) Beat").tag($0) }
