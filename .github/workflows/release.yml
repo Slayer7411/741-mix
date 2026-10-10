@@ -1,0 +1,32 @@
+name: release dmg
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "tag, e.g. v0.7.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-26
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+      - run: swift --version
+      - run: scripts/make-dmg.sh
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/MINOS-741-*.dmg build/MINOS-741.dmg
+          gh release upload "$TAG" build/MINOS-741-*.dmg build/MINOS-741.dmg --clobber

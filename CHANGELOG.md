@@ -5,7 +5,11 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ## ◆ [UNRELEASED]
 
+## ◆ [0.7.0] · 2026-10-10 · DMG
+
 ### added
+* universal dmg (apple silicon + intel) attached to every release, built by a github action
+* homebrew: `brew install --cask slayer7411/tap/minos-741`
 * x1: sync held + hotcue 3 / 4 = one bar back / forward, inside a loop the loop stays and the position wraps
 * audio: sample rate (44.1 - 192 khz, what the device offers) and buffer size, reconnect button (settings + status bar)
 * docs: user manual (`docs/MANUAL.md`), docs index, new screenshot
@@ -17,7 +21,6 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ### fixed
 * audio: device running at a different rate than the core played too fast (96 vs 44.1 khz) -> coreaudio converts now
-* link: 251 timeline resets in 15 s with the old build (beat without timestamp) -> now only on real drift
 
 ## ◆ [0.6.0] · 2026-10-10 · LINK
 
@@ -91,7 +94,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * kontrol x1 mk2 native hid, traktor custom mappings
 * history + preparation as traktor nml
 
-[UNRELEASED]: https://github.com/Slayer7411/MINOS-741/compare/v0.6.0...HEAD
+[UNRELEASED]: https://github.com/Slayer7411/MINOS-741/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Slayer7411/MINOS-741/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Slayer7411/MINOS-741/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Slayer7411/MINOS-741/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Slayer7411/MINOS-741/compare/v0.3.0...v0.4.0

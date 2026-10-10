@@ -71,7 +71,7 @@ maintainer checklist:
 1. move `[UNRELEASED]` in [CHANGELOG.md](CHANGELOG.md) into `[X.Y.Z] · date · NAME`, update the compare links
 2. bump the version in the README ticker
 3. `git tag -a vX.Y.Z -m vX.Y.Z && git push origin main vX.Y.Z`
-4. `gh release create vX.Y.Z --title "◆ vX.Y.Z · NAME"` with the changelog section
+4. `gh release create vX.Y.Z --title "◆ vX.Y.Z · NAME"` with the changelog section -> the release action builds the universal dmg and attaches it (`MINOS-741.dmg` + `MINOS-741-X.Y.Z.dmg`), the homebrew cask always points to the latest one
 5. `scripts/make-app.sh` -> app title shows the new version
 
 semver: `0.x` minor = new features, patch = fixes.

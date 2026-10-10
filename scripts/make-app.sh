@@ -2,6 +2,7 @@
 # Baut MINOS-741.app (Release), signiert ad hoc und installiert nach /Applications.
 # Aufruf: scripts/make-app.sh            -> bauen + installieren
 #         scripts/make-app.sh --no-install
+#         UNIVERSAL=1 -> arm64 + x86_64 (für Releases)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//')
@@ -9,8 +10,10 @@ VERSION=${VERSION:-0.0.0}
 BUILD=$(git rev-parse --short HEAD 2>/dev/null || echo dev)
 APP=build/MINOS-741.app
 
-swift build -c release
-BIN=$(swift build -c release --show-bin-path)
+ARCHS=()
+[[ -n "${UNIVERSAL:-}" ]] && ARCHS=(--arch arm64 --arch x86_64)
+swift build -c release $ARCHS
+BIN=$(swift build -c release $ARCHS --show-bin-path)
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Resources"

@@ -9,14 +9,32 @@
   05 waveform + grid  10 tags + smartlists      15 faq
 ```
 
-user manual for MINOS-741 `0.6.x`. ui terms are shown in CAPS like on screen.
+user manual for MINOS-741 `0.7.x`. ui terms are shown in CAPS like on screen.
 reference pages: [docs index](README.md).
 
 ---
 
 ## ◆ 01 · INSTALL
 
-needs macos 15+, apple silicon or intel, xcode / swift 6 for building.
+needs macos 15+, apple silicon or intel.
+
+**homebrew**
+
+```
+brew install --cask slayer7411/tap/minos-741
+```
+
+update: `brew upgrade --cask --greedy minos-741`
+
+**dmg**
+
+1. [releases](https://github.com/Slayer7411/MINOS-741/releases/latest) -> `MINOS-741.dmg`
+2. open it, drag MINOS-741 onto APPLICATIONS
+3. first start: macos blocks it (not signed by apple) -> system settings -> privacy & security -> OPEN ANYWAY
+
+update: download the new dmg, replace the app.
+
+**from source** (xcode / swift 6)
 
 ```
 git clone https://github.com/Slayer7411/MINOS-741.git
@@ -28,7 +46,7 @@ scripts/make-app.sh
 `scripts/make-app.sh --no-install` keeps it in `build/`.
 dev run without bundle: `swift run minos741`.
 
-update:
+update from source:
 
 ```
 git pull

@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/Slayer7411/MINOS-741/commits/main"><img src="https://img.shields.io/github/last-commit/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=LAST%20COMMIT" alt="last commit"></a> <a href="https://github.com/Slayer7411/MINOS-741/graphs/contributors"><img src="https://img.shields.io/github/contributors/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=CONTRIBUTORS" alt="contributors"></a> <a href="https://github.com/Slayer7411/MINOS-741/discussions"><img src="https://img.shields.io/github/discussions/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=DISCUSSIONS" alt="discussions"></a> <a href="https://github.com/sponsors/Slayer7411"><img src="https://img.shields.io/badge/SPONSOR-%E2%99%A5-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="sponsor"></a></p>
 
 ```
-$MINOS  v0.6.0 ▲  ·  CPU 70% -> 13% ▼  ·  PHASE 0.0000 BEATS  ·  14,160 TRACKS / 0.9 S  ·  LINK ●  ·  X1 MK2 ×2
+$MINOS  v0.7.0 ▲  ·  CPU 70% -> 13% ▼  ·  PHASE 0.0000 BEATS  ·  14,160 TRACKS / 0.9 S  ·  LINK ●  ·  X1 MK2 ×2
 ```
 
 native dj software for macos. traktor workflow and files, own browser and tag system.
@@ -50,7 +50,7 @@ work in progress, `0.x` -> things still change. missing parts: [docs/feature-par
 ## ◆ VERSIONING
 
 * [semver](https://semver.org) tags `vX.Y.Z`, every release -> [releases](https://github.com/Slayer7411/MINOS-741/releases) + [CHANGELOG.md](CHANGELOG.md)
-* app title shows version + build hash, e.g. `MINOS-741 0.6.0 (245e16c)`
+* app title shows version + build hash, e.g. `MINOS-741 0.7.0 (245e16c)`
 * `main` = latest state, can be ahead of the last tag
 
 ## ◆ KEYS
@@ -68,9 +68,19 @@ work in progress, `0.x` -> things still change. missing parts: [docs/feature-par
 | ⌘O | open collection |
 | ⌘, | settings |
 
+## ◆ INSTALL
+
+needs macos 15+, apple silicon or intel.
+
+```
+brew install --cask slayer7411/tap/minos-741
+```
+
+or the dmg from [releases](https://github.com/Slayer7411/MINOS-741/releases/latest). not signed by apple -> first start: system settings -> privacy & security -> OPEN ANYWAY.
+
 ## ◆ RUN IT
 
-needs macos 15+ and xcode / swift 6.
+from source, needs xcode / swift 6.
 
 ```
 git clone https://github.com/Slayer7411/MINOS-741.git
