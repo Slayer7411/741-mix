@@ -29,6 +29,8 @@
 "Browser groß" = "Big browser";
 "Browser-Anordnung" = "Browser layout";
 "Clock ist Master: MINOS gibt das Tempo vor, gesyncte Decks folgen" = "Clock is master: MINOS sets the tempo, synced decks follow";
+"Semi-Sync: neue Tracks laden mit dem Tempo des Masters, ohne Phasen-Sync" = "Semi-sync: new tracks load at the master tempo, no phase lock";
+"Abweichung von der Tonart des Tracks in Halbtönen" = "Deviation from the track's key in semitones";
 "Collection neu laden" = "Reload collection";
 "Collection öffnen …" = "Open collection …";
 "Crossfader-Kurve" = "Crossfader curve";

@@ -6,6 +6,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* key readout above each deck: open key of the track, the audible key in red as soon as it deviates (`8m → 3m`), the deviation in semitones below (keylock off: from the tempo, keylock on: from the key shift)
+* SEMI in the master clock: every newly loaded track takes the tempo of the current master (clock or master deck, nearest half / double ratio), no phase lock
 * quit asks first (⌘Q / quit menu) -> session, history and played state are written before the app closes
 * own history files named by day and session: `history_2026-10-10-01.nml`, `-02`, … (shown as `2026-10-10 · 01`); the optional copy into the collection's history folder keeps its time-stamped name
 * controller: flux held + pads 1-4 = hotcues 5-8 (set / jump, shift = delete), pads show their colors while flux is held. setting: beatjump on pads 3 / 4 instead
@@ -33,6 +35,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
 
 ### fixed
+* auto master sticks to the running master deck: starting another deck no longer makes it master (the lowest deck letter won before)
 * track handoff to the audio thread: generation counter instead of guessing the free slot -> the old buffer can no longer be freed while the audio thread still reads it
 * level meter: both channels (was left only)
 

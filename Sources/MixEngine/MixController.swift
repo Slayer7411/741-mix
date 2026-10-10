@@ -154,12 +154,14 @@ public struct MixState: Equatable, Sendable {
     }
     public var fx = [FXUnitState(), FXUnitState(), FXUnitState(), FXUnitState()]
     public var masterDeck: Int?
+    /// automatisch gewählter Master: bleibt, solange er spielt (ein neu gestartetes Deck übernimmt ihn nicht)
+    public var autoMaster: Int?
     /// Master-Clock: im Clock-Modus gibt MINOS das Tempo vor (kein Deck ist Master)
     public var clockMaster = false
-    public var clockBPM: Double = 128
-    public var metronome = false
     /// Semi-Sync: jeder neu geladene Track übernimmt das Tempo des aktuellen Masters (kein Phasen-Sync)
     public var semiSync = false
+    public var clockBPM: Double = 128
+    public var metronome = false
     public var metronomeVolume: Double = 0.5
     public var linkEnabled = false
     /// verbundene Link-Teilnehmer
@@ -180,6 +182,7 @@ public struct MixState: Equatable, Sendable {
     public var effectiveMaster: Int? {
         if clockMaster { return nil }
         if let m = masterDeck, decks[m].grid != nil { return m }
+        if let a = autoMaster, decks[a].playing, decks[a].grid != nil { return a }
         return decks.indices.first { decks[$0].playing && !decks[$0].sync && decks[$0].grid != nil }
             ?? decks.indices.first { decks[$0].playing && decks[$0].grid != nil }
     }
@@ -326,9 +329,6 @@ public final class MixController: @unchecked Sendable {
                 s.loopSize = p.defaultLoopSize
                 s.jumpSize = p.defaultJumpSize
             }
-            state.decks[d] = s
-            audio[d] = a
-            playedTime[d] = 0
             if state.semiSync, t.bpm > 0, state.clockMaster || state.effectiveMaster != nil {
                 // Semi-Sync: Tempo des aktuellen Masters übernehmen (ohne Phasen-Sync); halbes/doppeltes Tempo wählt
                 // das nächste Verhältnis; der Tempo-Bereich wächst bei Bedarf auf die nächste Stufe
@@ -339,6 +339,9 @@ public final class MixController: @unchecked Sendable {
                 if abs(pct) > s.tempoRange, let r = [6.0, 8, 10, 16, 50, 100].first(where: { $0 >= abs(pct) }) { s.tempoRange = r }
                 s.tempoPct = max(-s.tempoRange, min(s.tempoRange, pct))
             }
+            state.decks[d] = s
+            audio[d] = a
+            playedTime[d] = 0
             playedLogged[d] = false
             playStart[d] = nil
             let gen = engine.attach(a, deck: d, startAt: s.cuePoint)
@@ -710,12 +713,12 @@ public final class MixController: @unchecked Sendable {
     // MARK: Master-Clock
 
     /// Clock als Master an/aus. Beim Einschalten übernimmt sie Tempo und Phase des bisherigen Masters (kein Sprung).
-    public func setClockMaster(_ on: Bool) {
-        locked {
-            if on, !state.clockMaster, let m = state.effectiveMaster, let g = state.decks[m].grid {
     /// Semi-Sync: neue Tracks laden mit dem Tempo des Masters (kein Phasen-Sync)
     public func setSemiSync(_ on: Bool) { locked { state.semiSync = on } }
 
+    public func setClockMaster(_ on: Bool) {
+        locked {
+            if on, !state.clockMaster, let m = state.effectiveMaster, let g = state.decks[m].grid {
                 state.clockBPM = state.decks[m].bpm
                 engine.setClockBPM(state.clockBPM)
                 jumpClock(to: g.beatPosition(at: position(m)))
@@ -882,6 +885,7 @@ public final class MixController: @unchecked Sendable {
 
     private func tick() {
         let handlers: [(MixController) -> Void] = locked {
+            state.autoMaster = state.effectiveMaster   // Auto-Master klebt am laufenden Deck
             let master = state.effectiveMaster
             for d in state.decks.indices {
                 let p = engine.player(d)

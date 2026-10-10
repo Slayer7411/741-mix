@@ -99,7 +99,7 @@ A  title                 FX1 FX2    -1:10  130.00   11m   ±8 ▾
 
 * deck letter turns red while playing
 * FX1 / FX2 (… FX4) -> deck on that fx unit
-* remaining time, bpm, tempo offset, key (open key, e.g. `11m`), key shift
+* remaining time, bpm, tempo offset, key readout: open key of the track (e.g. `11m`), next to it the audible key in red as soon as it deviates (`11m → 6m`), below the deviation in semitones (`+0.60`). keylock off -> the tempo detunes, keylock on -> only the key shift counts
 * `±8 ▾` -> tempo range ±6 / 8 / 10 / 16 / 50 / 100 %
 
 ### transport
@@ -172,12 +172,13 @@ grid row (`GRID`):
 ## ◆ 06 · SYNC / CLOCK / LINK
 
 ```
-LINK 1 │ AUTO  128.00  − +  │ TICK ◯ │ S │ MAIN ◯ ⚙
-       │ MASTER  DECK B  TAP│        │ Q │
+LINK 1 │ AUTO  128.00  − +  SEMI │ TICK ◯ │ S │ MAIN ◯ ⚙
+       │ MASTER  DECK B  TAP      │        │ Q │
 ```
 
-* AUTO -> a deck is master (automatic or via MASTER on the deck)
+* AUTO -> a deck is master (automatic or via MASTER on the deck). the automatic master stays as long as it plays: a deck you start or load later does not take it over
 * MASTER -> the clock is master, all synced decks follow it
+* SEMI -> semi-sync: every newly loaded track takes the tempo of the current master (clock or master deck, half / double tempo picks the nearest ratio), no phase lock. the tempo range grows to the next step if needed
 * tempo: drag the number or − / +, TAP = tap tempo
 * TICK -> metronome on the clock beat, own volume, own output pair (setting)
 * S = snap, Q = quant

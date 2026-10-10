@@ -132,8 +132,7 @@ final class MixModel {
     /// (Kern: transpose = 2^(keyShift/12) · rate ohne Keylock)
     func keyDeviation(_ d: Int) -> Double {
         let s = decks[d].state
-        guard let t = s.track else { return "" }
-        return s.keyShift == 0 ? t.openKey : "\(t.openKey) \(s.keyShift > 0 ? "+" : "")\(s.keyShift)"
+        return Double(s.keyShift) + (s.keylock ? 0 : 12 * log2(max(s.rate, 1e-6)))
     }
 
     // MARK: - Befehle (weitergeleitet an den Kern)
@@ -208,8 +207,8 @@ final class MixModel {
     }
     func toggleQuantize() { prefs.engine.quantize.toggle() }
     func toggleSnap() { prefs.engine.snap.toggle() }
-    func setSemiSync(_ on: Bool) { run { core.setSemiSync(on) } }
     func setClockMaster(_ on: Bool) { run { core.setClockMaster(on) } }
+    func setSemiSync(_ on: Bool) { run { core.setSemiSync(on) } }
     func nudgeClock(_ d: Double) { run { core.nudgeClock(d) } }
     func setClockBPM(_ v: Double) { run { core.setClockBPM(v) } }
     func tap() { run { core.tap() } }
