@@ -6,6 +6,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* browser: PREVIEW column -> mini overview per track: 3-band waveform scaled per track, phrase bands, lines every 16 / 32 bars, hotcues, start cue, own grid edits. tracks without overview show grid + cues. setting: own column / behind the title (25 %) / off
+* previews come from deck loads (free), right click a source -> `Vorschauen berechnen`, and a background job (on, newest tracks first, skips cloud-only files). always paused while a deck plays or loads, progress + cancel in the status bar. cache `overviews/overviews.bin`, ~1.5 kb per track, renewed when the file changes
 * phrase anchor: on load the track's structural changes are checked against 8-bar boundaries from the grid anchor -> a cut first hit or a pickup beat (anchor 1-3 beats off) is found and the anchor moves by whole beats, bpm and grid lines stay. setting off / suggest (red `PHRASE +n` in the grid row) / automatic, stored in minos's own edits, never in the collection
 * grid row: ◂4 ◂1 1▸ 4▸ move the anchor by 1 bar / 1 beat (renumbering only)
 * code readout above each deck: bar of the track in its phrase (`5/16`) against the bar counter. purple `◆ CODE` = in the code, red `+2 BARS` / `−3 BEATS` = how far it is off, grey = deck stopped. phrase start = grid anchor, phrase length = the waveform phrase (4 / 8 / 16 / 32 bars)

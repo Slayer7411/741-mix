@@ -288,6 +288,20 @@ any installed audio unit effect (apple or third-party, v2 and v3) in the single 
 * the left controller drives the left pane, the right controller the right one
 * tree can hide while decks are visible (setting)
 
+### preview
+
+PREVIEW column (after the title, on by default): a mini overview of the whole track per row.
+
+* waveform (3 bands, palette from the waveform setting), scaled per track -> intro, breaks and drops stand out even on loud masters
+* phrase bands from the grid (phrase length = the waveform phrase), thin line every 16 bars, magenta every 32 bars
+* hotcues as short colored ticks, start cue as a triangle on top. own grid / phrase anchor / hotcue edits are drawn too
+* no overview yet -> grid and cues only
+* overview comes from: loading the track into a deck (free, from the deck's waveform) · right click TRACK COLLECTION, PREPARATION, a playlist, smartlist, playlist folder or music folder -> `Vorschauen berechnen` · background job for the whole collection, newest tracks first (setting, on)
+* rule: computing pauses while any deck plays or loads, also in the middle of a file. status bar: `Vorschauen 12/240`, `pausiert (Deck spielt)`, ✕ = cancel
+* the background job skips files that only exist in the cloud (not downloaded), explicit right click reads them
+* ⌘, -> DISPLAY -> browser preview: own column / behind the title (25 % under the title text) / off
+* overviews are checked against file size and modification time -> a retagged file gets a new one
+
 role chips `BASIS · SYNTH · DRUMS · VOLL · ATMO` -> filter on the role at the end of comment 2 (`» BASIS`). several chips = any of them.
 
 ### edit tracks
@@ -397,6 +411,7 @@ controller mapping -> [controllers.md](controllers.md).
 | settings | user defaults, key `prefs.v1` |
 | session (decks, fx, clock, browser) | `~/Library/Application Support/MINOS-741/session.json` |
 | hotcue + grid edits | `~/Library/Application Support/MINOS-741/edits.json` |
+| browser previews (track overviews) | `~/Library/Application Support/MINOS-741/overviews/overviews.bin` |
 | history | `~/Library/Application Support/MINOS-741/History` |
 | preparation archive | `~/Library/Application Support/MINOS-741/Preparation` |
 
