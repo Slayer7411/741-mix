@@ -102,14 +102,24 @@ struct Delay {
     }
 };
 
-// ---------- Reverb (Freeverb-Struktur) ----------
+// ---------- Reverb (Freeverb-Struktur, weich abgestimmt) ----------
+// gegen metallischen Klang: Eingangs-Diffusion, gedämpfte Kammfilter, Lesepunkt der Kammfilter schwankt langsam
+// um wenige Samples (keine stehenden Resonanzen), sanfter Tiefpass am Ausgang
 struct Comb {
     std::vector<float> b; int i = 0; float store = 0;
-    inline float tick(float x, float fb, float damp) {
-        float y = b[i];
+    float phase = 0, step = 0, mod = 0;   // LFO (Bogenmaß je Sample), aktueller Wert -1…1
+    void lfo(int n) { mod = std::sin(phase); phase += step * n; if (phase > 2 * float(kPi)) phase -= 2 * float(kPi); }
+    inline float tick(float x, float fb, float damp, float depth) {
+        int n = int(b.size());
+        // Leseposition vor dem Schreibzeiger: Verzögerung n-1-m, m = 0…depth Samples, gebrochen gelesen
+        float rp = float(i) + 1 + depth * (0.5f + 0.5f * mod);
+        if (rp >= n) rp -= n;
+        int r0 = int(rp), r1 = r0 + 1; if (r1 >= n) r1 = 0;
+        float f = rp - float(r0);
+        float y = b[r0] + (b[r1] - b[r0]) * f;
         store = y * (1 - damp) + store * damp;
         b[i] = x + store * fb;
-        if (++i >= int(b.size())) i = 0;
+        if (++i >= n) i = 0;
         return y;
     }
 };
@@ -123,23 +133,32 @@ struct Allpass {
     }
 };
 struct Reverb {
-    Comb cL[8], cR[8]; Allpass aL[4], aR[4];
+    Comb cL[8], cR[8]; Allpass aL[4], aR[4], inA[2];
     Biquad hp1, hp2, lp;     // nur dieser Frequenzbereich geht in den Hall
     float lastHP = -1, lastLP = -1;
     float send = 0, tail = 0;
+    float outL = 0, outR = 0, outA = 0.5f;   // Ausgangs-Tiefpass (Einpol)
     bool active() const { return send > 0.0005f || tail > 1e-5f; }
     void init(double fs) {
-        const int ct[8] = {1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617}, at[4] = {556, 441, 341, 225};
+        const int ct[8] = {1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617}, at[4] = {556, 441, 341, 225}, it[2] = {113, 79};
+        const float rates[8] = {0.31f, 0.47f, 0.59f, 0.73f, 0.41f, 0.53f, 0.67f, 0.83f};   // Hz, je Kammfilter anders
         double k = fs / 44100.0;
-        for (int j = 0; j < 8; j++) { cL[j].b.assign(size_t(ct[j] * k), 0); cR[j].b.assign(size_t((ct[j] + 23) * k), 0); }
+        for (int j = 0; j < 8; j++) {
+            cL[j].b.assign(size_t(ct[j] * k), 0); cR[j].b.assign(size_t((ct[j] + 23) * k), 0);
+            cL[j].step = float(2 * kPi * rates[j] / fs); cR[j].step = float(2 * kPi * rates[j] * 1.13 / fs);
+            cL[j].phase = j * 0.7f; cR[j].phase = j * 0.7f + 1.9f;
+        }
         for (int j = 0; j < 4; j++) { aL[j].b.assign(size_t(at[j] * k), 0); aR[j].b.assign(size_t((at[j] + 23) * k), 0); }
+        for (int j = 0; j < 2; j++) inA[j].b.assign(size_t(it[j] * k), 0);
+        outA = float(1 - std::exp(-2 * kPi * 9000 / fs));
     }
     void clear() {
         for (auto &c : cL) { std::fill(c.b.begin(), c.b.end(), 0); c.store = 0; }
         for (auto &c : cR) { std::fill(c.b.begin(), c.b.end(), 0); c.store = 0; }
         for (auto &a : aL) std::fill(a.b.begin(), a.b.end(), 0);
         for (auto &a : aR) std::fill(a.b.begin(), a.b.end(), 0);
-        send = tail = 0;
+        for (auto &a : inA) std::fill(a.b.begin(), a.b.end(), 0);
+        send = tail = 0; outL = outR = 0;
     }
     /// Send-Effekt: das trockene Signal bleibt unverändert, der Hall kommt dazu.
     /// `level` = wie viel hineingeht (aus = Eingang zu, Hall klingt aus), `wet` = Hall-Anteil am Ausgang.
@@ -154,20 +173,23 @@ struct Reverb {
             lastLP = lpP;
             if (lpP > 0.99f) lp.setIdentity(); else lp.lowpass(std::min(500 * std::pow(40.0, double(lpP)), fs * 0.45), 0.707, fs);
         }
-        float fb = 0.75f + 0.235f * size, damp = 0.02f;       // Nachhall ~1 s … ~20 s, kaum Dämpfung → Höhen bleiben (Swipe)
+        float fb = 0.75f + 0.235f * size;                    // Nachhall ~1 s … ~20 s
+        float damp = 0.25f + 0.2f * size, depth = 3.f;      // Höhen klingen schneller aus als Bässe (weich), Modulation ±1,5 Samples
         // gleiche Lautheit über Größe und Hochpass: was der Filter wegnimmt, kommt als Pegel zurück (gemessen: volles D/W ≈ 5 dB über dem Track, max. +45 dB)
         float g = 0.03f * std::sqrt((1 - fb) / 0.15f);
         if (loud) g *= std::pow(10.f, std::min(45.f, 10 + 34 * hpP + std::max(0.f, hpP - 0.7f) * 30) / 20);
         float target = on ? level : 0.f, peak = 0;
+        for (int j = 0; j < 8; j++) { cL[j].lfo(n); cR[j].lfo(n); }
         for (int i = 0; i < n; i++) {
             send += (target - send) * 0.002f;
             float x = (L[i] + R[i]) * 0.5f;
             x = lp.tick(0, hp2.tick(0, hp1.tick(0, x)));
-            float in = x * g * send, ol = 0, orr = 0;
-            for (int j = 0; j < 8; j++) { ol += cL[j].tick(in, fb, damp); orr += cR[j].tick(in, fb, damp); }
+            float in = inA[1].tick(inA[0].tick(x * g * send)), ol = 0, orr = 0;
+            for (int j = 0; j < 8; j++) { ol += cL[j].tick(in, fb, damp, depth); orr += cR[j].tick(in, fb, damp, depth); }
             for (int j = 0; j < 4; j++) { ol = aL[j].tick(ol); orr = aR[j].tick(orr); }
-            L[i] += ol * wet; R[i] += orr * wet;
-            peak = std::max(peak, std::max(std::fabs(ol), std::fabs(orr)));
+            outL += outA * (ol - outL); outR += outA * (orr - outR);
+            L[i] += outL * wet; R[i] += outR * wet;
+            peak = std::max(peak, std::max(std::fabs(outL), std::fabs(outR)));
         }
         tail = peak;
         if (!on && !active()) clear();

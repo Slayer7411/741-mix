@@ -151,3 +151,44 @@ private final class Core {
     #expect(mdsp_track_consumed(c.e, 0, g2) && mdsp_track_consumed(c.e, 0, g3))
     #expect(c.position == 2.0)
 }
+
+/// Hall-Fahne messen: Anteil über 4 kHz und spektrale Flachheit (niedrig = einzelne Resonanzen = metallisch).
+/// Keine festen Grenzen außer "klingt und klingt aus" – die Zahlen stehen im Log zum Vergleich.
+@Test func reverbTailMetrics() {
+    let c = Core()
+    var seed: UInt32 = 12345   // weißes Rauschen als Anregung
+    for i in 0..<c.frames { seed = seed &* 1664525 &+ 1013904223; let v = (Float(seed >> 8) / Float(1 << 24) - 0.5) * 0.6; c.left[i] = v; c.right[i] = v }
+    c.load(); c.render()
+    c.set(MD_FX1_ASSIGN, 1)
+    c.fx(MDFX_REVERB_ON, 1); c.fx(MDFX_REVERB_AMOUNT, 1); c.fx(MDFX_REVERB_SIZE, 0.7); c.fx(MDFX_REVERB_HP, 0); c.fx(MDFX_REVERB_LP, 1)
+    c.fx(MDFX_REVERB_DWSEND, 1); c.fx(MDFX_DRYWET, 1)
+    c.set(MD_PLAYING, 1); c.render(seconds: 1.5)
+    c.set(MD_PLAYING, 0); c.render(seconds: 1.0)   // erst die späte Fahne: dort bleiben nur Resonanzen übrig (metallisch)
+    var tail: [Float] = []
+    for _ in 0..<40 { c.render(512); tail += c.outL }
+    let fs = Float(c.fs)
+    // Anteil über 4 kHz (Einpol-Hochpass)
+    let a = 1 - exp(-2 * Float.pi * 4000 / fs)
+    var lp: Float = 0, hf: Float = 0, tot: Float = 0
+    for x in tail { lp += a * (x - lp); let h = x - lp; hf += h * h; tot += x * x }
+    // spektrale Flachheit 150 Hz … 2,5 kHz (dort liegt bei jeder Abstimmung Energie, die Neigung verfälscht nicht) über 4096 Samples (Hann), 160 log-verteilte Frequenzen
+    let n = 4096, seg = Array(tail.prefix(n))
+    var logSum: Double = 0, sum: Double = 0, count = 0
+    for k in 0..<160 {
+        let f = 150 * pow(2500.0 / 150, Double(k) / 159)
+        var re = 0.0, im = 0.0
+        for i in 0..<n {
+            let w = 0.5 - 0.5 * cos(2 * Double.pi * Double(i) / Double(n))
+            let ph = 2 * Double.pi * f * Double(i) / Double(fs)
+            re += Double(seg[i]) * w * cos(ph); im -= Double(seg[i]) * w * sin(ph)
+        }
+        let p = re * re + im * im + 1e-18
+        logSum += log(p); sum += p; count += 1
+    }
+    let flatness = exp(logSum / Double(count)) / (sum / Double(count))
+    let rms = (tot / Float(tail.count)).squareRoot()
+    print(String(format: "[reverb] tail rms %.4f · >4 kHz %.3f · flatness %.3f", rms, hf / max(tot, 1e-12), flatness))
+    #expect(rms > 1e-4)
+    c.render(seconds: 25)
+    #expect(c.render(seconds: 0.5) < 1e-3)   // klingt aus
+}
