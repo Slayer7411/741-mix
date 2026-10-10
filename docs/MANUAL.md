@@ -134,6 +134,11 @@ A  title                 FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 * hotcues come from the collection. colors: start cue red, cues white, loops green, short loops magenta (⌘, -> DISPLAY)
 * edits are saved in an own file. the collection stays untouched
 * SNAP -> cues and loop points lock to the beat
+* loop snap (with SNAP, LOOP / LOOP IN from deck, keyboard or controller):
+  1. a stored loop cue (hotcue or memory cue) starting up to 1 bar ahead or just passed (playhead still inside it) -> exactly that loop, start and length
+  2. otherwise within 1 beat of a 4-bar boundary (counted from the grid anchor) -> the loop starts on that boundary
+  3. otherwise the normal beat snap
+  * no jump: the playhead runs into the loop or is already inside. both rules and windows under ⌘, -> DECKS -> loops & beatjump
 * QUANT -> jumps keep the beat phase
 
 ### tempo

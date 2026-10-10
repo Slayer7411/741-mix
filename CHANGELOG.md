@@ -7,6 +7,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ### added
 * controller: flux = pad layer switch. tap -> pads 1-4 play hotcues 5-8 (set / jump, shift = delete, pad colors of 5-8, flux led lit), tap again -> back to 1-4, per side. shift + flux = flux mode, held = layer only while held. setting "flux button": switch pad layer (default) / flux mode (old layout)
+* loop snap (with SNAP): LOOP / LOOP IN takes a stored loop cue starting up to 1 bar ahead or just passed (start + length), else the nearest 4-bar boundary within 1 beat, else the beat snap. never jumps, the playhead runs into the loop. settings under DECKS -> loops & beatjump (both on, window 4 beats, tolerance 1 beat)
 * phrase anchor: on load the track's structural changes are checked against 8-bar boundaries from the grid anchor -> a cut first hit or a pickup beat (anchor 1-3 beats off) is found and the anchor moves by whole beats, bpm and grid lines stay. setting off / suggest (red `PHRASE +n` in the grid row) / automatic, stored in minos's own edits, never in the collection
 * grid row: ◂4 ◂1 1▸ 4▸ move the anchor by 1 bar / 1 beat (renumbering only)
 * code readout above each deck: bar of the track in its phrase (`5/16`) against the bar counter. purple `◆ CODE` = in the code, red `+2 BARS` / `−3 BEATS` = how far it is off, grey = deck stopped. phrase start = grid anchor, phrase length = the waveform phrase (4 / 8 / 16 / 32 bars)

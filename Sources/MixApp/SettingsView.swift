@@ -308,6 +308,17 @@ struct DeckSettings: View {
                 Picker("Beatjump-Größe (Standard)", selection: $mix.prefs.engine.defaultJumpSize) {
                     ForEach(BeatSizes.jump, id: \.self) { Text(BeatSizes.label($0)).tag($0) }
                 }
+                Group {
+                    Toggle("Loop-Snap auf Loop-Cues", isOn: $mix.prefs.engine.loopSnapCues)
+                    Stepper("Fenster (Beats): \(Int(mix.prefs.engine.loopSnapCueBeats))", value: $mix.prefs.engine.loopSnapCueBeats, in: 1...8, step: 1)
+                        .disabled(!mix.prefs.engine.loopSnapCues)
+                    Toggle("Loop-Snap auf 4-Bar-Raster", isOn: $mix.prefs.engine.loopSnapPhrase)
+                    Stepper("Toleranz (Beats): \(Int(mix.prefs.engine.loopSnapPhraseBeats))", value: $mix.prefs.engine.loopSnapPhraseBeats, in: 1...8, step: 1)
+                        .disabled(!mix.prefs.engine.loopSnapPhrase)
+                    Text("nur mit snap. loop, loop in: ein loop-cue, der bis zum fenster vor der position beginnt oder gerade überspielt wird, wird übernommen; sonst beginnt der loop auf der nächsten 4-takt-grenze (ab grid-anker) innerhalb der toleranz; sonst normaler snap. kein sprung: die position läuft in den loop hinein oder ist schon drin.")
+                        .settingsHint()
+                }
+                .disabled(!mix.prefs.engine.snap)
             }
             Section("History & Preparation") {
                 sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f", unit: "s")

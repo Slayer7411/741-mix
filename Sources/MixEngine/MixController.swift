@@ -49,6 +49,12 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var channelFilterResonance = 0.6
     public var defaultLoopSize = 4.0
     public var defaultJumpSize = 4.0
+    /// Loop-Snap (nur mit Snap): gespeicherten Loop-Cue übernehmen, wenn er bis zu loopSnapCueBeats vor oder hinter
+    /// der Position beginnt; sonst auf eine 4-Takt-Grenze innerhalb von loopSnapPhraseBeats
+    public var loopSnapCues = true
+    public var loopSnapPhrase = true
+    public var loopSnapCueBeats = 4.0
+    public var loopSnapPhraseBeats = 1.0
     public var delayFeedback = 0.45
     public var fxFilterResonance = 0.4
     /// Reverb: Pegel in dB (0 = Hall bei vollem D/W ≈ 4 dB unter dem Track), Helligkeit 0…1, Vorverzögerung in ms
@@ -569,13 +575,55 @@ public final class MixController: @unchecked Sendable {
         return g.nearestBeat(to: t)
     }
 
+    /// Beats je Snap-Phrase: 4 Takte, gezählt ab dem Grid-Anker
+    private static let snapPhraseBeats = 16.0
+
+    /// Loop-Snap: gespeicherter Loop-Cue (Hotcue oder Memory-Cue), der kurz vor der Position beginnt
+    /// oder gerade überspielt wird (Position noch im Loop). Der nächstgelegene gewinnt.
+    private func nearbyLoopCue(_ d: Int) -> (start: Double, end: Double)? {
+        let p = state.prefs
+        guard p.snap, p.loopSnapCues, !state.decks[d].reverse, let g = state.decks[d].grid else { return nil }
+        let pos = position(d), w = p.loopSnapCueBeats * g.beat
+        let memory = state.decks[d].track?.cues.filter { $0.hotcue < 0 } ?? []
+        return (Array(state.decks[d].hotcues.values) + memory)
+            .filter { $0.kind == .loop && $0.lengthMs > 0 }
+            .map { (start: $0.startMs / 1000, end: ($0.startMs + $0.lengthMs) / 1000) }
+            .filter { $0.start <= pos + w && $0.start >= pos - w && pos < $0.end }
+            .min { abs($0.start - pos) < abs($1.start - pos) }
+    }
+
+    /// Loop-Snap: 4-Takt-Grenze (ab dem Grid-Anker) innerhalb der Toleranz um die Position
+    private func nearbyPhraseStart(_ d: Int) -> Double? {
+        let p = state.prefs
+        guard p.snap, p.loopSnapPhrase, !state.decks[d].reverse, let g = state.decks[d].grid else { return nil }
+        let b = g.beatPosition(at: position(d))
+        let n = (b / Self.snapPhraseBeats).rounded() * Self.snapPhraseBeats
+        guard abs(b - n) <= p.loopSnapPhraseBeats + 1e-9 else { return nil }
+        return g.time(ofBeat: n)
+    }
+
+    /// Loop-Cue als Loop übernehmen, ohne Sprung (die Position läuft hinein bzw. ist schon drin)
+    private func activateLoopCue(_ d: Int, _ c: (start: Double, end: Double)) {
+        engine.setLoop(d, active: true, start: c.start, end: c.end)
+        state.decks[d].loopActive = true
+        let beats = (c.end - c.start) / beatLength(d)
+        if let s = BeatSizes.loop.first(where: { abs($0 - beats) < 0.01 }) { state.decks[d].loopSize = s }
+    }
+
     public func autoLoop(_ d: Int, size: Double? = nil) {
         locked {
             guard audio[d] != nil else { return }
             let s = size ?? state.decks[d].loopSize
             if state.decks[d].loopActive, size == nil || s == state.decks[d].loopSize { exitLoop(d); return }
+            if !state.decks[d].loopActive, let c = nearbyLoopCue(d) { activateLoopCue(d, c); return }
             state.decks[d].loopSize = s
             let pos = position(d)
+            // 4-Takt-Grenze: Loop beginnt dort, die Position läuft hinein oder ist schon drin (sonst normaler Snap)
+            if !state.decks[d].loopActive, let start = nearbyPhraseStart(d), pos < start + s * beatLength(d) {
+                engine.setLoop(d, active: true, start: start, end: start + s * beatLength(d))
+                state.decks[d].loopActive = true
+                return
+            }
             var start = state.decks[d].loopActive ? engine.loop(d).start : pos
             if !state.decks[d].loopActive, state.prefs.quantize, let g = state.decks[d].grid {
                 let unit = min(1, s)
@@ -620,7 +668,16 @@ public final class MixController: @unchecked Sendable {
 
     public func setLoopSize(_ d: Int, _ s: Double) { locked { state.decks[d].loopSize = s } }
 
-    public func setLoopIn(_ d: Int) { locked { state.decks[d].loopIn = snapped(d, position(d)) } }
+    public func setLoopIn(_ d: Int) {
+        locked {
+            if !state.decks[d].loopActive, let c = nearbyLoopCue(d) {
+                state.decks[d].loopIn = c.start
+                activateLoopCue(d, c)
+                return
+            }
+            state.decks[d].loopIn = nearbyPhraseStart(d) ?? snapped(d, position(d))
+        }
+    }
 
     public func setLoopOut(_ d: Int) {
         locked {
