@@ -100,6 +100,8 @@ public struct Track: Identifiable, Hashable, Sendable {
     /// nie live prüfen – auf Google Drive dauert jeder Zugriff, bei 14k Tracks hängt sonst die Oberfläche
     public var fileMissing: Bool?
     public var fileExists: Bool { !(fileMissing ?? false) }
+    /// Datei aus MUSIC FOLDERS, nicht in der Collection (kein Grid, keine Metadaten)
+    public var loose = false
 
     /// Erster Grid-Marker (Beat 1) in ms.
     public var gridAnchorMs: Double? { cues.first { $0.kind == .grid }?.startMs }

@@ -74,8 +74,9 @@ struct ContentView: View {
         }
         .windowToolbarFullScreenVisibility(.onHover)
         .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
-            store.running = keys.filter { !$0.isEmpty }.compactMap { store.byKey[$0] }
+            store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
         }
+        .onChange(of: mix.prefs.ui.musicFolders, initial: true) { _, f in store.folders.configured = f }
         .onAppear {
             if store.tracks.isEmpty { store.load() }
             // MIX741_LAYOUT=nomixer,2decks,nobrowser: Teile der Oberfläche für Layout-Messungen abschalten (nur Selbsttest)
@@ -323,6 +324,10 @@ case "de", "en": UserDefaults.standard.set([AppPrefs.load().ui.language], forKey
 default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
 }
 Theme.registerFonts()
+// Selbsttest-Bild offscreen (kein Fenster, kein Audio): MIX741_SELFTEST=1 MIX741_SHOT=browser:<png>
+if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"] {
+    MainActor.assumeIsolated { BrowserShot.run(shot) }
+}
 
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.
 NSApplication.shared.setActivationPolicy(.regular)

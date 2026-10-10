@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* browser: MUSIC FOLDERS in the tree -> the music library on disk, folder by folder. collection files show their metadata, other audio files show grey and load anyway. SUBFOLDERS switch, rescan on right click and on changes, folders per pane saved in the session, own folders under ⌘, -> DISPLAY -> browser (default: the folder holding 90 % of the collection)
 * key readout above each deck: open key of the track, the audible key in red as soon as it deviates (`8m → 3m`), the deviation in semitones below (keylock off: from the tempo, keylock on: from the key shift)
 * SEMI in the master clock: every newly loaded track takes the tempo of the current master (clock or master deck, nearest half / double ratio), no phase lock
 * quit asks first (⌘Q / quit menu) -> session, history and played state are written before the app closes

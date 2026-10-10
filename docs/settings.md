@@ -35,6 +35,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * magenta markers every 8 / 16 / 32 bars
 * tag separator for comment 2, empty = space
 * browser layout, hide the tree while decks are visible
+* music folders for MUSIC FOLDERS: add / remove, empty = automatic (the folder holding 90 % of the collection's files)
 * language: system / english / german (after restart)
 
 ## ◆ AUDIO

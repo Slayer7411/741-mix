@@ -181,3 +181,10 @@
 "Sitzung und History werden gespeichert." = "Session and history will be saved.";
 "Beenden" = "Quit";
 "Abbrechen" = "Cancel";
+"UNTERORDNER" = "SUBFOLDERS";
+"Dateien aus allen Unterordnern zeigen" = "Show files from all subfolders";
+"Neu einlesen" = "Rescan";
+"Musik-Ordner (MUSIC FOLDERS)" = "Music folders (MUSIC FOLDERS)";
+"Ordner hinzufügen …" = "Add folder …";
+"automatisch: %@" = "automatic: %@";
+"Entfernen" = "Remove";
