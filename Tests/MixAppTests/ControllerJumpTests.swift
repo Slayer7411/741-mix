@@ -135,7 +135,7 @@ private func prepare(_ rig: Rig, _ c: Case) {
 /// Ziel eines Taktsprungs: ±2 s, im Loop umlaufend
 @MainActor
 private func expected(_ rig: Rig, from p: Double, bars: Int) -> Double {
-    var t = p + Double(bars) * bar
+    var t = p + Double(bars) * beat   // Sync + Pad = ein Beat
     if rig.deck0.loopActive {
         let l = rig.core.engine.loop(0), len = l.end - l.start
         t = l.start + (t - l.start).truncatingRemainder(dividingBy: len)

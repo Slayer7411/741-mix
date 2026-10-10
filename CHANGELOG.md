@@ -53,6 +53,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * reverb settings (⌘, -> MIXER & FX): level (−18 … +6 dB), brightness, pre-delay (0 … 120 ms, default 15 ms)
 
 ### changed
+* controller: sync held + pad 3 / 4 jumps one beat (one kick) instead of one bar; inside a loop the loop stays and the position wraps
 * plugin windows stay above the MINOS windows (also in full screen) and hide while another app is active
 * deck: hotcues, loop sizes 1/32 … 32 and beatjump sizes 1/4 … 64 in three full-width rows, the selected loop and beatjump size red (follows the controller too), LOOP = on / off, white / yellow pads with dark numbers. `MIX741_SHOT=deck:<png>` (selftest only) renders a deck offscreen
 * settings window redone: sidebar instead of tabs, resizable (min 720 × 520), `◆` section headings, fixed label column, square toggles, slider values with units, one block per controller; selftest renders it offscreen (`MIX741_SHOT=settings:<folder>`)

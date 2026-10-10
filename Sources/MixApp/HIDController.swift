@@ -225,7 +225,7 @@ final class ControllerManager: @unchecked Sendable {
                 // Sync gehalten hat Vorrang vor Flux und Pad-Ebene: immer genau ein Takt
                 unit.syncComboUsed[s] = true
                 if unit.fluxHeld[s] == true { unit.fluxComboUsed[s] = true }   // Flux loslassen schaltet dann keine Ebene
-                core.barJump(d, bars: n == 2 ? -1 : 1)
+                core.stepJump(d, beats: n == 2 ? -1 : 1)   // ein Beat (ein Kick-Schlag), nicht ein Takt
             } else if unit.fluxHeld[s] == true {
                 // Flux gehalten: Pads = Hotcues 5–8 (oder Beatjump auf Pad 3/4)
                 unit.fluxComboUsed[s] = true
