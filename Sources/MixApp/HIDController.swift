@@ -222,7 +222,9 @@ final class ControllerManager: @unchecked Sendable {
             guard down else { return }
             let d = deck(s)
             if unit.syncHeld[s] == true, n == 2 || n == 3 {
+                // Sync gehalten hat Vorrang vor Flux und Pad-Ebene: immer genau ein Takt
                 unit.syncComboUsed[s] = true
+                if unit.fluxHeld[s] == true { unit.fluxComboUsed[s] = true }   // Flux loslassen schaltet dann keine Ebene
                 core.barJump(d, bars: n == 2 ? -1 : 1)
             } else if unit.fluxHeld[s] == true {
                 // Flux gehalten: Pads = Hotcues 5–8 (oder Beatjump auf Pad 3/4)
@@ -317,7 +319,7 @@ final class ControllerManager: @unchecked Sendable {
 /// Ein einzelner Controller: dekodiert Reports, merkt Zustände, schreibt LEDs.
 final class ControllerUnit {
     enum Side: Hashable { case left, right }
-    enum Event {
+    enum Event: Equatable {
         case play(Side, Bool), cue(Side, Bool), sync(Side, Bool), flux(Side, Bool), hotcue(Side, Int, Bool)
         case loopTurn(Side, Int), loopPush(Side, Bool), load(Side, Bool)
         case browseTurn(Int), browsePush(Bool), shift(Bool)
@@ -325,7 +327,8 @@ final class ControllerUnit {
         case strip(Side, Double, Bool)
     }
 
-    let device: IOHIDDevice
+    /// nil = ohne Gerät (Tests)
+    let device: IOHIDDevice?
     var info: ControllerStatus.Info
     weak var manager: ControllerManager?
     var shift = false
@@ -343,7 +346,7 @@ final class ControllerUnit {
     private var lastLED: [UInt8] = []
     private var lastDisplay: [UInt8] = []
 
-    init(device: IOHIDDevice, info: ControllerStatus.Info, manager: ControllerManager) {
+    init(device: IOHIDDevice?, info: ControllerStatus.Info, manager: ControllerManager) {
         self.device = device
         self.info = info
         self.manager = manager
@@ -371,16 +374,22 @@ final class ControllerUnit {
     ]
 
     func parse(_ r: [UInt8]) {
-        guard r.count >= 0x1F, r[0] == 0x01 else { return }
+        for e in decode(r) { manager?.handle(e, unit: self) }
+    }
+
+    /// Report → Ereignisse in Reihenfolge (Shift zuerst); merkt sich den Report für den nächsten Vergleich
+    func decode(_ r: [UInt8]) -> [Event] {
+        guard r.count >= 0x1F, r[0] == 0x01 else { return [] }
         defer { prev = Array(r.prefix(32)); havePrev = true }
-        guard havePrev else { return }
+        guard havePrev else { return [] }
+        var out: [Event] = []
         // Shift zuerst, damit Kombinationen im selben Report stimmen
         if (r[0x14] ^ prev[0x14]) & 0x04 != 0 {
             shift = r[0x14] & 0x04 != 0
-            manager?.handle(.shift(shift), unit: self)
+            out.append(.shift(shift))
         }
         for (byte, bit, make) in buttons where (r[byte] ^ prev[byte]) & bit != 0 {
-            manager?.handle(make(r[byte] & bit != 0), unit: self)
+            out.append(make(r[byte] & bit != 0))
         }
         // Encoder: 4-Bit-Zähler
         func delta(_ new: UInt8, _ old: UInt8) -> Int {
@@ -388,18 +397,18 @@ final class ControllerUnit {
             return d == 0 ? 0 : (d < 8 ? 1 : -1)
         }
         let browse = delta(r[0x11] >> 4, prev[0x11] >> 4)
-        if browse != 0 { manager?.handle(.browseTurn(browse), unit: self) }
+        if browse != 0 { out.append(.browseTurn(browse)) }
         let l = delta(r[0x11] & 0x0F, prev[0x11] & 0x0F)
-        if l != 0 { manager?.handle(.loopTurn(.left, l), unit: self) }
+        if l != 0 { out.append(.loopTurn(.left, l)) }
         let rr = delta(r[0x12] & 0x0F, prev[0x12] & 0x0F)
-        if rr != 0 { manager?.handle(.loopTurn(.right, rr), unit: self) }
+        if rr != 0 { out.append(.loopTurn(.right, rr)) }
         // FX-Regler (12 Bit, little endian): Unit 1 ab 0x01, Unit 2 ab 0x09
         for u in 0..<2 {
             for k in 0..<4 {
                 let o = 0x01 + u * 8 + k * 2
                 let v = Int(r[o]) | (Int(r[o + 1]) << 8)
                 let pv = Int(prev[o]) | (Int(prev[o + 1]) << 8)
-                if abs(v - pv) > 8 { manager?.handle(.fxKnob(u, k, Double(v & 0x0FFF) / 4095), unit: self) }
+                if abs(v - pv) > 8 { out.append(.fxKnob(u, k, Double(v & 0x0FFF) / 4095)) }
             }
         }
         // Touchstrip: Position 0–2047; links = linke Seite, rechts = rechte Seite
@@ -410,8 +419,9 @@ final class ControllerUnit {
             let p = touching ? pos : ppos
             let side: Side = p < 1024 ? .left : .right
             let frac = side == .left ? Double(p) / 1023 : Double(p - 1024) / 1023
-            manager?.handle(.strip(side, max(0, min(1, frac)), touching), unit: self)
+            out.append(.strip(side, max(0, min(1, frac)), touching))
         }
+        return out
     }
 
     /// Pad-Ebene 5–8 eingerastet (nur mit Flux-Taste = Pad-Ebene)
@@ -463,7 +473,7 @@ final class ControllerUnit {
             r[0x01 + u * 4] = fx.anyOn ? on : dim
             for i in 0..<3 { r[0x02 + u * 4 + i] = (fx.single ? i == 0 && fx.singleOn : fx.slots[i].on) ? on : dim }
         }
-        if r != lastLED {
+        if r != lastLED, let device {
             lastLED = r
             IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x80, r, r.count)
         }
@@ -484,7 +494,7 @@ final class ControllerUnit {
             // Punkt vor der Zahl = Bruchteil (1/x)
             if size < 1 { r[0x01 + i * 0x18 + (3 - text.count) * 8] = 0x7f }
         }
-        if r != lastDisplay {
+        if r != lastDisplay, let device {
             lastDisplay = r
             IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x81, r, r.count)
         }

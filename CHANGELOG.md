@@ -78,6 +78,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
 
 ### fixed
+* controller: sync held + pad 3 / 4 is always exactly one bar (4 beats), also with flux held or the pad layer on; a synced deck stays in phase, inside a loop the position wraps. releasing flux after this combo no longer switches the pad layer. `MIX741_DEBUG=1` logs every jump of a deck: `[jump] deck A: 10.500 → 12.500 s (bar jump +1, +4.00 beats)`
 * closing the main window (red button, ⌘W) quits after the confirmation instead of leaving minos running without a window
 * tag colors were lost after a restart (empty map in the defaults dropped the saved entries)
 * auto master sticks to the running master deck: starting another deck no longer makes it master (the lowest deck letter won before)

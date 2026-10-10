@@ -562,14 +562,14 @@ public final class MixController: @unchecked Sendable {
             let p = engine.player(d)
             if p.playing {
                 p.playing = false
-                engine.seek(d, seconds: state.decks[d].cuePoint)
+                jump(d, to: state.decks[d].cuePoint, "cue")
             } else if abs(position(d) - state.decks[d].cuePoint) < 0.02 {
                 semiAlignStart(d)   // Cue-Vorhören startet ebenfalls in Phase; CUE loslassen springt zurück zum Cue
                 p.playing = true
                 state.decks[d].cueHeld = true
             } else {
                 state.decks[d].cuePoint = snapped(d, position(d))
-                engine.seek(d, seconds: state.decks[d].cuePoint)
+                jump(d, to: state.decks[d].cuePoint, "cue set")
             }
             state.decks[d].playing = p.playing
             applyRate(d)
@@ -580,7 +580,7 @@ public final class MixController: @unchecked Sendable {
         locked {
             guard state.decks[d].cueHeld else { return }
             engine.player(d).playing = false
-            engine.seek(d, seconds: state.decks[d].cuePoint)
+            jump(d, to: state.decks[d].cuePoint, "cue release")
             state.decks[d].cueHeld = false
             state.decks[d].playing = false
             applyRate(d)
@@ -590,7 +590,7 @@ public final class MixController: @unchecked Sendable {
     public func cup(_ d: Int) {
         locked {
             guard audio[d] != nil else { return }
-            engine.seek(d, seconds: state.decks[d].cuePoint)
+            jump(d, to: state.decks[d].cuePoint, "cup")
             semiAlignStart(d)   // vom Cue aus in Phase zum Master starten
             engine.player(d).playing = true
             state.decks[d].playing = true
@@ -605,7 +605,7 @@ public final class MixController: @unchecked Sendable {
     /// Von Hand verschoben (Wellenform ziehen, Touchstrip): im Fix-Sync bleibt die neue Phase
     public func seek(_ d: Int, seconds: Double) {
         locked {
-            engine.seek(d, seconds: seconds)
+            jump(d, to: seconds, "seek")
             if state.prefs.syncMode == .fixed, state.decks[d].sync, let g = state.decks[d].grid, let mb = masterBeat() {
                 phaseOffset[d] = BeatGrid.phaseError(own: g.beatPosition(at: seconds), master: mb)
                 bigError[d] = 0
@@ -617,7 +617,7 @@ public final class MixController: @unchecked Sendable {
         locked {
             state.decks[d].reverse = on
             engine.player(d).reverse = on
-            if !on, state.decks[d].flux { engine.seek(d, seconds: engine.fluxPosition(d)) }
+            if !on, state.decks[d].flux { jump(d, to: engine.fluxPosition(d), "flux return") }
         }
     }
 
@@ -641,7 +641,7 @@ public final class MixController: @unchecked Sendable {
                 state.decks[d].reverse = true; p.reverse = true
             } else {
                 state.decks[d].reverse = false; p.reverse = false
-                engine.seek(d, seconds: engine.fluxPosition(d))
+                jump(d, to: engine.fluxPosition(d), "flux reverse return")
                 let r = fluxReverseRestore[d] ?? false
                 state.decks[d].flux = r; p.flux = r
                 fluxReverseRestore[d] = nil
@@ -660,7 +660,7 @@ public final class MixController: @unchecked Sendable {
                 if state.prefs.quantize, state.prefs.hotcueKeepsPhase, state.decks[d].playing, let g = state.decks[d].grid {
                     target += position(d) - g.beatFloor(position(d))
                 }
-                engine.seek(d, seconds: target)
+                jump(d, to: target, "hotcue \(n + 1)")
                 if c.kind == .loop, c.lengthMs > 0 {
                     engine.setLoop(d, active: true, start: c.startMs / 1000, end: (c.startMs + c.lengthMs) / 1000)
                     state.decks[d].loopActive = true
@@ -679,6 +679,17 @@ public final class MixController: @unchecked Sendable {
     // MARK: Loops / Beatjump
 
     private func beatLength(_ d: Int) -> Double { state.decks[d].grid?.beat ?? 0.5 }
+
+    /// jeder Sprung des Kerns läuft hier durch; MIX741_DEBUG=1: `[jump] deck A: von → nach (Grund)`
+    private func jump(_ d: Int, to t: Double, _ reason: @autoclosure () -> String) {
+        let from = Self.debug ? position(d) : 0
+        engine.seek(d, seconds: t)
+        guard Self.debug else { return }
+        let deck = String(UnicodeScalar(UInt8(65 + d)))
+        let beats = state.decks[d].grid.map { String(format: ", %+.2f beats", (max(0, t) - from) / $0.beat) } ?? ""
+        print(String(format: "[jump] deck %@: %.3f → %.3f s (%@%@)", deck, from, max(0, t), reason(), beats))
+        fflush(stdout)
+    }
 
     /// Snap: Cue-/Loop-Punkte auf den nächsten Beat
     private func snapped(_ d: Int, _ t: Double) -> Double {
@@ -750,7 +761,7 @@ public final class MixController: @unchecked Sendable {
             let l = engine.loop(d)
             engine.setLoop(d, active: false, start: l.start, end: l.end)
             state.decks[d].loopActive = false
-            if state.decks[d].flux { engine.seek(d, seconds: engine.fluxPosition(d)) }
+            if state.decks[d].flux { jump(d, to: engine.fluxPosition(d), "flux return") }
         }
     }
 
@@ -760,7 +771,7 @@ public final class MixController: @unchecked Sendable {
             guard l.end > l.start else { return }
             if state.decks[d].loopActive { exitLoop(d); return }
             engine.setLoop(d, active: true, start: l.start, end: l.end)
-            if position(d) > l.end || position(d) < l.start { engine.seek(d, seconds: l.start) }
+            if position(d) > l.end || position(d) < l.start { jump(d, to: l.start, "reloop") }
             state.decks[d].loopActive = true
         }
     }
@@ -796,7 +807,7 @@ public final class MixController: @unchecked Sendable {
             let b = snapped(d, position(d))
             guard b > a + 0.01 else { return }
             engine.setLoop(d, active: true, start: a, end: b)
-            engine.seek(d, seconds: a)
+            jump(d, to: a, "loop out")
             state.decks[d].loopActive = true
         }
     }
@@ -809,7 +820,7 @@ public final class MixController: @unchecked Sendable {
                 let l = engine.loop(d)
                 engine.setLoop(d, active: true, start: l.start + delta, end: l.end + delta)
             }
-            engine.seek(d, seconds: max(0, position(d) + delta))
+            jump(d, to: max(0, position(d) + delta), String(format: "beatjump %+g", beats))
         }
     }
 
@@ -824,7 +835,7 @@ public final class MixController: @unchecked Sendable {
                 let len = l.end - l.start
                 if len > 0 { t = l.start + (t - l.start).truncatingRemainder(dividingBy: len); if t < l.start { t += len } }
             }
-            engine.seek(d, seconds: max(0, t))
+            jump(d, to: max(0, t), "bar jump \(bars > 0 ? "+" : "")\(bars)")
         }
     }
 
@@ -897,7 +908,7 @@ public final class MixController: @unchecked Sendable {
         phaseOffset[d] = 0
         applyRate(d)
         if hard, let e = phaseErrorLocked(d) {
-            engine.seek(d, seconds: position(d) - e * g.beat)
+            jump(d, to: position(d) - e * g.beat, "sync align")
         }
     }
 
@@ -909,7 +920,7 @@ public final class MixController: @unchecked Sendable {
         if !state.clockMaster { guard let m = state.effectiveMaster, m != d, state.decks[m].playing else { return } }
         guard let e = rawPhaseError(d) else { return }
         let t = position(d) - e * g.beat
-        engine.seek(d, seconds: t < 0 ? t + g.beat : t)   // vor dem Trackanfang: einen Beat später
+        jump(d, to: t < 0 ? t + g.beat : t, "semi start")   // vor dem Trackanfang: einen Beat später
     }
 
     // MARK: Beatgrid bearbeiten
@@ -1402,7 +1413,7 @@ public final class MixController: @unchecked Sendable {
                     // harter Sprung nur, wenn der Fehler groß ist und > 100 ms anhält – sonst weich nachziehen
                     bigError[d] = abs(e) > 0.25 ? bigError[d] + 1 : 0
                     if bigError[d] >= 20 {
-                        engine.seek(d, seconds: position(d) - e * g.beat)
+                        jump(d, to: position(d) - e * g.beat, "phase lock")
                         state.decks[d].nudge = 0
                         bigError[d] = 0
                     } else {
