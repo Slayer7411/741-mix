@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* cover art: square cover left of the title in each deck header, preview of the selected track below the browser tree, optional `Cover` column in the list (hidden by default). source: embedded picture (mp3, m4a, flac), else `cover` / `folder` / `front` .jpg / .png in the track's folder. read and scaled in the background, thumbnails cached in `~/Library/Caches/MINOS-741/artwork`, list rows load only while visible. settings: ⌘, -> DISPLAY -> cover
 * phrase anchor: on load the track's structural changes are checked against 8-bar boundaries from the grid anchor -> a cut first hit or a pickup beat (anchor 1-3 beats off) is found and the anchor moves by whole beats, bpm and grid lines stay. setting off / suggest (red `PHRASE +n` in the grid row) / automatic, stored in minos's own edits, never in the collection
 * grid row: ◂4 ◂1 1▸ 4▸ move the anchor by 1 bar / 1 beat (renumbering only)
 * code readout above each deck: bar of the track in its phrase (`5/16`) against the bar counter. purple `◆ CODE` = in the code, red `+2 BARS` / `−3 BEATS` = how far it is off, grey = deck stopped. phrase start = grid anchor, phrase length = the waveform phrase (4 / 8 / 16 / 32 bars)

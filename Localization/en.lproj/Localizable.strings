@@ -263,3 +263,8 @@
 "Phrasen-Anker" = "Phrase anchor";
 "Phrasen-Anker: Strukturwechsel liegen %lld Beats neben den 8-Takt-Grenzen – Klick verschiebt den Anker (Sicherheit %@)" = "Phrase anchor: structural changes sit %lld beats off the 8-bar boundaries – click moves the anchor (confidence %@)";
 "Vorschlagen" = "Suggest";
+"Cover" = "Cover";
+"Cover im Deck anzeigen" = "Show cover in the deck";
+"Cover-Vorschau im Browser" = "Cover preview in the browser";
+"◆ KEIN COVER" = "◆ NO COVER";
+"vorschau unter dem baum (gewählter track). spalte „Cover“ in der liste: rechtsklick auf die spaltenköpfe. bild aus der datei, sonst cover / folder / front.jpg im ordner, zwischengespeichert in ~/Library/Caches/MINOS-741/artwork." = "preview below the tree (selected track). “Cover” column in the list: right click on the column headers. image from the file, else cover / folder / front.jpg in the folder, cached in ~/Library/Caches/MINOS-741/artwork.";

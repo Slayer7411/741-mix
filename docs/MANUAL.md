@@ -93,11 +93,12 @@ tracks without an analysis in the collection play, but have no grid -> no sync.
 ### header
 
 ```
-A  title                 FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
-   artist                            33.2  +0.00%  ◆ CODE
+A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
+    artist                           33.2  +0.00%  ◆ CODE
 ```
 
 * deck letter turns red while playing
+* ▣ cover of the loaded track (embedded in the file, else `cover` / `folder` / `front` .jpg / .png in its folder), `◆` = no cover. off: ⌘, -> DISPLAY -> cover
 * FX1 / FX2 (… FX4) -> deck on that fx unit
 * code readout: bar of the track in its phrase (`5/16`, phrase start = grid anchor, length = waveform phrase, ⌘, -> DISPLAY) against the bar counter. purple `◆ CODE` -> same bar and beat as the counter, red `+2 BARS` / `−3 BEATS` -> the deck is that far ahead / behind (wrapped to half a phrase), grey -> deck stopped or no counter
 * remaining time, bpm, tempo offset, key readout: open key of the track (e.g. `11m`), next to it the audible key in red as soon as it deviates (`11m → 6m`), below the deviation in semitones (`+0.60`). keylock off -> the tempo detunes, keylock on -> only the key shift counts
@@ -287,6 +288,8 @@ any installed audio unit effect (apple or third-party, v2 and v3) in the single 
 * played column ▶: ✓ = played since the last reset. reset: right click a track or TRACK COLLECTION -> Reset Played State, or ⌥⌘P
 * the left controller drives the left pane, the right controller the right one
 * tree can hide while decks are visible (setting)
+* cover preview below the tree: cover of the selected track, `◆ KEIN COVER` (`◆ NO COVER`) = none (setting)
+* cover column (hidden by default): right click on the header -> Cover. thumbnails load only for visible rows, in the background
 
 role chips `BASIS · SYNTH · DRUMS · VOLL · ATMO` -> filter on the role at the end of comment 2 (`» BASIS`). several chips = any of them.
 
@@ -399,6 +402,7 @@ controller mapping -> [controllers.md](controllers.md).
 | hotcue + grid edits | `~/Library/Application Support/MINOS-741/edits.json` |
 | history | `~/Library/Application Support/MINOS-741/History` |
 | preparation archive | `~/Library/Application Support/MINOS-741/Preparation` |
+| cover thumbnails (cache, safe to delete) | `~/Library/Caches/MINOS-741/artwork` |
 
 backup = copy the `MINOS-741` folder.
 

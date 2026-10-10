@@ -107,6 +107,9 @@ struct BrowserPane: View {
         let tree = model.showTree && !(decks.prefs.ui.hideTreeWithDecks && !browserState.maximized)
         HSplitView {
             SourceTree(selection: $model.source)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if tree && decks.prefs.ui.showCoverPreview { CoverPreview(model: model) }   // Cover des gewählten Tracks
+                }
                 .frame(minWidth: tree ? 170 : 0, idealWidth: tree ? 210 : 0, maxWidth: tree ? 320 : 0)
             VStack(spacing: 0) {
                 header(count: model.source.isHistory ? historyEntries.count : rows.count, separators: seps)
@@ -462,9 +465,14 @@ struct TrackTable: View {
     private static func withNewColumnsFirst(_ data: Data) -> Data {
         guard var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               var order = obj["columnOrder"] as? [Any] else { return data }
-        let ids = order.compactMap { (($0 as? [String: Any])?["base"] as? [String: Any]).flatMap { ($0["explicit"] as? [String: Any])?["_0"] as? String } }
-        guard !ids.contains("played") else { return data }
-        order.insert(["base": ["explicit": ["_0": "played"]]], at: 0)
+        let id = { (e: Any) in ((e as? [String: Any])?["base"] as? [String: Any]).flatMap { ($0["explicit"] as? [String: Any])?["_0"] as? String } }
+        let ids = order.compactMap(id)
+        guard !ids.contains("played") || !ids.contains("cover") else { return data }
+        if !ids.contains("played") { order.insert(["base": ["explicit": ["_0": "played"]]], at: 0) }
+        // Cover-Spalte neben die Farbe statt ans Ende
+        if !ids.contains("cover") {
+            order.insert(["base": ["explicit": ["_0": "cover"]]], at: order.firstIndex { id($0) == "color" }.map { $0 + 1 } ?? min(3, order.count))
+        }
         obj["columnOrder"] = order
         return (try? JSONSerialization.data(withJSONObject: obj)) ?? data
     }
@@ -477,6 +485,8 @@ struct TrackTable: View {
             .width(16).customizationID("analyzed")
         TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4) }
             .width(6).customizationID("color")
+        TableColumn("Cover") { (t: Track) in CoverThumb(path: t.path) }
+            .width(min: 22, ideal: 44).customizationID("cover").defaultVisibility(.hidden)
         TableColumn("Artist", value: \Track.artist) { (t: Track) in
                 cell(t, .artist) { Text(t.artist).foregroundStyle(t.loose ? Theme.muted : t.fileExists ? Theme.bone : Theme.state) }
             }

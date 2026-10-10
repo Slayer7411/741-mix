@@ -38,6 +38,7 @@ struct DeckView: View {
     private func header(_ deck: DeckState) -> some View {
         HStack(alignment: .center, spacing: 6) {
             Text(deckLetters[d]).font(Theme.label(22, .bold)).foregroundStyle(deck.playing ? Theme.state : Theme.bone)
+            CoverTile(d: d)
             VStack(alignment: .leading, spacing: 0) {
                 Text(deck.loading ? "Lade …" : (deck.track?.title ?? "—"))
                     .font(Theme.mono(13, .semibold)).lineLimit(1)

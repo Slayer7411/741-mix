@@ -404,6 +404,12 @@ struct WaveformSettings: View {
                 Text("aus: änderungen (inline, ⌘E) liegen nur in MINOS-741 (metadata.json). an: nach ÜBERNEHMEN in die collection.nml, sicherung höchstens stündlich in „Backup MINOS-741“ neben der datei. nicht, solange die collection-software läuft.")
                     .font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
+            Section("Cover") {
+                Toggle("Cover im Deck anzeigen", isOn: $mix.prefs.ui.showDeckCover)
+                Toggle("Cover-Vorschau im Browser", isOn: $mix.prefs.ui.showCoverPreview)
+                Text("vorschau unter dem baum (gewählter track). spalte „Cover“ in der liste: rechtsklick auf die spaltenköpfe. bild aus der datei, sonst cover / folder / front.jpg im ordner, zwischengespeichert in ~/Library/Caches/MINOS-741/artwork.")
+                    .settingsHint()
+            }
             Section("Cue-Farben (Bildschirm und Controller-Pads)") {
                 Picker("Start-Cue (Load / AutoGrid)", selection: $mix.prefs.controller.colorStartCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
                 Picker("Cue", selection: $mix.prefs.controller.colorCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
