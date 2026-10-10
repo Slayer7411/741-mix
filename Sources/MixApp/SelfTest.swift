@@ -107,9 +107,14 @@ enum SelfTest {
             core.togglePlay(0)                       // Deck stoppen: hörbar bleibt nur noch die Echo-Fahne
             try? await Task.sleep(for: .milliseconds(150))
             let tail = await level()
-            core.updateFX(2) { $0.singleOn = false }
+            core.updateFX(2) { $0.singleOn = false }   // aus: Eingang zu, Echo muss weiter ausklingen
+            try? await Task.sleep(for: .milliseconds(200))
+            let spill = await level()
+            try? await Task.sleep(for: .seconds(4))
+            let gone = await level()
             core.toggleFXAssign(0, 2)
             log(String(format: "FX3 Single-Delay: Echo nach Stopp %.3f (ohne Delay ~0)", tail))
+            log(String(format: "FX3 aus: Echo klingt aus %.3f, nach 4 s %.4f", spill, gone))
             core.togglePlay(0)
             log(String(format: "Pegel A: trocken %.3f · Filter HP %.3f (%.0f %%) · Reverb %.3f (%.0f %%)",
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))

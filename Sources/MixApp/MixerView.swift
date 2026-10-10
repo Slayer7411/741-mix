@@ -189,6 +189,12 @@ struct TopBar: View {
             Spacer(minLength: 4)
             MasterClockPanel()
             BarCounter()
+            Button { mix.core.resetSession() } label: {
+                Text("↺").font(Theme.mono(14)).foregroundStyle(Theme.bone).frame(width: 22, height: 42)
+            }
+            .buttonStyle(.plain)
+            .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+            .help("Takt-Zähler neu starten: der aktuelle Beat wird Takt 1")
             Spacer(minLength: 4)
             if mix.prefs.ui.showFXUnits {
                 FXUnitView(u: 1)

@@ -7,7 +7,12 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ### added
 * browser: RUNNING TRACKS under the collection -> the tracks loaded on the decks
+* bar counter: ↺ button next to it -> current beat = bar 1
 * browser: played column ▶ in front (✓ = played since the last reset), right click on TRACK COLLECTION -> Reset Played State
+
+### changed
+* x1: mode = fx on / off instead of cycling effects, shift + mode = next effect / delay time
+* fx off = spillover -> delay and reverb get no new audio but ring out
 
 ## ◆ [0.7.0] · 2026-10-10 · DMG
 

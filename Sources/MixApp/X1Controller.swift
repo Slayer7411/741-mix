@@ -56,6 +56,8 @@ final class X1Manager: @unchecked Sendable {
     let status: X1Status
     private var manager: IOHIDManager?
     fileprivate var units: [String: X1Unit] = [:]
+    /// Gruppen-Modus: welche Slots vor dem Ausschalten per Mode-Taste an waren (je FX-Unit)
+    fileprivate var groupMemory: [Int: [Bool]] = [:]
     private let lock = NSLock()
     private var _prefs = X1Prefs()
     /// 2 oder 4 FX-Units (aus den Einstellungen)
@@ -263,17 +265,26 @@ final class X1Manager: @unchecked Sendable {
             }
         case let .fxButton(u, b, down):
             guard down, let fu = fxUnit(unit, section: u) else { return }
+            let shift = unit.shift
             core.updateFX(fu) { fx in
                 if fx.single {
-                    // Single: Taste 1 = an/aus, Mode = nächster Effekt
-                    if b == 0 { fx.singleType = (fx.singleType + 1) % FXUnitState.Effect.allCases.count }
-                    else if b == 1 { fx.singleOn.toggle() }
+                    // Single: Mode = Effekt an/aus (Echo/Hall klingt aus), Shift + Mode = nächster Effekt, Taste 1 = an/aus
+                    if b == 0 {
+                        if shift { fx.singleType = (fx.singleType + 1) % FXUnitState.Effect.allCases.count } else { fx.singleOn.toggle() }
+                    } else if b == 1 { fx.singleOn.toggle() }
                     return
                 }
                 if b == 0 {
-                    // Mode-Taste: alle Slots aus, sonst Delay-Zeit weiterschalten
-                    if fx.anyOn { for i in fx.slots.indices { fx.slots[i].on = false } }
-                    else { fx.delayIndex = (fx.delayIndex + 1) % MixEngine.delayBeats.count }
+                    // Gruppe: Mode = an/aus (merkt sich, welche Slots an waren), Shift + Mode = Delay-Zeit weiter
+                    if shift {
+                        fx.delayIndex = (fx.delayIndex + 1) % MixEngine.delayBeats.count
+                    } else if fx.anyOn {
+                        self.groupMemory[fu] = fx.slots.map(\.on)
+                        for i in fx.slots.indices { fx.slots[i].on = false }
+                    } else {
+                        let last = self.groupMemory[fu] ?? []
+                        for i in fx.slots.indices { fx.slots[i].on = last.contains(true) ? (i < last.count && last[i]) : true }
+                    }
                 } else {
                     fx.slots[b - 1].on.toggle()
                 }

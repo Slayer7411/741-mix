@@ -170,3 +170,4 @@
 "startet die Ausgabe neu, z. B. wenn die Xone nach einem USB-Aussetzer stumm bleibt" = "restarts the output, e.g. when the Xone stays silent after a USB dropout";
 "Eine neue Samplerate gilt am Gerät sofort, MINOS-741 rechnet ab dem nächsten Start damit." = "A new sample rate applies to the device right away, MINOS-741 uses it internally from the next start.";
 "Audio-Interface neu verbinden" = "Reconnect audio interface";
+"Takt-Zähler neu starten: der aktuelle Beat wird Takt 1" = "Restart bar counter: the current beat becomes bar 1";

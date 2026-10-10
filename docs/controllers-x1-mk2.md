@@ -16,7 +16,9 @@ ni default layout:
 * loop encoder: turn = loop size, push = loop on / off, shift + turn = beatjump, shift + push = reloop
 * load -> selected track of the own browser pane
 * browse encoder -> selection (shift: x10), push = big browser, shift + push = preview
-* fx: d/w knob, knob 1-3 = filter / delay / reverb amount, button 1-3 = on / off, mode = all off or next delay time
+* fx: d/w knob, knob 1-3 = filter / delay / reverb amount, button 1-3 = on / off
+* mode = fx on / off (group: remembers which slots were on), shift + mode = next effect (single) or next delay time (group)
+* off = input closed, echo and reverb ring out
 * fx assign buttons per side
 * touch strip: pitch bend (shift: seek), split left / right side
 * 7 segment display: loop size of each side

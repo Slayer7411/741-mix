@@ -75,22 +75,30 @@ struct SweepFilter {
 };
 
 // ---------- Delay (stereo, beat-synchron gesteuert von außen) ----------
+// Aus = Eingang zu, Echo läuft aus (Spillover); erst wenn es verklungen ist, wird nicht mehr gerechnet
 struct Delay {
     std::vector<float> bufL, bufR;
     int w = 0;
+    float send = 0, tail = 0;
     void init(double fs) { bufL.assign(size_t(fs * 2.1), 0); bufR.assign(size_t(fs * 2.1), 0); }
-    void clear() { std::fill(bufL.begin(), bufL.end(), 0); std::fill(bufR.begin(), bufR.end(), 0); }
-    void run(float *L, float *R, int n, double seconds, float feedback, float wet, double fs) {
+    void clear() { std::fill(bufL.begin(), bufL.end(), 0); std::fill(bufR.begin(), bufR.end(), 0); send = tail = 0; }
+    bool active() const { return send > 0.0005f || tail > 1e-5f; }
+    void run(float *L, float *R, int n, double seconds, float feedback, float wet, double fs, bool on) {
         int len = int(bufL.size());
         int d = std::clamp(int(seconds * fs), 1, len - 1);
+        float target = on ? 1.f : 0.f, peak = 0;
         for (int i = 0; i < n; i++) {
+            send += (target - send) * 0.002f;
             int r = w - d; if (r < 0) r += len;
             float dl = bufL[r], dr = bufR[r];
-            bufL[w] = L[i] + dl * feedback;
-            bufR[w] = R[i] + dr * feedback;
+            bufL[w] = L[i] * send + dl * feedback;
+            bufR[w] = R[i] * send + dr * feedback;
             L[i] += dl * wet; R[i] += dr * wet;
+            peak = std::max(peak, std::max(std::fabs(dl), std::fabs(dr)));
             if (++w >= len) w = 0;
         }
+        tail = peak;
+        if (!on && !active()) clear();
     }
 };
 
@@ -116,6 +124,8 @@ struct Allpass {
 };
 struct Reverb {
     Comb cL[8], cR[8]; Allpass aL[4], aR[4];
+    float send = 0, tail = 0;
+    bool active() const { return send > 0.0005f || tail > 1e-5f; }
     void init(double fs) {
         const int ct[8] = {1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617}, at[4] = {556, 441, 341, 225};
         double k = fs / 44100.0;
@@ -127,16 +137,23 @@ struct Reverb {
         for (auto &c : cR) std::fill(c.b.begin(), c.b.end(), 0);
         for (auto &a : aL) std::fill(a.b.begin(), a.b.end(), 0);
         for (auto &a : aR) std::fill(a.b.begin(), a.b.end(), 0);
+        send = tail = 0;
     }
-    void run(float *L, float *R, int n, float size, float wet) {
+    /// aus = Eingang zu, trockenes Signal wieder voll, Hall klingt aus
+    void run(float *L, float *R, int n, float size, float wet, bool on) {
         float fb = 0.70f + 0.28f * size, damp = 0.25f;
+        float target = on ? 1.f : 0.f, peak = 0;
         for (int i = 0; i < n; i++) {
-            float in = (L[i] + R[i]) * 0.015f, ol = 0, orr = 0;
+            send += (target - send) * 0.002f;
+            float in = (L[i] + R[i]) * 0.015f * send, ol = 0, orr = 0;
             for (int j = 0; j < 8; j++) { ol += cL[j].tick(in, fb, damp); orr += cR[j].tick(in, fb, damp); }
             for (int j = 0; j < 4; j++) { ol = aL[j].tick(ol); orr = aR[j].tick(orr); }
-            L[i] = L[i] * (1 - wet * 0.4f) + ol * wet;
-            R[i] = R[i] * (1 - wet * 0.4f) + orr * wet;
+            L[i] = L[i] * (1 - wet * 0.4f * send) + ol * wet;
+            R[i] = R[i] * (1 - wet * 0.4f * send) + orr * wet;
+            peak = std::max(peak, std::max(std::fabs(ol), std::fabs(orr)));
         }
+        tail = peak;
+        if (!on && !active()) clear();
     }
 };
 
@@ -299,7 +316,8 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     bool fxTail = false;
     for (int u = 0; u < MDSP_FX_UNITS; u++) {
         bool assigned = d.p[MD_FX1_ASSIGN + u].load() > 0.5f;
-        if (assigned && (e->fxp[u][MDFX_DELAY_ON].load() > 0.5f || e->fxp[u][MDFX_REVERB_ON].load() > 0.5f)) fxTail = true;
+        if (assigned && (e->fxp[u][MDFX_DELAY_ON].load() > 0.5f || e->fxp[u][MDFX_REVERB_ON].load() > 0.5f
+                         || d.fx[u].delay.active() || d.fx[u].reverb.active())) fxTail = true;
     }
     if (playing) d.tailFrames = int(e->fs * 4);
     else if (d.tailFrames > 0 && fxTail) d.tailFrames -= n;
@@ -382,11 +400,13 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
             c.filter.update((fp[MDFX_FILTER_AMOUNT].load() * 2 - 1) * dw, fp[MDFX_FILTER_RES].load(), e->fs);
             c.filter.run(L, R, n);
         }
-        if (fp[MDFX_DELAY_ON].load() > 0.5f) {
+        bool delayOn = fp[MDFX_DELAY_ON].load() > 0.5f, reverbOn = fp[MDFX_REVERB_ON].load() > 0.5f;
+        if (delayOn || c.delay.active()) {
             float a = fp[MDFX_DELAY_AMOUNT].load();
-            c.delay.run(L, R, n, fp[MDFX_DELAY_SECONDS].load(), fp[MDFX_DELAY_FEEDBACK].load() * (0.4f + 0.6f * a), a * dw, e->fs);
+            c.delay.run(L, R, n, fp[MDFX_DELAY_SECONDS].load(), fp[MDFX_DELAY_FEEDBACK].load() * (0.4f + 0.6f * a), a * dw, e->fs, delayOn);
         }
-        if (fp[MDFX_REVERB_ON].load() > 0.5f) c.reverb.run(L, R, n, fp[MDFX_REVERB_SIZE].load(), fp[MDFX_REVERB_AMOUNT].load() * dw);
+        if (reverbOn || c.reverb.active())
+            c.reverb.run(L, R, n, fp[MDFX_REVERB_SIZE].load(), fp[MDFX_REVERB_AMOUNT].load() * dw, reverbOn);
     }
 
     // Lautstärke + Ausgangspaar
