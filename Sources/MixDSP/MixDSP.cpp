@@ -425,7 +425,7 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
             primeStretch(d, dir, rate * srcRatio);
         }
         // Eingangslänge für dieses Ausgangsfenster (gebrochen aufsummiert)
-        d.inAcc += n * rate * srcRatio;
+        d.inAcc = std::min(d.inAcc + n * rate * srcRatio, double(kMaxIn));   // begrenzt: int-Überlauf bei extremen Raten
         int nIn = std::clamp(int(d.inAcc), 0, kMaxIn);
         d.inAcc -= nIn;
         readInput(d, d.inL.data(), d.inR.data(), nIn, dir);
@@ -549,7 +549,10 @@ uint32_t mdsp_set_track(MDEngine *e, int deck, const float *left, const float *r
     uint32_t gen = ++d.loadGen;
     if (gen == 0) gen = ++d.loadGen;   // 0 heißt „nichts ausstehend“
     // Slot der vorletzten Übergabe: längst übernommen oder nie gelesen (von der letzten überholt)
-    d.slots[gen & 1] = TrackSlot{left, right, frames, trackRate, startSeconds};
+    // Rate 0/NaN (kaputte Datei) → Engine-Rate, sonst Division durch 0 bei jeder Positionsmeldung
+    if (!(trackRate > 0) || !std::isfinite(trackRate)) trackRate = e->fs;
+    if (!left || !right || frames < 0) { left = right = nullptr; frames = 0; }
+    d.slots[gen & 1] = TrackSlot{left, right, frames, trackRate, std::isfinite(startSeconds) ? std::max(0.0, startSeconds) : 0};
     d.pendingGen.store(gen);
     return gen;
 }
@@ -585,6 +588,7 @@ bool mdsp_playing(MDEngine *e, int deck) { return e->decks[deck].p[MD_PLAYING].l
 void mdsp_levels(MDEngine *e, int deck, float *rms, float *peak) { *rms = e->decks[deck].rms.load(); *peak = e->decks[deck].peak.load(); }
 
 void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
+    if (!out || channels <= 0 || frames <= 0) return;
     DenormalGuard ftz;
     for (int c = 0; c < channels; c++) std::memset(out[c], 0, sizeof(float) * frames);
     int done = 0;

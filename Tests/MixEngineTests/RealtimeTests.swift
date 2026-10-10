@@ -116,6 +116,27 @@ private func allFinite(_ blocks: [[Float]]) -> Bool { blocks.allSatisfy { $0.all
     #expect(Float.leastNormalMagnitude / opaque(4) != 0)
 }
 
+/// Randfälle der Schnittstelle: kein Kanal, ein Kanal (Mono-Gerät), Rate 0 beim Laden
+@Test func renderEdgeCases() {
+    let c = Engine()
+    c.loadMusic(deck: 0, seconds: 2)
+    c.set(0, MD_PLAYING, 1)
+    _ = c.render(256, channels: 0)               // darf nicht abstürzen
+    _ = c.render(0, channels: 2)
+    let mono = c.render(512, channels: 1)
+    #expect(allFinite(mono))
+    #expect((mono[0].map { abs($0) }.max() ?? 0) > 0.01)
+    // Track mit Rate 0 (kaputte Datei): Position bleibt endlich
+    let l = UnsafeMutablePointer<Float>.allocate(capacity: 1000), r = UnsafeMutablePointer<Float>.allocate(capacity: 1000)
+    defer { l.deallocate(); r.deallocate() }
+    l.initialize(repeating: 0, count: 1000); r.initialize(repeating: 0, count: 1000)
+    let gen = mdsp_set_track(c.e, 1, l, r, 1000, 0, 0)
+    c.set(1, MD_PLAYING, 1)
+    for _ in 0..<4 { _ = c.render(512) }
+    #expect(mdsp_track_consumed(c.e, 1, gen))
+    #expect(mdsp_position(c.e, 1).isFinite)
+}
+
 /// Rechenzeit je Block: 2 Decks Keylock, 4 Decks Keylock + FX. Nur mit MIX741_BENCH=1 (Zahlen für CHANGELOG/PR).
 @Test(.enabled(if: ProcessInfo.processInfo.environment["MIX741_BENCH"] == "1"))
 func benchRenderCPU() {
