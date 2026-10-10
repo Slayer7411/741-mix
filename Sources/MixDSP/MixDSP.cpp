@@ -16,6 +16,8 @@ namespace {
 constexpr int kMaxFrames = 4096;
 constexpr int kMaxIn = kMaxFrames * 5;   // Eingang je Block bei Tempo bis 4× (+Reserve)
 constexpr double kPi = 3.14159265358979323846;
+constexpr float kReverbRef = 0.0175f;     // Hall-Eingangsgewicht bei Pegel 1 (Abgleich: siehe Reverb::run)
+constexpr double kReverbLowCut = 200;     // Hz, Hochpass vor dem Hall
 
 inline float dbToLin(float db) { return db <= -95.f ? 0.f : std::pow(10.f, db / 20.f); }
 
@@ -135,11 +137,17 @@ struct Allpass {
 struct Reverb {
     Comb cL[8], cR[8]; Allpass aL[4], aR[4], inA[2];
     Biquad hp1, hp2, lp;     // nur dieser Frequenzbereich geht in den Hall
-    float lastHP = -1, lastLP = -1;
+    Biquad lowCut;           // fester Hochpass vor dem Hall: Bass/Kick bauen sich in den Kammfiltern sonst stark auf (laut, mulmig)
+    std::vector<float> pre; int preW = 0;    // Vorverzögerung (mono, vor der Diffusion), Platz für 200 ms
+    float preSm = -1;                        // geglättete Vorverzögerung in Samples (Regler springt nicht hörbar)
+    float lastHP = -1, lastLP = -1, lastBright = -1;
     float send = 0, tail = 0;
-    float outL = 0, outR = 0, outA = 0.5f;   // Ausgangs-Tiefpass (Einpol)
+    float damp = 0.4f;                       // Dämpfung in den Kammfiltern (aus der Helligkeit)
+    float outL = 0, outR = 0, out2L = 0, out2R = 0, outA = 0.5f;   // Ausgangs-Tiefpass (zwei Einpole hintereinander, 12 dB/Okt)
     bool active() const { return send > 0.0005f || tail > 1e-5f; }
     void init(double fs) {
+        pre.assign(size_t(fs * 0.2) + 1, 0); preW = 0;
+        lowCut.highpass(kReverbLowCut, 0.707, fs);
         const int ct[8] = {1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617}, at[4] = {556, 441, 341, 225}, it[2] = {113, 79};
         const float rates[8] = {0.31f, 0.47f, 0.59f, 0.73f, 0.41f, 0.53f, 0.67f, 0.83f};   // Hz, je Kammfilter anders
         double k = fs / 44100.0;
@@ -150,20 +158,23 @@ struct Reverb {
         }
         for (int j = 0; j < 4; j++) { aL[j].b.assign(size_t(at[j] * k), 0); aR[j].b.assign(size_t((at[j] + 23) * k), 0); }
         for (int j = 0; j < 2; j++) inA[j].b.assign(size_t(it[j] * k), 0);
-        outA = float(1 - std::exp(-2 * kPi * 9000 / fs));
+        lastBright = -1;
     }
     void clear() {
+        std::fill(pre.begin(), pre.end(), 0);
         for (auto &c : cL) { std::fill(c.b.begin(), c.b.end(), 0); c.store = 0; }
         for (auto &c : cR) { std::fill(c.b.begin(), c.b.end(), 0); c.store = 0; }
         for (auto &a : aL) std::fill(a.b.begin(), a.b.end(), 0);
         for (auto &a : aR) std::fill(a.b.begin(), a.b.end(), 0);
         for (auto &a : inA) std::fill(a.b.begin(), a.b.end(), 0);
-        send = tail = 0; outL = outR = 0;
+        send = tail = 0; outL = outR = out2L = out2R = 0;
     }
     /// Send-Effekt: das trockene Signal bleibt unverändert, der Hall kommt dazu.
     /// `level` = wie viel hineingeht (aus = Eingang zu, Hall klingt aus), `wet` = Hall-Anteil am Ausgang.
     /// hpP/lpP 0…1: Hochpass 20 Hz…8 kHz (24 dB), Tiefpass 500 Hz…20 kHz – so entsteht z. B. ein heller Swipe aus den Höhen.
-    void run(float *L, float *R, int n, float size, float level, float wet, float hpP, float lpP, double fs, bool on, bool loud) {
+    /// `gain` = Hall-Pegel linear (Einstellung), `bright` 0…1 = Helligkeit, `preS` = Vorverzögerung in Sekunden.
+    void run(float *L, float *R, int n, float size, float level, float wet, float hpP, float lpP,
+             float gain, float bright, float preS, double fs, bool on, bool loud) {
         if (hpP != lastHP) {
             lastHP = hpP;
             if (hpP < 0.01f) { hp1.setIdentity(); hp2.setIdentity(); }
@@ -173,23 +184,43 @@ struct Reverb {
             lastLP = lpP;
             if (lpP > 0.99f) lp.setIdentity(); else lp.lowpass(std::min(500 * std::pow(40.0, double(lpP)), fs * 0.45), 0.707, fs);
         }
+        if (bright != lastBright) {
+            lastBright = bright;
+            float b = std::clamp(bright, 0.f, 1.f);
+            damp = 0.6f - 0.45f * b;                                            // dunkel 0,6 … hell 0,15
+            outA = float(1 - std::exp(-2 * kPi * 2500 * std::pow(4.8, double(b)) / fs));   // Tiefpass 2,5 … 12 kHz
+        }
         float fb = 0.75f + 0.235f * size;                    // Nachhall ~1 s … ~20 s
-        float damp = 0.25f + 0.2f * size, depth = 3.f;      // Höhen klingen schneller aus als Bässe (weich), Modulation ±1,5 Samples
-        // gleiche Lautheit über Größe und Hochpass: was der Filter wegnimmt, kommt als Pegel zurück (gemessen: volles D/W ≈ 5 dB über dem Track, max. +45 dB)
-        float g = 0.03f * std::sqrt((1 - fb) / 0.15f);
-        if (loud) g *= std::pow(10.f, std::min(45.f, 10 + 34 * hpP + std::max(0.f, hpP - 0.7f) * 30) / 20);
+        float depth = 3.f;                                   // Modulation ±1,5 Samples
+        // gleiche Lautheit über Größe: was die kürzere Fahne weniger aufbaut, kommt als Pegel zurück.
+        // kReverbRef: gain 1 -> Hall allein ≈ 4 dB unter dem Track, mit Hall ≈ 1,2× so laut wie trocken
+        // (rosa Rauschen, volles D/W, gemessen in EngineTests; vorher Single +12 dB, Gruppe +3 dB)
+        float g = kReverbRef * std::sqrt((1 - fb) / 0.15f) * gain;
+        // Single-Modus: was der Hochpass wegnimmt, kommt als Pegel zurück (Swipe aus den Höhen), max. +35 dB
+        if (loud) g *= std::pow(10.f, std::min(35.f, 34 * hpP + std::max(0.f, hpP - 0.7f) * 30) / 20);
+        int preLen = int(pre.size());
+        float preT = std::clamp(float(preS * fs), 0.f, float(preLen - 2));
+        if (preSm < 0) preSm = preT;
         float target = on ? level : 0.f, peak = 0;
         for (int j = 0; j < 8; j++) { cL[j].lfo(n); cR[j].lfo(n); }
         for (int i = 0; i < n; i++) {
             send += (target - send) * 0.002f;
             float x = (L[i] + R[i]) * 0.5f;
-            x = lp.tick(0, hp2.tick(0, hp1.tick(0, x)));
+            x = lowCut.tick(0, lp.tick(0, hp2.tick(0, hp1.tick(0, x))));
+            pre[preW] = x;                                   // Vorverzögerung: erst schreiben, dann preSm Samples zurück lesen (0 = direkt)
+            preSm += (preT - preSm) * 0.0005f;
+            int d0 = int(preSm); float f = preSm - float(d0);
+            int r0 = preW - d0; if (r0 < 0) r0 += preLen;
+            int r1 = r0 - 1; if (r1 < 0) r1 += preLen;
+            x = pre[r0] + (pre[r1] - pre[r0]) * f;
+            if (++preW >= preLen) preW = 0;
             float in = inA[1].tick(inA[0].tick(x * g * send)), ol = 0, orr = 0;
             for (int j = 0; j < 8; j++) { ol += cL[j].tick(in, fb, damp, depth); orr += cR[j].tick(in, fb, damp, depth); }
             for (int j = 0; j < 4; j++) { ol = aL[j].tick(ol); orr = aR[j].tick(orr); }
             outL += outA * (ol - outL); outR += outA * (orr - outR);
-            L[i] += outL * wet; R[i] += outR * wet;
-            peak = std::max(peak, std::max(std::fabs(outL), std::fabs(outR)));
+            out2L += outA * (outL - out2L); out2R += outA * (outR - out2R);
+            L[i] += out2L * wet; R[i] += out2R * wet;
+            peak = std::max(peak, std::max(std::fabs(out2L), std::fabs(out2R)));
         }
         tail = peak;
         if (!on && !active()) clear();
@@ -445,7 +476,9 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
             bool dwSend = fp[MDFX_REVERB_DWSEND].load() > 0.5f;
             float amt = fp[MDFX_REVERB_AMOUNT].load();
             c.reverb.run(L, R, n, fp[MDFX_REVERB_SIZE].load(), dwSend ? dw : 1.f, dwSend ? amt : amt * dw,
-                         fp[MDFX_REVERB_HP].load(), fp[MDFX_REVERB_LP].load(), e->fs, reverbOn, dwSend);
+                         fp[MDFX_REVERB_HP].load(), fp[MDFX_REVERB_LP].load(),
+                         fp[MDFX_REVERB_LEVEL].load(), fp[MDFX_REVERB_BRIGHT].load(), fp[MDFX_REVERB_PREDELAY].load(),
+                         e->fs, reverbOn, dwSend);
         }
     }
 
@@ -494,6 +527,7 @@ MDEngine *mdsp_create(double sampleRate) {
         e->fxp[u][MDFX_DELAY_FEEDBACK].store(0.45f); e->fxp[u][MDFX_REVERB_SIZE].store(0.6f);
         e->fxp[u][MDFX_FILTER_RES].store(0.4f);
         e->fxp[u][MDFX_REVERB_HP].store(0); e->fxp[u][MDFX_REVERB_LP].store(1); e->fxp[u][MDFX_REVERB_DWSEND].store(0);
+        e->fxp[u][MDFX_REVERB_LEVEL].store(1); e->fxp[u][MDFX_REVERB_BRIGHT].store(0.4f); e->fxp[u][MDFX_REVERB_PREDELAY].store(0.015f);
         for (auto p : {MDFX_FILTER_AMOUNT, MDFX_DELAY_AMOUNT, MDFX_REVERB_AMOUNT}) e->fxp[u][p].store(0.5f);
     }
     return e;

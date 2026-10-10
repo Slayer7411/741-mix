@@ -50,6 +50,10 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var defaultJumpSize = 4.0
     public var delayFeedback = 0.45
     public var fxFilterResonance = 0.4
+    /// Reverb: Pegel in dB (0 = Hall bei vollem D/W ≈ 4 dB unter dem Track), Helligkeit 0…1, Vorverzögerung in ms
+    public var reverbLevelDb = 0.0
+    public var reverbBrightness = 0.4
+    public var reverbPreDelayMs = 15.0
     /// Track gilt als gespielt (History), wenn er so viele Sekunden hörbar lief
     public var historyThreshold = 30.0
     public init() {}
@@ -889,7 +893,9 @@ public final class MixController: @unchecked Sendable {
         for d in state.decks.indices {
             let bpm = state.masterTempo > 0 ? state.masterTempo : 125
             engine.applyFX(unit: u, deck: d, fx, assigned: state.decks[d].fxAssign[u], bpm: bpm,
-                           feedback: state.prefs.delayFeedback, filterResonance: state.prefs.fxFilterResonance)
+                           feedback: state.prefs.delayFeedback, filterResonance: state.prefs.fxFilterResonance,
+                           reverbLevel: pow(10, state.prefs.reverbLevelDb / 20), reverbBrightness: state.prefs.reverbBrightness,
+                           reverbPreDelay: state.prefs.reverbPreDelayMs / 1000)
         }
     }
 

@@ -139,14 +139,18 @@ public final class MixEngine: @unchecked Sendable {
 
     // MARK: - FX
 
-    /// FX-Unit (Gruppenmodus Filter · Delay · Reverb) setzen und Deck zuweisen
+    /// FX-Unit (Gruppenmodus Filter · Delay · Reverb) setzen und Deck zuweisen.
+    /// reverbLevel linear (1 = 0 dB), reverbBrightness 0…1, reverbPreDelay in Sekunden – gelten in beiden Modi.
     public func applyFX(unit u: Int, deck d: Int, _ fx: FXUnitState, assigned: Bool, bpm: Double,
-                        feedback: Double, filterResonance: Double) {
+                        feedback: Double, filterResonance: Double,
+                        reverbLevel: Double, reverbBrightness: Double, reverbPreDelay: Double) {
         let un = Int32(u)
         mdsp_set_param(core, Int32(d), MDParam(rawValue: MD_FX1_ASSIGN.rawValue + UInt32(u)), assigned ? 1 : 0)
         let beat = 60 / (bpm > 0 ? bpm : 125)
         func set(_ p: MDFXParam, _ v: Double) { mdsp_set_fx(core, un, p, Float(v)) }
         set(MDFX_DRYWET, fx.dryWet)
+        set(MDFX_REVERB_LEVEL, max(0, reverbLevel)); set(MDFX_REVERB_BRIGHT, max(0, min(1, reverbBrightness)))
+        set(MDFX_REVERB_PREDELAY, max(0, min(0.2, reverbPreDelay)))
         if fx.single {
             // Single-Modus: ein Effekt, die 3 Regler sind seine Parameter
             let on = fx.singleOn, p = fx.params
