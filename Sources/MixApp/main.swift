@@ -325,7 +325,10 @@ default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
 Theme.registerFonts()
 MainActor.assumeIsolated { DeckShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=deck:…, kehrt dann nicht zurück
 
-// Selbsttest, nur Bild: MIX741_SHOT=wave:<png> rendert die Wellenform-Ebene offscreen und beendet – kein Fenster
+// Selbsttest, nur Bild: MIX741_SHOT=wave:<png> | header:<png> rendert offscreen und beendet – kein Fenster
+if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("header:") {
+    MainActor.assumeIsolated { HeaderShot.run(shot) }
+}
 if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("wave:") {
     MainActor.assumeIsolated { WaveShot.run(path: String(shot.dropFirst(5))) }
 }

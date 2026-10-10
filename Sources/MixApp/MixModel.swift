@@ -135,6 +135,13 @@ final class MixModel {
         return Double(s.keyShift) + (s.keylock ? 0 : 12 * log2(max(s.rate, 1e-6)))
     }
 
+    /// Lage des Decks im „Code“ (Bar-Zähler); Phrase wie in der Wellenform (⌘, → Anzeige), nil ohne Grid
+    func phraseCode(_ d: Int) -> PhraseCode? {
+        guard let g = decks[d].state.grid, g.bpm > 0 else { return nil }
+        return PhraseCode(deckBeat: g.beatPosition(at: position(d)), sessionBeat: core.sessionBeat,
+                          phraseBars: max(4, prefs.ui.phraseBeats) / 4)
+    }
+
     // MARK: - Befehle (weitergeleitet an den Kern)
 
     func load(_ t: Track, deck d: Int) {

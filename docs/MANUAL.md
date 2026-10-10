@@ -93,12 +93,13 @@ tracks without an analysis in the collection play, but have no grid -> no sync.
 ### header
 
 ```
-A  title                 FX1 FX2    -1:10  130.00   11m   ±8 ▾
-   artist                            33.2  +0.00%
+A  title                 FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
+   artist                            33.2  +0.00%  ◆ CODE
 ```
 
 * deck letter turns red while playing
 * FX1 / FX2 (… FX4) -> deck on that fx unit
+* code readout: bar of the track in its phrase (`5/16`, phrase start = grid anchor, length = waveform phrase, ⌘, -> DISPLAY) against the bar counter. purple `◆ CODE` -> same bar and beat as the counter, red `+2 BARS` / `−3 BEATS` -> the deck is that far ahead / behind (wrapped to half a phrase), grey -> deck stopped or no counter
 * remaining time, bpm, tempo offset, key readout: open key of the track (e.g. `11m`), next to it the audible key in red as soon as it deviates (`11m → 6m`), below the deviation in semitones (`+0.60`). keylock off -> the tempo detunes, keylock on -> only the key shift counts
 * `±8 ▾` -> tempo range ±6 / 8 / 10 / 16 / 50 / 100 %
 
@@ -204,7 +205,7 @@ link (network tempo sync):
 * link beat is time stamped in the audio callback -> no drift
 * offset setting for latency between the two apps
 
-bar counter (top right): runs from the first play, 4 / 8 / 16 bars, double click = back to bar 1.
+bar counter (top right): runs from the first play, 4 / 8 / 16 bars, double click or ↺ = back to bar 1. bar 1 of the counter = bar 1 of a phrase (the code). each deck header shows `◆ CODE` or how far the deck is off (`+2 BARS`) -> a beatjump of that size the other way brings it back in.
 
 ## ◆ 07 · MIXER + AUDIO
 

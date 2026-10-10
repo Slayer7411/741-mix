@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* code readout above each deck: bar of the track in its phrase (`5/16`) against the bar counter. purple `◆ CODE` = in the code, red `+2 BARS` / `−3 BEATS` = how far it is off, grey = deck stopped. phrase start = grid anchor, phrase length = the waveform phrase (4 / 8 / 16 / 32 bars)
 * key readout above each deck: open key of the track, the audible key in red as soon as it deviates (`8m → 3m`), the deviation in semitones below (keylock off: from the tempo, keylock on: from the key shift)
 * SEMI in the master clock: every newly loaded track takes the tempo of the current master (clock or master deck, nearest half / double ratio), no phase lock
 * SEMI: an unsynced deck starts in phase with the running master (play, cup, cue preview) -> one jump to the nearest beat at start, then it runs free with its own tempo

@@ -64,6 +64,7 @@ struct DeckView: View {
                 Text(String(format: "%.2f", deck.bpm)).font(Theme.mono(15, .bold))
                 Text(String(format: "%+.2f%%", deck.tempoPct)).font(Theme.mono(10)).foregroundStyle(.secondary)
             }
+            CodeReadout(d: d)
             VStack(alignment: .trailing, spacing: 0) {
                 KeyReadout(d: d)
                 PhaseMeter(d: d).frame(width: 44, height: 6)
@@ -183,7 +184,33 @@ struct TimeReadout: View {
     }
 }
 
-/// Phasenanzeige gegenüber dem Master
+/// „Code“ über dem Deck: Takt in der eigenen Phrase und Abstand zum Bar-Zähler.
+/// Lila = im Code, rot = verschoben (Takte bzw. Beats), grau = Deck steht oder kein Zähler.
+struct CodeReadout: View {
+    @Environment(MixModel.self) private var mix
+    let d: Int
+
+    var body: some View {
+        let deck = mix.deck(d)
+        let bars = max(4, mix.prefs.ui.phraseBeats) / 4
+        LiveCanvas(fps: 10, running: deck.track != nil) { [mix, d] _, size in
+            let muted = NSColor(Theme.muted), lila = NSColor(Theme.secondary)
+            guard deck.track != nil, let c = mix.phraseCode(d) else {
+                CG.text("—", size: 13, color: muted, rightAt: size.width, y: 0)
+                return
+            }
+            let live = deck.playing && c.offsetBeats != nil
+            let top: NSColor = !live ? muted : c.aligned ? lila : NSColor(Theme.bone)
+            CG.text("\(c.bar)/\(c.phraseBars)", size: 13, color: top, rightAt: size.width, y: 0)
+            let (s, col): (String, NSColor) = !live ? ("CODE", muted)
+                : c.aligned ? ("◆ CODE", lila) : (c.offsetLabel ?? "", NSColor(Theme.state))
+            CG.text(s, size: 10, weight: "Regular", color: col, rightAt: size.width, y: 17)
+        }
+        .frame(width: 62, height: 31)
+        .help(String(localized: "Code: Takt in der \(bars)-Takt-Phrase des Tracks, Abstand zum Bar-Zähler"))
+    }
+}
+
 /// Tonart über dem Deck: Key des Tracks, daneben der hörbare Key (rot), sobald er abweicht,
 /// darunter die Abweichung in Halbtönen (Keylock aus: aus dem Tempo, Keylock an: aus dem Key-Shift)
 struct KeyReadout: View {
@@ -211,6 +238,7 @@ struct KeyReadout: View {
     }
 }
 
+/// Phasenanzeige gegenüber dem Master
 struct PhaseMeter: View {
     @Environment(MixModel.self) private var mix
     let d: Int
