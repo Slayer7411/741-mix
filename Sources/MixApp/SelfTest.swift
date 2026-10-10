@@ -75,6 +75,17 @@ enum SelfTest {
             core.updateFX(0) { $0.slots[0].on = false; $0.slots[2].on = true; $0.slots[2].amount = 1.0 }
             let rev = await level()
             core.updateFX(0) { $0.slots[2].on = false }
+            // FX 3 im Single-Modus (Delay) auf Deck A
+            core.toggleFXAssign(0, 2)
+            core.updateFX(2) { $0.single = true; $0.singleType = FXUnitState.Effect.delay.rawValue; $0.singleOn = true; $0.params = [0.5, 0.7, 0.5] }
+            try? await Task.sleep(for: .seconds(1))
+            core.togglePlay(0)                       // Deck stoppen: hörbar bleibt nur noch die Echo-Fahne
+            try? await Task.sleep(for: .milliseconds(150))
+            let tail = await level()
+            core.updateFX(2) { $0.singleOn = false }
+            core.toggleFXAssign(0, 2)
+            log(String(format: "FX3 Single-Delay: Echo nach Stopp %.3f (ohne Delay ~0)", tail))
+            core.togglePlay(0)
             log(String(format: "Pegel A: trocken %.3f · Filter HP %.3f (%.0f %%) · Reverb %.3f (%.0f %%)",
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen

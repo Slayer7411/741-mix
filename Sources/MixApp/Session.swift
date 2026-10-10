@@ -73,9 +73,9 @@ struct Session: Codable {
                 if let v = d.filter { s.decks[i].filter = v }
                 if let v = d.fader { s.decks[i].fader = v }
                 if let v = d.xf { s.decks[i].xf = v }
-                if let v = d.fxAssign, v.count == 2 { s.decks[i].fxAssign = v }
+                if let v = d.fxAssign { for u in 0..<min(v.count, s.decks[i].fxAssign.count) { s.decks[i].fxAssign[u] = v[u] } }
             }
-            if let v = fx, v.count == s.fx.count { s.fx = v }
+            if let v = fx { for u in 0..<min(v.count, s.fx.count) { s.fx[u] = v[u] } }
             if let v = clockBPM { s.clockBPM = v }
             if let v = clockMaster { s.clockMaster = v }
             if let v = metronome { s.metronome = v }

@@ -136,19 +136,42 @@ public final class MixEngine: @unchecked Sendable {
     public func applyFX(unit u: Int, deck d: Int, _ fx: FXUnitState, assigned: Bool, bpm: Double,
                         feedback: Double, filterResonance: Double) {
         let un = Int32(u)
-        mdsp_set_param(core, Int32(d), u == 0 ? MD_FX1_ASSIGN : MD_FX2_ASSIGN, assigned ? 1 : 0)
-        mdsp_set_fx(core, un, MDFX_DRYWET, Float(fx.dryWet))
-        mdsp_set_fx(core, un, MDFX_FILTER_ON, fx.slots[0].on ? 1 : 0)
-        mdsp_set_fx(core, un, MDFX_FILTER_AMOUNT, Float(fx.slots[0].amount))
-        mdsp_set_fx(core, un, MDFX_FILTER_RES, Float(filterResonance))
-        mdsp_set_fx(core, un, MDFX_DELAY_ON, fx.slots[1].on ? 1 : 0)
-        mdsp_set_fx(core, un, MDFX_DELAY_AMOUNT, Float(fx.slots[1].amount))
+        mdsp_set_param(core, Int32(d), MDParam(rawValue: MD_FX1_ASSIGN.rawValue + UInt32(u)), assigned ? 1 : 0)
+        let beat = 60 / (bpm > 0 ? bpm : 125)
+        func set(_ p: MDFXParam, _ v: Double) { mdsp_set_fx(core, un, p, Float(v)) }
+        set(MDFX_DRYWET, fx.dryWet)
+        if fx.single {
+            // Single-Modus: ein Effekt, die 3 Regler sind seine Parameter (wie Traktor)
+            let on = fx.singleOn, p = fx.params
+            let filterOn = { (v: Double) in on && abs(v - 0.5) > 0.02 }
+            switch FXUnitState.Effect(rawValue: fx.singleType) ?? .delay {
+            case .filter:
+                set(MDFX_FILTER_ON, on ? 1 : 0); set(MDFX_FILTER_AMOUNT, p[0]); set(MDFX_FILTER_RES, 0.2 + p[1] * 1.3)
+                set(MDFX_DELAY_ON, 0); set(MDFX_REVERB_ON, 0)
+            case .delay:
+                set(MDFX_FILTER_ON, filterOn(p[0]) ? 1 : 0); set(MDFX_FILTER_AMOUNT, p[0]); set(MDFX_FILTER_RES, filterResonance)
+                set(MDFX_DELAY_ON, on ? 1 : 0); set(MDFX_DELAY_AMOUNT, 1); set(MDFX_DELAY_FEEDBACK, p[1])
+                let i = max(0, min(Self.delayBeats.count - 1, Int(p[2] * Double(Self.delayBeats.count))))
+                set(MDFX_DELAY_SECONDS, min(2, Self.delayBeats[i] * beat))
+                set(MDFX_REVERB_ON, 0)
+            case .reverb:
+                set(MDFX_FILTER_ON, filterOn(p[1]) ? 1 : 0); set(MDFX_FILTER_AMOUNT, p[1]); set(MDFX_FILTER_RES, filterResonance)
+                set(MDFX_DELAY_ON, 0)
+                set(MDFX_REVERB_ON, on ? 1 : 0); set(MDFX_REVERB_AMOUNT, 0.3 + p[2] * 0.7); set(MDFX_REVERB_SIZE, p[0])
+            }
+            return
+        }
+        set(MDFX_FILTER_ON, fx.slots[0].on ? 1 : 0)
+        set(MDFX_FILTER_AMOUNT, fx.slots[0].amount)
+        set(MDFX_FILTER_RES, filterResonance)
+        set(MDFX_DELAY_ON, fx.slots[1].on ? 1 : 0)
+        set(MDFX_DELAY_AMOUNT, fx.slots[1].amount)
         let idx = max(0, min(Self.delayBeats.count - 1, fx.delayIndex))
-        mdsp_set_fx(core, un, MDFX_DELAY_SECONDS, Float(min(2, Self.delayBeats[idx] * 60 / (bpm > 0 ? bpm : 125))))
-        mdsp_set_fx(core, un, MDFX_DELAY_FEEDBACK, Float(feedback))
-        mdsp_set_fx(core, un, MDFX_REVERB_ON, fx.slots[2].on ? 1 : 0)
-        mdsp_set_fx(core, un, MDFX_REVERB_AMOUNT, Float(fx.slots[2].amount))
-        mdsp_set_fx(core, un, MDFX_REVERB_SIZE, Float(fx.reverbSize))
+        set(MDFX_DELAY_SECONDS, min(2, Self.delayBeats[idx] * beat))
+        set(MDFX_DELAY_FEEDBACK, feedback)
+        set(MDFX_REVERB_ON, fx.slots[2].on ? 1 : 0)
+        set(MDFX_REVERB_AMOUNT, fx.slots[2].amount)
+        set(MDFX_REVERB_SIZE, fx.reverbSize)
     }
 
     public func setReverbSize(unit u: Int, _ size: Double) { mdsp_set_fx(core, Int32(u), MDFX_REVERB_SIZE, Float(size)) }

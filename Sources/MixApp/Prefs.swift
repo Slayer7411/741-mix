@@ -92,6 +92,8 @@ struct UIPrefs: Codable, Equatable {
     /// Ordner-Baum ausblenden, solange die Decks zu sehen sind (Browser-Listen breiter)
     var hideTreeWithDecks = false
     var tagHighlight = true
+    /// 2 oder 4 FX-Units (wie Traktor)
+    var fxUnitCount = 2
     /// Marker alle 8 / 16 / 32 Takte in der Wellenform (magenta)
     var barMarkers = true
     /// "system", "de" oder "en" – wirkt nach Neustart

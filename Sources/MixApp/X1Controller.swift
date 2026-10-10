@@ -14,7 +14,7 @@ final class X1Status {
         var right: Int
         /// welcher Browser-Bereich: 0 = links/oben, 1 = rechts/unten
         var pane: Int = 0
-        /// FX-Regler: -1 = links FX1 / rechts FX2, sonst beide Sektionen auf diese Unit
+        /// FX-Sektionen: -1 = FX1/FX2, 0 = beide FX1, 1 = beide FX2, 10 = FX1/FX3, 11 = FX2/FX4
         var fxUnit: Int = -1
     }
     var devices: [Info] = []
@@ -58,6 +58,8 @@ final class X1Manager: @unchecked Sendable {
     fileprivate var units: [String: X1Unit] = [:]
     private let lock = NSLock()
     private var _prefs = X1Prefs()
+    /// 2 oder 4 FX-Units (aus den Einstellungen)
+    var fxUnits = 2
     // gebündelte Browse-Schritte (nur auf der Steuer-Queue anfassen)
     private var pendingBrowse: [Int: Int] = [:]
     private var browseScheduled = false
@@ -118,9 +120,9 @@ final class X1Manager: @unchecked Sendable {
         let savedPane = UserDefaults.standard.object(forKey: "x1pane.\(serial)") as? Int
         var info = X1Status.Info(id: serial, location: loc, left: saved?.first ?? def.0, right: saved?.last ?? def.1,
                                  pane: savedPane ?? min(units.count, 1))
-        // Standard: Seite mit A/C steuert FX1, mit B/D FX2
+        // Standard wie Traktor mit 2 X1: Seite mit A/C steuert FX1 (+FX3), mit B/D FX2 (+FX4)
         info.fxUnit = UserDefaults.standard.object(forKey: "x1fx.\(serial)") as? Int
-            ?? ([0, 2].contains(info.left) || [0, 2].contains(info.right) ? 0 : 1)
+            ?? ([0, 2].contains(info.left) || [0, 2].contains(info.right) ? 10 : 11)
         units[serial] = X1Unit(device: device, info: info, manager: self)
         DispatchQueue.main.async {
             self.status.devices.append(info)
@@ -160,6 +162,19 @@ final class X1Manager: @unchecked Sendable {
     }
 
     // MARK: - Ereignisse von einem X1 (Steuer-Queue)
+
+    /// welche FX-Unit eine Sektion (0 = links, 1 = rechts) dieses X1 steuert
+    func fxUnit(_ unit: X1Unit, section s: Int) -> Int? {
+        let n = fxUnits
+        let u: Int = switch unit.info.fxUnit {
+        case 0: 0
+        case 1: 1
+        case 10: n == 4 ? [0, 2][s] : 0
+        case 11: n == 4 ? [1, 3][s] : 1
+        default: s
+        }
+        return u < n ? u : nil
+    }
 
     func handle(_ e: X1Unit.Event, unit: X1Unit) {
         let p = prefs
@@ -232,13 +247,20 @@ final class X1Manager: @unchecked Sendable {
             if unit.shift { DispatchQueue.main.async { self.onPreview?(pane) } }
             else { DispatchQueue.main.async { self.onToggleBrowser?() } }
         case let .fxKnob(u, k, v):
-            // D/W + Regler 1–3 = Stärke der Slots Filter · Delay · Reverb
-            core.updateFX(unit.info.fxUnit >= 0 ? unit.info.fxUnit : u) { fx in
-                if k == 0 { fx.dryWet = v } else { fx.slots[k - 1].amount = v }
+            // D/W + Regler 1–3: Gruppe = Stärke der Slots, Single = Parameter des Effekts
+            guard let fu = fxUnit(unit, section: u) else { return }
+            core.updateFX(fu) { fx in
+                if k == 0 { fx.dryWet = v } else if fx.single { fx.params[k - 1] = v } else { fx.slots[k - 1].amount = v }
             }
         case let .fxButton(u, b, down):
-            guard down else { return }
-            core.updateFX(unit.info.fxUnit >= 0 ? unit.info.fxUnit : u) { fx in
+            guard down, let fu = fxUnit(unit, section: u) else { return }
+            core.updateFX(fu) { fx in
+                if fx.single {
+                    // Single: Taste 1 = an/aus, Mode = nächster Effekt
+                    if b == 0 { fx.singleType = (fx.singleType + 1) % FXUnitState.Effect.allCases.count }
+                    else if b == 1 { fx.singleOn.toggle() }
+                    return
+                }
                 if b == 0 {
                     // Mode-Taste: alle Slots aus, sonst Delay-Zeit weiterschalten
                     if fx.anyOn { for i in fx.slots.indices { fx.slots[i].on = false } }
@@ -248,7 +270,7 @@ final class X1Manager: @unchecked Sendable {
                 }
             }
         case let .fxAssign(s, u, down):
-            if down { core.toggleFXAssign(deck(s), u) }
+            if down, let fu = fxUnit(unit, section: u) { core.toggleFXAssign(deck(s), fu) }
         case let .strip(s, pos, touching):
             let d = deck(s)
             if !touching { core.bend(d, 0); unit.stripLast[s] = nil; return }
@@ -379,8 +401,9 @@ final class X1Unit {
             r[left ? 0x2D : 0x2F] = deck.sync ? on : dim
             r[left ? 0x2C : 0x2E] = deck.flux || fluxHeld[s] == true ? on : dim
             r[left ? 0x11 : 0x13] = deck.track != nil ? on : dim
-            r[left ? 0x09 : 0x0F] = deck.fxAssign[0] ? on : dim
-            r[left ? 0x0A : 0x10] = deck.fxAssign[1] ? on : dim
+            let f0 = manager?.fxUnit(self, section: 0), f1 = manager?.fxUnit(self, section: 1)
+            r[left ? 0x09 : 0x0F] = f0.map { deck.fxAssign[$0] } == true ? on : dim
+            r[left ? 0x0A : 0x10] = f1.map { deck.fxAssign[$0] } == true ? on : dim
             let pads = left ? [0x14, 0x17, 0x20, 0x23] : [0x1A, 0x1D, 0x26, 0x29]
             for (n, base) in pads.enumerated() {
                 var c: (UInt8, UInt8, UInt8) = (0, 0, 0)
@@ -397,9 +420,10 @@ final class X1Unit {
         }
         r[0x12] = shift ? on : dim
         for u in 0..<2 {
-            let fx = state.fx[info.fxUnit >= 0 ? info.fxUnit : u]
+            guard let fu = manager?.fxUnit(self, section: u) else { continue }
+            let fx = state.fx[fu]
             r[0x01 + u * 4] = fx.anyOn ? on : dim
-            for i in 0..<3 { r[0x02 + u * 4 + i] = fx.slots[i].on ? on : dim }
+            for i in 0..<3 { r[0x02 + u * 4 + i] = (fx.single ? i == 0 && fx.singleOn : fx.slots[i].on) ? on : dim }
         }
         if r != lastLED {
             lastLED = r

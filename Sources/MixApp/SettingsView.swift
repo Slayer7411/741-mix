@@ -59,6 +59,9 @@ struct DeckSettings: View {
                     ForEach([6.0, 8, 10, 16, 50, 100], id: \.self) { Text(String(format: "±%g %%", $0)).tag($0) }
                 }
                 Toggle("Phase laufend nachführen (Beat-Sync)", isOn: $mix.prefs.engine.phaseLock)
+                Picker("Sync-Modus", selection: $mix.prefs.engine.syncMode) {
+                    ForEach(SyncMode.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
                 sliderRow("Pitch-Bend-Stärke", $mix.prefs.engine.bendAmount, 0.01...0.12, format: "%.2f")
             }
             Section("Loops & Beatjump") {
@@ -109,6 +112,11 @@ struct MixerFXSettings: View {
             }
             Section("FX-Units (Gruppenmodus: Filter · Delay · Reverb)") {
                 Toggle("FX-Units anzeigen", isOn: $mix.prefs.ui.showFXUnits)
+                Picker("Anzahl FX-Units", selection: $mix.prefs.ui.fxUnitCount) {
+                    Text(verbatim: "2").tag(2)
+                    Text(verbatim: "4").tag(4)
+                }
+                .pickerStyle(.segmented)
                 sliderRow("Delay-Feedback", $mix.prefs.engine.delayFeedback, 0...1)
                 sliderRow("FX-Filter-Resonanz", $mix.prefs.engine.fxFilterResonance, 0...1)
             }
@@ -252,9 +260,11 @@ struct ControllerSettings: View {
                         }
                         .frame(width: 130)
                         Picker("FX", selection: Binding(get: { d.fxUnit }, set: { x1.assignFX(d.id, $0) })) {
-                            Text("FX1").tag(0)
-                            Text("FX2").tag(1)
-                            Text("FX1 + FX2").tag(-1)
+                            Text(verbatim: "FX1 + FX3").tag(10)
+                            Text(verbatim: "FX2 + FX4").tag(11)
+                            Text(verbatim: "FX1 + FX2").tag(-1)
+                            Text(verbatim: "FX1").tag(0)
+                            Text(verbatim: "FX2").tag(1)
                         }
                         .frame(width: 120)
                         Button("Blinken") { x1.identify(d.id) }.help("Pads dieses X1 leuchten kurz weiß")

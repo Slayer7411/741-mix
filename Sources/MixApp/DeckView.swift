@@ -45,9 +45,15 @@ struct DeckView: View {
             Spacer(minLength: 4)
             if !mix.prefs.ui.showMixer {
                 // ohne Mixer-Ansicht: FX-Zuweisung direkt am Deck
+                // FX-Zuweisung wie am Traktor-Kanal: 1 2 (3 4)
+                let n = mix.prefs.ui.fxUnitCount
                 VStack(spacing: 2) {
-                    ForEach(0..<MixEngine.fxUnitCount, id: \.self) { u in
-                        DeckButton(title: "FX\(u + 1)", active: deck.fxAssign[u], color: Theme.state) { mix.toggleFXAssign(d, u) }
+                    ForEach(0..<(n == 4 ? 2 : 1), id: \.self) { row in
+                        HStack(spacing: 2) {
+                            ForEach([0, 1].map { row * 2 + $0 }, id: \.self) { u in
+                                DeckButton(title: "FX\(u + 1)", active: deck.fxAssign[u], color: Theme.state) { mix.toggleFXAssign(d, u) }
+                            }
+                        }
                     }
                 }
             }

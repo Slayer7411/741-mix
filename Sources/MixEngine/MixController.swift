@@ -5,6 +5,11 @@ import MixCore
 
 public enum XFAssign: String, CaseIterable, Codable, Sendable { case a = "A", thru = "·", b = "B" }
 
+/// Sync wie Traktor: Beat-Sync zieht auf Phase 0, Fix hält eine von Hand verschobene Phase, Nur Tempo lässt die Phase frei
+public enum SyncMode: String, CaseIterable, Codable, Sendable {
+    case dynamic = "Dynamisch (zurück auf Phase 0)", fixed = "Fix (verschobene Phase bleibt)", tempo = "Nur Tempo"
+}
+
 /// Wohin ein geladener Track springt
 public enum LoadPosition: String, CaseIterable, Codable, Sendable {
     case loadCue = "Load-Cue / Grid", start = "Track-Anfang", firstHotcue = "Hotcue 1"
@@ -34,6 +39,7 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var hotcueKeepsPhase = true
     public var bendAmount = 0.04
     public var phaseLock = true
+    public var syncMode = SyncMode.dynamic
     public var trackEndWarning = 30.0
     public var crossfaderCurve = CrossfaderCurve.smooth
     public var eqKill = true
@@ -81,7 +87,7 @@ public struct DeckState: Equatable, Sendable {
     public var filter: Double = 0
     public var fader: Double = 1
     public var xf: XFAssign = .a
-    public var fxAssign: [Bool] = [false, false]
+    public var fxAssign: [Bool] = [false, false, false, false]
 
     public init() {}
 
@@ -89,11 +95,24 @@ public struct DeckState: Equatable, Sendable {
     public var bpm: Double { (grid?.bpm ?? track?.bpm ?? 0) * (1 + tempoPct / 100) }
 }
 
-/// FX-Unit im Traktor-Gruppenmodus: 3 Slots (Filter · Delay · Reverb), je Knopf = Stärke, Taste = an/aus.
+/// FX-Unit wie Traktor: Gruppenmodus (3 Slots Filter · Delay · Reverb, Regler = Stärke)
+/// oder Single-Modus (ein Effekt, die 3 Regler = seine Parameter).
 public struct FXUnitState: Equatable, Sendable, Codable {
     public struct Slot: Equatable, Sendable, Codable {
         public var on = false
         public var amount: Double
+    }
+    public enum Effect: Int, CaseIterable, Sendable {
+        case filter = 0, delay, reverb
+        public var name: String { ["FILTER", "DELAY", "REVERB"][rawValue] }
+        /// Beschriftung der 3 Regler im Single-Modus
+        public var params: [String] {
+            switch self {
+            case .filter: ["CUTOFF", "RES", "—"]
+            case .delay: ["FILTER", "FEEDB", "RATE"]
+            case .reverb: ["SIZE", "FILTER", "AMOUNT"]
+            }
+        }
     }
     public static let slotNames = ["FILTER", "DELAY", "REVERB"]
     public var dryWet: Double = 1
@@ -101,8 +120,26 @@ public struct FXUnitState: Equatable, Sendable, Codable {
     /// Delay-Zeit (Index in MixEngine.delayBeats), Hallgröße 0–1
     public var delayIndex = 3
     public var reverbSize = 0.6
-    public var anyOn: Bool { slots.contains { $0.on } }
+    public var single = false
+    public var singleType = Effect.delay.rawValue
+    public var singleOn = false
+    public var params = [0.5, 0.45, 0.6]
+    public var anyOn: Bool { single ? singleOn : slots.contains { $0.on } }
     public init() {}
+
+    // tolerant laden: neue Felder fehlen in alten Sitzungen
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dryWet = try c.decodeIfPresent(Double.self, forKey: .dryWet) ?? 1
+        slots = try c.decodeIfPresent([Slot].self, forKey: .slots) ?? slots
+        delayIndex = try c.decodeIfPresent(Int.self, forKey: .delayIndex) ?? 3
+        reverbSize = try c.decodeIfPresent(Double.self, forKey: .reverbSize) ?? 0.6
+        single = try c.decodeIfPresent(Bool.self, forKey: .single) ?? false
+        singleType = try c.decodeIfPresent(Int.self, forKey: .singleType) ?? Effect.delay.rawValue
+        singleOn = try c.decodeIfPresent(Bool.self, forKey: .singleOn) ?? false
+        params = try c.decodeIfPresent([Double].self, forKey: .params) ?? params
+        if params.count != 3 { params = [0.5, 0.45, 0.6] }
+    }
 }
 
 public struct MixState: Equatable, Sendable {
@@ -110,10 +147,10 @@ public struct MixState: Equatable, Sendable {
         var d = DeckState()
         d.xf = i % 2 == 0 ? .a : .b
         // FX 1 auf A/C, FX 2 auf B/D – sonst wirken eingeschaltete Effekte auf kein Deck
-        d.fxAssign = i % 2 == 0 ? [true, false] : [false, true]
+        d.fxAssign = i % 2 == 0 ? [true, false, false, false] : [false, true, false, false]
         return d
     }
-    public var fx = [FXUnitState(), FXUnitState()]
+    public var fx = [FXUnitState(), FXUnitState(), FXUnitState(), FXUnitState()]
     public var masterDeck: Int?
     /// Master-Clock: im Clock-Modus gibt MINOS das Tempo vor (kein Deck ist Master)
     public var clockMaster = false
@@ -159,6 +196,8 @@ public final class MixController: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var tickCount = 0
     private var bigError = [Int](repeating: 0, count: MixEngine.deckCount)
+    /// Fix-Sync: von Hand eingestellter Phasenversatz je Deck (Beats)
+    private var phaseOffset = [Double](repeating: 0, count: MixEngine.deckCount)
     // History: hörbare Spielzeit je Deck seit dem Laden
     private var playedTime = [Double](repeating: 0, count: MixEngine.deckCount)
     private var playedLogged = [Bool](repeating: false, count: MixEngine.deckCount)
@@ -208,7 +247,8 @@ public final class MixController: @unchecked Sendable {
 
     // MARK: Positionen / Phase
 
-    public func phaseError(_ d: Int) -> Double? { locked { phaseErrorLocked(d) } }
+    /// tatsächlicher Phasenabstand zum Master (Anzeige)
+    public func phaseError(_ d: Int) -> Double? { locked { rawPhaseError(d) } }
 
     /// Beat-Position, an der sich gesyncte Decks ausrichten (Clock oder Master-Deck)
     private func masterBeat() -> Double? {
@@ -217,10 +257,12 @@ public final class MixController: @unchecked Sendable {
         return mg.beatPosition(at: position(m))
     }
 
+    /// Phasenfehler gegenüber dem Ziel (Master-Phase plus gehaltener Versatz im Fix-Sync)
     private func phaseErrorLocked(_ d: Int) -> Double? {
-        if !state.clockMaster, state.effectiveMaster == d { return nil }
-        guard let g = state.decks[d].grid, let mb = masterBeat() else { return nil }
-        return BeatGrid.phaseError(own: g.beatPosition(at: position(d)), master: mb)
+        guard let e = rawPhaseError(d) else { return nil }
+        var r = e - phaseOffset[d]
+        r -= r.rounded()
+        return r
     }
 
     // MARK: Laden
@@ -353,10 +395,19 @@ public final class MixController: @unchecked Sendable {
     }
 
     public func seek(_ d: Int, fraction: Double) {
-        locked { engine.seek(d, seconds: max(0, min(1, fraction)) * state.decks[d].duration) }
+        locked { seek(d, seconds: max(0, min(1, fraction)) * state.decks[d].duration) }
     }
 
-    public func seek(_ d: Int, seconds: Double) { engine.seek(d, seconds: seconds) }
+    /// Von Hand verschoben (Wellenform ziehen, Touchstrip): im Fix-Sync bleibt die neue Phase
+    public func seek(_ d: Int, seconds: Double) {
+        locked {
+            engine.seek(d, seconds: seconds)
+            if state.prefs.syncMode == .fixed, state.decks[d].sync, let g = state.decks[d].grid, let mb = masterBeat() {
+                phaseOffset[d] = BeatGrid.phaseError(own: g.beatPosition(at: seconds), master: mb)
+                bigError[d] = 0
+            }
+        }
+    }
 
     public func setReverse(_ d: Int, _ on: Bool) {
         locked {
@@ -549,7 +600,23 @@ public final class MixController: @unchecked Sendable {
 
     /// Pitch-Bend: −1…1 × eingestellte Stärke
     public func bend(_ d: Int, _ v: Double) {
-        locked { state.decks[d].bend = v * state.prefs.bendAmount; applyRate(d) }
+        locked {
+            let was = state.decks[d].bend
+            state.decks[d].bend = v * state.prefs.bendAmount
+            // Bend losgelassen: im Fix-Sync die erreichte Phase halten, sonst zurück auf 0
+            if v == 0, was != 0 {
+                phaseOffset[d] = state.prefs.syncMode == .fixed ? (rawPhaseError(d) ?? 0) : 0
+                bigError[d] = 0
+            }
+            applyRate(d)
+        }
+    }
+
+    /// Phasenfehler ohne gehaltenen Versatz
+    private func rawPhaseError(_ d: Int) -> Double? {
+        if !state.clockMaster, state.effectiveMaster == d { return nil }
+        guard let g = state.decks[d].grid, let mb = masterBeat() else { return nil }
+        return BeatGrid.phaseError(own: g.beatPosition(at: position(d)), master: mb)
     }
 
     private func alignPhase(_ d: Int, hard: Bool) {
@@ -557,6 +624,7 @@ public final class MixController: @unchecked Sendable {
         if !state.clockMaster { guard let m = state.effectiveMaster, m != d else { return } }
         state.decks[d].tempoPct = (state.masterTempo / g.bpm - 1) * 100
         state.decks[d].nudge = 0
+        phaseOffset[d] = 0
         applyRate(d)
         if hard, let e = phaseErrorLocked(d) {
             engine.seek(d, seconds: position(d) - e * g.beat)
@@ -757,7 +825,7 @@ public final class MixController: @unchecked Sendable {
     private func applyFX(_ u: Int) {
         let fx = state.fx[u]
         for d in state.decks.indices {
-            let bpm = state.decks[d].bpm > 0 ? state.decks[d].bpm : (state.effectiveMaster.map { state.decks[$0].bpm } ?? 125)
+            let bpm = state.masterTempo > 0 ? state.masterTempo : 125
             engine.applyFX(unit: u, deck: d, fx, assigned: state.decks[d].fxAssign[u], bpm: bpm,
                            feedback: state.prefs.delayFeedback, filterResonance: state.prefs.fxFilterResonance)
         }
@@ -786,7 +854,8 @@ public final class MixController: @unchecked Sendable {
                 var changed = abs(target - state.decks[d].tempoPct) > 0.0001
                 state.decks[d].tempoPct = target
                 // rückwärts (Flux-Reverse, Reverse) nicht nachziehen – beim Loslassen kommt die Flux-Position, die bleibt in Phase
-                if state.prefs.phaseLock, !state.decks[d].reverse, let e = phaseErrorLocked(d) {
+                if state.prefs.phaseLock, state.prefs.syncMode != .tempo, !state.decks[d].reverse, state.decks[d].bend == 0,
+                   let e = phaseErrorLocked(d) {
                     // harter Sprung nur, wenn der Fehler groß ist und > 100 ms anhält – sonst weich nachziehen
                     bigError[d] = abs(e) > 0.25 ? bigError[d] + 1 : 0
                     if bigError[d] >= 20 {

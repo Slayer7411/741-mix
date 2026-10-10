@@ -47,7 +47,7 @@ struct ChannelStrip: View {
             }
             knob(\.filter, -1...1, "FILTER", color: Theme.state)
             HStack(spacing: 2) {
-                ForEach(0..<MixEngine.fxUnitCount, id: \.self) { u in
+                ForEach(0..<mix.prefs.ui.fxUnitCount, id: \.self) { u in
                     DeckButton(title: "\(u + 1)", active: deck.fxAssign[u], color: Theme.state) { mix.toggleFXAssign(d, u) }
                 }
             }
@@ -113,36 +113,66 @@ struct FXUnitView: View {
     var body: some View {
         let fx = mix.state.fx[u]
         HStack(spacing: 8) {
-            Text("FX \(u + 1)").font(Theme.label(11, .heavy)).foregroundStyle(fx.anyOn ? Theme.state : Theme.muted)
+            VStack(spacing: 2) {
+                Text("FX \(u + 1)").font(Theme.label(11, .heavy)).foregroundStyle(fx.anyOn ? Theme.state : Theme.muted)
+                DeckButton(title: fx.single ? "SNGL" : "GRP", active: fx.single, color: Theme.secondary, width: 32) {
+                    mix.updateFX(u) { $0.single.toggle() }
+                }
+                .help("Gruppe (3 Effekte) oder Single (1 Effekt, 3 Parameter)")
+            }
             Knob(value: Binding(get: { mix.state.fx[u].dryWet }, set: { v in mix.updateFX(u) { $0.dryWet = v } }),
                  range: 0...1, defaultValue: 1, label: "D/W", color: Theme.state, size: 24)
-            ForEach(0..<3, id: \.self) { i in
-                VStack(spacing: 2) {
-                    Knob(value: Binding(get: { mix.state.fx[u].slots[i].amount },
-                                        set: { v in mix.updateFX(u) { $0.slots[i].amount = v } }),
-                         range: 0...1, defaultValue: 0.5, bipolar: i == 0, label: FXUnitState.slotNames[i],
-                         color: Theme.state, size: 24)
-                    DeckButton(title: "ON", active: fx.slots[i].on, color: Theme.state, width: 22) {
-                        mix.updateFX(u) { $0.slots[i].on.toggle() }
-                    }
-                }
-            }
-            Menu(BeatSizes.label(MixEngine.delayBeats[fx.delayIndex])) {
-                ForEach(MixEngine.delayBeats.indices, id: \.self) { i in
-                    Button("Delay \(BeatSizes.label(MixEngine.delayBeats[i])) Beat") { mix.updateFX(u) { $0.delayIndex = i } }
-                }
-            }
-            .menuStyle(.borderlessButton)
-            .font(Theme.label(10, .bold))
-            .fixedSize()
-            .help("Delay-Zeit in Beats")
-            Knob(value: Binding(get: { mix.state.fx[u].reverbSize }, set: { v in mix.updateFX(u) { $0.reverbSize = v } }),
-                 range: 0...1, defaultValue: 0.6, label: "ROOM", color: Theme.state, size: 20)
+            if fx.single { single(fx) } else { group(fx) }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(Rectangle().fill(Theme.deck))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    @ViewBuilder private func group(_ fx: FXUnitState) -> some View {
+        ForEach(0..<3, id: \.self) { i in
+            VStack(spacing: 2) {
+                Knob(value: Binding(get: { mix.state.fx[u].slots[i].amount },
+                                    set: { v in mix.updateFX(u) { $0.slots[i].amount = v } }),
+                     range: 0...1, defaultValue: 0.5, bipolar: i == 0, label: FXUnitState.slotNames[i],
+                     color: Theme.state, size: 24)
+                DeckButton(title: "ON", active: fx.slots[i].on, color: Theme.state, width: 22) {
+                    mix.updateFX(u) { $0.slots[i].on.toggle() }
+                }
+            }
+        }
+        Menu(BeatSizes.label(MixEngine.delayBeats[fx.delayIndex])) {
+            ForEach(MixEngine.delayBeats.indices, id: \.self) { i in
+                Button("Delay \(BeatSizes.label(MixEngine.delayBeats[i])) Beat") { mix.updateFX(u) { $0.delayIndex = i } }
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .font(Theme.label(10, .bold))
+        .fixedSize()
+        .help("Delay-Zeit in Beats")
+        Knob(value: Binding(get: { mix.state.fx[u].reverbSize }, set: { v in mix.updateFX(u) { $0.reverbSize = v } }),
+             range: 0...1, defaultValue: 0.6, label: "ROOM", color: Theme.state, size: 20)
+    }
+
+    @ViewBuilder private func single(_ fx: FXUnitState) -> some View {
+        let effect = FXUnitState.Effect(rawValue: fx.singleType) ?? .delay
+        VStack(spacing: 2) {
+            Menu(effect.name) {
+                ForEach(FXUnitState.Effect.allCases, id: \.self) { e in
+                    Button(e.name) { mix.updateFX(u) { $0.singleType = e.rawValue } }
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .font(Theme.label(10, .bold))
+            .fixedSize()
+            DeckButton(title: "ON", active: fx.singleOn, color: Theme.state, width: 30) { mix.updateFX(u) { $0.singleOn.toggle() } }
+        }
+        ForEach(0..<3, id: \.self) { i in
+            Knob(value: Binding(get: { mix.state.fx[u].params[i] }, set: { v in mix.updateFX(u) { $0.params[i] = v } }),
+                 range: 0...1, defaultValue: 0.5, bipolar: effect.params[i] == "FILTER" || effect.params[i] == "CUTOFF",
+                 label: effect.params[i], color: Theme.state, size: 24)
+        }
     }
 }
 
@@ -152,12 +182,18 @@ struct TopBar: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            if mix.prefs.ui.showFXUnits { FXUnitView(u: 0) }
+            if mix.prefs.ui.showFXUnits {
+                FXUnitView(u: 0)
+                if mix.prefs.ui.fxUnitCount == 4 { FXUnitView(u: 2) }
+            }
             Spacer(minLength: 4)
             MasterClockPanel()
             BarCounter()
             Spacer(minLength: 4)
-            if mix.prefs.ui.showFXUnits { FXUnitView(u: 1) }
+            if mix.prefs.ui.showFXUnits {
+                FXUnitView(u: 1)
+                if mix.prefs.ui.fxUnitCount == 4 { FXUnitView(u: 3) }
+            }
         }
     }
 }

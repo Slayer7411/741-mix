@@ -156,3 +156,9 @@
 "Bar-Zähler: läuft ab dem ersten Play · Doppelklick = neu auf Takt 1" = "Bar counter: runs from the first play · double click = back to bar 1";
 "Sprache" = "Language";
 "Browser" = "Browser";
+"Sync-Modus" = "Sync mode";
+"Dynamisch (zurück auf Phase 0)" = "Dynamic (back to phase 0)";
+"Fix (verschobene Phase bleibt)" = "Fixed (shifted phase stays)";
+"Nur Tempo" = "Tempo only";
+"Anzahl FX-Units" = "Number of FX units";
+"Gruppe (3 Effekte) oder Single (1 Effekt, 3 Parameter)" = "Group (3 effects) or single (1 effect, 3 parameters)";

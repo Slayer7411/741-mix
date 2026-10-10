@@ -168,6 +168,7 @@ struct MixApp: App {
                 .frame(minWidth: 1280, minHeight: 860)
                 .onAppear { startControllers() }
                 .onChange(of: mix.prefs.x1) { x1?.prefs = mix.prefs.x1 }
+                .onChange(of: mix.prefs.ui.fxUnitCount) { x1?.fxUnits = mix.prefs.ui.fxUnitCount }
         }
         Settings {
             SettingsView()
@@ -243,6 +244,7 @@ extension MixApp {
         guard x1 == nil, !Session.isSelfTest else { return }
         let m = X1Manager(core: mix.core, status: x1Status)
         m.prefs = mix.prefs.x1
+        m.fxUnits = mix.prefs.ui.fxUnitCount
         m.onBrowse = { [browser] pane, step in browser.moveSelection(by: step, pane: pane) }
         m.onLoad = { [browser, mix] pane, d in if let t = browser.selectedTrack(pane: pane) { mix.load(t, deck: d) } }
         m.onPreview = { [browser, mix] pane in if let t = browser.selectedTrack(pane: pane) { mix.togglePreview(t) } }
