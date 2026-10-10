@@ -207,6 +207,10 @@ public final class MixEngine: @unchecked Sendable {
         mdsp_fx_plugin_released(core, Int32(u), Int32(d), old.ptr)
     }
 
+    /// NaN im Deck: das Plugin wartet auf `reset` (bis dahin trocken)
+    public func pluginNeedsReset(unit u: Int, deck d: Int) -> Bool { mdsp_fx_plugin_needs_reset(core, Int32(u), Int32(d)) }
+    public func pluginResetDone(unit u: Int, deck d: Int) { mdsp_fx_plugin_reset_done(core, Int32(u), Int32(d)) }
+
     // MARK: - Master-Clock
 
     public func setClockBPM(_ bpm: Double) { mdsp_clock_set_bpm(core, bpm) }

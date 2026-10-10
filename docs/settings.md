@@ -41,11 +41,12 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 
 saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in the user defaults.
 
-* load third-party plugins isolated (on): separate system service, apple plugins always in-process
-* folders: system and user audio unit folders + AUv3 (always), own folders (add / remove), install plugin …, rescan
-* list with search: per plugin use in MINOS-741 (on / off), status, PRÜFEN (auval), click -> path, load default / isolated / in-process, unblock, last auval log
+* load third-party plugins isolated (on): separate system service for audio units, apple plugins and VST3 always in-process
+* folders: system and user audio unit folders + AUv3 + system and user VST3 folders (always), own folders (add / remove), install plugin … (`.component` and `.vst3`), rescan
+* list with search: per plugin use in MINOS-741 (on / off), status, PRÜFEN (auval / VST3 self-check), click -> path, load default / isolated / in-process (audio units), `läuft im prozess` (VST3), unblock, last log
 * ALLE PRÜFEN with progress and cancel, results kept per plugin + version
 * crash marker `plugin-opening.json` next to it, a leftover marker blocks that plugin on the next start -> [manual](MANUAL.md#-08--fx)
+* offscreen image of this tab without audio: `MIX741_SELFTEST=1 MIX741_SHOT=plugins:<folder>` (optional `MIX741_SHOT_PLUGINS=<plugin folder>`)
 
 ## ◆ DISPLAY
 

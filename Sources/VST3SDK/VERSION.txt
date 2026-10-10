@@ -1,0 +1,12 @@
+VST 3 SDK v3.8.1_build_84 (MIT)
+https://github.com/steinbergmedia/vst3sdk
+vst3sdk        3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96
+pluginterfaces 4f547e8e102b47de4a8b8aaf343c73b700786372
+public.sdk     586dc5e6c8012c3e4b01c79389375cbe96bdb1da
+base           fcf9da0bd27a16f7f03773a3a39822f28f5c8477   (nur Tests/Fixtures/VST3Plugin)
+
+Auszug: pluginterfaces/{base,gui,vst}, public.sdk/source/vst/hosting (ohne hostdataexchangehandler, module_linux, module_win32),
+public.sdk/source/vst/utility/{optional.h,stringconvert,uid.h,versionparser.h}, public.sdk/source/vst/vstinitiids.cpp,
+public.sdk/source/common/{commoniids,commonstringconvert,memorystream,threadchecker.h,threadchecker_mac.mm}.
+Unverändert übernommen. Kein vstgui, keine Beispiele, keine Tests.
+Test-Plugin (again_sampleaccurate + base + Plugin-Hilfsklassen, gleicher Stand): Tests/Fixtures/VST3Plugin.

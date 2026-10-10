@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import MixCore
+import MixEngine
 
 /// Anordnung der Browser-Bereiche.
 enum BrowserLayout: String, CaseIterable, Identifiable, Codable {
@@ -324,6 +325,15 @@ func setAppIcon() {
     }
 }
 
+// VST3-Selbsttest im eigenen Prozess (Einstellungen → PLUGINS → Prüfen): `<exe> --vst3-check <bundle> <klasse>`
+if CommandLine.arguments.count >= 4, CommandLine.arguments[1] == PluginSelfCheck.argument {
+    let info = PluginInfo.vst3(classID: CommandLine.arguments[3], name: URL(fileURLWithPath: CommandLine.arguments[2]).lastPathComponent,
+                               vendor: "", version: "", path: CommandLine.arguments[2])
+    let r = PluginSelfCheck.run(info)
+    print(r.log)
+    exit(r.passed ? 0 : 1)
+}
+
 AppResources.migrateDefaults()
 // Sprache aus den Einstellungen (vor dem ersten Fenster)
 switch AppPrefs.load().ui.language {
@@ -354,6 +364,7 @@ if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SH
     MainActor.assumeIsolated { PreviewShot.run(shot) }
 }
 MainActor.assumeIsolated { CoverShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cover:<ordner>, endet mit exit
+MainActor.assumeIsolated { SettingsShot.runPluginsIfRequested() }   // nur PLUGINS-Tab, ohne Audio: MIX741_SHOT=plugins:<ordner>
 MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=status:<ordner>, endet mit exit(0)
 

@@ -3,7 +3,7 @@ import AppKit
 import AudioToolbox
 import MixEngine
 
-/// Plugin-Verwaltung für die Oberfläche: Liste, Ordner, Installieren, Prüfen (auval). Die Daten liegen im PluginCatalog
+/// Plugin-Verwaltung für die Oberfläche: Liste, Ordner, Installieren, Prüfen (auval, VST3-Selbsttest). Die Daten liegen im PluginCatalog
 /// des Kerns – das FX-Menü sieht dieselbe Liste.
 @MainActor @Observable
 final class PluginManager {
@@ -17,7 +17,8 @@ final class PluginManager {
     /// Ergebnis der letzten Installation
     var message: String?
 
-    @ObservationIgnored private let validator = PluginValidator()
+    /// VST3-Selbsttest im eigenen Prozess: dieses Programm mit --vst3-check
+    @ObservationIgnored private let validator = PluginValidator(selfCheckExecutable: Bundle.main.executableURL)
     @ObservationIgnored private var validateAllTask: Task<Void, Never>?
     @ObservationIgnored private var watchers: [String: DispatchSourceFileSystemObject] = [:]
     @ObservationIgnored private var rescanPending = false
@@ -65,7 +66,7 @@ final class PluginManager {
 
     /// eigene Ordner und den Benutzer-Ordner beobachten: neue/entfernte Bundles → neu einlesen
     private func updateWatchers() {
-        let want = Set(settings.folders + [PluginInstaller.userComponents.path])
+        let want = Set(settings.folders + [PluginInstaller.userComponents.path, PluginInstaller.userVST3.path])
         for (p, src) in watchers where !want.contains(p) { src.cancel(); watchers[p] = nil }
         for p in want where watchers[p] == nil {
             let fd = open(p, O_EVTONLY)
@@ -98,7 +99,7 @@ final class PluginManager {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
-        panel.message = String(localized: "Ordner mit .component-Bundles (Unterordner werden mit eingelesen)")
+        panel.message = String(localized: "Ordner mit .component- oder .vst3-Bundles (Unterordner werden mit eingelesen)")
         guard panel.runModal() == .OK else { return }
         catalog.update { s in for u in panel.urls where !s.folders.contains(u.path) { s.folders.append(u.path) } }
         changed()
@@ -113,7 +114,8 @@ final class PluginManager {
 
     // MARK: Installieren
 
-    /// .component-Bundles (oder Ordner/.zip damit) nach ~/Library/Audio/Plug-Ins/Components kopieren – nur auf Klick
+    /// .component-Bundles (oder Ordner/.zip damit) nach ~/Library/Audio/Plug-Ins/Components kopieren, .vst3 nach …/VST3 –
+    /// nur auf Klick
     func install() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -121,7 +123,7 @@ final class PluginManager {
         panel.allowsMultipleSelection = true
         panel.treatsFilePackagesAsDirectories = false
         panel.prompt = String(localized: "Installieren")
-        panel.message = String(localized: ".component-Bundles, Ordner oder .zip wählen")
+        panel.message = String(localized: ".component- oder .vst3-Bundles, Ordner oder .zip wählen")
         guard panel.runModal() == .OK else { return }
         let fm = FileManager.default
         let scratch = fm.temporaryDirectory.appendingPathComponent("minos-install-\(UUID().uuidString)")
@@ -131,10 +133,10 @@ final class PluginManager {
             message = error.localizedDescription; return
         }
         var lines: [String] = []
-        if found.components.isEmpty && found.vst3.isEmpty { message = String(localized: "keine .component-Bundles gefunden"); return }
+        if found.components.isEmpty && found.vst3.isEmpty { message = String(localized: "keine .component- oder .vst3-Bundles gefunden"); return }
 
         var clearQuarantine = false
-        if found.components.contains(where: PluginInstaller.isQuarantined) {
+        if (found.components + found.vst3).contains(where: PluginInstaller.isQuarantined) {
             let a = NSAlert()
             a.messageText = String(localized: "Quarantäne-Markierung entfernen?")
             a.informativeText = String(localized: "Die Auswahl stammt aus einem Download. Gatekeeper kann nicht signierte oder nicht beglaubigte Plugins dann beim Laden blockieren. Nur entfernen, wenn du der Quelle vertraust.")
@@ -142,9 +144,10 @@ final class PluginManager {
             a.addButton(withTitle: String(localized: "Behalten"))
             clearQuarantine = a.runModal() == .alertFirstButtonReturn
         }
-        for b in found.components {
+        let jobs = found.components.map { ($0, PluginInstaller.userComponents) } + found.vst3.map { ($0, PluginInstaller.userVST3) }
+        for (b, dest) in jobs {
             let name = b.deletingPathExtension().lastPathComponent
-            if let c = PluginInstaller.conflict(b), !c.sameVersion {
+            if let c = PluginInstaller.conflict(b, in: dest), !c.sameVersion {
                 let a = NSAlert()
                 a.messageText = String(format: String(localized: "„%@“ ist schon installiert"), name)
                 a.informativeText = String(format: String(localized: "Installiert: %@ · neu: %@. Ersetzen?"),
@@ -156,23 +159,19 @@ final class PluginManager {
                 }
             }
             do {
-                let t = try PluginInstaller.install(b)
+                let t = try PluginInstaller.install(b, into: dest)
                 if clearQuarantine { PluginInstaller.clearQuarantine(t) }
                 lines.append(String(format: String(localized: "installiert: %@"), name))
             } catch {
                 lines.append("\(name): \(error.localizedDescription)")
             }
         }
-        if !found.vst3.isEmpty {
-            lines.append(String(format: String(localized: "VST3 noch nicht unterstützt, übersprungen: %@"),
-                                found.vst3.map { $0.deletingPathExtension().lastPathComponent }.joined(separator: ", ")))
-        }
         message = lines.joined(separator: "\n")
         // das Systemregister braucht einen Moment für neue Bundles
         scheduleRescan(after: 1.5)
     }
 
-    // MARK: Prüfen (auval)
+    // MARK: Prüfen (auval, VST3-Selbsttest)
 
     func validate(_ e: PluginEntry) {
         guard validating == nil, progress == nil, e.canValidate else { return }
@@ -215,16 +214,22 @@ final class PluginManager {
 /// Einstellungen → PLUGINS
 struct PluginSettingsView: View {
     @Environment(MixModel.self) private var mix
-    @State private var search = ""
-    @State private var expanded: String?
+
+    var body: some View { PluginSettingsPage(pm: mix.plugins) }
+}
+
+/// Inhalt des Tabs; das Selbsttest-Bild nutzt ihn ohne MixModel (kein Audio) und gibt Suche + aufgeklappte Zeile vor
+struct PluginSettingsPage: View {
+    let pm: PluginManager
+    @State var search = ""
+    @State var expanded: String?
 
     var body: some View {
-        let pm = mix.plugins
         let s = pm.settings
         Form {
             Section("Laden") {
                 Toggle("Drittanbieter-Plugins isoliert laden", isOn: Binding(get: { s.isolateThirdParty }, set: { pm.setIsolateThirdParty($0) }))
-                Text("isoliert = in einem eigenen systemdienst. stürzt das plugin ab, läuft minos weiter, die fx-unit bleibt trocken und das plugin wird blockiert. kostet je block etwas zeit (siehe handbuch). apple-plugins laufen immer im prozess, plugins aus eigenen ordnern auch (nur in minos registriert). gilt ab dem nächsten laden des plugins.")
+                Text("isoliert = in einem eigenen systemdienst. stürzt das plugin ab, läuft minos weiter, die fx-unit bleibt trocken und das plugin wird blockiert. kostet je block etwas zeit (siehe handbuch). apple-plugins laufen immer im prozess, plugins aus eigenen ordnern (nur in minos registriert) und vst3 auch – der dienst kennt nur audio units. gilt ab dem nächsten laden des plugins.")
                     .settingsHint()
                 if let c = pm.catalog.crashedLastRun {
                     Text(String(format: String(localized: "beim letzten lauf beim öffnen abgestürzt: %@ -> blockiert"), c.name))
@@ -235,6 +240,8 @@ struct PluginSettingsView: View {
                 folderRow("◆", PluginCatalog.defaultFolders[0].0.path, "System")
                 folderRow("◆", "~/Library/Audio/Plug-Ins/Components", "Benutzer")
                 folderRow("◆", String(localized: "AUv3 aus Apps (Systemregister)"), "App")
+                folderRow("◆", PluginCatalog.defaultVST3Folders[0].path, "VST3")
+                folderRow("◆", "~/Library/Audio/Plug-Ins/VST3", "VST3")
                 ForEach(s.folders, id: \.self) { p in
                     HStack(spacing: 8) {
                         Text(verbatim: "◇").font(Theme.mono(10)).foregroundStyle(Theme.muted).frame(width: 12)
@@ -250,7 +257,7 @@ struct PluginSettingsView: View {
                     if pm.scanning { Text("liest …").font(Theme.mono(10)).foregroundStyle(Theme.muted) }
                 }
                 .padding(.top, 4)
-                Text("installieren kopiert .component-bundles (auch aus ordnern oder .zip) nach ~/Library/Audio/Plug-Ins/Components, nie in den system-ordner. nicht signierte oder nicht beglaubigte plugins kann gatekeeper blockieren; die quarantäne-markierung aus dem download wird nur nach rückfrage entfernt. eigene ordner: bundles werden nur in minos geladen und registriert, nicht installiert.")
+                Text("installieren kopiert .component-bundles (auch aus ordnern oder .zip) nach ~/Library/Audio/Plug-Ins/Components, .vst3 nach ~/Library/Audio/Plug-Ins/VST3, nie in den system-ordner. nicht signierte oder nicht beglaubigte plugins kann gatekeeper blockieren; die quarantäne-markierung aus dem download wird nur nach rückfrage entfernt. eigene ordner: bundles werden nur in minos geladen und registriert, nicht installiert.")
                     .settingsHint()
                 if let m = pm.message {
                     Text(verbatim: m).font(Theme.mono(10)).foregroundStyle(Theme.bone)
@@ -268,7 +275,7 @@ struct PluginSettingsView: View {
                     if pm.progress != nil || pm.validating != nil {
                         Button("Abbrechen") { pm.cancelValidation() }
                     } else {
-                        Button("Alle prüfen") { pm.validateAll() }.help("auval für jedes installierte Plugin")
+                        Button("Alle prüfen") { pm.validateAll() }.help("auval für jedes installierte Audio-Unit-Plugin, Selbsttest für jedes VST3")
                     }
                 }
                 .padding(.bottom, 4)
@@ -323,6 +330,10 @@ private struct PluginRow: View {
                     Text(verbatim: meta(e)).font(Theme.mono(10)).foregroundStyle(Theme.muted).lineLimit(1)
                 }
                 Spacer(minLength: 8)
+                if e.format == .vst3 && loadable {
+                    StatusBadge(status: .init(text: String(localized: "läuft im Prozess"), alert: false, strong: false))
+                        .help("VST3 läuft im Prozess von MINOS-741 (isolieren geht nur für Audio Units)")
+                }
                 StatusBadge(status: status(e))
                 if e.canValidate {
                     Button(LocalizedStringKey(pm.validating == e.id ? "prüft …" : "Prüfen")) { pm.validate(e) }
@@ -351,7 +362,10 @@ private struct PluginRow: View {
                     }
                     .labelsHidden().frame(width: 190)
                 }
-            } else if e.format != .vst3 && e.info != nil {
+            } else if e.format == .vst3 && e.info != nil {
+                Text("vst3: läuft im prozess (isolieren geht nur für audio units). stürzt es beim öffnen ab, ist es beim nächsten start blockiert.")
+                    .font(Theme.mono(10)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            } else if e.info != nil {
                 Text("eigener ordner: läuft im prozess (isolieren geht nur für installierte)").font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
             if let r = pm.settings.blocked[e.id] {
@@ -361,11 +375,8 @@ private struct PluginRow: View {
                 }
             }
             if let p = e.problem { Text(verbatim: p).font(Theme.mono(10)).foregroundStyle(Theme.state) }
-            if e.format == .vst3 {
-                Text("vst3 wird noch nicht geladen – nur angezeigt.").font(Theme.mono(10)).foregroundStyle(Theme.muted)
-            }
             if let v = pm.catalog.validation(e) {
-                Text(verbatim: "auval · " + Theme.date(v.date) + "\n" + v.log)
+                Text(verbatim: (e.format == .vst3 ? String(localized: "selbsttest") : "auval") + " · " + Theme.date(v.date) + "\n" + v.log)
                     .font(Theme.mono(9)).foregroundStyle(v.passed ? Theme.bone.opacity(0.75) : Theme.state)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(6)
@@ -393,7 +404,6 @@ private struct PluginRow: View {
     }
 
     private func status(_ e: PluginEntry) -> StatusBadge.Status {
-        if e.format == .vst3 { return .init(text: String(localized: "VST3 – noch nicht unterstützt"), alert: false, strong: false) }
         if pm.settings.blocked[e.id] != nil { return .init(text: String(localized: "blockiert"), alert: true, strong: true) }
         if e.problem != nil { return .init(text: String(localized: "nicht ladbar"), alert: true, strong: true) }
         if let v = pm.settings.validation[e.validationKey] {

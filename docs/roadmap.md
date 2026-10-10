@@ -40,6 +40,8 @@
 | mixer fx | □ p2 | |
 | 2 / 4 fx units, group + single mode, channel assign | ■ | 3 effects so far |
 | more effects (beatmasher, gater, flanger, ramp delay …) | □ p2 | |
+| effect plugins: audio unit (v2, v3) + VST3 in single mode | ■ | audio units isolated by default |
+| VST3 in a helper process (crash isolation) | □ p3 | xpc + shared memory ring, VST3 runs in-process so far |
 
 ## ◆ BROWSER / LIBRARY
 
