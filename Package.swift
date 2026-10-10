@@ -26,7 +26,8 @@ let package = Package(
         .target(name: "MixEngine", dependencies: ["MixCore", "MixDSP", "LinkKit"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "MixApp", dependencies: ["MixCore", "MixEngine"],
                           resources: [.copy("Resources")],
-                          swiftSettings: [.swiftLanguageMode(.v5)]),
+                          swiftSettings: [.swiftLanguageMode(.v5)],
+                          linkerSettings: [.linkedFramework("CoreAudioKit")]),   // Plugin-Fenster (AUGenericView)
         .testTarget(name: "MixCoreTests", dependencies: ["MixCore"]),
         // Kern offline rendern (kein Audiogerät): Transport, Loop, Keylock, FX-Fahnen, Übergabe
         .testTarget(name: "MixEngineTests", dependencies: ["MixDSP", "MixEngine"]),

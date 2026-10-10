@@ -15,8 +15,10 @@ extern "C" {
 
 #define MDSP_DECKS 4
 #define MDSP_FX_UNITS 4
+#define MDSP_MAX_FRAMES 4096   // größter Block je Durchlauf (größere Puffer rechnet mdsp_render in Teilen)
 
 typedef struct MDEngine MDEngine;
+typedef struct MDPlugin MDPlugin;   // Effekt-Plugin (Backend-Datei, z. B. MixDSPAUHost.h)
 
 /// Parameter je Deck (mdsp_set_param)
 typedef enum {
@@ -45,6 +47,7 @@ typedef enum {
     MDFX_FILTER_RES,
     MDFX_REVERB_HP, MDFX_REVERB_LP,         // Filter vor dem Hall: 0…1 (HP 0 = aus, LP 1 = aus)
     MDFX_REVERB_DWSEND,                     // 1 = D/W regelt, wie viel in den Hall geht (Single), 0 = D/W regelt den Hall-Anteil
+    MDFX_PLUGIN_ON,                         // Plugin der Unit an (aus = Eingang zu, Fahne klingt aus)
     MDFX_PARAM_COUNT
 } MDFXParam;
 
@@ -60,6 +63,11 @@ bool mdsp_track_consumed(MDEngine *e, int deck, uint32_t generation);
 void mdsp_set_param(MDEngine *e, int deck, MDParam p, float v);
 void mdsp_set_fx(MDEngine *e, int unit, MDFXParam p, float v);
 void mdsp_set_master(MDEngine *e, float volume);
+
+/// Plugin für FX-Unit × Deck setzen (NULL = keins). Liefert das vorherige; das darf erst geschlossen werden,
+/// wenn mdsp_fx_plugin_released() true liefert (Audio-Thread hat einen ganzen Block ohne es gerechnet).
+MDPlugin *mdsp_set_fx_plugin(MDEngine *e, int unit, int deck, MDPlugin *p);
+bool mdsp_fx_plugin_released(MDEngine *e, int unit, int deck, MDPlugin *old);
 
 void mdsp_seek(MDEngine *e, int deck, double seconds);
 void mdsp_set_loop(MDEngine *e, int deck, bool active, double startSeconds, double endSeconds);

@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* fx single mode: PLUGIN -> any installed audio unit effect (apple or third-party, v2 and v3), e.g. AUMatrixReverb / AUReverb2. knobs 1-3 = first three plugin parameters, D/W, ON with spillover (tail rings out), EDIT opens the plugin window (own view or generic), plugin and settings saved with the session
 * key readout above each deck: open key of the track, the audible key in red as soon as it deviates (`8m → 3m`), the deviation in semitones below (keylock off: from the tempo, keylock on: from the key shift)
 * SEMI in the master clock: every newly loaded track takes the tempo of the current master (clock or master deck, nearest half / double ratio), no phase lock
 * quit asks first (⌘Q / quit menu) -> session, history and played state are written before the app closes

@@ -1,3 +1,4 @@
+import AudioToolbox
 import Foundation
 import MixCore
 
@@ -105,14 +106,15 @@ public struct FXUnitState: Equatable, Sendable, Codable {
         public var amount: Double
     }
     public enum Effect: Int, CaseIterable, Sendable {
-        case filter = 0, delay, reverb
-        public var name: String { ["FILTER", "DELAY", "REVERB"][rawValue] }
+        case filter = 0, delay, reverb, plugin
+        public var name: String { ["FILTER", "DELAY", "REVERB", "PLUGIN"][rawValue] }
         /// Beschriftung der 3 Regler im Single-Modus
         public var params: [String] {
             switch self {
             case .filter: ["CUTOFF", "RES", "—"]
             case .delay: ["FILTER", "FEEDB", "RATE"]
             case .reverb: ["SIZE", "HP", "LP"]
+            case .plugin: ["P1", "P2", "P3"]   // echte Namen: MixState.pluginParams
             }
         }
     }
@@ -126,6 +128,9 @@ public struct FXUnitState: Equatable, Sendable, Codable {
     public var singleType = Effect.delay.rawValue
     public var singleOn = false
     public var params = [0.5, 0.45, 0.6]
+    /// Effekt-Plugin (PluginInfo.id, z. B. "aufx:mrev:appl") und sein Zustand (ClassInfo, Binär-Plist)
+    public var pluginID: String?
+    public var pluginState: Data?
     public var anyOn: Bool { single ? singleOn : slots.contains { $0.on } }
     public init() {}
 
@@ -141,6 +146,8 @@ public struct FXUnitState: Equatable, Sendable, Codable {
         singleOn = try c.decodeIfPresent(Bool.self, forKey: .singleOn) ?? false
         params = try c.decodeIfPresent([Double].self, forKey: .params) ?? params
         if params.count != 3 { params = [0.5, 0.45, 0.6] }
+        pluginID = try c.decodeIfPresent(String.self, forKey: .pluginID)
+        pluginState = try c.decodeIfPresent(Data.self, forKey: .pluginState)
     }
 }
 
@@ -170,6 +177,9 @@ public struct MixState: Equatable, Sendable {
     public var masterVolume: Double = 0.85
     public var externalMixer = false
     public var prefs = EnginePrefs()
+    /// je FX-Unit: Namen der ersten 3 Plugin-Parameter (Regler) und letzter Ladefehler
+    public var pluginParams = [[String]](repeating: [], count: MixEngine.fxUnitCount)
+    public var pluginErrors = [String?](repeating: nil, count: MixEngine.fxUnitCount)
 
     public init() {}
 
@@ -871,6 +881,7 @@ public final class MixController: @unchecked Sendable {
     }
 
     private func applyFX(_ u: Int) {
+        syncPlugins(u)
         let fx = state.fx[u]
         for d in state.decks.indices {
             let bpm = state.masterTempo > 0 ? state.masterTempo : 125
@@ -880,6 +891,179 @@ public final class MixController: @unchecked Sendable {
     }
 
     private func applyAllFX() { for u in state.fx.indices { applyFX(u) } }
+
+    // MARK: Plugins
+    // je FX-Unit eine Instanz pro Deck (auch nicht zugewiesene: Zuweisen wirkt sofort, ohne Ladepause).
+    // Laden auf eigener Queue außerhalb der Sperre (Plugins brauchen teils lange), Einsetzen unter der Sperre;
+    // alte Instanzen werden erst frei, wenn der Audio-Thread sie nicht mehr rechnet.
+
+    private var plugins = [[PluginInstance?]](repeating: Array(repeating: nil, count: MixEngine.deckCount), count: MixEngine.fxUnitCount)
+    private var pluginGen = [Int](repeating: 0, count: MixEngine.fxUnitCount)
+    private var pluginLoading = [String?](repeating: nil, count: MixEngine.fxUnitCount)
+    private var pluginFailed = [String?](repeating: nil, count: MixEngine.fxUnitCount)
+    /// Regler steuern das Plugin gerade (Single + PLUGIN); zuletzt gesendete Werte
+    private var knobsLive = [Bool](repeating: false, count: MixEngine.fxUnitCount)
+    private var lastKnobs = [[Double]](repeating: [], count: MixEngine.fxUnitCount)
+    /// beim nächsten Aktivieren die gespeicherten Regler senden (Sitzung) statt sie vom Plugin zu lesen (neues Plugin)
+    private var pushKnobsOnActivate = [Bool](repeating: false, count: MixEngine.fxUnitCount)
+    private let pluginQueue = DispatchQueue(label: "minos741.plugins", qos: .userInitiated)
+    private let pluginEvents = DispatchQueue(label: "minos741.plugin-events", qos: .userInitiated)
+    private let listLock = NSLock()
+    private var pluginCache: [PluginInfo]?
+
+    /// installierte Effekt-Plugins (einmal eingelesen, `refresh` liest neu)
+    public func pluginList(refresh: Bool = false) -> [PluginInfo] {
+        listLock.lock(); defer { listLock.unlock() }
+        if refresh || pluginCache == nil { pluginCache = PluginHost.installed() }
+        return pluginCache ?? []
+    }
+
+    /// Namen der Plugin-Parameter auf den 3 Reglern
+    public func pluginParamNames(_ u: Int) -> [String] { locked { state.pluginParams[u] } }
+
+    /// Plugin einer Unit wählen (schaltet auf Single + PLUGIN)
+    public func setPlugin(_ u: Int, id: String?) {
+        locked {
+            if state.fx[u].pluginID != id {
+                state.fx[u].pluginID = id
+                state.fx[u].pluginState = nil
+            }
+            pluginFailed[u] = nil   // nochmals gewählt = neuer Versuch
+            state.pluginErrors[u] = nil
+            if id != nil { state.fx[u].single = true; state.fx[u].singleType = FXUnitState.Effect.plugin.rawValue }
+            applyFX(u)
+        }
+    }
+
+    /// Instanz für das Plugin-Fenster (die des ersten Decks); Änderungen darin gehen live an die anderen Decks
+    public func beginPluginEdit(_ u: Int) -> PluginInstance? {
+        locked {
+            guard let first = plugins[u].compactMap({ $0 }).first else { return nil }
+            first.observe(on: pluginEvents) { [weak self, weak first] id, v in
+                guard let self, let first else { return }
+                self.pluginParamChanged(u, first, id, v)
+            }
+            return first
+        }
+    }
+
+    /// Fenster zu: Zuhören beenden, Zustand für die Sitzung merken
+    public func endPluginEdit(_ u: Int, _ inst: PluginInstance) {
+        inst.stopObserving()
+        locked {
+            guard plugins[u].contains(where: { $0 === inst }) else { return }
+            if let st = inst.state { state.fx[u].pluginState = st }
+        }
+    }
+
+    private func pluginParamChanged(_ u: Int, _ src: PluginInstance, _ id: AudioUnitParameterID, _ v: Float) {
+        locked {
+            guard plugins[u].contains(where: { $0 === src }) else { return }
+            for case let p? in plugins[u] where p !== src && p.value(id) != v { p.set(id, v) }
+            // Regler in der Oberfläche folgen dem Fenster
+            if knobsLive[u], let i = src.parameters.prefix(3).firstIndex(where: { $0.id == id }), let k = src.knob(i),
+               abs(k - state.fx[u].params[i]) > 1e-4 {
+                state.fx[u].params[i] = k
+                if i < lastKnobs[u].count { lastKnobs[u][i] = k }
+            }
+        }
+    }
+
+    private func syncPlugins(_ u: Int) {
+        let fx = state.fx[u]
+        guard let want = fx.pluginID else {
+            if plugins[u].contains(where: { $0 != nil }) || pluginLoading[u] != nil {
+                pluginGen[u] += 1; pluginLoading[u] = nil
+                for d in plugins[u].indices { installPlugin(nil, unit: u, deck: d) }
+                state.pluginParams[u] = []
+                knobsLive[u] = false
+            }
+            return
+        }
+        let loaded = plugins[u].allSatisfy { $0?.info.id == want }
+        if !loaded {
+            knobsLive[u] = false
+            guard pluginLoading[u] != want, pluginFailed[u] != want else { return }
+            pluginGen[u] += 1
+            let gen = pluginGen[u], saved = fx.pluginState, rate = engine.sampleRate
+            pluginLoading[u] = want
+            let info = pluginList().first { $0.id == want } ?? PluginHost.codes(want).map {
+                PluginInfo(id: want, name: PluginHost.fourCC($0.1), manufacturer: PluginHost.fourCC($0.2), type: $0.0, subtype: $0.1, manu: $0.2)
+            }
+            pluginQueue.async { [self] in
+                do {
+                    guard let info else { throw NSError(domain: "minos741.plugin", code: 2, userInfo: [NSLocalizedDescriptionKey: want]) }
+                    let insts = try (0..<MixEngine.deckCount).map { _ -> PluginInstance in
+                        let p = try PluginInstance(info, sampleRate: rate)
+                        if let saved { p.state = saved }
+                        _ = p.parameters
+                        return p
+                    }
+                    finishPluginLoad(u, gen, insts, restored: saved != nil)
+                } catch {
+                    locked {
+                        guard gen == pluginGen[u] else { return }
+                        pluginLoading[u] = nil; pluginFailed[u] = want
+                        state.pluginErrors[u] = error.localizedDescription
+                    }
+                }
+            }
+            return
+        }
+        guard fx.single, fx.singleType == FXUnitState.Effect.plugin.rawValue, let first = plugins[u][0] else { knobsLive[u] = false; return }
+        if !knobsLive[u] {
+            knobsLive[u] = true
+            if pushKnobsOnActivate[u] {
+                for p in plugins[u] { for i in 0..<3 { p?.setKnob(i, fx.params[i]) } }
+            } else {
+                for i in 0..<3 { if let k = first.knob(i) { state.fx[u].params[i] = k } }
+            }
+            pushKnobsOnActivate[u] = false
+            lastKnobs[u] = state.fx[u].params
+            return
+        }
+        for i in 0..<3 where lastKnobs[u].count == 3 && fx.params[i] != lastKnobs[u][i] {
+            for p in plugins[u] { p?.setKnob(i, fx.params[i]) }
+            lastKnobs[u][i] = fx.params[i]
+        }
+    }
+
+    private func finishPluginLoad(_ u: Int, _ gen: Int, _ insts: [PluginInstance], restored: Bool) {
+        locked {
+            // inzwischen anderes Plugin gewählt: die neuen Instanzen waren nie im Kern → einfach verwerfen
+            guard gen == pluginGen[u], state.fx[u].pluginID == insts[0].info.id else { return }
+            pluginLoading[u] = nil; pluginFailed[u] = nil; state.pluginErrors[u] = nil
+            for d in insts.indices { installPlugin(insts[d], unit: u, deck: d) }
+            state.pluginParams[u] = insts[0].parameters.prefix(3).map { Self.shortName($0.name) }
+            knobsLive[u] = false
+            pushKnobsOnActivate[u] = restored
+            if state.fx[u].pluginState == nil { state.fx[u].pluginState = insts[0].state }
+            applyFX(u)
+        }
+    }
+
+    private func installPlugin(_ p: PluginInstance?, unit u: Int, deck d: Int) {
+        let old = plugins[u][d]
+        plugins[u][d] = p
+        engine.setPlugin(unit: u, deck: d, p)
+        if let old { retirePlugin(old, unit: u, deck: d) }
+    }
+
+    /// alte Instanz halten, bis der Audio-Thread einen Block ohne sie gerechnet hat (steht die Ausgabe, rechnet niemand)
+    private func retirePlugin(_ old: PluginInstance, unit u: Int, deck d: Int) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { [self] in
+            if engine.pluginReleased(unit: u, deck: d, old) || !engine.running { return }
+            retirePlugin(old, unit: u, deck: d)
+        }
+    }
+
+    /// Parametername für einen Regler: versal, kurz
+    static func shortName(_ n: String) -> String {
+        let up = n.uppercased()
+        if up.count <= 7 { return up }
+        let first = up.split(whereSeparator: { $0 == " " || $0 == "_" || $0 == "-" }).first.map(String.init) ?? up
+        return String(first.prefix(7))
+    }
 
     // MARK: Steuertakt (200 Hz, Steuer-Queue)
 

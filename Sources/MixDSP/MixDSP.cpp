@@ -1,6 +1,7 @@
 // MixDSP – Echtzeitkern. Regeln für alles, was in render() läuft:
 // keine Sperren, kein new/delete, keine Systemaufrufe, nur vorab angelegter Speicher.
 #include "MixDSP.h"
+#include "MixDSPAUHost.h"
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -13,7 +14,7 @@
 
 namespace {
 
-constexpr int kMaxFrames = 4096;
+constexpr int kMaxFrames = MDSP_MAX_FRAMES;
 constexpr int kMaxIn = kMaxFrames * 5;   // Eingang je Block bei Tempo bis 4× (+Reserve)
 constexpr double kPi = 3.14159265358979323846;
 
@@ -196,8 +197,41 @@ struct Reverb {
     }
 };
 
+// ---------- Plugin (Audio Unit o. ä., über MixDSPAUHost.h) ----------
+// wie Delay/Reverb: aus = Eingang zu, Ausgang klingt aus; erst nach 1 s unter -100 dB wird nicht mehr gerechnet
+struct PluginSlot {
+    std::atomic<MDPlugin *> plugin{nullptr};
+    std::atomic<uint64_t> releaseAt{0};   // Render-Zähler, ab dem das vorherige Plugin frei ist
+    // nur Audio-Thread
+    MDPlugin *last = nullptr;
+    float send = 0;
+    int quiet = 0x7fffffff;   // Samples in Folge unter der Schwelle
+    std::vector<float> dryL, dryR;
+    bool tail(double fs) const { return last && quiet < int(fs); }
+    bool active(double fs) const { return send > 0.0005f || tail(fs); }
+    /// out = dry·(1 − dw·send) + wet·dw – an: klassisches Dry/Wet, aus: trocken + ausklingende Fahne
+    void run(MDPlugin *p, float *L, float *R, int n, float dw, bool on, double fs) {
+        float target = on ? 1.f : 0.f;
+        std::memcpy(dryL.data(), L, sizeof(float) * n); std::memcpy(dryR.data(), R, sizeof(float) * n);
+        float s = send;
+        for (int i = 0; i < n; i++) { s += (target - s) * 0.002f; L[i] *= s; R[i] *= s; }
+        mdplug_process(p, L, R, n);
+        float peak = 0;
+        for (int i = 0; i < n; i++) {
+            send += (target - send) * 0.002f;
+            float wl = L[i], wr = R[i];
+            if (!std::isfinite(wl)) wl = 0;
+            if (!std::isfinite(wr)) wr = 0;
+            peak = std::max(peak, std::max(std::fabs(wl), std::fabs(wr)));
+            float k = 1 - dw * send;
+            L[i] = dryL[i] * k + wl * dw; R[i] = dryR[i] * k + wr * dw;
+        }
+        if (on || peak >= 1e-5f) quiet = 0; else if (quiet < 0x7fff0000) quiet += n;
+    }
+};
+
 struct FXChain {   // eine FX-Unit für ein Deck
-    SweepFilter filter; Delay delay; Reverb reverb;
+    SweepFilter filter; Delay delay; Reverb reverb; PluginSlot plug;
 };
 
 struct TrackSlot { const float *L = nullptr, *R = nullptr; int64_t frames = 0; double rate = 44100; double start = 0; };
@@ -265,6 +299,7 @@ struct MDEngine {
     std::atomic<float> master{0.85f};
     float masterSm = 0.85f;
     uint64_t renderHost = 0;   // setzt der CoreAudio-Callback vor jedem Block
+    std::atomic<uint64_t> renders{0};   // fertig gerechnete Blöcke (Plugin-Übergabe)
 };
 
 // ---------- Lesen aus dem Track ----------
@@ -356,7 +391,8 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     // Deck steht: weiterrechnen, solange Echo oder Hall noch klingen (gemessen, kein festes Zeitlimit)
     bool fxTail = false;
     for (int u = 0; u < MDSP_FX_UNITS; u++) {
-        if (d.p[MD_FX1_ASSIGN + u].load() > 0.5f && (d.fx[u].delay.tail > 1e-5f || d.fx[u].reverb.tail > 1e-5f)) fxTail = true;
+        if (d.p[MD_FX1_ASSIGN + u].load() > 0.5f &&
+            (d.fx[u].delay.tail > 1e-5f || d.fx[u].reverb.tail > 1e-5f || d.fx[u].plug.active(e->fs))) fxTail = true;
     }
     if (!playing && !fxTail) {   // Deck steht, kein Hall/Echo-Rest → nichts rechnen
         d.rms.store(d.rms.load() * 0.8f); d.peak.store(d.peak.load() * 0.8f);
@@ -447,6 +483,10 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
             c.reverb.run(L, R, n, fp[MDFX_REVERB_SIZE].load(), dwSend ? dw : 1.f, dwSend ? amt : amt * dw,
                          fp[MDFX_REVERB_HP].load(), fp[MDFX_REVERB_LP].load(), e->fs, reverbOn, dwSend);
         }
+        MDPlugin *pl = c.plug.plugin.load(std::memory_order_acquire);
+        bool plugOn = pl && fp[MDFX_PLUGIN_ON].load() > 0.5f;
+        if (pl != c.plug.last) { c.plug.last = pl; c.plug.send = 0; c.plug.quiet = 0x7fffffff; }   // neues Plugin: ohne Fahne
+        if (pl && (plugOn || c.plug.active(e->fs))) c.plug.run(pl, L, R, n, dw, plugOn, e->fs);
     }
 
     // Lautstärke + Ausgangspaar
@@ -486,7 +526,10 @@ MDEngine *mdsp_create(double sampleRate) {
         d.outL.assign(kMaxFrames, 0); d.outR.assign(kMaxFrames, 0);
         d.stretch.presetDefault(2, float(sampleRate));
         primeStretch(d, 1, 1.0);   // interne Puffer einmal anlegen (nicht erst im Audio-Thread)
-        for (auto &c : d.fx) { c.delay.init(sampleRate); c.reverb.init(sampleRate); }
+        for (auto &c : d.fx) {
+            c.delay.init(sampleRate); c.reverb.init(sampleRate);
+            c.plug.dryL.assign(kMaxFrames, 0); c.plug.dryR.assign(kMaxFrames, 0);
+        }
     }
     for (auto &u : e->fxp) for (auto &x : u) x.store(0);
     for (int u = 0; u < MDSP_FX_UNITS; u++) {
@@ -518,6 +561,21 @@ bool mdsp_track_consumed(MDEngine *e, int deck, uint32_t gen) {
 void mdsp_set_param(MDEngine *e, int deck, MDParam p, float v) { e->decks[deck].p[p].store(v); }
 void mdsp_set_fx(MDEngine *e, int unit, MDFXParam p, float v) { e->fxp[unit][p].store(v); }
 void mdsp_set_master(MDEngine *e, float v) { e->master.store(v); }
+
+MDPlugin *mdsp_set_fx_plugin(MDEngine *e, int unit, int deck, MDPlugin *p) {
+    PluginSlot &s = e->decks[deck].fx[unit].plug;
+    MDPlugin *old = s.plugin.exchange(p, std::memory_order_acq_rel);
+    // ein Block, der vor dem Tausch begann, kann das alte noch rechnen – frei erst nach dem nächsten fertigen Block
+    s.releaseAt.store(e->renders.load() + 1);
+    return old;
+}
+
+bool mdsp_fx_plugin_released(MDEngine *e, int unit, int deck, MDPlugin *old) {
+    PluginSlot &s = e->decks[deck].fx[unit].plug;
+    if (!old) return true;
+    if (s.plugin.load() == old) return false;
+    return e->renders.load() >= s.releaseAt.load();
+}
 void mdsp_seek(MDEngine *e, int deck, double s) { e->decks[deck].pendingSeek.store(s); }
 
 void mdsp_set_loop(MDEngine *e, int deck, bool active, double s, double en) {
@@ -590,6 +648,7 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
     k.stampBeat.store(beatStart, std::memory_order_relaxed);
     k.stampHost.store(e->renderHost, std::memory_order_relaxed);
     k.stampSeq.fetch_add(1, std::memory_order_release);
+    e->renders.fetch_add(1);
 }
 
 void mdsp_set_render_host(MDEngine *e, uint64_t hostTime) { e->renderHost = hostTime; }

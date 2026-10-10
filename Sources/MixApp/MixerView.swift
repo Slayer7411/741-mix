@@ -168,10 +168,37 @@ struct FXUnitView: View {
             .fixedSize()
             DeckButton(title: "ON", active: fx.singleOn, color: Theme.state, width: 30) { mix.updateFX(u) { $0.singleOn.toggle() } }
         }
+        if effect == .plugin { pluginControls(fx) }
+        let names = effect == .plugin ? mix.state.pluginParams[u] : effect.params
         ForEach(0..<3, id: \.self) { i in
+            let label = i < names.count ? names[i] : "—"
             Knob(value: Binding(get: { mix.state.fx[u].params[i] }, set: { v in mix.updateFX(u) { $0.params[i] = v } }),
-                 range: 0...1, defaultValue: 0.5, bipolar: effect.params[i] == "FILTER" || effect.params[i] == "CUTOFF",
-                 label: effect.params[i], color: Theme.state, size: 24)
+                 range: 0...1, defaultValue: 0.5, bipolar: effect != .plugin && (label == "FILTER" || label == "CUTOFF"),
+                 label: label, color: Theme.state, size: 24)
+        }
+    }
+
+    /// Plugin wählen (Name · Hersteller) und sein Fenster öffnen
+    @ViewBuilder private func pluginControls(_ fx: FXUnitState) -> some View {
+        let list = mix.core.pluginList()
+        let current = list.first { $0.id == fx.pluginID }
+        let error = mix.state.pluginErrors[u]
+        VStack(spacing: 2) {
+            Menu {
+                ForEach(list) { p in
+                    Button(p.name + " · " + p.manufacturer) { mix.setPlugin(u, p.id) }
+                }
+                Divider()
+                Button("Plugin-Liste neu einlesen") { _ = mix.core.pluginList(refresh: true) }
+            } label: {
+                Text(error != nil ? "⚠︎ " + String((current?.name ?? "PLUGIN").prefix(10)) : current.map { String($0.name.prefix(12)) } ?? "—")
+            }
+            .menuStyle(.borderlessButton)
+            .font(Theme.label(10, .bold))
+            .fixedSize()
+            .help(error ?? String(localized: "Audio-Unit-Plugin wählen"))
+            DeckButton(title: "EDIT", active: false, color: Theme.state, width: 30) { PluginWindow.show(unit: u, core: mix.core) }
+                .help("Plugin-Fenster öffnen")
         }
     }
 }

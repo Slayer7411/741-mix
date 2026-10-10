@@ -144,6 +144,23 @@ enum SelfTest {
             log(String(format: "Reverb Single HP: D/W 0 %.3f (trocken %.3f) · D/W 1 %.3f · nach Drop 1 s %.4f · 4 s %.4f",
                        rDry, dry, rWet, r1, r4))
             core.togglePlay(0)
+            // Plugin (FX4 Single): Apples AUMatrixReverb, lädt im Hintergrund, Regler = erste 3 Parameter, Fahne nach Stopp
+            core.toggleFXAssign(0, 3)
+            core.setPlugin(3, id: "aufx:mrev:appl")
+            for _ in 0..<60 where core.pluginParamNames(3).isEmpty { try? await Task.sleep(for: .milliseconds(50)) }
+            core.updateFX(3) { $0.singleOn = true; $0.dryWet = 0.5 }
+            try? await Task.sleep(for: .seconds(1))
+            let pWet = await level()
+            core.updateFX(3) { $0.singleOn = false }
+            core.togglePlay(0)
+            try? await Task.sleep(for: .milliseconds(150))
+            let pTail = await level()
+            let pNames = core.pluginParamNames(3).joined(separator: "/"), pErr = core.snapshot().pluginErrors[3]
+            core.setPlugin(3, id: nil)
+            core.toggleFXAssign(0, 3)
+            core.togglePlay(0)
+            log(String(format: "Plugin %@: Regler %@ · D/W 0.5 %.3f · Fahne nach Stopp %.4f%@",
+                       "aufx:mrev:appl", pNames, pWet, pTail, pErr.map { " · Fehler: \($0)" } ?? ""))
             log(String(format: "Pegel A: trocken %.3f · Filter HP %.3f (%.0f %%) · Reverb %.3f (%.0f %%)",
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
