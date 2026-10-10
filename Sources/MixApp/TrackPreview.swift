@@ -6,7 +6,7 @@ import MixEngine
 
 /// Browser-Vorschau: wo die Mini-Übersicht (Wellenform + Grid + Cues) steht
 enum PreviewMode: String, CaseIterable, Codable, Identifiable {
-    case column = "Eigene Spalte", behindTitle = "Hinter dem Titel", off = "Aus"
+    case fullRow = "Ganze Zeile (zweizeilig)", column = "Eigene Spalte", behindTitle = "Hinter dem Titel", off = "Aus"
     var id: String { rawValue }
 }
 
@@ -166,6 +166,8 @@ struct PreviewSpec: Hashable, Sendable {
     var palette: WaveformPalette
     var style: WaveformStyle
     var colors: PreviewColors
+    /// ganze Zeile: breiteres Bild
+    var wide = false
 
     /// Track mit den eigenen Grid-/Cue-Änderungen (wie beim Laden ins Deck)
     @MainActor init(_ track: Track, mix: MixModel) {
@@ -201,6 +203,8 @@ struct PreviewSpec: Hashable, Sendable {
 enum PreviewRenderer {
     /// Bildgröße in Pixeln (2×): 200 × 17 pt, die Zelle streckt es auf ihre Breite
     static let width = 400, height = 34
+    /// ganze Zeile (zweizeilig): Band über alle Spalten
+    static let wideWidth = 1000
     static let heightPt: CGFloat = 17
 
     private static func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat) -> CGColor { CGColor(srgbRed: r, green: g, blue: b, alpha: a) }
@@ -236,7 +240,7 @@ enum PreviewRenderer {
 
     /// Mini-Übersicht: Phrasen-Bänder, 3-Band-Wellenform (gedämpft), Marker alle 16/32 Takte, Hotcues, Start-Cue
     static func render(_ s: PreviewSpec, overview: TrackOverview?) -> CGImage? {
-        let w = width, h = height
+        let w = s.wide ? wideWidth : width, h = height
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         let W = CGFloat(w), H = CGFloat(h), mid = H / 2

@@ -106,11 +106,21 @@ enum PreviewShot {
             log("bild \(url.path)")
         }
         let shotRows = Array(pick.prefix(28))
-        for (mode, name) in [(PreviewMode.column, "preview-column.png"), (.behindTitle, "preview-title.png")] {
+        for (mode, name) in [(PreviewMode.fullRow, "preview-row.png"), (.column, "preview-column.png"), (.behindTitle, "preview-title.png")] {
             mix.prefs.ui.previewMode = mode
             let (h, win) = host(shotRows, size: NSSize(width: 1400, height: 640))
             for _ in 0..<8 { h.layoutSubtreeIfNeeded(); spin(0.25) }
             png(h, name)
+            // ganze Zeile: Auswahl (Zeile 2) und Inline-Bearbeitung (Titel, Zeile 4) prüfen
+            if mode != .behindTitle, shotRows.count > 4 {
+                model.selection = [shotRows[3].key]
+                model.inlineText = shotRows[3].title
+                model.inline = InlineEdit(key: shotRows[3].key, field: .title, serial: 1)
+                for _ in 0..<6 { h.layoutSubtreeIfNeeded(); spin(0.25) }
+                png(h, mode == .fullRow ? "preview-row-edit.png" : "preview-column-edit.png")
+                model.inline = nil
+                model.selection = []
+            }
             win.contentView = nil
             win.close()
         }
@@ -141,7 +151,7 @@ enum PreviewShot {
             return out
         }
         let pagesN = Int(env["MIX741_SHOT_PAGES"] ?? "") ?? 60
-        for mode in [PreviewMode.off, .column, .behindTitle] {
+        for mode in [PreviewMode.off, .column, .behindTitle, .fullRow] {
             mix.prefs.ui.previewMode = mode
             let (h, win) = host(all, size: NSSize(width: 1400, height: 1000))
             for _ in 0..<6 { h.layoutSubtreeIfNeeded(); spin(0.2) }
@@ -154,6 +164,7 @@ enum PreviewShot {
                 spin(1.5)   // Bilder im Hintergrund fertig
                 _ = pages("\(mode.rawValue.lowercased()) aus dem cache", h, tv, count: pagesN)
                 if mode == .column { png(h, "preview-collection.png") }
+                if mode == .fullRow { png(h, "preview-collection-row.png") }
             }
             win.contentView = nil
             win.close()

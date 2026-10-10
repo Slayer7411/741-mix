@@ -335,6 +335,7 @@
 "%@ abgestürzt – blockiert" = "%@ crashed – blocked";
 "Browser-Vorschau" = "Browser preview";
 "Vorschau" = "Preview";
+"Ganze Zeile (zweizeilig)" = "Full row (two lines)";
 "Eigene Spalte" = "Own column";
 "Hinter dem Titel" = "Behind the title";
 "Vorschauen berechnen" = "Compute previews";

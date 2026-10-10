@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* browser preview: mode `Ganze Zeile (zweizeilig)`, new default -> rows twice as high, text on top, the overview as one band across the full row width underneath (continuous over all columns, drawn per visible row). own column / behind the title stay. paging through 14,160 tracks offscreen: median 62 ms per page from the cache (~29 rows), own column 89 ms, off 82 ms (~41 rows) -> per row the same as without preview
 * settings: PLUGINS tab -> every effect plugin with manufacturer, version, AUv2 / AUv3 / VST3, source and status, search, per plugin on / off for the fx menu
 * plugins: own plugin folders -> `.component` bundles are loaded and registered for MINOS-741 only. PLUGIN INSTALLIEREN … copies bundles (also from folders or `.zip`) to `~/Library/Audio/Plug-Ins/Components`, asks before replacing another version and before removing the download quarantine flag
 * plugins: validation with apple's `auval` (single or all, progress, cancel), pass / fail and log tail cached per plugin + version
