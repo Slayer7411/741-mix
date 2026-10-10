@@ -22,7 +22,7 @@ built for my own setup. ideas -> [discussions](https://github.com/Slayer7411/MIN
 * gpu waveform with 3-band layers, real file level, colored beatgrid, phrase countdown, grid tools
 * internal mixer or external mode -> every deck on its own usb pair
 * 2 or 4 fx units, group or single mode, channel assign 1-4
-* audio unit plugins (apple or third-party, v2 and v3) as an effect in the fx single mode, own window per unit
+* audio unit plugins (apple or third-party, v2 and v3) and VST3 effects as an effect in the fx single mode, own window per unit
 * two hid controllers in native mode, incl. my custom mappings
 * dual browser side by side or stacked, all library columns (move, hide, saved)
 * reads the `collection.nml` of your existing library directly
@@ -41,7 +41,7 @@ built for my own setup. ideas -> [discussions](https://github.com/Slayer7411/MIN
   sync      ■ master clock · link · 3 sync modes
   mixer     ■ internal + external usb mixer
   fx        ◧ 4 units, 3 effects so far
-  plugins   ■ audio unit plugins in the fx single mode
+  plugins   ■ audio unit + VST3 effects in the fx single mode
   browser   ■ dual browser · all library columns · tags · smartlists
   hid       ■ native controllers, 2 units
   analysis  □ bpm / key / grid come from the collection
@@ -131,7 +131,7 @@ fonts bundled under the sil open font license.
 ## ◆ CREDITS
 
 * fonts: [cinzel](https://fonts.google.com/specimen/Cinzel), [ibm plex mono](https://fonts.google.com/specimen/IBM+Plex+Mono)
-* link library and time-stretch library: see LICENSE
+* link library, time-stretch library, VST 3 SDK: see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
 
 not affiliated with any dj software or hardware vendor, no vendor code inside.
 
@@ -144,4 +144,6 @@ bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) · ideas -> [di
 GPL-2.0-or-later ([LICENSE.md](LICENSE.md)), because of the link library.
 * link library 3.1.5: GPL-2.0-or-later, `Sources/LinkKit`
 * time-stretch / fft libraries: MIT, `Sources/MixDSP/vendor`
+* VST 3 SDK 3.8.1 (hosting part): MIT, `Sources/VST3SDK` · VST is a registered trademark of Steinberg Media Technologies GmbH
 * fonts: SIL open font license
+* all notices and license texts: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)

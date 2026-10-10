@@ -263,9 +263,9 @@ effects so far: filter, delay, reverb, PLUGIN. more -> [roadmap](roadmap.md).
 
 ### PLUGIN
 
-any installed audio unit effect (apple or third-party, v2 and v3) in the single mode, e.g. AUMatrixReverb or AUReverb2 instead of the built-in reverb.
+any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect in the single mode, e.g. AUMatrixReverb or AUReverb2 instead of the built-in reverb.
 
-* SNGL -> effect menu -> PLUGIN -> the menu below lists every installed effect (`name · manufacturer`)
+* SNGL -> effect menu -> PLUGIN -> the menu below lists every installed effect (`name · manufacturer`, VST3 with a small `VST3` behind)
 * knobs 1-3 -> the first three parameters of the plugin, labels from the plugin
 * D/W -> dry / wet of the unit (on top of the plugin's own mix)
 * ON -> on / off. off = spillover: the plugin gets no new audio and rings out
@@ -279,18 +279,30 @@ any installed audio unit effect (apple or third-party, v2 and v3) in the single 
 
 * list of every effect plugin: name, manufacturer, version, AUv2 / AUv3 / VST3, source (system / user / own folder / app), status, search field
 * square left = use in MINOS-741. off -> not in the fx menu (a loaded one keeps playing until you pick another)
-* PRÜFEN / ALLE PRÜFEN -> apple's `auval` in its own process, pass / fail + the last lines of its log (click the row). cached per plugin and version, cancel any time
-* status: ok · ungeprüft (not validated) · prüfung fehlgeschlagen (failed) · blockiert (crashed before) · nicht ladbar · VST3 – not supported yet
-* folders always scanned: `/Library/Audio/Plug-Ins/Components`, `~/Library/Audio/Plug-Ins/Components`, AUv3 from apps (system registry)
-* ORDNER HINZUFÜGEN … -> own folders. `.component` bundles in there (subfolders too) are loaded into MINOS-741 and registered for this app only, nothing is installed. folder changes trigger a rescan
-* PLUGIN INSTALLIEREN … -> pick `.component` bundles, folders or a `.zip` -> copied to `~/Library/Audio/Plug-Ins/Components` (created if missing, never `/Library`). an installed bundle with another version -> asks before replacing
+* PRÜFEN / ALLE PRÜFEN -> audio units: apple's `auval`, VST3: self-check (load, 1 s of noise, state read + written back, unload). both in their own process, pass / fail + the last lines of the log (click the row). cached per plugin and version, cancel any time
+* status: ok · ungeprüft (not validated) · prüfung fehlgeschlagen (failed) · blockiert (crashed before) · nicht ladbar (with the reason in the row)
+* folders always scanned: `/Library/Audio/Plug-Ins/Components`, `~/Library/Audio/Plug-Ins/Components`, AUv3 from apps (system registry), `/Library/Audio/Plug-Ins/VST3`, `~/Library/Audio/Plug-Ins/VST3`
+* ORDNER HINZUFÜGEN … -> own folders. `.component` bundles in there (subfolders too) are loaded into MINOS-741 and registered for this app only, `.vst3` bundles are loaded from where they are, nothing is installed. folder changes trigger a rescan
+* PLUGIN INSTALLIEREN … -> pick `.component` / `.vst3` bundles, folders or a `.zip` -> `.component` copied to `~/Library/Audio/Plug-Ins/Components`, `.vst3` to `~/Library/Audio/Plug-Ins/VST3` (created if missing, never `/Library`). an installed bundle with another version -> asks before replacing
 * downloads carry a quarantine flag. gatekeeper may block unsigned or unnotarized plugins -> MINOS-741 asks before removing the flag, only say yes for sources you trust
-* `.vst3` bundles (vst3 folders, own folders) are listed with status VST3 – not supported yet, no hosting so far
+
+#### VST3
+
+* every effect class of a `.vst3` bundle (category audio effect, sub category Fx) is an own entry. the classes come from `Contents/Resources/moduleinfo.json` without loading code, otherwise the bundle is loaded once (with crash marker)
+* runs in-process, `läuft im prozess` in the list. isolation is audio unit only -> a crashing VST3 takes MINOS-741 down, the crash marker blocks it on the next start
+* stereo in / out (a mono plugin gets the mid signal), 32-bit float, blocks up to 4096 frames, the sample rate of the audio device
+* knobs 1-3 -> the first three plugin parameters, bypass, program change, read-only and hidden ones skipped
+* the plugin gets the tempo of the master clock (tempo-synced delays follow)
+* latency reported by the plugin is not compensated (same as audio units)
+* tail: rendered until 1 s below -100 dB, or as long as the plugin's own tail time (max 30 s)
+* EDIT -> the plugin's own view (resizable if the plugin allows it), else one slider per parameter
+* state of processor + controller is saved with the session
+* VST is a registered trademark of Steinberg Media Technologies GmbH. hosting via the VST 3 SDK (MIT) -> [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)
 
 #### crash safety
 
 * isolated loading: third-party plugins run in a separate system service (default on, ⌘, -> PLUGINS -> load third-party plugins isolated, per plugin: default / isolated / in-process). a crash there kills only the service -> the unit goes dry, the plugin gets blocked, the set plays on
-* apple plugins and plugins from own folders always load in-process
+* apple plugins, plugins from own folders and VST3 always load in-process
 * cost of isolation, AUMatrixReverb, 512 frames at 48 kHz (budget 10.7 ms): no added latency, ~0.04 ms -> ~0.05 ms per block on the audio thread (mean), p99 0.06-0.16 ms -> 0.08-0.27 ms
 * crash marker: before an in-process plugin (or its window, or a bundle from an own folder) opens, MINOS-741 notes it. if the app dies right there, the next start blocks that plugin and shows it in the PLUGINS tab. a blocked plugin never loads, also not from a saved session -> BLOCK AUFHEBEN to try again
 
