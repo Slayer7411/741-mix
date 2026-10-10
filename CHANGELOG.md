@@ -38,6 +38,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * track loading: decoded in chunks straight into the deck buffer -> one copy in memory instead of two or three while loading
 * waveform: no core animation transaction while the deck stands still
 * controller: mode = fx on / off instead of cycling effects, shift + mode = next effect / delay time
+* controller events are logged (`[hid]`) only with `MIX741_DEBUG=1` (was one stdout write per knob step on the control thread)
+* offline core bench: `MIX741_BENCH=1 swift test --filter benchRenderCPU` -> 2 decks keylock 1.5 % of one core (avg 44 µs, max ~0.5 ms per 128-frame block), 4 decks keylock + fx 3.4 % (max ~1 ms of 2.9 ms at 128 frames), m1 pro
 * fx off = spillover -> delay and reverb get no new audio but ring out
 * reverb (single): SIZE / HP / LP, the filters only feed the reverb, the track stays dry, D/W = how much goes in -> bright swipe from the highs, long tail (size 1 ≈ 20 s), full D/W ≈ 5 dB over the track
 * stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
@@ -48,6 +50,14 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * auto master sticks to the running master deck: starting another deck no longer makes it master (the lowest deck letter won before)
 * track handoff to the audio thread: generation counter instead of guessing the free slot -> the old buffer can no longer be freed while the audio thread still reads it
 * level meter: both channels (was left only)
+* loading two tracks onto one deck in quick succession: the last chosen one stays (a slower decode of the first one finishing later replaced it)
+* usb interface dropout: when the interface chosen in settings comes back, the output returns to it by itself (stayed on the fallback device until ↻)
+* audio core: nan/inf from a broken file or an unstable state no longer reaches the device and no longer silences the deck until the next load -> the block is dropped, the deck resets its filters / fx / stretch and fades back in
+* audio core: devices at 16-32 khz -> channel filter and high eq stay stable (filter frequencies above nyquist made the deck go silent)
+* audio core: denormals flushed to zero inside the render block (decaying eq / filter / fx tails cost up to ~100x per sample on intel macs)
+* audio core: render with 0 channels, tracks reporting rate 0 -> no crash / no division by zero; inf / nan bpm in the collection -> track loads without grid instead of crashing the bar readout
+* waveform: a newly loaded track could show the waveform of an earlier one (cache keyed by a reused buffer address); waveforms of unloaded tracks are freed right away (were kept up to 16)
+* deck state on screen kept updating only outside menus: the 30 hz mirror now also runs while a menu is open or the window is resized
 
 ## ◆ [0.7.0] · 2026-10-10 · DMG
 

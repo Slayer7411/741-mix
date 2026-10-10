@@ -32,6 +32,9 @@ master clock -> metronome click -> own pair
 * the device rate is never changed
 * keylock latency is compensated -> position and seeks point at what you hear
 * stopped decks without fx tail cost nothing
+* render block runs with denormals flushed to zero (restored afterwards)
+* filter frequencies clamped below nyquist (devices at 16-32 khz)
+* a deck block with nan / inf is dropped, the deck resets its recursive state (`healDeck`) and fades back in; nan never reaches the device
 * hard clip as last stage
 
 ## ◆ SYNC
