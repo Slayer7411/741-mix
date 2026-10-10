@@ -25,6 +25,11 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var keylockDefault = true
     public var tempoRangeDefault = 8.0
     public var autoGain = true
+    /// wie Traktor: Headroom und Auto-Gain je Mixer-Modus, Main-Volume im externen Modus optional
+    public var headroomInternal = 0.0
+    public var headroomExternal = -3.0
+    public var autoGainExternal = false
+    public var masterVolumeExternal = false
     public var loadPosition = LoadPosition.loadCue
     public var hotcueKeepsPhase = true
     public var bendAmount = 0.04
@@ -85,8 +90,8 @@ public struct DeckState: Equatable, Sendable {
 }
 
 /// FX-Unit im Traktor-Gruppenmodus: 3 Slots (Filter · Delay · Reverb), je Knopf = Stärke, Taste = an/aus.
-public struct FXUnitState: Equatable, Sendable {
-    public struct Slot: Equatable, Sendable {
+public struct FXUnitState: Equatable, Sendable, Codable {
+    public struct Slot: Equatable, Sendable, Codable {
         public var on = false
         public var amount: Double
     }
@@ -195,10 +200,11 @@ public final class MixController: @unchecked Sendable {
             engine.setMetronome(on: state.metronome, volume: state.metronomeVolume, firstChannel: p.metronomeChannel)
             applyAllMixer()
             applyAllFX()
+            applyMaster()
         }
     }
 
-    public func setExternalMixer(_ on: Bool) { locked { state.externalMixer = on; applyAllMixer() } }
+    public func setExternalMixer(_ on: Bool) { locked { state.externalMixer = on; applyAllMixer(); applyMaster() } }
 
     // MARK: Positionen / Phase
 
@@ -648,6 +654,18 @@ public final class MixController: @unchecked Sendable {
 
     public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on } }
 
+    /// gespeicherte Sitzung übernehmen (Mixer, FX, Clock)
+    public func restore(_ f: (inout MixState) -> Void) {
+        locked {
+            f(&state)
+            for d in state.decks.indices { applyRate(d) }
+            applyAllMixer(); applyAllFX()
+            engine.setClockBPM(state.clockBPM)
+            engine.setMetronome(on: state.metronome, volume: state.metronomeVolume, firstChannel: state.prefs.metronomeChannel)
+            applyMaster()
+        }
+    }
+
     /// Tempo an die Engine; steht das Deck, laufen Time-Stretch/Varispeed im Bypass (spart viel CPU im Leerlauf)
     private func applyRate(_ d: Int) {
         let s = state.decks[d]
@@ -662,12 +680,18 @@ public final class MixController: @unchecked Sendable {
 
     public func setCrossfader(_ v: Double) { locked { state.crossfader = v; applyAllMixer() } }
 
-    public func setMasterVolume(_ v: Double) { locked { state.masterVolume = v; engine.setMasterVolume(v) } }
+    public func setMasterVolume(_ v: Double) { locked { state.masterVolume = v; applyMaster() } }
+
+    private func applyMaster() {
+        let ext = state.externalMixer && !state.prefs.masterVolumeExternal
+        engine.setMasterVolume(ext ? 1 : state.masterVolume)
+    }
 
     private func applyMixer(_ d: Int) {
         let s = state.decks[d], p = state.prefs
-        let auto = p.autoGain ? -(s.track?.perceivedDb ?? 0) : 0
-        engine.setGain(d, db: s.gainDb + auto)
+        let ext = state.externalMixer
+        let auto = (ext ? p.autoGainExternal : p.autoGain) ? -(s.track?.perceivedDb ?? 0) : 0
+        engine.setGain(d, db: s.gainDb + auto + (ext ? p.headroomExternal : p.headroomInternal))
         engine.setChannelFilter(d, s.filter, resonance: p.channelFilterResonance)
         if state.externalMixer {
             engine.setEQ(d, low: 0, mid: 0, high: 0, kill: p.eqKill)

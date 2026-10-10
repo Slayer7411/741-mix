@@ -43,15 +43,14 @@ final class RenderedWaveform: @unchecked Sendable {
             pk = max(pk, a.peak[i]); lo += a.low[i]; mi += a.mid[i]; hi += a.high[i]
         }
         let c = Float(e - s)
-        // leichte Kompression, damit leise Stellen sichtbar bleiben
-        return (CGFloat(pow(pk, 0.8)), CGFloat(lo / c), CGFloat(mi / c), CGFloat(hi / c))
+        return (CGFloat(pk), CGFloat(lo / c), CGFloat(mi / c), CGFloat(hi / c))
     }
 
     private static func draw(_ ctx: CGContext, x: CGFloat, h: CGFloat, col: (pk: CGFloat, lo: CGFloat, mi: CGFloat, hi: CGFloat),
                              style: WaveformStyle, colors: Colors) {
         let mid = h / 2
         func bar(_ amp: CGFloat, _ c: RGB, alpha: CGFloat = 1) {
-            let hh = max(0.5, amp * mid * 0.96)
+            let hh = max(0.5, amp * mid)
             ctx.setFillColor(CGColor(red: c.r, green: c.g, blue: c.b, alpha: alpha))
             ctx.fill(CGRect(x: x, y: mid - hh, width: 1, height: hh * 2))
         }
@@ -141,7 +140,7 @@ private extension Dictionary {
     }
 }
 
-/// Scrollende Wellenform (Traktor-Stil): Kacheln, gedimmter gespielter Teil, Beatgrid mit Taktmarken, Cues, Loop.
+/// Scrollende Wellenform (Traktor-Stil): Ebenen auf der GPU, pro Frame nur verschoben.
 struct WaveformView: View {
     @Environment(MixModel.self) private var mix
     @Environment(WaveformCache.self) private var cache
@@ -152,129 +151,33 @@ struct WaveformView: View {
         let ui = mix.prefs.ui
         let deck = mix.deck(d)
         let wf = cache.waveform(for: mix.audio(d), style: ui.waveformStyle, palette: ui.waveformPalette)
-        let tileImages = wf?.tiles.map { Image(decorative: $0, scale: 1) } ?? []
-        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: deck.track == nil)) { _ in
-            Canvas(rendersAsynchronously: true) { ctx, size in
-                let w = size.width, h = size.height
-                ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.wave))
-                guard deck.track != nil else { return }
-                let span = ui.waveformSeconds
-                let pos = mix.position(d)
-                let secPerPt = span * 2 / w
-                func x(_ t: Double) -> CGFloat { (t - pos) / secPerPt + w / 2 }
-
-                // Wellenform-Kacheln
-                if let wf {
-                    let tileSec = Double(RenderedWaveform.tileWidth) / RenderedWaveform.pxPerSec
-                    for (i, img) in tileImages.enumerated() {
-                        let t0 = Double(i) * tileSec
-                        let tw = Double(wf.tiles[i].width) / RenderedWaveform.pxPerSec
-                        guard t0 + tw > pos - span, t0 < pos + span else { continue }
-                        ctx.draw(img, in: CGRect(x: x(t0), y: 0, width: tw / secPerPt, height: h))
-                    }
-                } else {
-                    ctx.draw(Text("Wellenform wird berechnet …").font(Theme.mono(10)).foregroundStyle(.secondary),
-                             at: CGPoint(x: w / 2, y: h / 2))
+        let scene = WaveScene(
+            waveID: wf.map { ObjectIdentifier($0) }, duration: deck.duration, grid: deck.grid, span: ui.waveformSeconds,
+            showGrid: ui.showBeatgrid, colorful: ui.colorfulGrid, phraseBeats: ui.phraseBeats, barNumbers: ui.showBarNumbers,
+            dimPlayed: ui.dimPlayed,
+            cues: deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }.map {
+                WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)))
+            },
+            cuePoint: deck.cuePoint, hasTrack: deck.track != nil)
+        WaveLayerView(scene: scene, wave: wf, position: { [mix, d] in mix.position(d) }, loop: { [mix, d] in mix.engine.loop(d) })
+            .overlay {
+                if deck.track != nil, wf == nil {
+                    Text("Wellenform wird berechnet …").font(Theme.mono(10)).foregroundStyle(.secondary)
                 }
-                // gespielter Teil gedimmt
-                if ui.dimPlayed {
-                    ctx.fill(Path(CGRect(x: 0, y: 0, width: w / 2, height: h)), with: .color(.black.opacity(0.32)))
-                }
-                // Loop
-                let loop = mix.engine.loop(d)
-                if loop.active {
-                    let r = CGRect(x: x(loop.start), y: 0, width: x(loop.end) - x(loop.start), height: h)
-                    ctx.fill(Path(r), with: .color(Theme.state.opacity(0.14)))
-                    ctx.fill(Path(CGRect(x: r.minX, y: 0, width: 1, height: h)), with: .color(Theme.state))
-                    ctx.fill(Path(CGRect(x: r.maxX - 1, y: 0, width: 1, height: h)), with: .color(Theme.state))
-                }
-                // Beatgrid: Phrasen-Bänder (lila), Taktlinien mit Marken, Beat-Ticks, Phrasen-Countdown
-                if ui.showBeatgrid, let g = deck.grid {
-                    let first = g.beatPosition(at: pos - span).rounded(.up)
-                    let last = g.beatPosition(at: pos + span).rounded(.down)
-                    let phrase = Double(max(4, ui.phraseBeats))
-                    if ui.colorfulGrid {
-                        // jede zweite Phrase leicht eingefärbt
-                        var p = (first / phrase).rounded(.down) * phrase
-                        while p <= last {
-                            if Int(p / phrase) % 2 == 1 {
-                                let x0 = x(g.time(ofBeat: p)), x1 = x(g.time(ofBeat: p + phrase))
-                                ctx.fill(Path(CGRect(x: x0, y: 0, width: x1 - x0, height: h)), with: .color(Theme.secondary.opacity(0.10)))
-                            }
-                            p += phrase
-                        }
-                    }
-                    if last - first < 600 {
-                        for b in stride(from: first, through: last, by: 1) {
-                            let bx = x(g.time(ofBeat: b))
-                            let ib = Int(b)
-                            let isBar = ib % 4 == 0
-                            let isPhrase = ib % Int(phrase) == 0
-                            if isPhrase && ui.colorfulGrid {
-                                ctx.fill(Path(CGRect(x: bx - 1, y: 0, width: 2, height: h)), with: .color(Theme.secondary))
-                                ctx.draw(Text("P\(ib / Int(phrase) + 1)").font(Theme.mono(9, .semibold)).foregroundStyle(Theme.secondary),
-                                         at: CGPoint(x: bx + 3, y: h - 9), anchor: .leading)
-                            } else {
-                                ctx.fill(Path(CGRect(x: bx - 0.5, y: 0, width: 1, height: h)),
-                                         with: .color(Theme.bone.opacity(isBar ? 0.32 : 0.09)))
-                            }
-                            // Beat-Ticks oben/unten: Taktanfang groß, übrige Beats klein
-                            let tick: CGFloat = isBar ? 6 : 3
-                            let tc = isBar ? Theme.bone : Theme.muted
-                            ctx.fill(Path(CGRect(x: bx - 1, y: 0, width: 2, height: tick)), with: .color(tc))
-                            ctx.fill(Path(CGRect(x: bx - 1, y: h - tick, width: 2, height: tick)), with: .color(tc))
-                            if ui.showBarNumbers, isBar, ib % 16 == 0, !(isPhrase && ui.colorfulGrid) {
-                                ctx.draw(Text("\(ib / 4 + 1)").font(Theme.mono(8, .semibold)).foregroundStyle(Theme.bone.opacity(0.7)),
-                                         at: CGPoint(x: bx + 3, y: 10), anchor: .leading)
-                            }
-                        }
-                    }
-                    // Countdown bis zur nächsten Phrase (in Takten)
-                    if ui.colorfulGrid {
-                        let bp = g.beatPosition(at: pos)
-                        let toNext = phrase - (bp - (bp / phrase).rounded(.down) * phrase)
-                        let bars = Int((toNext / 4).rounded(.up))
-                        let label = "P\(Int((bp / phrase).rounded(.down)) + 1) · \(bars) T"
-                        ctx.draw(Text(label).font(Theme.mono(10, .semibold)).foregroundStyle(bars <= 1 ? Theme.state : Theme.bone),
-                                 at: CGPoint(x: w / 2 + 6, y: 9), anchor: .leading)
-                    }
-                }
-                // Hotcues als Fahnen
-                for c in deck.hotcues.values {
-                    let cx = x(c.startMs / 1000)
-                    guard cx > -20, cx < w + 20 else { continue }
-                    let col = Theme.cueColor(c, deck: deck, prefs: mix.prefs)
-                    ctx.fill(Path(CGRect(x: cx - 1, y: 0, width: 2, height: h)), with: .color(col))
-                    ctx.fill(Path(roundedRect: CGRect(x: cx, y: 0, width: 13, height: 12), cornerRadius: 2), with: .color(col))
-                    ctx.draw(Text("\(c.hotcue + 1)").font(Theme.label(9, .heavy)).foregroundStyle(.black),
-                             at: CGPoint(x: cx + 6.5, y: 6))
-                }
-                // Cue-Punkt
-                let cueX = x(deck.cuePoint)
-                var cueTri = Path()
-                cueTri.move(to: CGPoint(x: cueX - 5, y: h)); cueTri.addLine(to: CGPoint(x: cueX + 5, y: h))
-                cueTri.addLine(to: CGPoint(x: cueX, y: h - 8)); cueTri.closeSubpath()
-                ctx.fill(cueTri, with: .color(Theme.bone))
-                // Abspielkopf
-                ctx.fill(Path(CGRect(x: w / 2 - 2, y: 0, width: 4, height: h)), with: .color(.black.opacity(0.5)))
-                ctx.fill(Path(CGRect(x: w / 2 - 1, y: 0, width: 2, height: h)), with: .color(Theme.state))
             }
-        }
-        .drawingGroup()
-        .clipShape(Rectangle())
-        .overlay {
-            GeometryReader { geo in
-                Color.clear.contentShape(Rectangle())
-                    .gesture(DragGesture(minimumDistance: 1)
-                        .onChanged { g in
-                            let dx = g.translation.width - (lastDrag ?? 0)
-                            lastDrag = g.translation.width
-                            let secPerPt = mix.prefs.ui.waveformSeconds * 2 / geo.size.width
-                            mix.core.seek(d, seconds: mix.position(d) - Double(dx) * secPerPt)
-                        }
-                        .onEnded { _ in lastDrag = nil })
+            .overlay {
+                GeometryReader { geo in
+                    Color.clear.contentShape(Rectangle())
+                        .gesture(DragGesture(minimumDistance: 1)
+                            .onChanged { g in
+                                let dx = g.translation.width - (lastDrag ?? 0)
+                                lastDrag = g.translation.width
+                                let secPerPt = mix.prefs.ui.waveformSeconds * 2 / geo.size.width
+                                mix.core.seek(d, seconds: mix.position(d) - Double(dx) * secPerPt)
+                            }
+                            .onEnded { _ in lastDrag = nil })
+                }
             }
-        }
     }
 }
 
@@ -288,27 +191,26 @@ struct OverviewView: View {
         let ui = mix.prefs.ui
         let deck = mix.deck(d)
         let wf = cache.waveform(for: mix.audio(d), style: ui.waveformStyle, palette: ui.waveformPalette)
-        let img = wf?.overview.map { Image(decorative: $0, scale: 1) }
         GeometryReader { geo in
-            TimelineView(.animation(minimumInterval: 1.0 / 15, paused: deck.track == nil)) { _ in
-                Canvas(rendersAsynchronously: true) { ctx, size in
-                    ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.wave))
-                    guard deck.duration > 0 else { return }
-                    if let img { ctx.draw(img, in: CGRect(origin: .zero, size: size)) }
-                    let f = mix.position(d) / deck.duration
-                    ctx.fill(Path(CGRect(x: 0, y: 0, width: size.width * f, height: size.height)), with: .color(.black.opacity(0.45)))
-                    let loop = mix.engine.loop(d)
-                    if loop.active {
-                        ctx.fill(Path(CGRect(x: loop.start / deck.duration * size.width, y: 0,
-                                             width: max(2, (loop.end - loop.start) / deck.duration * size.width), height: size.height)),
-                                 with: .color(Theme.state.opacity(0.4)))
-                    }
-                    for c in deck.hotcues.values {
-                        ctx.fill(Path(CGRect(x: c.startMs / 1000 / deck.duration * size.width, y: 0, width: 2, height: size.height)),
-                                 with: .color(Theme.cueColor(c, deck: deck, prefs: mix.prefs)))
-                    }
-                    ctx.fill(Path(CGRect(x: size.width * f - 1, y: 0, width: 2, height: size.height)), with: .color(Theme.state))
+            LiveCanvas(fps: deck.playing ? 15 : 4, running: deck.duration > 0) { [mix, d] ctx, size in
+                ctx.setFillColor(CG.wave); ctx.fill(CGRect(origin: .zero, size: size))
+                guard deck.duration > 0 else { return }
+                if let img = wf?.overview { ctx.draw(img, in: CGRect(origin: .zero, size: size)) }
+                let f = mix.position(d) / deck.duration
+                ctx.setFillColor(NSColor.black.withAlphaComponent(0.45).cgColor)
+                ctx.fill(CGRect(x: 0, y: 0, width: size.width * f, height: size.height))
+                let loop = mix.engine.loop(d)
+                if loop.active {
+                    ctx.setFillColor(NSColor(Theme.state).withAlphaComponent(0.4).cgColor)
+                    ctx.fill(CGRect(x: loop.start / deck.duration * size.width, y: 0,
+                                    width: max(2, (loop.end - loop.start) / deck.duration * size.width), height: size.height))
                 }
+                for c in deck.hotcues.values {
+                    ctx.setFillColor(NSColor(Theme.cueColor(c, deck: deck, prefs: mix.prefs)).cgColor)
+                    ctx.fill(CGRect(x: c.startMs / 1000 / deck.duration * size.width, y: 0, width: 2, height: size.height))
+                }
+                ctx.setFillColor(CG.state)
+                ctx.fill(CGRect(x: size.width * f - 1, y: 0, width: 2, height: size.height))
             }
             .clipShape(Rectangle())
             .contentShape(Rectangle())

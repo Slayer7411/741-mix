@@ -1,0 +1,302 @@
+import AppKit
+import QuartzCore
+import SwiftUI
+import MixCore
+import MixEngine
+
+/// Was die Wellenform zeigt – ändert sich selten. Pro Frame wird nur verschoben (wie Traktor: Textur auf der GPU, Shader-Offset).
+struct WaveScene: Equatable {
+    struct Mark: Equatable {
+        var t: Double, number: Int, rgba: [CGFloat]
+        init(t: Double, number: Int, color: NSColor) {
+            self.t = t; self.number = number
+            let c = color.usingColorSpace(.sRGB) ?? color
+            rgba = [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent]
+        }
+        var color: NSColor { NSColor(srgbRed: rgba[0], green: rgba[1], blue: rgba[2], alpha: rgba[3]) }
+    }
+    var waveID: ObjectIdentifier?
+    var duration: Double = 0
+    var grid: BeatGrid?
+    var span = 4.0
+    var showGrid = true
+    var colorful = true
+    var phraseBeats = 64
+    var barNumbers = true
+    var dimPlayed = true
+    var cues: [Mark] = []
+    var cuePoint: Double = 0
+    var hasTrack = false
+}
+
+struct WaveLayerView: NSViewRepresentable {
+    let scene: WaveScene
+    let wave: RenderedWaveform?
+    let position: @MainActor () -> Double
+    let loop: @MainActor () -> (active: Bool, start: Double, end: Double)
+
+    func makeNSView(context: Context) -> WaveLayerNSView { WaveLayerNSView() }
+
+    func updateNSView(_ v: WaveLayerNSView, context: Context) {
+        v.position = position
+        v.loop = loop
+        v.wave = wave
+        v.scene = scene
+    }
+}
+
+final class WaveLayerNSView: NSView {
+    var position: @MainActor () -> Double = { 0 }
+    var loop: @MainActor () -> (active: Bool, start: Double, end: Double) = { (false, 0, 0) }
+    var wave: RenderedWaveform?
+    var scene = WaveScene() { didSet { if scene != oldValue { rebuild() } } }
+
+    private let content = CALayer()   // gespiegelt: y nach unten
+    private let strip = CALayer()
+    private let loopLayer = CALayer()
+    private let dim = CALayer()
+    private let playhead = CALayer()
+    private let countdown = CATextLayer()
+    private var link: CADisplayLink?
+    private var builtSize: CGSize = .zero
+    private var pps: Double = 1   // Punkte pro Sekunde bei aktuellem Zoom
+    private var lastLoop: (Bool, Double, Double) = (false, 0, 0)
+    private var lastCountdown = ""
+
+    private static let ruler: CGFloat = 14
+    private static let monoBold = CTFontCreateWithName("IBMPlexMono-SemiBold" as CFString, 9, nil)
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer = CALayer()
+        content.isGeometryFlipped = true
+        content.anchorPoint = .zero
+        content.actions = Self.noAnimation
+        layer?.addSublayer(content)
+        layer?.masksToBounds = true
+        layer?.backgroundColor = NSColor(Theme.wave).cgColor
+        strip.anchorPoint = .zero
+        loopLayer.backgroundColor = NSColor(Theme.state).withAlphaComponent(0.14).cgColor
+        loopLayer.borderColor = NSColor(Theme.state).cgColor
+        loopLayer.borderWidth = 1
+        loopLayer.isHidden = true
+        dim.backgroundColor = NSColor.black.withAlphaComponent(0.32).cgColor
+        playhead.backgroundColor = NSColor(Theme.state).cgColor
+        playhead.shadowColor = NSColor.black.cgColor
+        playhead.shadowOpacity = 0.6
+        playhead.shadowRadius = 1
+        playhead.shadowOffset = .zero
+        countdown.font = Self.monoBold
+        countdown.fontSize = 10
+        countdown.contentsScale = 2
+        for l in [strip, dim, playhead, countdown] { content.addSublayer(l) }
+        for l in [strip, loopLayer, dim, playhead, countdown] as [CALayer] { l.actions = Self.noAnimation }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    private static let noAnimation: [String: CAAction] = [
+        "position": NSNull(), "bounds": NSNull(), "frame": NSNull(), "hidden": NSNull(), "contents": NSNull(), "string": NSNull(),
+        "foregroundColor": NSNull(), "sublayers": NSNull(),
+    ]
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        link?.invalidate()
+        link = nil
+        guard window != nil else { return }
+        let l = displayLink(target: self, selector: #selector(step))
+        l.add(to: .main, forMode: .common)
+        link = l
+    }
+
+    override func layout() {
+        super.layout()
+        if bounds.size != builtSize { rebuild() }
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        rebuild()
+    }
+
+    private var scale: CGFloat { window?.backingScaleFactor ?? 2 }
+
+    // MARK: Aufbau (nur bei Änderungen)
+
+    private func rebuild() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        let w = bounds.width, h = bounds.height
+        builtSize = bounds.size
+        content.frame = bounds
+        strip.sublayers = nil
+        dim.frame = CGRect(x: 0, y: 0, width: w / 2, height: h)
+        dim.isHidden = !scene.dimPlayed || !scene.hasTrack
+        playhead.frame = CGRect(x: (w / 2 - 1).rounded(), y: 0, width: 2, height: h)
+        playhead.isHidden = !scene.hasTrack
+        countdown.isHidden = true
+        guard scene.hasTrack, w > 0, h > 0 else { return }
+        pps = Double(w) / (scene.span * 2)
+        let total = CGFloat(scene.duration * pps)
+        strip.frame = CGRect(x: 0, y: 0, width: total, height: h)
+
+        // Kacheln: fertige Bilder, die GPU skaliert
+        if let wave {
+            let tileSec = Double(RenderedWaveform.tileWidth) / RenderedWaveform.pxPerSec
+            for (i, img) in wave.tiles.enumerated() {
+                let t = CALayer()
+                t.actions = Self.noAnimation
+                t.contents = img
+                t.contentsGravity = .resize
+                t.magnificationFilter = .linear
+                t.frame = CGRect(x: CGFloat(Double(i) * tileSec * pps), y: 0,
+                                 width: CGFloat(Double(img.width) / RenderedWaveform.pxPerSec * pps), height: h)
+                strip.addSublayer(t)
+            }
+        }
+        strip.addSublayer(loopLayer)
+        lastLoop = (false, -1, -1)
+        if scene.showGrid, let g = scene.grid, g.bpm > 0 { buildGrid(g, h: h) }
+        buildCues(h: h)
+        step()
+    }
+
+    private func px(_ v: Double) -> CGFloat { (CGFloat(v) * scale).rounded() / scale }
+
+    private func shape(_ path: CGPath, _ color: NSColor) -> CAShapeLayer {
+        let s = CAShapeLayer()
+        s.actions = Self.noAnimation
+        s.path = path
+        s.fillColor = color.cgColor
+        return s
+    }
+
+    private func text(_ str: String, _ color: NSColor, at p: CGPoint, size: CGFloat = 9) -> CATextLayer {
+        let t = CATextLayer()
+        t.actions = Self.noAnimation
+        t.string = str
+        t.font = Self.monoBold
+        t.fontSize = size
+        t.foregroundColor = color.cgColor
+        t.contentsScale = scale
+        t.frame = CGRect(x: p.x, y: p.y, width: CGFloat(str.count) * size * 0.62 + 4, height: size + 3)
+        return t
+    }
+
+    private func buildGrid(_ g: BeatGrid, h: CGFloat) {
+        let r = Self.ruler
+        let bone = NSColor(Theme.bone), lila = NSColor(Theme.secondary), muted = NSColor(Theme.muted)
+        let phrase = max(4, scene.phraseBeats)
+        let first = Int(g.beatPosition(at: 0).rounded(.up))
+        let last = Int(g.beatPosition(at: scene.duration).rounded(.down))
+        guard last > first, last - first < 5000 else { return }
+        let bands = CGMutablePath(), beats = CGMutablePath(), bars = CGMutablePath(), phrases = CGMutablePath()
+        let tris = CGMutablePath(), ptris = CGMutablePath(), ticks = CGMutablePath()
+        let labels = CALayer()
+        labels.actions = Self.noAnimation
+        for b in first...last {
+            let x = px(g.time(ofBeat: Double(b)) * pps)
+            let inBar = ((b % 4) + 4) % 4
+            let isPhrase = scene.colorful && ((b % phrase) + phrase) % phrase == 0
+            if isPhrase, (((b / phrase) % 2) + 2) % 2 == 1 {
+                let x1 = px(g.time(ofBeat: Double(b + phrase)) * pps)
+                bands.addRect(CGRect(x: x, y: 0, width: x1 - x, height: h))
+            }
+            if isPhrase {
+                phrases.addRect(CGRect(x: x - 1, y: r, width: 2, height: h - r))
+            } else if inBar == 0 {
+                bars.addRect(CGRect(x: x - 0.75, y: r, width: 1.5, height: h - r))
+            } else {
+                beats.addRect(CGRect(x: x - 0.5, y: r, width: 1, height: h - r))
+            }
+            if inBar == 0 {
+                let tp = isPhrase ? ptris : tris
+                tp.move(to: CGPoint(x: x - 5, y: r)); tp.addLine(to: CGPoint(x: x + 5, y: r))
+                tp.addLine(to: CGPoint(x: x, y: r + 6)); tp.closeSubpath()
+                let perPhrase = phrase / 4
+                let barInPhrase = (((b / 4) % perPhrase) + perPhrase) % perPhrase + 1
+                let label = isPhrase ? "P\(b / phrase + 1)" : (scene.barNumbers ? "\(barInPhrase)" : "")
+                if !label.isEmpty {
+                    labels.addSublayer(text(label, isPhrase ? lila : bone.withAlphaComponent(0.85), at: CGPoint(x: x + 3, y: 1)))
+                }
+            } else {
+                ticks.addRect(CGRect(x: x - 0.5, y: r - 4, width: 1, height: 4))
+            }
+            let tick: CGFloat = inBar == 0 ? 7 : 3
+            ticks.addRect(CGRect(x: x - 1, y: h - tick, width: 2, height: tick))
+        }
+        let rulerBG = CALayer()
+        rulerBG.actions = Self.noAnimation
+        rulerBG.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        rulerBG.frame = CGRect(x: 0, y: 0, width: strip.bounds.width, height: r)
+        strip.addSublayer(shape(bands, lila.withAlphaComponent(0.08)))
+        strip.addSublayer(rulerBG)
+        strip.addSublayer(shape(beats, bone.withAlphaComponent(0.42)))
+        strip.addSublayer(shape(bars, bone.withAlphaComponent(0.9)))
+        strip.addSublayer(shape(phrases, lila))
+        strip.addSublayer(shape(ticks, muted))
+        strip.addSublayer(shape(tris, bone))
+        strip.addSublayer(shape(ptris, lila))
+        strip.addSublayer(labels)
+        // Grid-Anker
+        let ax = px(g.anchor * pps)
+        let anchor = CGMutablePath()
+        anchor.addRect(CGRect(x: ax - 1, y: 0, width: 2, height: h))
+        anchor.addRect(CGRect(x: ax, y: r, width: 10, height: 10))
+        strip.addSublayer(shape(anchor, bone))
+        strip.addSublayer(text("G", .black, at: CGPoint(x: ax + 1.5, y: r - 1), size: 8))
+        countdown.isHidden = !scene.colorful
+    }
+
+    private func buildCues(h: CGFloat) {
+        for c in scene.cues {
+            let x = px(c.t * pps)
+            let p = CGMutablePath()
+            p.addRect(CGRect(x: x - 1, y: 0, width: 2, height: h))
+            p.addRect(CGRect(x: x, y: h - 26, width: 13, height: 12))
+            strip.addSublayer(shape(p, c.color))
+            strip.addSublayer(text("\(c.number)", .black, at: CGPoint(x: x + 3, y: h - 27), size: 9))
+        }
+        let cx = px(scene.cuePoint * pps)
+        let tri = CGMutablePath()
+        tri.move(to: CGPoint(x: cx - 5, y: h)); tri.addLine(to: CGPoint(x: cx + 5, y: h))
+        tri.addLine(to: CGPoint(x: cx, y: h - 8)); tri.closeSubpath()
+        strip.addSublayer(shape(tri, NSColor(Theme.bone)))
+    }
+
+    // MARK: pro Frame: nur verschieben
+
+    @objc private func step() {
+        guard scene.hasTrack else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let pos = position()
+        let x = Double(bounds.width / 2) - pos * pps
+        strip.position = CGPoint(x: (CGFloat(x) * scale).rounded() / scale, y: 0)
+        let l = loop()
+        if l.active != lastLoop.0 || l.start != lastLoop.1 || l.end != lastLoop.2 {
+            lastLoop = (l.active, l.start, l.end)
+            loopLayer.isHidden = !l.active
+            if l.active {
+                loopLayer.frame = CGRect(x: CGFloat(l.start * pps), y: 0, width: CGFloat((l.end - l.start) * pps), height: bounds.height)
+            }
+        }
+        if !countdown.isHidden, let g = scene.grid {
+            let phrase = Double(max(4, scene.phraseBeats))
+            let bp = g.beatPosition(at: pos)
+            let toNext = phrase - (bp - (bp / phrase).rounded(.down) * phrase)
+            let bars = Int((toNext / 4).rounded(.up))
+            let s = "P\(Int((bp / phrase).rounded(.down)) + 1) · \(bars) T"
+            if s != lastCountdown {
+                lastCountdown = s
+                countdown.string = s
+                countdown.foregroundColor = NSColor(bars <= 1 ? Theme.state : Theme.bone).cgColor
+                countdown.frame = CGRect(x: bounds.width / 2 + 6, y: Self.ruler + 3, width: 120, height: 14)
+            }
+        }
+        CATransaction.commit()
+    }
+}

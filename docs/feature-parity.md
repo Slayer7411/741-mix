@@ -1,6 +1,6 @@
 # FEATURE PARITY WITH TRAKTOR 3 / 4
 
-■ done · ◧ partly · □ missing. order of the gaps = what comes next (p1 first).
+■ done · ◧ partly · □ missing · p1 = next
 
 ## ◆ DECKS
 
@@ -8,7 +8,7 @@
 |---|---|---|
 | 4 track decks, play / cue / cup, cue hold preview | ■ | |
 | hotcues 1-8 (cue / loop), set / jump / delete, keep phase | ■ | colors in settings |
-| save hotcues and cues permanently | □ p1 | lost on quit right now |
+| save hotcues and grid edits | ■ | own file, collection untouched |
 | auto loop 1/32-32, loop in / out, reloop, loop move | ■ | |
 | beatjump 1/4-64, flux, reverse, flux reverse | ■ | |
 | loop roll / slip | ◧ p2 | flux covers part of it |
@@ -20,11 +20,11 @@
 | feature | | note |
 |---|---|---|
 | sync + master, phase lock on its own thread | ■ | |
-| keylock, key shift ±12, tempo ranges, pitch bend | ■ | keylock quality is apples timepitch -> better stretcher is p2 |
-| internal master clock with own bpm / tap | □ p1 | |
-| ableton link | □ p1 | next |
+| keylock, key shift ±12, tempo ranges, pitch bend | ■ | signalsmith stretch |
+| master clock: auto / master, tap, metronome | ■ | |
+| ableton link | □ p1 | |
 | midi clock in / out | □ p2 | |
-| beatgrid editing | □ p1 | |
+| beatgrid editing (shift, bpm, anchor, reset) | ■ | |
 | own bpm / key / grid analysis | □ p2 | values come from the traktor collection |
 
 ## ◆ MIXER / FX
@@ -33,7 +33,8 @@
 |---|---|---|
 | internal mixer: gain, auto-gain, 3-band eq + kill, filter, fader, crossfader + curve | ■ | can be hidden |
 | external mixer mode, one usb pair per deck | ■ | |
-| level meters, limiter | □ p2 | levels are measured already |
+| headroom per mixer mode, autogain extern | ■ | no limiter |
+| level meters | □ p2 | |
 | headphone cue in internal mode | □ p2 | external mode uses the desk |
 | eq types (classic, p600, xone, nuo) | □ p3 | |
 | mixer fx (traktor 3) | □ p2 | |
@@ -63,5 +64,6 @@
 | keyboard mapping | ◧ | a few shortcuts |
 | mix recording | □ p2 | |
 | timecode / dvs | □ p4 | |
-| layouts, deck sizes | ◧ p3 | decks and mixer can be hidden |
+| layouts, deck sizes | ◧ p3 | |
+| playlist export (nml, m3u, folder) | ■ | |
 | buffer / latency settings | □ p2 | |

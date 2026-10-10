@@ -92,6 +92,14 @@ struct MixerFXSettings: View {
             Section("Mixer") {
                 Toggle("Internen Mixer anzeigen", isOn: $mix.prefs.ui.showMixer)
                 Toggle("Auto-Gain (Lautheit aus der Collection)", isOn: $mix.prefs.engine.autoGain)
+                headroomPicker("Headroom", $mix.prefs.engine.headroomInternal)
+            }
+            Section("Externer Mixer") {
+                headroomPicker("Headroom", $mix.prefs.engine.headroomExternal)
+                Toggle("Auto-Gain", isOn: $mix.prefs.engine.autoGainExternal)
+                Toggle("Main-Volume wirkt auch extern", isOn: $mix.prefs.engine.masterVolumeExternal)
+            }
+            Section("Mixer-Optionen") {
                 Toggle("EQ-Kill (ganz links = aus)", isOn: $mix.prefs.engine.eqKill)
                 Picker("Crossfader-Kurve", selection: $mix.prefs.engine.crossfaderCurve) {
                     ForEach(CrossfaderCurve.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -268,5 +276,11 @@ struct ControllerSettings: View {
             Section("Letztes Ereignis") { Text(x1.lastEvent.isEmpty ? "—" : x1.lastEvent).font(.callout.monospaced()) }
         }
         .formStyle(.grouped)
+    }
+}
+
+func headroomPicker(_ title: String, _ v: Binding<Double>) -> some View {
+    Picker(title, selection: v) {
+        ForEach([0.0, -3, -6, -9, -12], id: \.self) { Text($0 == 0 ? "0 dB" : "\(Int($0)) dB").tag($0) }
     }
 }

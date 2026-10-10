@@ -143,21 +143,18 @@ struct TimeReadout: View {
     var body: some View {
         let deck = mix.deck(d)
         let warnAt = mix.prefs.engine.trackEndWarning
-        TimelineView(.periodic(from: .now, by: 0.1)) { ctx in
+        LiveCanvas(fps: 10, running: deck.track != nil) { [mix, d] _, size in
             let pos = mix.position(d)
             let remain = max(0, deck.duration - pos)
             let warn = deck.playing && warnAt > 0 && remain < warnAt && deck.duration > 0
-            let blink = Int(ctx.date.timeIntervalSince1970 * 2) % 2 == 0
-            VStack(alignment: .trailing, spacing: 0) {
-                Text("-" + Theme.time(remain))
-                    .font(Theme.mono(13, .semibold))
-                    .foregroundStyle(warn && blink ? Theme.state : Theme.bone)
-                if let g = deck.grid {
-                    let bb = g.barBeat(at: pos)
-                    Text("\(bb.bar).\(bb.beat)").font(Theme.mono(10)).foregroundStyle(.secondary)
-                }
+            let blink = Int(Date().timeIntervalSince1970 * 2) % 2 == 0
+            CG.text("-" + Theme.time(remain), size: 13, color: NSColor(warn && blink ? Theme.state : Theme.bone), rightAt: size.width, y: 0)
+            if let g = deck.grid {
+                let bb = g.barBeat(at: pos)
+                CG.text("\(bb.bar).\(bb.beat)", size: 10, weight: "Regular", color: NSColor(Theme.muted), rightAt: size.width, y: 17)
             }
         }
+        .frame(width: 66, height: 31)
     }
 }
 
@@ -167,19 +164,15 @@ struct PhaseMeter: View {
     let d: Int
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !mix.deck(d).sync && mix.effectiveMaster == nil)) { _ in
-            GeometryReader { geo in
-                let e = mix.phaseError(d)
-                ZStack {
-                    Rectangle().fill(Theme.void)
-                    Rectangle().fill(Theme.muted).frame(width: 1)
-                    if let e {
-                        Rectangle().fill(abs(e) < 0.02 ? Theme.bone : Theme.state)
-                            .frame(width: max(2, abs(e) * geo.size.width))
-                            .offset(x: e * geo.size.width / 2)
-                    }
-                }
-            }
+        let active = mix.deck(d).playing && (mix.state.clockMaster || mix.effectiveMaster != nil)
+        LiveCanvas(fps: 20, running: active) { [mix, d] ctx, size in
+            let w = size.width, h = size.height
+            ctx.setFillColor(CG.void); ctx.fill(CGRect(origin: .zero, size: size))
+            ctx.setFillColor(CG.muted); ctx.fill(CGRect(x: w / 2 - 0.5, y: 0, width: 1, height: h))
+            guard active, let e = mix.phaseError(d) else { return }
+            let bw = max(2, abs(e) * w)
+            ctx.setFillColor(abs(e) < 0.02 ? CG.bone : CG.state)
+            ctx.fill(CGRect(x: w / 2 + e * w / 2 - bw / 2, y: 0, width: bw, height: h))
         }
     }
 }
@@ -191,17 +184,16 @@ struct PhaseBar: View {
 
     var body: some View {
         let active = mix.deck(d).playing && (mix.state.clockMaster || mix.effectiveMaster != nil)
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !active)) { _ in
-            Canvas { ctx, size in
-                let w = size.width, h = size.height
-                ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.void))
-                ctx.fill(Path(CGRect(x: w / 2 - 0.5, y: 0, width: 1, height: h)), with: .color(Theme.muted))
-                for q in [0.25, 0.75] { ctx.fill(Path(CGRect(x: w * q, y: h / 2, width: 1, height: h / 2)), with: .color(Theme.hairline)) }
-                guard let e = mix.phaseError(d) else { return }
-                let x = w / 2 + CGFloat(e) * w
-                let r = CGRect(x: min(w / 2, x), y: 1, width: max(2, abs(x - w / 2)), height: h - 2)
-                ctx.fill(Path(r), with: .color(abs(e) < 0.02 ? Theme.bone : Theme.state))
-            }
+        LiveCanvas(fps: 30, running: active) { [mix, d] ctx, size in
+            let w = size.width, h = size.height
+            ctx.setFillColor(CG.void); ctx.fill(CGRect(origin: .zero, size: size))
+            ctx.setFillColor(CG.muted); ctx.fill(CGRect(x: w / 2 - 0.5, y: 0, width: 1, height: h))
+            ctx.setFillColor(CG.hairline)
+            for q in [0.25, 0.75] { ctx.fill(CGRect(x: w * q, y: h / 2, width: 1, height: h / 2)) }
+            guard active, let e = mix.phaseError(d) else { return }
+            let x = w / 2 + CGFloat(e) * w
+            ctx.setFillColor(abs(e) < 0.02 ? CG.bone : CG.state)
+            ctx.fill(CGRect(x: min(w / 2, x), y: 1, width: max(2, abs(x - w / 2)), height: h - 2))
         }
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
     }

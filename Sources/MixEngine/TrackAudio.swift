@@ -94,7 +94,6 @@ public final class TrackAudio: @unchecked Sendable {
         let aLow = Float(1 - exp(-2 * Double.pi * 250 / sampleRate))
         let aHigh = Float(1 - exp(-2 * Double.pi * 3000 / sampleRate))
         var lp1: Float = 0, lp2: Float = 0
-        var maxPeak: Float = 0.0001
         var i = 0
         for b in 0..<count {
             var pk: Float = 0, eL: Float = 0, eM: Float = 0, eH: Float = 0
@@ -105,15 +104,15 @@ public final class TrackAudio: @unchecked Sendable {
                 lp2 += aHigh * (x - lp2)
                 let l = lp1, h = x - lp2, m = lp2 - lp1
                 eL += l * l; eM += m * m; eH += h * h
-                pk = max(pk, abs(x))
+                pk = max(pk, abs(left[i]), abs(right[i]))
                 i += 1
             }
             // Höhen sind energetisch schwach → leicht anheben, damit Hats sichtbar werden
             eH *= 4; eM *= 2
             let sum = max(eL + eM + eH, 1e-12)
             peak[b] = pk; low[b] = eL / sum; mid[b] = eM / sum; high[b] = eH / sum
-            maxPeak = max(maxPeak, pk)
         }
-        for b in 0..<count { peak[b] /= maxPeak }
+        // nicht normalisieren: volle Höhe = 0 dBFS der Datei
+        for b in 0..<count { peak[b] = min(1, peak[b]) }
     }
 }

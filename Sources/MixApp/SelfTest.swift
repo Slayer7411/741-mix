@@ -83,6 +83,8 @@ enum SelfTest {
                 log("Test-History entfernt: \(url.lastPathComponent)")
             }
             log("SELFTEST OK")
+            fflush(stdout)
+            if ProcessInfo.processInfo.environment["MIX741_STAY"] == nil { exit(0) }
         }
     }
 

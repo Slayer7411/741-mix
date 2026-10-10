@@ -17,7 +17,6 @@ enum BrowserLayout: String, CaseIterable, Identifiable, Codable {
 struct ContentView: View {
     @Environment(LibraryStore.self) private var store
     @Environment(MixModel.self) private var mix
-    @State private var fullScreen = false
     private var layout: BrowserLayout { mix.prefs.ui.browserLayout }
     @Environment(BrowserState.self) private var browserState
     private var paneA: BrowserPaneModel { browserState.paneA }
@@ -68,9 +67,7 @@ struct ContentView: View {
                 .help("Collection neu laden")
             }
         }
-        .toolbar(fullScreen ? .hidden : .visible, for: .windowToolbar)
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in fullScreen = true }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in fullScreen = false }
+        .windowToolbarFullScreenVisibility(.onHover)
         .onAppear {
             if store.tracks.isEmpty { store.load() }
             SelfTest.run(store: store, mix: mix)
@@ -152,6 +149,7 @@ struct MixApp: App {
     @State private var waveforms = WaveformCache()
     @State private var history = HistoryStore()
     @State private var x1: X1Manager?
+    @State private var sessionTimer: Timer?
 
     var body: some Scene {
         WindowGroup("MINOS-741") {
@@ -220,10 +218,16 @@ extension MixApp {
         browser.history = history
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
         history.start(store: store, mix: mix)
+        let session = Session.load()
+        session?.applyEngine(to: mix)
+        sessionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [mix, browser] _ in
+            MainActor.assumeIsolated { Session.saveIfChanged(mix: mix, browser: browser) }
+        }
         // Preparation der letzten Session archivieren und leeren (einmal pro Start, nach dem Laden der Collection)
-        store.onLoaded = { [store, history] in
+        store.onLoaded = { [store, history, browser] in
             guard !store.preparationArchived else { return }
             store.preparationArchived = true
+            session?.applyBrowser(browser, store: store, history: history)
             if !store.preparation.isEmpty {
                 history.archivePreparation(keys: store.preparation, date: store.preparationDate)
                 store.preparation = []
