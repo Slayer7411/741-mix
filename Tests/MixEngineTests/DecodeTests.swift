@@ -4,7 +4,7 @@ import Testing
 import MixEngine
 
 /// Testdatei schreiben: Sinus 440 Hz, Pegel 0.5, `seconds` lang
-private func writeWAV(rate: Double, channels: UInt32, seconds: Double) throws -> URL {
+func writeWAV(rate: Double, channels: UInt32, seconds: Double) throws -> URL {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("minos-decode-\(UUID().uuidString).wav")
     let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: channels)!
     let file = try AVAudioFile(forWriting: url, settings: fmt.settings, commonFormat: .pcmFormatFloat32, interleaved: false)

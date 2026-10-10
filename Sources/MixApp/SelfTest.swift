@@ -71,6 +71,21 @@ enum SelfTest {
             log(String(format: "Clock-Master 126: B %.2f BPM, Phase zur Clock %.4f Beats, Clock-Beat %.2f",
                        core.snapshot().decks[1].bpm, core.phaseError(1) ?? .nan, core.engine.clockBeat))
             core.setClockMaster(false)
+            // Semi-Sync-Start: B ungesynct stoppen und neu starten, A ist Master -> B springt beim Start in Phase,
+            // Tempo (von Sync übernommen) und Sync-Zustand bleiben; danach wieder Sync wie zuvor
+            try? await Task.sleep(for: .milliseconds(300))   // Sync zieht B erst wieder auf A nach
+            core.toggleSync(1)
+            core.togglePlay(1)
+            try? await Task.sleep(for: .milliseconds(300))
+            core.setSemiSync(true)
+            let semiTempo = core.snapshot().decks[1].tempoPct, semiBefore = core.phaseError(1) ?? .nan
+            core.togglePlay(1)
+            try? await Task.sleep(for: .seconds(1))
+            let sB = core.snapshot().decks[1]
+            log(String(format: "Semi-Start B ungesynct (A Master): Phase vor Start %.4f, nach 1 s %.4f Beats (soll < 0.05) · B %.2f vs A %.2f BPM · Tempo %.2f -> %.2f %% · Sync %@",
+                       semiBefore, core.phaseError(1) ?? .nan, sB.bpm, core.snapshot().decks[0].bpm, semiTempo, sB.tempoPct, "\(sB.sync)"))
+            core.setSemiSync(false)
+            core.toggleSync(1)
             core.autoLoop(0, size: 4)
             try? await Task.sleep(for: .seconds(4))
             let l = core.engine.loop(0), pos = core.position(0)
