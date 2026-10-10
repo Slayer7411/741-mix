@@ -31,7 +31,7 @@ enum Theme {
 
     /// Schriften aus dem App-Bundle registrieren (vor dem ersten Zeichnen)
     static func registerFonts() {
-        guard let dir = Bundle.module.url(forResource: "Fonts", withExtension: nil, subdirectory: "Resources") else { return }
+        guard let dir = AppResources.url("Fonts", nil) else { return }
         let urls = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         for u in urls where u.pathExtension == "ttf" {
             CTFontManagerRegisterFontsForURL(u as CFURL, .process, nil)

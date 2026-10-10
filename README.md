@@ -33,6 +33,12 @@ cd 741-mix
 swift run 741mix
 ```
 
+build a real app and install it to /Applications (release build, icon, ad hoc signed):
+
+```
+scripts/make-app.sh
+```
+
 the app looks for `~/Native Instruments/Traktor 3.11.2/collection.nml` -> other files via ⌘O.
 tests: `swift test` (parses a sample nml, all smartlists of a real collection if present, history round trip).
 

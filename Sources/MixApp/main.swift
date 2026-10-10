@@ -225,12 +225,13 @@ extension MixApp {
 
 /// App-Icon: Lobster (Christians lobster2.png) – im Bundle als AppIcon.icns, beim Direktstart aus der Ressource
 func setAppIcon() {
-    if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png", subdirectory: "Resources"),
+    if let url = AppResources.url("AppIcon", "png"),
        let img = NSImage(contentsOf: url) {
         NSApplication.shared.applicationIconImage = img
     }
 }
 
+AppResources.migrateDefaults()
 Theme.registerFonts()
 
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.
