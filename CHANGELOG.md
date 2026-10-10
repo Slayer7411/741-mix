@@ -13,6 +13,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ### changed
 * x1: mode = fx on / off instead of cycling effects, shift + mode = next effect / delay time
 * fx off = spillover -> delay and reverb get no new audio but ring out
+* reverb like traktor (single): SIZE / HP / LP, the filters only feed the reverb, the track stays dry, D/W = how much goes in -> bright swipe from the highs, long tail (size 1 ≈ 20 s), full D/W ≈ 5 dB over the track
+* stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
 
 ## ◆ [0.7.0] · 2026-10-10 · DMG
 

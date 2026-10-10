@@ -124,6 +124,8 @@ struct Allpass {
 };
 struct Reverb {
     Comb cL[8], cR[8]; Allpass aL[4], aR[4];
+    Biquad hp1, hp2, lp;     // nur dieser Frequenzbereich geht in den Hall
+    float lastHP = -1, lastLP = -1;
     float send = 0, tail = 0;
     bool active() const { return send > 0.0005f || tail > 1e-5f; }
     void init(double fs) {
@@ -133,23 +135,37 @@ struct Reverb {
         for (int j = 0; j < 4; j++) { aL[j].b.assign(size_t(at[j] * k), 0); aR[j].b.assign(size_t((at[j] + 23) * k), 0); }
     }
     void clear() {
-        for (auto &c : cL) std::fill(c.b.begin(), c.b.end(), 0);
-        for (auto &c : cR) std::fill(c.b.begin(), c.b.end(), 0);
+        for (auto &c : cL) { std::fill(c.b.begin(), c.b.end(), 0); c.store = 0; }
+        for (auto &c : cR) { std::fill(c.b.begin(), c.b.end(), 0); c.store = 0; }
         for (auto &a : aL) std::fill(a.b.begin(), a.b.end(), 0);
         for (auto &a : aR) std::fill(a.b.begin(), a.b.end(), 0);
         send = tail = 0;
     }
-    /// aus = Eingang zu, trockenes Signal wieder voll, Hall klingt aus
-    void run(float *L, float *R, int n, float size, float wet, bool on) {
-        float fb = 0.70f + 0.28f * size, damp = 0.25f;
-        float target = on ? 1.f : 0.f, peak = 0;
+    /// Send-Effekt: das trockene Signal bleibt unverändert, der Hall kommt dazu.
+    /// `level` = wie viel hineingeht (aus = Eingang zu, Hall klingt aus), `wet` = Hall-Anteil am Ausgang.
+    /// hpP/lpP 0…1: Hochpass 20 Hz…8 kHz (24 dB), Tiefpass 500 Hz…20 kHz – so entsteht z. B. ein heller Swipe aus den Höhen.
+    void run(float *L, float *R, int n, float size, float level, float wet, float hpP, float lpP, double fs, bool on) {
+        if (hpP != lastHP) {
+            lastHP = hpP;
+            if (hpP < 0.01f) { hp1.setIdentity(); hp2.setIdentity(); }
+            else { double f = std::min(20 * std::pow(400.0, double(hpP)), fs * 0.45); hp1.highpass(f, 0.54, fs); hp2.highpass(f, 1.31, fs); }
+        }
+        if (lpP != lastLP) {
+            lastLP = lpP;
+            if (lpP > 0.99f) lp.setIdentity(); else lp.lowpass(std::min(500 * std::pow(40.0, double(lpP)), fs * 0.45), 0.707, fs);
+        }
+        float fb = 0.75f + 0.235f * size, damp = 0.02f;       // Nachhall ~1 s … ~20 s, kaum Dämpfung → Höhen bleiben (Swipe)
+        // gleiche Lautheit über Größe und Hochpass: was der Filter wegnimmt, kommt als Pegel zurück (gemessen: volles D/W ≈ 5 dB über dem Track, max. +45 dB)
+        float g = 0.03f * std::sqrt((1 - fb) / 0.15f) * std::pow(10.f, std::min(45.f, 10 + 34 * hpP + std::max(0.f, hpP - 0.7f) * 30) / 20);
+        float target = on ? level : 0.f, peak = 0;
         for (int i = 0; i < n; i++) {
             send += (target - send) * 0.002f;
-            float in = (L[i] + R[i]) * 0.015f * send, ol = 0, orr = 0;
+            float x = (L[i] + R[i]) * 0.5f;
+            x = lp.tick(0, hp2.tick(0, hp1.tick(0, x)));
+            float in = x * g * send, ol = 0, orr = 0;
             for (int j = 0; j < 8; j++) { ol += cL[j].tick(in, fb, damp); orr += cR[j].tick(in, fb, damp); }
             for (int j = 0; j < 4; j++) { ol = aL[j].tick(ol); orr = aR[j].tick(orr); }
-            L[i] = L[i] * (1 - wet * 0.4f * send) + ol * wet;
-            R[i] = R[i] * (1 - wet * 0.4f * send) + orr * wet;
+            L[i] += ol * wet; R[i] += orr * wet;
             peak = std::max(peak, std::max(std::fabs(ol), std::fabs(orr)));
         }
         tail = peak;
@@ -313,15 +329,12 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
         if (!jumped) { d.pos = std::max(0.0, d.pos - d.latSm * d.latDir); d.flux = std::max(0.0, d.flux - d.latSm * d.latDir); }
         d.latSm = 0; d.wasStretching = false;
     }
+    // Deck steht: weiterrechnen, solange Echo oder Hall noch klingen (gemessen, kein festes Zeitlimit)
     bool fxTail = false;
     for (int u = 0; u < MDSP_FX_UNITS; u++) {
-        bool assigned = d.p[MD_FX1_ASSIGN + u].load() > 0.5f;
-        if (assigned && (e->fxp[u][MDFX_DELAY_ON].load() > 0.5f || e->fxp[u][MDFX_REVERB_ON].load() > 0.5f
-                         || d.fx[u].delay.active() || d.fx[u].reverb.active())) fxTail = true;
+        if (d.p[MD_FX1_ASSIGN + u].load() > 0.5f && (d.fx[u].delay.tail > 1e-5f || d.fx[u].reverb.tail > 1e-5f)) fxTail = true;
     }
-    if (playing) d.tailFrames = int(e->fs * 4);
-    else if (d.tailFrames > 0 && fxTail) d.tailFrames -= n;
-    else d.tailFrames = 0;
+    d.tailFrames = playing || fxTail ? 1 : 0;
     if (!playing && d.tailFrames <= 0) {   // Deck steht, kein Hall/Echo-Rest → nichts rechnen
         d.rms.store(d.rms.load() * 0.8f); d.peak.store(d.peak.load() * 0.8f);
         d.playingOut.store(false);
@@ -405,8 +418,12 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
             float a = fp[MDFX_DELAY_AMOUNT].load();
             c.delay.run(L, R, n, fp[MDFX_DELAY_SECONDS].load(), fp[MDFX_DELAY_FEEDBACK].load() * (0.4f + 0.6f * a), a * dw, e->fs, delayOn);
         }
-        if (reverbOn || c.reverb.active())
-            c.reverb.run(L, R, n, fp[MDFX_REVERB_SIZE].load(), fp[MDFX_REVERB_AMOUNT].load() * dw, reverbOn);
+        if (reverbOn || c.reverb.active()) {
+            bool dwSend = fp[MDFX_REVERB_DWSEND].load() > 0.5f;
+            float amt = fp[MDFX_REVERB_AMOUNT].load();
+            c.reverb.run(L, R, n, fp[MDFX_REVERB_SIZE].load(), dwSend ? dw : 1.f, dwSend ? amt : amt * dw,
+                         fp[MDFX_REVERB_HP].load(), fp[MDFX_REVERB_LP].load(), e->fs, reverbOn);
+        }
     }
 
     // Lautstärke + Ausgangspaar
@@ -453,6 +470,7 @@ MDEngine *mdsp_create(double sampleRate) {
         e->fxp[u][MDFX_DRYWET].store(1); e->fxp[u][MDFX_DELAY_SECONDS].store(0.46f);
         e->fxp[u][MDFX_DELAY_FEEDBACK].store(0.45f); e->fxp[u][MDFX_REVERB_SIZE].store(0.6f);
         e->fxp[u][MDFX_FILTER_RES].store(0.4f);
+        e->fxp[u][MDFX_REVERB_HP].store(0); e->fxp[u][MDFX_REVERB_LP].store(1); e->fxp[u][MDFX_REVERB_DWSEND].store(0);
         for (auto p : {MDFX_FILTER_AMOUNT, MDFX_DELAY_AMOUNT, MDFX_REVERB_AMOUNT}) e->fxp[u][p].store(0.5f);
     }
     return e;

@@ -112,7 +112,7 @@ public struct FXUnitState: Equatable, Sendable, Codable {
             switch self {
             case .filter: ["CUTOFF", "RES", "—"]
             case .delay: ["FILTER", "FEEDB", "RATE"]
-            case .reverb: ["SIZE", "FILTER", "AMOUNT"]
+            case .reverb: ["SIZE", "HP", "LP"]
             }
         }
     }

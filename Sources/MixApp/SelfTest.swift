@@ -115,6 +115,25 @@ enum SelfTest {
             core.toggleFXAssign(0, 2)
             log(String(format: "FX3 Single-Delay: Echo nach Stopp %.3f (ohne Delay ~0)", tail))
             log(String(format: "FX3 aus: Echo klingt aus %.3f, nach 4 s %.4f", spill, gone))
+            // Reverb wie Traktor (FX4 Single): D/W 0 = trocken unverändert, D/W hoch = Hall aus den Höhen dazu, aus = klingt lange aus
+            core.togglePlay(0)
+            core.toggleFXAssign(0, 3)
+            core.updateFX(3) { $0.single = true; $0.singleType = FXUnitState.Effect.reverb.rawValue; $0.singleOn = true
+                               $0.params = [0.9, 0.75, 1.0]; $0.dryWet = 0 }
+            let rDry = await level()
+            core.updateFX(3) { $0.dryWet = 1 }
+            try? await Task.sleep(for: .seconds(2))
+            let rWet = await level()
+            core.updateFX(3) { $0.dryWet = 0 }       // Drop: nichts Neues mehr in den Hall
+            core.togglePlay(0)
+            try? await Task.sleep(for: .seconds(1))
+            let r1 = await level()
+            try? await Task.sleep(for: .seconds(3))
+            let r4 = await level()
+            core.updateFX(3) { $0.singleOn = false }
+            core.toggleFXAssign(0, 3)
+            log(String(format: "Reverb Single HP: D/W 0 %.3f (trocken %.3f) · D/W 1 %.3f · nach Drop 1 s %.4f · 4 s %.4f",
+                       rDry, dry, rWet, r1, r4))
             core.togglePlay(0)
             log(String(format: "Pegel A: trocken %.3f · Filter HP %.3f (%.0f %%) · Reverb %.3f (%.0f %%)",
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))

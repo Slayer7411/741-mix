@@ -160,10 +160,12 @@ public final class MixEngine: @unchecked Sendable {
                 set(MDFX_DELAY_SECONDS, min(2, Self.delayBeats[i] * beat))
                 set(MDFX_REVERB_ON, 0)
             case .reverb:
-                set(MDFX_FILTER_ON, filterOn(p[1]) ? 1 : 0); set(MDFX_FILTER_AMOUNT, p[1]); set(MDFX_FILTER_RES, filterResonance)
-                set(MDFX_DELAY_ON, 0)
-                set(MDFX_REVERB_ON, on ? 1 : 0); set(MDFX_REVERB_AMOUNT, 0.3 + p[2] * 0.7); set(MDFX_REVERB_SIZE, p[0])
+                // wie Traktor: SIZE, HP, LP – Filter nur vor dem Hall, Track läuft trocken weiter, D/W = wie viel in den Hall geht
+                set(MDFX_FILTER_ON, 0); set(MDFX_DELAY_ON, 0)
+                set(MDFX_REVERB_ON, on ? 1 : 0); set(MDFX_REVERB_AMOUNT, 1); set(MDFX_REVERB_SIZE, p[0])
+                set(MDFX_REVERB_HP, p[1]); set(MDFX_REVERB_LP, p[2]); set(MDFX_REVERB_DWSEND, 1)
             }
+            if FXUnitState.Effect(rawValue: fx.singleType) != .reverb { set(MDFX_REVERB_HP, 0); set(MDFX_REVERB_LP, 1); set(MDFX_REVERB_DWSEND, 0) }
             return
         }
         set(MDFX_FILTER_ON, fx.slots[0].on ? 1 : 0)
@@ -177,6 +179,7 @@ public final class MixEngine: @unchecked Sendable {
         set(MDFX_REVERB_ON, fx.slots[2].on ? 1 : 0)
         set(MDFX_REVERB_AMOUNT, fx.slots[2].amount)
         set(MDFX_REVERB_SIZE, fx.reverbSize)
+        set(MDFX_REVERB_HP, 0); set(MDFX_REVERB_LP, 1); set(MDFX_REVERB_DWSEND, 0)
     }
 
     public func setReverbSize(unit u: Int, _ size: Double) { mdsp_set_fx(core, Int32(u), MDFX_REVERB_SIZE, Float(size)) }
