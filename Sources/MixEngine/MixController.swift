@@ -250,8 +250,16 @@ public final class MixController: @unchecked Sendable {
             applyAllFX()
             return old
         }
-        // alten Puffer erst freigeben, wenn der Audio-Thread ihn sicher nicht mehr liest
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { _ = old }
+        // alten Puffer erst freigeben, wenn der Audio-Kern ihn losgelassen hat
+        releaseWhenFree(old, deck: d, tries: 50)
+    }
+
+    private func releaseWhenFree(_ old: TrackAudio?, deck d: Int, tries: Int) {
+        guard let old else { return }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { [self] in
+            if engine.bufferReleased(d) || tries <= 0 || !engine.running { _ = old; return }
+            releaseWhenFree(old, deck: d, tries: tries - 1)
+        }
     }
 
     // MARK: Transport

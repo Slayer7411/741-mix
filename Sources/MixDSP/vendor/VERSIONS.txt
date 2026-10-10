@@ -1,0 +1,1 @@
+signalsmith-stretch 1.4.0, signalsmith-linear 146b26f91b48835d665fa0498d64d9617818d27a (MIT)
