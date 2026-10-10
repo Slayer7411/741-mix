@@ -29,7 +29,7 @@ let package = Package(
                           swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "MixCoreTests", dependencies: ["MixCore"]),
         // Kern offline rendern (kein Audiogerät): Transport, Loop, Keylock, FX-Fahnen, Übergabe
-        .testTarget(name: "MixEngineTests", dependencies: ["MixDSP"]),
+        .testTarget(name: "MixEngineTests", dependencies: ["MixDSP", "MixEngine"]),
     ],
     cxxLanguageStandard: .cxx17
 )

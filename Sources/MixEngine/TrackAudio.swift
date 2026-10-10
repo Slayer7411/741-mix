@@ -61,9 +61,11 @@ public final class TrackAudio: @unchecked Sendable {
             while true {
                 var err: NSError?
                 let status = conv.convert(to: outBuf, error: &err) { _, st in
-                    if eof { st.pointee = .endOfStream; return nil }
-                    do { try file.read(into: inBuf, frameCount: chunk) } catch { readError = error }
-                    if readError != nil || inBuf.frameLength == 0 { eof = true; st.pointee = .endOfStream; return nil }
+                    // am Dateiende nicht mehr lesen (read wirft dort statt 0 Frames zu liefern)
+                    if !eof, file.framePosition < file.length {
+                        do { try file.read(into: inBuf, frameCount: chunk) } catch { readError = error }
+                    } else { eof = true }
+                    if eof || readError != nil || inBuf.frameLength == 0 { eof = true; st.pointee = .endOfStream; return nil }
                     st.pointee = .haveData
                     return inBuf
                 }

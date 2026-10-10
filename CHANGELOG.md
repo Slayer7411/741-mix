@@ -9,7 +9,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * browser: RUNNING TRACKS under the collection -> the tracks loaded on the decks
 * bar counter: ↺ button next to it -> current beat = bar 1
 * browser: played column ▶ in front (✓ = played since the last reset), right click on TRACK COLLECTION -> Reset Played State
-* engine tests without an audio device (`swift test`): transport, seek, loop, reverse, keylock, delay tail, limiter, clock, track handoff
+* engine tests without an audio device (`swift test`): transport, seek, loop, reverse, keylock, delay tail, limiter, clock, track handoff, decode (direct, mono, rate conversion)
 * ci: build + tests on every push and pull request, badge in the readme
 
 ### changed
