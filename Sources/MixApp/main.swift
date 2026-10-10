@@ -83,6 +83,7 @@ struct ContentView: View {
         .windowToolbarFullScreenVisibility(.onHover)
         .background(MainWindowHook())
         .background(OverviewHook())   // Browser-Vorschau: Deck-Tracks, Pause-Regel, Leerlauf
+        .background(CloudHook())      // Cloud-Library: Prüfen, Lokal-halten, Pause beim Laden
         .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
             store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
         }
@@ -174,6 +175,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let a = NSAlert()
         a.messageText = String(localized: "MINOS-741 beenden?")
         a.informativeText = String(localized: "Sitzung und History werden gespeichert.")
+        let pending = MainActor.assumeIsolated { CloudLibrary.shared.pendingCount }
+        if pending > 0 {
+            let handOff = MainActor.assumeIsolated { CloudLibrary.shared.handOffOnQuit }
+            a.informativeText += "\n" + (handOff
+                ? String(localized: "\(pending) Cloud-Downloads offen: der Anbieter lädt sie nach dem Beenden weiter.")
+                : String(localized: "\(pending) Cloud-Downloads offen: sie werden abgebrochen."))
+        }
         a.addButton(withTitle: String(localized: "Beenden"))
         a.addButton(withTitle: String(localized: "Abbrechen"))
         guard a.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
@@ -286,6 +294,7 @@ extension MixApp {
         appDelegate.onQuit = { [mix, browser, history] in
             Session.saveNow(mix: mix, browser: browser)
             history.finish()
+            CloudLibrary.shared.handOff()
         }
         let session = Session.load()
         session?.applyEngine(to: mix)
@@ -369,6 +378,7 @@ MainActor.assumeIsolated { CoverShot.runIfRequested() }   // nur Selbsttest mit 
 MainActor.assumeIsolated { SettingsShot.runPluginsIfRequested() }   // nur PLUGINS-Tab, ohne Audio: MIX741_SHOT=plugins:<ordner>
 MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=status:<ordner>, endet mit exit(0)
+MainActor.assumeIsolated { CloudShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cloud:<ordner>, endet mit exit(0)
 
 if ToggleBench.requested { MainActor.assumeIsolated { ToggleBench.run() } }   // Messung offscreen, ohne Fenster
 if ReloadBench.requested { MainActor.assumeIsolated { ReloadBench.run() } }   // Neu-Laden der Collection messen, offscreen

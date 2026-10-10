@@ -22,6 +22,8 @@ final class BrowserPaneModel: Identifiable {
     var showTree = true
     /// MUSIC FOLDERS: Dateien aus allen Unterordnern zeigen
     var subfolders = false
+    /// nur lokale Dateien (Cloud: ohne ☁ nur online / fehlend)
+    var localOnly = false
     /// Inline-Bearbeitung: Zelle (Track + Feld) und der Text im Feld
     var inline: InlineEdit?
     var inlineText = ""
@@ -62,7 +64,7 @@ final class BrowserPaneModel: Identifiable {
             sortedBase = store.presorted(source, order: sortOrder) ?? base(from: store, history: history).sorted(using: sortOrder)
             sortedKey = baseKey
         }
-        let key = baseKey + [search, roles, tags, separators] as [AnyHashable]
+        let key = baseKey + [search, roles, tags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0] as [AnyHashable]
         if key == cacheKey { return cachedRows }
         cachedRows = filtered(sortedBase, separators: separators)
         cacheKey = key
@@ -88,6 +90,10 @@ final class BrowserPaneModel: Identifiable {
         }
         let words = search.split(separator: " ").map { Track.fold(String($0)) }
         if !words.isEmpty { list = list.filter { $0.matches(words: words) } }
+        if localOnly {
+            let c = CloudLibrary.shared
+            list = list.filter { c.isLocal($0.path) }
+        }
         return list
     }
 }
@@ -179,6 +185,12 @@ struct BrowserPane: View {
                     .popover(isPresented: $showTags, arrowEdge: .bottom) {
                         TagPicker(model: model, separators: separators)
                     }
+                if CloudLibrary.shared.hasCloudTracks {
+                    Text("│").foregroundStyle(Theme.hairline)
+                    DeckButton(title: "● LOKAL", active: model.localOnly) { model.localOnly.toggle() }
+                        .help("Nur lokale Tracks (ohne ☁ nur online)")
+                    SetCheckButton(model: model)
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
                         ForEach(model.tags.sorted(), id: \.self) { t in
@@ -268,12 +280,14 @@ struct SourceTree: View {
                     Button("Collection prüfen …") { ConsistencyWindow.show(store: store) }
                     Button("Reset Played State") { history.resetPlayed() }
                     OverviewMenuButton { store.tracks }
+                    CloudMenuButton(label: "Track Collection") { store.tracks }
                 }
             row("▶", "RUNNING TRACKS").tag(BrowserSource.running)
             row("▤", "PREPARATION").tag(BrowserSource.preparation)
                 .contextMenu {
                     exportMenu(.preparation)
                     OverviewMenuButton { store.tracks(for: .preparation) }
+                    CloudMenuButton(label: "Preparation") { store.tracks(for: .preparation) }
                 }
             DisclosureGroup {
                 ForEach(history.prepArchive) { s in
@@ -295,6 +309,7 @@ struct SourceTree: View {
                         .contextMenu {
                             exportMenu(.custom(sl))
                             OverviewMenuButton { store.tracks(for: .custom(sl)) }
+                            CloudMenuButton(label: sl.name) { store.tracks(for: .custom(sl)) }
                             Button("Bearbeiten …") { editing = sl }
                             Button("Löschen") { store.customSmartlists.removeAll { $0.id == sl.id } }
                         }
@@ -313,6 +328,7 @@ struct SourceTree: View {
                         .contextMenu {
                             if node.kind != .folder { exportMenu(.node(node)) }
                             OverviewMenuButton { nodeTracks(node) }
+                            CloudMenuButton(label: node.name) { nodeTracks(node) }
                         }
                 }
             }
@@ -485,8 +501,13 @@ struct TrackTable: View {
               var order = obj["columnOrder"] as? [Any] else { return data }
         let id = { (e: Any) in ((e as? [String: Any])?["base"] as? [String: Any]).flatMap { ($0["explicit"] as? [String: Any])?["_0"] as? String } }
         let ids = order.compactMap(id)
-        guard !ids.contains("played") || !ids.contains("cover") else { return data }
+        guard !ids.contains("played") || !ids.contains("cover") || !ids.contains("cloud") else { return data }
         if !ids.contains("played") { order.insert(["base": ["explicit": ["_0": "played"]]], at: 0) }
+        // Cloud-Spalte hinter „played“
+        if !ids.contains("cloud") {
+            let at = order.firstIndex { id($0) == "played" }.map { $0 + 1 } ?? 0
+            order.insert(["base": ["explicit": ["_0": "cloud"]]], at: at)
+        }
         // Cover-Spalte neben die Farbe statt ans Ende
         if !ids.contains("cover") {
             order.insert(["base": ["explicit": ["_0": "cover"]]], at: order.firstIndex { id($0) == "color" }.map { $0 + 1 } ?? min(3, order.count))
@@ -499,6 +520,8 @@ struct TrackTable: View {
     private var cols0: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("▶") { (t: Track) in Text(history.played.contains(t.key) ? "✓" : "").foregroundStyle(Theme.secondary).modifier(PreviewRowCell(on: twoLine)) }
             .width(16).customizationID("played")
+        TableColumn(Text(verbatim: "☁").font(.system(size: 13))) { (t: Track) in CloudCell(path: t.path).modifier(PreviewRowCell(on: twoLine)) }
+            .width(16).customizationID("cloud")
         TableColumn("✓", value: \Track.analyzedSort) { (t: Track) in Text(t.analyzed ? "✓" : "").foregroundStyle(Theme.muted).modifier(PreviewRowCell(on: twoLine)) }
             .width(16).customizationID("analyzed")
         TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4).modifier(PreviewRowCell(on: twoLine)) }
@@ -654,6 +677,7 @@ struct TrackTable: View {
                 Button("Aus Preparation entfernen") { store.preparation.removeAll { ids.contains($0) } }
             }
             Divider()
+            CloudMenuButton(label: String(localized: "Auswahl")) { ids.compactMap { store.track($0) } }
             Button("Vorhören") { if let id = ids.first, let t = store.track(id) { decks.preview(t) } }
             Button("Im Finder zeigen") {
                 let urls = ids.compactMap { store.track($0) }.map { URL(fileURLWithPath: $0.path) }
