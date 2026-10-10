@@ -40,6 +40,8 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 ## ◆ AUDIO
 
 * output device (the system default or any device, saved by uid)
+* sample rate (what the device offers, applies to the device right away, inside minos from the next start) and buffer size
+* reconnect -> restarts the output, also via ↻ in the status bar
 * mode: internal (mixer in the app) or external (mixing desk)
 * internal: which pair the master goes to
 * external: one pair per deck, default a 1/2 · b 3/4 · c 5/6 · d 7/8
