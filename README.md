@@ -45,6 +45,7 @@ MIX741_SELFTEST=1 MIX741_NOXONE=1 swift run 741mix
 ## ◆ DOCS
 
 * [architecture](docs/architecture.md) -> threads, audio graph, why the ui can hang without the sound stopping
+* [library](docs/library.md) -> dual browser, tags, smartlists, preparation, history
 * [traktor files](docs/traktor-files.md) -> collection.nml, history nml, preparation, tsi controller config
 * [kontrol x1 mk2](docs/controllers-x1-mk2.md) -> hid layout, mapping, leds
 * [settings](docs/settings.md)
