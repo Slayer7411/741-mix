@@ -158,7 +158,8 @@ public struct MixState: Equatable, Sendable {
     public var autoMaster: Int?
     /// Master-Clock: im Clock-Modus gibt MINOS das Tempo vor (kein Deck ist Master)
     public var clockMaster = false
-    /// Semi-Sync: jeder neu geladene Track übernimmt das Tempo des aktuellen Masters (kein Phasen-Sync)
+    /// Semi-Sync: jeder neu geladene Track übernimmt das Tempo des aktuellen Masters (kein Phasen-Sync);
+    /// ein ungesynctes Deck startet in Phase zum Master (einmaliger Sprung, danach frei)
     public var semiSync = false
     public var clockBPM: Double = 128
     public var metronome = false
@@ -370,7 +371,7 @@ public final class MixController: @unchecked Sendable {
             guard audio[d] != nil else { return }
             let p = engine.player(d)
             if p.playing { p.playing = false } else {
-                if state.decks[d].sync { alignPhase(d, hard: true) }
+                if state.decks[d].sync { alignPhase(d, hard: true) } else { semiAlignStart(d) }
                 p.playing = true
             }
             state.decks[d].cueHeld = false
@@ -387,6 +388,7 @@ public final class MixController: @unchecked Sendable {
                 p.playing = false
                 engine.seek(d, seconds: state.decks[d].cuePoint)
             } else if abs(position(d) - state.decks[d].cuePoint) < 0.02 {
+                semiAlignStart(d)   // Cue-Vorhören startet ebenfalls in Phase; CUE loslassen springt zurück zum Cue
                 p.playing = true
                 state.decks[d].cueHeld = true
             } else {
@@ -413,6 +415,7 @@ public final class MixController: @unchecked Sendable {
         locked {
             guard audio[d] != nil else { return }
             engine.seek(d, seconds: state.decks[d].cuePoint)
+            semiAlignStart(d)   // vom Cue aus in Phase zum Master starten
             engine.player(d).playing = true
             state.decks[d].playing = true
             applyRate(d)
@@ -671,6 +674,17 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
+    /// Semi-Sync-Start: ein ungesynctes Deck springt beim Start einmalig auf den nächsten Beat des laufenden Masters
+    /// (Fehler −0,5…0,5 Beats) und läuft dann frei – Tempo, Nudge und Sync-Zustand bleiben unverändert.
+    /// Nichts passiert ohne laufenden Master oder wenn das Deck selbst Master ist.
+    private func semiAlignStart(_ d: Int) {
+        guard state.semiSync, !state.decks[d].sync, let g = state.decks[d].grid, g.bpm > 0 else { return }
+        if !state.clockMaster { guard let m = state.effectiveMaster, m != d, state.decks[m].playing else { return } }
+        guard let e = rawPhaseError(d) else { return }
+        let t = position(d) - e * g.beat
+        engine.seek(d, seconds: t < 0 ? t + g.beat : t)   // vor dem Trackanfang: einen Beat später
+    }
+
     // MARK: Beatgrid bearbeiten
 
     /// Grid verschieben (ms, + = später)
@@ -712,10 +726,10 @@ public final class MixController: @unchecked Sendable {
 
     // MARK: Master-Clock
 
-    /// Clock als Master an/aus. Beim Einschalten übernimmt sie Tempo und Phase des bisherigen Masters (kein Sprung).
-    /// Semi-Sync: neue Tracks laden mit dem Tempo des Masters (kein Phasen-Sync)
+    /// Semi-Sync: neue Tracks laden mit dem Tempo des Masters (kein Phasen-Sync), ein ungesynctes Deck startet in Phase
     public func setSemiSync(_ on: Bool) { locked { state.semiSync = on } }
 
+    /// Clock als Master an/aus. Beim Einschalten übernimmt sie Tempo und Phase des bisherigen Masters (kein Sprung).
     public func setClockMaster(_ on: Bool) {
         locked {
             if on, !state.clockMaster, let m = state.effectiveMaster, let g = state.decks[m].grid {
