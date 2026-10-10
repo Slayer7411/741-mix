@@ -309,7 +309,8 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
-    static let debug = ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1"
+    /// MIX741_DEBUG=1: Lade-, Hänger- und Controller-Protokoll
+    public static let debug = ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1"
 
     private func finishLoad(_ t: Track, _ a: TrackAudio, _ d: Int, seq: Int) {
         let r: (TrackAudio?, UInt32)? = locked {

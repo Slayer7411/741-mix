@@ -80,17 +80,22 @@ final class MixModel {
                 }
             }
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+        // .common: läuft auch, solange ein Menü offen ist oder das Fenster gezogen wird (sonst steht die Anzeige still)
+        let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pull() }
         }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
         // MIX741_DEBUG=1: Hänger des Hauptthreads melden (Lücken zwischen zwei Takten > 30 ms)
-        if ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1" {
+        if MixController.debug {
             var last = CACurrentMediaTime()
-            hitchTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120, repeats: true) { _ in
+            let h = Timer(timeInterval: 1.0 / 120, repeats: true) { _ in
                 let now = CACurrentMediaTime(), gap = now - last
                 last = now
                 if gap > 0.03 { print(String(format: "[hitch] %.1f s: main thread %.0f ms", now, gap * 1000)); fflush(stdout) }
             }
+            RunLoop.main.add(h, forMode: .common)
+            hitchTimer = h
         }
     }
     @ObservationIgnored private var hitchTimer: Timer?
@@ -103,7 +108,7 @@ final class MixModel {
         var s = core.snapshot()
         for i in s.decks.indices { s.decks[i].nudge = 0 }
         if s != state {
-            if ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1" {
+            if MixController.debug {
                 changeCount += 1
                 if Date().timeIntervalSince(lastReport) > 2 {
                     let diff = s.decks.indices.filter { s.decks[$0] != state.decks[$0] }
