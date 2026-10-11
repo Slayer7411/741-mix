@@ -106,6 +106,8 @@ public struct Track: Identifiable, Hashable, Sendable {
     public var fileExists: Bool { !(fileMissing ?? false) }
     /// Datei aus MUSIC FOLDERS, nicht in der Collection (kein Grid, keine Metadaten)
     public var loose = false
+    /// Werte (Tempo, Grid, Tonart, Lautheit) ganz oder teilweise aus der eigenen Analyse statt aus der Collection
+    public var ownAnalysis = false
 
     /// Erster Grid-Marker (Beat 1) in ms.
     public var gridAnchorMs: Double? { cues.first { $0.kind == .grid }?.startMs }
@@ -114,8 +116,13 @@ public struct Track: Identifiable, Hashable, Sendable {
     /// Open-Key-Notation (1d…12m) aus MUSICAL_KEY: 0–11 Dur (C…B), 12–23 Moll (Cm…Bm).
     public var openKey: String {
         guard musicalKey >= 0 else { return keyText }
-        let major = musicalKey < 12
-        let semitone = musicalKey % 12
+        return Self.openKey(code: musicalKey)
+    }
+
+    /// Open-Key-Text zu einem MUSICAL_KEY-Wert (0–23)
+    public static func openKey(code: Int) -> String {
+        let major = code < 12
+        let semitone = code % 12
         // Quintenzirkel-Position: C = 1d, Am = 1m (Moll über die parallele Dur-Tonart)
         let n = ((major ? semitone : semitone + 3) * 7) % 12 + 1
         return "\(n)\(major ? "d" : "m")"

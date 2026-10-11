@@ -11,6 +11,8 @@ public enum CollectionWriter {
         public var blocks: [String: String] = [:]
         /// Felder, die jetzt so in der Datei stehen
         public var written: [String: [TrackField: String]] = [:]
+        /// Analysen, die jetzt in der Datei stehen
+        public var writtenAnalyses: [String] = []
         /// Tracks, deren Block in der Datei nicht (mehr) gefunden wurde – Datei inzwischen anders gespeichert
         public var missing: [String] = []
         /// angelegte Sicherung (nil = keine nötig, letzte ist jünger als eine Stunde)
@@ -197,22 +199,98 @@ public enum CollectionWriter {
         return o
     }
 
+    // MARK: - Analyse (TEMPO, LOUDNESS, MUSICAL_KEY, Grid-Marker)
+
+    /// ENTRY-Block mit den analysierten Werten: BPM wie beim Bearbeiten, LOUDNESS und MUSICAL_KEY als Attribute ihrer
+    /// Elemente (fehlende Elemente hinter TEMPO bzw. LOUDNESS), der Grid-Anker als CUE_V2 TYPE="4" (vorhandener Marker:
+    /// START, sonst ein neuer vor </ENTRY>). Nur gesetzte Felder der Analyse ändern den Block.
+    public static func patch(entry block: String, analysis a: TrackAnalysis) -> String {
+        var s = block
+        let nl = block.unicodeScalars.contains("\r") ? "\r\n" : "\n"
+        let f6 = { (v: Double) in String(format: "%.6f", v) }
+        if let b = a.bpm, b > 0 { s = patch(entry: s, changes: [.bpm: String(format: "%.3f", b)]) }
+        if let p = a.perceivedDb {
+            var attrs = [(String, String)]()
+            if let pk = a.peakDb { attrs.append(("PEAK_DB", f6(pk))) }
+            attrs += [("PERCEIVED_DB", f6(p)), ("ANALYZED_DB", f6(p))]
+            s = setElement("LOUDNESS", attrs, after: ["</TEMPO>", "</INFO>", "</MODIFICATION_INFO>", "</ALBUM>", "</LOCATION>"], in: s, nl: nl)
+        }
+        if let k = a.musicalKey {
+            s = setElement("MUSICAL_KEY", [("VALUE", String(k))],
+                           after: ["</LOUDNESS>", "</TEMPO>", "</INFO>", "</MODIFICATION_INFO>", "</ALBUM>", "</LOCATION>"], in: s, nl: nl)
+        }
+        if let g = a.gridAnchorMs {
+            if let r = gridCueTag(in: s) {
+                let tag = setRawAttr("START", f6(g), in: String(s[r]))
+                if tag != String(s[r]) { s.replaceSubrange(r, with: tag) }
+            } else if let end = s.range(of: "</ENTRY>", options: [.literal, .backwards]) {
+                // eigene Zeile vor </ENTRY>, wie die Marker der Collection
+                let tag = "<CUE_V2 NAME=\"AutoGrid\" DISPL_ORDER=\"0\" TYPE=\"4\" START=\"\(f6(g))\" LEN=\"0.000000\" REPEATS=\"-1\" HOTCUE=\"-1\"></CUE_V2>"
+                let onLine = end.lowerBound > s.startIndex && s[s.index(before: end.lowerBound)] == "\n"
+                s.insert(contentsOf: onLine ? tag + nl : nl + tag + nl, at: end.lowerBound)
+            }
+        }
+        return s
+    }
+
+    /// Attribute eines Elements setzen; fehlt das Element, kommt es hinter die erste gefundene Marke
+    static func setElement(_ el: String, _ attrs: [(String, String)], after: [String], in s: String, nl: String) -> String {
+        var s = s
+        if let r = startTag(el, in: s) {
+            var tag = String(s[r])
+            for (n, v) in attrs { tag = setRawAttr(n, v, in: tag) }
+            if tag != String(s[r]) { s.replaceSubrange(r, with: tag) }
+            return s
+        }
+        for a in after {
+            if let r = s.range(of: a, options: .literal) {
+                s.insert(contentsOf: nl + "<\(el)" + attrs.map { " \($0.0)=\"\(escape($0.1))\"" }.joined() + "></\(el)>", at: r.upperBound)
+                return s
+            }
+        }
+        return s
+    }
+
+    /// Attribut im Start-Tag setzen oder anhängen (nur wenn der Wert sich ändert)
+    static func setRawAttr(_ name: String, _ value: String, in tag: String) -> String {
+        var t = tag
+        if let r = t.range(of: " \(name)=\"", options: .literal), let q = t[r.upperBound...].firstIndex(of: "\"") {
+            guard String(t[r.upperBound..<q]) != escape(value) else { return tag }
+            t.replaceSubrange(r.upperBound..<q, with: escape(value))
+            return t
+        }
+        let end = t.hasSuffix("/>") ? t.index(t.endIndex, offsetBy: -2) : t.index(before: t.endIndex)
+        t.insert(contentsOf: " \(name)=\"\(escape(value))\"", at: end)
+        return t
+    }
+
+    /// Start-Tag des Grid-Markers (CUE_V2 mit TYPE="4")
+    static func gridCueTag(in s: String) -> Range<String.Index>? {
+        var from = s.startIndex
+        while let r = s.range(of: "<CUE_V2 ", options: .literal, range: from..<s.endIndex), let end = tagEnd(s, from: r.lowerBound) {
+            if s[r.lowerBound..<end].contains(" TYPE=\"4\"") { return r.lowerBound..<end }
+            from = end
+        }
+        return nil
+    }
+
     // MARK: - Datei
 
     /// Änderungen in die Datei schreiben: Sicherung (höchstens eine pro Stunde), Blöcke ersetzen, Ergebnis prüfen
     /// (muss sich lesen lassen, gleiche Anzahl Tracks), dann atomar ersetzen (Temp-Datei + rename).
-    public static func write(url: URL, changes: [String: [TrackField: String]], index: NMLEntryIndex,
-                             backupDir: URL?, now: Date = Date()) throws -> Result {
+    public static func write(url: URL, changes: [String: [TrackField: String]], analyses: [String: TrackAnalysis] = [:],
+                             index: NMLEntryIndex, backupDir: URL?, now: Date = Date()) throws -> Result {
         let data = try Data(contentsOf: url)
         var bytes = [UInt8](data)
         var res = Result()
         var replacements: [(range: Range<Int>, new: [UInt8])] = []
-        for (key, fields) in changes.sorted(by: { $0.key < $1.key }) {
+        for key in Set(changes.keys).union(analyses.keys).sorted() {
             guard let old = index.raw[key] else { res.missing.append(key); continue }
             let ob = Array(old.utf8)
             guard let pos = find(ob, in: bytes) else { res.missing.append(key); continue }
-            let new = patch(entry: old, changes: fields)
-            res.written[key] = fields
+            var new = old
+            if let fields = changes[key] { new = patch(entry: new, changes: fields); res.written[key] = fields }
+            if let a = analyses[key] { new = patch(entry: new, analysis: a); res.writtenAnalyses.append(key) }
             res.blocks[key] = new
             if new != old { replacements.append((pos..<(pos + ob.count), Array(new.utf8))) }
         }
