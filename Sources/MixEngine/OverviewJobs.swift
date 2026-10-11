@@ -1,15 +1,40 @@
 import Foundation
 import MixCore
 
+/// Arbeit je Datei einer Warteschlange: Vorschau (Standard, `OverviewStoreHandler`) oder Analyse
+public protocol OverviewJobHandler: Sendable {
+    /// Ergebnis liegt schon vor (Datei unverändert) -> nichts rechnen
+    func isDone(_ job: OverviewJobs.Job) -> Bool
+    /// eine Datei rechnen und ablegen; `checkpoint` zwischen zwei Blöcken (Pause: wartet dort, Abbruch: wirft)
+    func run(_ job: OverviewJobs.Job, checkpoint: () throws -> Void) throws
+}
+
+/// Vorschau aus der Datei in den `OverviewStore`
+public struct OverviewStoreHandler: OverviewJobHandler {
+    public let store: OverviewStore
+    public init(store: OverviewStore) { self.store = store }
+    public func isDone(_ job: OverviewJobs.Job) -> Bool { !job.refresh && store.isValid(job.key, path: job.path) }
+    public func run(_ job: OverviewJobs.Job, checkpoint: () throws -> Void) throws {
+        guard let stamp = OverviewStore.Stamp.of(path: job.path) else { return }
+        let ov = try OverviewAnalyzer.analyze(url: URL(fileURLWithPath: job.path), checkpoint: checkpoint)
+        store.put(job.key, path: job.path, overview: ov, stamp: stamp)
+    }
+}
+
 /// Warteschlangen + Arbeiter der Vorschau-Berechnung (eigene Threads). Reihenfolge: Rechtsklick-Stapel, sichtbare
 /// Zeilen (zuletzt gezeigte zuerst), Hintergrund (neueste Tracks zuerst). Wann und wie schnell: `OverviewPolicy` –
-/// geprüft vor jeder Datei und zwischen zwei Lese-Blöcken.
+/// geprüft vor jeder Datei und zwischen zwei Lese-Blöcken. Was je Datei passiert, bestimmt der `handler`
+/// (Vorschau oder Analyse: eine zweite Instanz mit eigenem Handler teilt Regeln, Drosselung und Abbruch).
 public final class OverviewJobs: @unchecked Sendable {
     public struct Job: Sendable {
         public let key: String
         public let path: String
         public let explicit: Bool
-        public init(key: String, path: String, explicit: Bool) { self.key = key; self.path = path; self.explicit = explicit }
+        /// auch rechnen, wenn ein Ergebnis vorliegt (Neu analysieren)
+        public let refresh: Bool
+        public init(key: String, path: String, explicit: Bool, refresh: Bool = false) {
+            self.key = key; self.path = path; self.explicit = explicit; self.refresh = refresh
+        }
     }
 
     public struct Progress: Equatable, Sendable {
@@ -27,7 +52,9 @@ public final class OverviewJobs: @unchecked Sendable {
         public init() {}
     }
 
-    public var store: OverviewStore?
+    /// Vorschau-Speicher (setzt den Standard-Handler)
+    public var store: OverviewStore? { didSet { handler = store.map { OverviewStoreHandler(store: $0) } } }
+    public var handler: OverviewJobHandler?
     public var onProgress: (@Sendable (Progress) -> Void)?
     /// Obergrenze der Arbeiter (Messungen)
     public var maxWorkers = 2
@@ -82,7 +109,7 @@ public final class OverviewJobs: @unchecked Sendable {
     public func enqueue(_ jobs: [Job]) {
         lock.lock()
         for j in jobs where !queued.contains(j.key) {
-            explicit.append(Job(key: j.key, path: j.path, explicit: true))
+            explicit.append(Job(key: j.key, path: j.path, explicit: true, refresh: j.refresh))
             queued.insert(j.key)
             progress.total += 1
         }
@@ -134,6 +161,11 @@ public final class OverviewJobs: @unchecked Sendable {
         progress.done = 0; progress.total = 0
         lock.unlock()
         report()
+    }
+
+    /// nicht lesbare Dateien wieder versuchen (neuer Stapel)
+    public func forgetFailures() {
+        lock.lock(); failed.removeAll(); lock.unlock()
     }
 
     /// Hintergrund + sichtbare Zeilen anhalten (bis zur nächsten Liste)
@@ -252,20 +284,19 @@ public final class OverviewJobs: @unchecked Sendable {
 
     /// eine Datei; Rückgabe: zuletzt geltendes Tempo
     private func process(_ job: Job, gen: Int) -> OverviewPolicy.Gate {
-        guard let store else { return .full }
+        guard let handler else { return .full }
         var g = OverviewPolicy.Gate.full
         do {
             g = try pass(job, gen: gen)
-            if store.isValid(job.key, path: job.path) { stored(job.key); return .full }
+            if handler.isDone(job) { stored(job.key); return .full }
             switch OverviewPolicy.admit(explicit: job.explicit, file: OverviewPolicy.fileState(path: job.path)) {
             case .skipOnline: return .full
             case .skipMissing: throw CocoaError(.fileNoSuchFile)
             case .read: break
             }
-            guard let stamp = OverviewStore.Stamp.of(path: job.path) else { return .full }
             applyQoS(g)
             var t0 = Self.now(), owed = 0.0
-            let ov = try OverviewAnalyzer.analyze(url: URL(fileURLWithPath: job.path)) {
+            try handler.run(job) {
                 // zwischen zwei Lese-Blöcken: Regel prüfen; gedrosselt Rechenzeit sammeln und ab 0,2 s gleich lang
                 // schlafen (kurze Schlafzeiten dehnt das System bei QoS background stark)
                 owed += Self.now() - t0
@@ -277,7 +308,6 @@ public final class OverviewJobs: @unchecked Sendable {
                 }
                 t0 = Self.now()
             }
-            store.put(job.key, path: job.path, overview: ov, stamp: stamp)
             stored(job.key)
         } catch is Cancelled {
         } catch {

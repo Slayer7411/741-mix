@@ -251,6 +251,15 @@ final class MixModel {
         }
     }
 
+    /// Neu analysieren: eigene Grid-Änderung (BPM, Anker) des Tracks verwerfen, Hotcues bleiben.
+    /// Liegt der Track gerade auf einem Deck, bleibt die Änderung bis zum nächsten Laden
+    func clearGridEdit(_ key: String) {
+        guard var e = edits.edit(for: key), e.bpm != nil || e.gridAnchorMs != nil,
+              !originals.values.contains(where: { $0.key == key }) else { return }
+        e.bpm = nil; e.gridAnchorMs = nil
+        edits.set(e.hotcues == nil ? nil : e, for: key)
+    }
+
     func shiftGrid(_ d: Int, ms: Double) { run { core.shiftGrid(d, ms: ms) } }
     func setGridBPM(_ d: Int, _ v: Double) { run { core.setGridBPM(d, v) } }
     func scaleGridBPM(_ d: Int, _ f: Double) { run { core.scaleGridBPM(d, f) } }

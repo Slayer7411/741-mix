@@ -598,3 +598,16 @@
 "Grid-Werkzeuge" = "Grid tools";
 "Alle Zeilen" = "All rows";
 "auch im menü decks -> zeilen. wellenform und kopfzeile bleiben immer." = "also in the decks menu -> rows. waveform and header always stay.";
+
+/* eigene Analyse */
+"Analysieren" = "Analyze";
+"Neu analysieren" = "Re-analyze";
+"Analyse verwerfen" = "Discard analysis";
+"Analyse %lld/%lld" = "Analysis %lld/%lld";
+"Analyse abbrechen" = "Cancel analysis";
+"Analysiert: %lld Tracks" = "Analyzed: %lld tracks";
+"Analyse abgebrochen" = "Analysis cancelled";
+"%lld nicht lesbar" = "%lld unreadable";
+"Nichts zu analysieren: Tempo, Grid, Tonart und Lautheit sind vorhanden" = "Nothing to analyze: tempo, grid, key and loudness are present";
+"analysiert von MINOS-741 (Tempo, Grid, Tonart, Lautheit ganz oder teilweise)" = "analyzed by MINOS-741 (tempo, grid, key, loudness in whole or in part)";
+"analysiert in der Collection" = "analyzed in the collection";
