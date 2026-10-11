@@ -112,6 +112,8 @@ private func throughCore(_ inst: PluginInstance, fs: Double = 48000, seconds: Do
     let e = try #require(list.first { $0.name == VST3Fixture.gainName })
     #expect(e.id == "vst3:C18D3C1E719E4E29924D3ECAA5E4DA18" && e.source == .folder && e.path == b.path)
     #expect(e.info != nil && e.problem == nil && e.canValidate && !e.canIsolate && !cat.isolated(e.id))
+    #expect(!cat.menuList().contains { $0.id == e.id } && cat.inProcessReason(e.id) != nil)   // VST3 nur im Prozess: live aus
+    cat.update { $0.allowInProcess = true }
     #expect(cat.menuList().contains { $0.id == e.id })
     cat.setEnabled(e.id, false)
     #expect(!cat.menuList().contains { $0.id == e.id })

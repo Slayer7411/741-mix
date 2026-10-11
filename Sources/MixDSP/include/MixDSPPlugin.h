@@ -17,6 +17,8 @@ void mdplug_close(MDPlugin *p);
 void mdplug_reset(MDPlugin *p);
 /// L/R an Ort und Stelle durch das Plugin rechnen (Audio-Thread). Bei Fehler bleibt das Signal unverändert.
 void mdplug_process(MDPlugin *p, float *L, float *R, int n);
+/// nicht gerechnete Blöcke seit dem Öffnen und Frames, die zuletzt ohne Unterbrechung fehlschlugen (Steuer-Thread)
+void mdplug_failures(MDPlugin *p, uint64_t *blocks, uint64_t *frames);
 
 #ifdef __cplusplus
 }

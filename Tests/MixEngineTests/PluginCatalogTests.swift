@@ -160,7 +160,10 @@ private let mrev = "aufx:mrev:appl"
     #expect(!e.canIsolate && !cat.isolated(e.id))
     let bad = try #require(list.first { $0.id == "bundle:" + broken.path })
     #expect(bad.info == nil && bad.problem != nil)
-    #expect(cat.menuList().contains { $0.id == e.id })
+    // live-Regel: nur im Prozess ladbar -> erst mit „Plugins im Prozess“
+    #expect(!cat.menuList().contains { $0.id == e.id } && cat.inProcessReason(e.id) != nil)
+    cat.update { $0.allowInProcess = true }
+    #expect(cat.menuList().contains { $0.id == e.id } && cat.inProcessReason(e.id) == nil)
     // zweites Einlesen registriert nicht doppelt
     #expect(cat.entries(refresh: true).filter { $0.id == e.id }.count == 1)
 
@@ -306,4 +309,45 @@ private extension URL {
         try FileManager.default.createDirectory(at: deletingLastPathComponent(), withIntermediateDirectories: true)
         return self
     }
+}
+
+/// live-Regel: ohne „Plugins im Prozess“ laufen Fremd-Audio-Units isoliert (auch gegen die Einstellung je Plugin),
+/// Apple im Prozess; mit der Einstellung gelten Standard und Einstellung je Plugin wie zuvor
+@Test func liveRuleIsolatesThirdPartyUnlessInProcessAllowed() {
+    let s0 = PluginSettings()
+    #expect(!s0.allowInProcess)
+    let third = PluginEntry(id: "aufx:Tst1:Mnos", name: "T", manufacturer: "M", version: "1", format: .auv2, source: .user, path: nil,
+                            info: PluginInfo(id: "aufx:Tst1:Mnos", name: "T", manufacturer: "M", type: 0x61756678, subtype: 1, manu: 2),
+                            problem: nil)
+    let apple = PluginEntry(id: mrev, name: "MatrixReverb", manufacturer: "Apple", version: "1", format: .auv2, source: .system, path: nil,
+                            info: PluginInfo(id: mrev, name: "MatrixReverb", manufacturer: "Apple", type: 0x61756678, subtype: 0x6d726576,
+                                             manu: 0x6170706c), problem: nil)
+    var vinfo = PluginInfo.vst3(classID: String(repeating: "A", count: 32), name: "V", vendor: "M", version: "1", path: "/x.vst3")
+    vinfo.format = .vst3
+    let vst3 = PluginEntry(id: vinfo.id, name: "V", manufacturer: "M", version: "1", format: .vst3, source: .user, path: "/x.vst3",
+                           info: vinfo, problem: nil)
+    var s = s0
+    s.isolation[third.id] = false   // „im Prozess“ je Plugin zählt live nicht
+    #expect(PluginCatalog.isolated(third, s) && !PluginCatalog.isolated(apple, s))
+    #expect(PluginCatalog.inProcessOnly(vst3, s) && !PluginCatalog.inProcessOnly(third, s) && !PluginCatalog.inProcessOnly(apple, s))
+    s.allowInProcess = true
+    #expect(!PluginCatalog.isolated(third, s) && !PluginCatalog.inProcessOnly(vst3, s))
+    s.isolation[third.id] = nil
+    #expect(PluginCatalog.isolated(third, s))   // Standard: Drittanbieter isoliert
+}
+
+/// Abstürze isolierter Plugins: gezählt und gespeichert, beim dritten gesperrt; Block aufheben setzt den Zähler zurück
+@Test func isolatedCrashesBlockAfterLimit() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let a = PluginCatalog(directory: dir, folders: [], vst3Folders: [])
+    #expect(a.recordCrash("aufx:Tst1:Mnos") == 1)
+    #expect(a.recordCrash("aufx:Tst1:Mnos") == 2)
+    #expect(a.unusableReason("aufx:Tst1:Mnos") == nil)
+    let b = PluginCatalog(directory: dir, folders: [], vst3Folders: [])
+    #expect(b.settings.crashes["aufx:Tst1:Mnos"] == 2)
+    #expect(b.recordCrash("aufx:Tst1:Mnos") == PluginCatalog.crashLimit)
+    #expect(b.unusableReason("aufx:Tst1:Mnos") != nil)
+    b.unblock("aufx:Tst1:Mnos")
+    #expect(b.settings.crashes["aufx:Tst1:Mnos"] == nil && b.unusableReason("aufx:Tst1:Mnos") == nil)
 }

@@ -21,7 +21,7 @@ private func tempDir() throws -> URL {
 /// Katalog nur mit eigenem Ordner (keine System-VST3-Ordner einlesen)
 private func catalog(_ dir: URL, vst3: URL? = nil) -> PluginCatalog {
     let c = PluginCatalog(directory: dir.appendingPathComponent("store"), folders: [], vst3Folders: [])
-    if let vst3 { c.update { $0.folders = [vst3.path] } }
+    if let vst3 { c.update { $0.folders = [vst3.path]; $0.allowInProcess = true } }   // VST3 läuft nur im Prozess
     return c
 }
 

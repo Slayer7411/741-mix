@@ -132,7 +132,12 @@ void AUPlugin::process(float *L, float *R, int n) {
     OSStatus st = AudioUnitRender(p->au, &flags, &ts, 0, UInt32(n), p->abl);
     p->sampleTime += n;
     p->inL = p->inR = nullptr; p->inFrames = 0;
-    if (st != noErr) return;   // Signal bleibt trocken
+    if (st != noErr) {   // Signal bleibt trocken
+        p->failedBlocks.fetch_add(1, std::memory_order_relaxed);
+        p->failingFrames.fetch_add(uint64_t(n), std::memory_order_relaxed);
+        return;
+    }
+    p->failingFrames.store(0, std::memory_order_relaxed);
     // Plugin darf die Zeiger ersetzt haben (eigene Puffer)
     const float *oL = static_cast<const float *>(p->abl->mBuffers[0].mData), *oR = static_cast<const float *>(p->abl->mBuffers[1].mData);
     if (!oL || !oR) return;
