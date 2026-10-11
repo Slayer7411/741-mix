@@ -267,35 +267,29 @@ final class ControllerManager: @unchecked Sendable {
             if unit.shift { DispatchQueue.main.async { self.onPreview?(pane) } }
             else { DispatchQueue.main.async { self.onToggleBrowser?() } }
         case let .fxKnob(u, k, v):
-            // D/W + Regler 1–3: Gruppe = Stärke der Slots, Single = Parameter des Effekts
+            // D/W + Regler 1–3 -> zugewiesene Parameter (FX-Belegung, Standard: Gruppe = Stärke, Single = Parameter)
             guard let fu = fxUnit(unit, section: u) else { return }
-            core.updateFX(fu) { fx in
-                if k == 0 { fx.dryWet = v } else if fx.single { fx.params[k - 1] = v } else { fx.slots[k - 1].amount = v }
-            }
+            core.setFXControl(fu, k == 0 ? .dryWet : .knob(k - 1), v)
         case let .fxButton(u, b, down):
             guard down, let fu = fxUnit(unit, section: u) else { return }
+            // Tasten 1–3 -> zugewiesene Parameter (Standard: Gruppe = Slot an/aus, Single = Taste 1 an/aus)
+            if b > 0 { core.pressFXButton(fu, b - 1); return }
             let shift = unit.shift
             core.updateFX(fu) { fx in
                 if fx.single {
-                    // Single: Mode = Effekt an/aus (Echo/Hall klingt aus), Shift + Mode = nächster Effekt, Taste 1 = an/aus
-                    if b == 0 {
-                        if shift { fx.singleType = (fx.singleType + 1) % FXUnitState.Effect.allCases.count } else { fx.singleOn.toggle() }
-                    } else if b == 1 { fx.singleOn.toggle() }
+                    // Single: Mode = Effekt an/aus (Echo/Hall klingt aus), Shift + Mode = nächster Effekt
+                    if shift { fx.singleType = (fx.singleType + 1) % FXUnitState.Effect.allCases.count } else { fx.singleOn.toggle() }
                     return
                 }
-                if b == 0 {
-                    // Gruppe: Mode = an/aus (merkt sich, welche Slots an waren), Shift + Mode = Delay-Zeit weiter
-                    if shift {
-                        fx.delayIndex = (fx.delayIndex + 1) % MixEngine.delayBeats.count
-                    } else if fx.anyOn {
-                        self.groupMemory[fu] = fx.slots.map(\.on)
-                        for i in fx.slots.indices { fx.slots[i].on = false }
-                    } else {
-                        let last = self.groupMemory[fu] ?? []
-                        for i in fx.slots.indices { fx.slots[i].on = last.contains(true) ? (i < last.count && last[i]) : true }
-                    }
+                // Gruppe: Mode = an/aus (merkt sich, welche Slots an waren), Shift + Mode = Delay-Zeit weiter
+                if shift {
+                    fx.delayIndex = (fx.delayIndex + 1) % MixEngine.delayBeats.count
+                } else if fx.anyOn {
+                    self.groupMemory[fu] = fx.slots.map(\.on)
+                    for i in fx.slots.indices { fx.slots[i].on = false }
                 } else {
-                    fx.slots[b - 1].on.toggle()
+                    let last = self.groupMemory[fu] ?? []
+                    for i in fx.slots.indices { fx.slots[i].on = last.contains(true) ? (i < last.count && last[i]) : true }
                 }
             }
         case let .fxAssign(s, u, down):
@@ -471,7 +465,7 @@ final class ControllerUnit {
             guard let fu = manager?.fxUnit(self, section: u) else { continue }
             let fx = state.fx[fu]
             r[0x01 + u * 4] = fx.anyOn ? on : dim
-            for i in 0..<3 { r[0x02 + u * 4 + i] = (fx.single ? i == 0 && fx.singleOn : fx.slots[i].on) ? on : dim }
+            for i in 0..<3 { r[0x02 + u * 4 + i] = state.fxControls[fu][FXControl.button(i).slot].active ? on : dim }
         }
         if r != lastLED, let device {
             lastLED = r

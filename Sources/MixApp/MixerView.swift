@@ -104,8 +104,8 @@ struct LevelFader: View {
     }
 }
 
-/// FX-Unit im Gruppenmodus: Dry/Wet + 3 Slots (Filter · Delay · Reverb), je Knopf + Taste.
-/// Am Controller: D/W-Regler, Regler 1–3 = Stärke, Tasten 1–3 = an/aus.
+/// FX-Unit: Gruppe (Filter · Delay · Reverb) oder Single (ein Effekt). D/W, Regler 1–3 und Tasten 1–3 liegen auf
+/// zuweisbaren Parametern (Rechtsklick, ⌘, -> MIXER & FX); der Controller geht denselben Weg.
 struct FXUnitView: View {
     @Environment(MixModel.self) private var mix
     let u: Int
@@ -122,8 +122,7 @@ struct FXUnitView: View {
                 }
                 .help("Gruppe (3 Effekte) oder Single (1 Effekt, 3 Parameter)")
             }
-            Knob(value: Binding(get: { unit.state.dryWet }, set: { v in mix.updateFX(u) { $0.dryWet = v } }),
-                 range: 0...1, defaultValue: 1, label: "D/W", color: Theme.state, size: 24)
+            FXKnob(u: u, c: .dryWet)
             if fx.single { single(fx) } else { group(fx) }
         }
         .padding(.horizontal, 8)
@@ -132,18 +131,18 @@ struct FXUnitView: View {
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
     }
 
-    @ViewBuilder private func group(_ fx: FXUnitState) -> some View {
+    /// Regler 1–3 mit Taste darunter
+    private var controls: some View {
         ForEach(0..<3, id: \.self) { i in
             VStack(spacing: 2) {
-                Knob(value: Binding(get: { unit.state.slots[i].amount },
-                                    set: { v in mix.updateFX(u) { $0.slots[i].amount = v } }),
-                     range: 0...1, defaultValue: 0.5, bipolar: i == 0, label: FXUnitState.slotNames[i],
-                     color: Theme.state, size: 24)
-                DeckButton(title: "ON", active: fx.slots[i].on, color: Theme.state, width: 22) {
-                    mix.updateFX(u) { $0.slots[i].on.toggle() }
-                }
+                FXKnob(u: u, c: .knob(i))
+                FXButton(u: u, i: i)
             }
         }
+    }
+
+    @ViewBuilder private func group(_ fx: FXUnitState) -> some View {
+        controls
         Menu(BeatSizes.label(MixEngine.delayBeats[fx.delayIndex])) {
             ForEach(MixEngine.delayBeats.indices, id: \.self) { i in
                 Button("Delay \(BeatSizes.label(MixEngine.delayBeats[i])) Beat") { mix.updateFX(u) { $0.delayIndex = i } }
@@ -171,13 +170,7 @@ struct FXUnitView: View {
             DeckButton(title: "ON", active: fx.singleOn, color: Theme.state, width: 30) { mix.updateFX(u) { $0.singleOn.toggle() } }
         }
         if effect == .plugin { pluginControls(fx) }
-        let names = effect == .plugin ? unit.pluginParams : effect.params
-        ForEach(0..<3, id: \.self) { i in
-            let label = i < names.count ? names[i] : "—"
-            Knob(value: Binding(get: { unit.state.params[i] }, set: { v in mix.updateFX(u) { $0.params[i] = v } }),
-                 range: 0...1, defaultValue: 0.5, bipolar: effect != .plugin && (label == "FILTER" || label == "CUTOFF"),
-                 label: label, color: Theme.state, size: 24)
-        }
+        controls
     }
 
     /// Plugin wählen (Name · Hersteller) und sein Fenster öffnen
@@ -202,6 +195,172 @@ struct FXUnitView: View {
             DeckButton(title: "EDIT", active: false, color: Theme.state, width: 30) { PluginWindow.show(unit: u, core: mix.core) }
                 .help("Plugin-Fenster öffnen")
         }
+    }
+}
+
+/// Regler eines FX-Bedienelements: Beschriftung = zugewiesener Parameter (hell = eigene Zuweisung),
+/// beim Drehen und Zeigen der Wert mit Einheit. Rechtsklick = zuweisen
+struct FXKnob: View {
+    @Environment(MixModel.self) private var mix
+    let u: Int
+    let c: FXControl
+    @State private var hover = false
+    @State private var flash = false
+    @State private var flashTask: Task<Void, Never>?
+
+    var body: some View {
+        let info = mix.fxUnits[u].controls[c.slot]
+        let showValue = info.param != nil && (hover || flash)
+        VStack(spacing: 1) {
+            Knob(value: Binding(get: { mix.fxUnits[u].controls[c.slot].value }, set: { mix.setFXControl(u, c, $0) }),
+                 range: 0...1, defaultValue: info.param?.defaultValue ?? 0, bipolar: info.param?.bipolar ?? false,
+                 color: Theme.state, size: 24)
+                .opacity(info.param == nil ? 0.35 : 1)
+            Text(verbatim: showValue ? mix.fxText(u, info) : info.label)
+                .font(showValue ? Theme.mono(8) : Theme.label(8, .semibold))
+                .foregroundStyle(showValue || !info.isDefault ? Theme.bone : Theme.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .frame(width: 34)
+        }
+        .onHover { hover = $0 }
+        .onChange(of: info.value) {
+            // Wert kurz zeigen (Controller, Plugin-Fenster, Ziehen)
+            flash = true
+            flashTask?.cancel()
+            flashTask = Task { try? await Task.sleep(for: .seconds(1.2)); if !Task.isCancelled { flash = false } }
+        }
+        .contextMenu { FXAssignMenu(u: u, c: c) }
+        .help(fxHelp(info))
+    }
+
+    private func fxHelp(_ info: FXControlInfo) -> Text {
+        guard let p = info.param else { return Text("Nicht zugewiesen · Rechtsklick = Parameter wählen") }
+        return fxParamName(p) + Text(verbatim: " · " + mix.fxText(u, info) + " · ") + Text("Rechtsklick = Parameter wählen")
+    }
+}
+
+/// Taste eines FX-Bedienelements: Schalter, Liste (nächste Stufe) oder min/max. Rechtsklick = zuweisen
+struct FXButton: View {
+    @Environment(MixModel.self) private var mix
+    let u: Int
+    let i: Int
+
+    var body: some View {
+        let c = FXControl.button(i)
+        let info = mix.fxUnits[u].controls[c.slot]
+        DeckButton(title: info.label, active: info.active, color: Theme.state, width: 22, verbatim: true) { mix.pressFXButton(u, i) }
+            .opacity(info.param == nil ? 0.5 : 1)
+            .contextMenu { FXAssignMenu(u: u, c: c) }
+            .help(info.param.map { fxParamName($0) + Text(verbatim: " · " + mix.fxText(u, info) + " · ") + Text("Rechtsklick = Parameter wählen") }
+                  ?? Text("Nicht zugewiesen · Rechtsklick = Parameter wählen"))
+    }
+}
+
+/// Name eines Parameters (eigene Effekte übersetzt, Plugins wie geliefert)
+func fxParamName(_ p: FXParam) -> Text {
+    p.pluginParam == nil ? Text(LocalizedStringKey(p.name)) : Text(verbatim: p.name)
+}
+
+extension FXControl {
+    /// Beschriftung in Menüs und Einstellungen (Lokalisierungsschlüssel)
+    var title: LocalizedStringKey {
+        switch self {
+        case .dryWet: "D/W"
+        case .knob1: "Regler 1"
+        case .knob2: "Regler 2"
+        case .knob3: "Regler 3"
+        case .button1: "Taste 1"
+        case .button2: "Taste 2"
+        case .button3: "Taste 3"
+        }
+    }
+}
+
+/// FX-Belegung eines Bedienelements: Standard, nicht zugewiesen, alle Parameter des geladenen Effekts.
+/// Gruppen als Abschnitte, bei vielen Parametern als Untermenüs (je 20). Tasten: Schalter/Listen oben, stufenlose als min/max.
+/// `filter` = Suche (Einstellungen)
+struct FXAssignMenu: View {
+    @Environment(MixModel.self) private var mix
+    let u: Int
+    let c: FXControl
+    var filter = ""
+
+    private static let flatLimit = 24, chunk = 20
+
+    var body: some View {
+        let unit = mix.fxUnits[u]
+        let mapped = unit.state.mapping[c]
+        let params = unit.params
+        let def = FXCatalog.defaultTarget(c, effect: unit.state.effectKey, params: params).flatMap { k in params.first { $0.id == k } }
+        let list = filter.isEmpty ? params : params.filter {
+            $0.name.localizedCaseInsensitiveContains(filter) || $0.group.localizedCaseInsensitiveContains(filter)
+        }
+        Toggle(isOn: Binding(get: { mapped == nil }, set: { _ in mix.setFXMapping(u, c, nil) })) {
+            Text("Standard") + Text(verbatim: " · ") + (def.map(fxParamName) ?? Text(verbatim: "—"))
+        }
+        Toggle(isOn: Binding(get: { mapped == "" }, set: { _ in mix.setFXMapping(u, c, "") })) { Text("Nicht zugewiesen") }
+        Divider()
+        if list.isEmpty {
+            params.isEmpty ? Text("Effekt lädt …") : Text("Kein Parameter gefunden")
+        }
+        if c == .dryWet {
+            let wet = list.filter { p in p.pluginParam != nil && ["mix", "wet", "dry"].contains { p.name.lowercased().contains($0) } }
+            if !wet.isEmpty { Section("Mix des Plugins") { items(wet, mapped) } }
+        }
+        if c.isButton {
+            let switches = list.filter(\.isSwitch), rest = list.filter { !$0.isSwitch }
+            if !switches.isEmpty { Section("Schalter und Listen") { tree(switches, mapped) } }
+            if !rest.isEmpty { Menu("Stufenlos (min/max)") { tree(rest, mapped) } }
+        } else {
+            tree(list, mapped)
+        }
+    }
+
+    /// nach Gruppen: wenige = Abschnitte, viele = Untermenüs
+    @ViewBuilder private func tree(_ list: [FXParam], _ mapped: String?) -> some View {
+        let groups = Self.groups(list)
+        if list.count <= Self.flatLimit || groups.count == 1 {
+            ForEach(groups, id: \.0) { g in
+                if g.0.isEmpty || groups.count == 1 { chunked(g.1, mapped) } else { Section(g.0) { chunked(g.1, mapped) } }
+            }
+        } else {
+            ForEach(groups, id: \.0) { g in
+                if g.0.isEmpty { chunked(g.1, mapped) } else { Menu { chunked(g.1, mapped) } label: { Text(verbatim: g.0) } }
+            }
+        }
+    }
+
+    @ViewBuilder private func chunked(_ list: [FXParam], _ mapped: String?) -> some View {
+        if list.count <= Self.flatLimit {
+            items(list, mapped)
+        } else {
+            ForEach(Array(stride(from: 0, to: list.count, by: Self.chunk)), id: \.self) { i in
+                let part = Array(list[i..<min(i + Self.chunk, list.count)])
+                Menu { items(part, mapped) } label: { Text(verbatim: "\(part[0].name) … \(part[part.count - 1].name)") }
+            }
+        }
+    }
+
+    private func items(_ list: [FXParam], _ mapped: String?) -> some View {
+        ForEach(list) { p in
+            Toggle(isOn: Binding(get: { mapped == p.id }, set: { _ in mix.setFXMapping(u, c, p.id) })) {
+                // Art bzw. Bereich hinter dem Namen (Plugins: Einheit, AU mit Bereich)
+                let detail: Text? = p.steps == 1 ? Text("Schalter") : p.steps > 1 ? Text("\(p.steps + 1) Stufen")
+                    : p.pluginParam == nil || p.rangeText.isEmpty ? nil : Text(verbatim: p.rangeText)
+                detail.map { fxParamName(p) + Text(verbatim: " · ") + $0 } ?? fxParamName(p)
+            }
+        }
+    }
+
+    /// Gruppen in der Reihenfolge des ersten Auftretens
+    private static func groups(_ list: [FXParam]) -> [(String, [FXParam])] {
+        var order: [String] = [], by: [String: [FXParam]] = [:]
+        for p in list {
+            if by[p.group] == nil { order.append(p.group) }
+            by[p.group, default: []].append(p)
+        }
+        return order.map { ($0, by[$0] ?? []) }
     }
 }
 

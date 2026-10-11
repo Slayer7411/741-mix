@@ -63,11 +63,13 @@ struct DeckButton: View {
     var color: Color = Theme.state
     var width: CGFloat? = nil
     var fill = false
+    /// Titel nicht übersetzen (Namen aus Plugins)
+    var verbatim = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(LocalizedStringKey(title))
+            (verbatim ? Text(verbatim: title) : Text(LocalizedStringKey(title)))
                 .font(Theme.label(10, .bold))
                 .lineLimit(1)
                 .frame(minWidth: width ?? 0, maxWidth: fill ? .infinity : nil)
@@ -98,7 +100,7 @@ extension DeckButton {
         var body: some View { button }
         static func == (a: Self, b: Self) -> Bool {
             a.button.title == b.button.title && a.button.active == b.button.active && a.button.color == b.button.color
-                && a.button.width == b.button.width && a.button.fill == b.button.fill
+                && a.button.width == b.button.width && a.button.fill == b.button.fill && a.button.verbatim == b.button.verbatim
         }
     }
 }

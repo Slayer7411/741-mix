@@ -11,6 +11,8 @@ public final class PlaylistNode: Identifiable, Hashable, @unchecked Sendable {
     public var trackKeys: [String] = []
     /// Smartlist-Regel (nur Smartlist)
     public var query: String = ""
+    /// UUID aus der Collection (Playlist, Smartlist; Ordner haben keine)
+    public var uuid: String = ""
 
     public init(name: String, kind: Kind) { self.name = name; self.kind = kind }
 
@@ -29,13 +31,42 @@ public final class PlaylistNode: Identifiable, Hashable, @unchecked Sendable {
     }
     /// gleicher Baum (Namen, Arten, Playlist-Einträge, Regeln)?
     public func sameTree(_ o: PlaylistNode) -> Bool {
-        id == o.id && name == o.name && kind == o.kind && trackKeys == o.trackKeys && query == o.query
+        id == o.id && name == o.name && kind == o.kind && trackKeys == o.trackKeys && query == o.query && uuid == o.uuid
             && children.count == o.children.count && zip(children, o.children).allSatisfy { $0.sameTree($1) }
     }
     /// alle Knoten nach ID
     public func index(into d: inout [UUID: PlaylistNode]) {
         d[id] = self
         for c in children { c.index(into: &d) }
+    }
+    /// Namen von den Kindern dieses Knotens bis `target` (nil = nicht darunter)
+    public func path(to target: PlaylistNode) -> [String]? {
+        for c in children {
+            if c === target || c.id == target.id { return [c.name] }
+            if let p = c.path(to: target) { return [c.name] + p }
+        }
+        return nil
+    }
+    /// Knoten unter diesem: zuerst über die UUID, sonst über den Namenspfad (gleiche Art, erster Treffer)
+    public func find(uuid: String?, path: [String]?, kind: Kind? = nil) -> PlaylistNode? {
+        if let uuid, !uuid.isEmpty, let n = first(where: { $0.uuid == uuid }) { return n }
+        guard let path, !path.isEmpty else { return nil }
+        var n = self
+        for (i, name) in path.enumerated() {
+            let last = i == path.count - 1
+            let want: Kind? = last ? kind : .folder
+            guard let c = n.children.first(where: { c in c.name == name && (want == nil || c.kind == want) }) else { return nil }
+            n = c
+        }
+        return n
+    }
+    /// erster Knoten unter diesem (Tiefensuche), der passt
+    public func first(where match: (PlaylistNode) -> Bool) -> PlaylistNode? {
+        for c in children {
+            if match(c) { return c }
+            if let f = c.first(where: match) { return f }
+        }
+        return nil
     }
     public static func == (a: PlaylistNode, b: PlaylistNode) -> Bool { a.id == b.id }
     public func hash(into h: inout Hasher) { h.combine(id) }
@@ -141,6 +172,8 @@ public final class NMLParser: NSObject, XMLParserDelegate {
             let node = PlaylistNode(name: a["NAME"] ?? "", kind: kind)
             (stack.last ?? root).children.append(node)
             stack.append(node)
+        case "PLAYLIST", "SMARTLIST":
+            if let u = a["UUID"], let n = stack.last, n.uuid.isEmpty { n.uuid = u }
         case "PRIMARYKEY":
             if let k = a["KEY"], let n = stack.last, n.kind == .playlist { n.trackKeys.append(k) }
         case "SEARCH_EXPRESSION":

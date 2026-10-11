@@ -13,6 +13,8 @@ struct Session: Codable {
         var source: String?, sort: String?, ascending: Bool?, roles: [String]?, tags: [String]?, showTree: Bool?
         /// MUSIC FOLDERS: Unterordner einbeziehen
         var subfolders: Bool?
+        /// Favoritenleiste (6 Plätze, leer = null)
+        var favorites: [BrowserFavorite?]?
     }
     var decks: [Deck]?
     var fx: [FXUnitState]?
@@ -63,7 +65,8 @@ struct Session: Codable {
             let c = p.sortOrder.first
             return Pane(source: Session.sourceID(p.source), sort: c.flatMap { Session.sortName($0) },
                         ascending: c.map { $0.order == .forward }, roles: p.roles.map(\.rawValue),
-                        tags: Array(p.tags), showTree: p.showTree, subfolders: p.subfolders)
+                        tags: Array(p.tags), showTree: p.showTree, subfolders: p.subfolders,
+                        favorites: p.favorites.contains { $0 != nil } ? p.favorites : nil)
         }
         maximized = browser.maximized
     }
@@ -109,6 +112,7 @@ struct Session: Codable {
             if let t = p.tags { pane.tags = Set(t) }
             if let v = p.showTree { pane.showTree = v }
             if let v = p.subfolders { pane.subfolders = v }
+            if let f = p.favorites { pane.favorites = BrowserFavorite.normalized(f) }
         }
     }
 

@@ -26,6 +26,8 @@ extension ShortcutID: Identifiable {
         case .loadSelected: String(localized: "Auswahl ins Fokus-Deck laden")
         case .previewSelected: String(localized: "Auswahl vorhören")
         case .reloadCollection: String(localized: "Collection neu laden")
+        case .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6:
+            String(localized: "Favorit \((index ?? 0) + 1) (Fokus-Bereich)")
         case .toggleMixer: String(localized: "Mixer ein/aus")
         case .toggleFourDecks: String(localized: "2 / 4 Decks")
         case .bigBrowser: String(localized: "Browser groß")
@@ -141,6 +143,8 @@ struct AppActions {
         case .loadSelected: if let t = browser.selectedTrack() { mix.load(t, deck: d) }
         case .previewSelected: if let t = browser.selectedTrack() { mix.togglePreview(t) }
         case .reloadCollection: store.load(store.sourceURL ?? LibraryStore.defaultNML)
+        case .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6:
+            (mix.prefs.ui.browserLayout == .single ? browser.paneA : browser.activePane).applyFavorite(a.index ?? 0, store: store)
         case .toggleMixer: mix.prefs.ui.showMixer.toggle()
         case .toggleFourDecks: mix.prefs.ui.showFourDecks.toggle()
         case .bigBrowser, .bigBrowserKey: browser.maximized.toggle()

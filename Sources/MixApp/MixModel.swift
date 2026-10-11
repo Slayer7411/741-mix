@@ -26,7 +26,10 @@ final class DeckMirror {
 @MainActor @Observable
 final class FXMirror {
     var state = FXUnitState()
-    var pluginParams: [String] = []
+    /// Bedienelemente D/W, Regler 1–3, Tasten 1–3: Ziel, Stellung, Beschriftung (Länge wie MixState.fxControls)
+    var controls = Array(repeating: FXControlInfo(), count: FXControl.allCases.count)
+    /// zuweisbare Parameter des geladenen Effekts
+    var params: [FXParam] = []
     var pluginError: String?
 }
 
@@ -169,7 +172,8 @@ final class MixModel {
             if s.clockMaster != clockMaster { clockMaster = s.clockMaster }
             for (u, m) in fxUnits.enumerated() {
                 if m.state != s.fx[u] { m.state = s.fx[u] }
-                if m.pluginParams != s.pluginParams[u] { m.pluginParams = s.pluginParams[u] }
+                if m.controls != s.fxControls[u] { m.controls = s.fxControls[u] }
+                if m.params != s.fxParams[u] { m.params = s.fxParams[u] }
                 if m.pluginError != s.pluginErrors[u] { m.pluginError = s.pluginErrors[u] }
             }
             let c = ClockMirror(s)
@@ -281,6 +285,30 @@ final class MixModel {
     func setCrossfader(_ v: Double) { run { core.setCrossfader(v) } }
     func updateFX(_ u: Int, _ f: (inout FXUnitState) -> Void) { run { core.updateFX(u, f) } }
     func toggleFXAssign(_ d: Int, _ u: Int) { run { core.toggleFXAssign(d, u) } }
+    func setFXControl(_ u: Int, _ c: FXControl, _ v: Double) { run { core.setFXControl(u, c, v) } }
+    func pressFXButton(_ u: Int, _ i: Int) { run { core.pressFXButton(u, i) } }
+    /// Zuweisung ändern (nil = Standard, "" = aus); die gemerkte Zuweisung je Effekt geht in die Einstellungen
+    func setFXMapping(_ u: Int, _ c: FXControl, _ target: String?) {
+        run { core.setFXMapping(u, c, target) }
+        prefs.engine.fxMappings = state.prefs.fxMappings
+    }
+    func resetFXMapping(_ u: Int) {
+        run { core.resetFXMapping(u) }
+        prefs.engine.fxMappings = state.prefs.fxMappings
+    }
+    /// Wert eines Bedienelements mit Einheit (VST3: Text vom Plugin)
+    func fxText(_ u: Int, _ info: FXControlInfo) -> String {
+        guard let p = info.param else { return "—" }
+        return core.pluginText(u, p, info.value) ?? p.text(info.value)
+    }
+    /// Name eines Effekts zur Kennung (Plugin: Name aus der Plugin-Liste)
+    func effectName(_ key: String) -> String {
+        switch key {
+        case FXCatalog.groupKey: String(localized: "Gruppe")
+        case "FILTER", "DELAY", "REVERB", "PLUGIN": key
+        default: core.pluginCatalog.knownInfo(key).map { "\($0.name) · \($0.manufacturer)" } ?? key
+        }
+    }
     func setPlugin(_ u: Int, _ id: String?) {
         if id != state.fx[u].pluginID { PluginWindow.close(u) }
         run { core.setPlugin(u, id: id) }
