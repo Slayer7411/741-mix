@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "minos741", targets: ["MixApp"]),
+        .executable(name: "minos-files", targets: ["MixFiles"]),
         .library(name: "MixCore", targets: ["MixCore"]),
     ],
     targets: [
@@ -33,6 +34,13 @@ let package = Package(
                               .define("LINK_PLATFORM_MACOSX", to: "1")]),
         // Dekodieren, Wellenform-Analyse, Übersicht, Phrasen-Anker, Cover – ohne Audiogerät, auch im Datei-Dienst
         .target(name: "MixMedia", dependencies: ["MixCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        // Steuer-Ebene zwischen Prozessen: Unix-Socket mit Nachrichten-Kopf, fd-Übergabe, Kindprozess starten/überwachen
+        .target(name: "MixIPC"),
+        // Nachrichten zwischen den Prozessen (versioniert)
+        .target(name: "MixProtocol"),
+        // Datei-Dienst: dekodiert in eigenem Prozess (abschießbar, wenn der Cloud-Anbieter hängt)
+        .executableTarget(name: "MixFiles", dependencies: ["MixIPC", "MixProtocol", "MixMedia"],
+                          swiftSettings: [.swiftLanguageMode(.v5)]),
         // Audio-Thread-Code arbeitet bewusst mit geteiltem Zustand → Swift-5-Modus
         .target(name: "MixEngine", dependencies: ["MixCore", "MixMedia", "MixDSP", "LinkKit"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "MixApp", dependencies: ["MixCore", "MixEngine", "LibraryCloud"],
@@ -42,6 +50,7 @@ let package = Package(
         .testTarget(name: "MixCoreTests", dependencies: ["MixCore"]),
         .testTarget(name: "LibraryCloudTests", dependencies: ["LibraryCloud"]),
         // .mtrk: Rundreise gegen Dekodieren im Prozess, kaputte Köpfe, Löschen während eingeblendet
+        .testTarget(name: "MixIPCTests", dependencies: ["MixIPC"]),
         .testTarget(name: "MixMediaTests", dependencies: ["MixMedia", "MixCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
         // Kern offline rendern (kein Audiogerät): Transport, Loop, Keylock, FX-Fahnen, Übergabe
         .testTarget(name: "MixEngineTests", dependencies: ["MixDSP", "MixMedia", "MixEngine"]),
