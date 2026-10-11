@@ -734,7 +734,8 @@ struct TrackTable: View {
         // Vorschau-Bilder in Zellen hängen am Übersichten-Zähler, das Band (ganze Zeile) zeichnet PreviewRowLayer
         let tick = ui.previewMode == .column || ui.previewMode == .behindTitle ? Overviews.shared.tick : 0
         let look = TrackTableController.Look(ui: ui, zoom: UIZoom.shared.factor, filter: model.tagFilter, inline: model.inline,
-                                             played: history.played, cloud: CloudLibrary.shared.revision, tick: tick)
+                                             played: history.played, cloud: CloudLibrary.shared.revision, tick: tick,
+                                             preview: ui.previewMode == .column || ui.previewMode == .behindTitle ? decks.previewing?.key : nil)
         TrackTableView(controller: table, look: look, selection: model.selection, sort: model.sortOrder) { table in
                 table.model = model
                 table.fixedRows = rows
@@ -760,7 +761,7 @@ struct TrackTable: View {
             }
             .background(PreviewRowLayer(controller: rowBand, mix: decks, on: ui.previewMode == .fullRow))
             .onAppear { inlineCtl.install() }
-            .onDisappear { inlineCtl.uninstall(); rowBand.remove() }
+            .onDisappear { inlineCtl.uninstall(); rowBand.remove(); table.detach() }
             .onChange(of: model.selection) { browser.activePaneID = model.id }
             .onChange(of: browser.scrollRequest?.track) {
                 if let r = browser.scrollRequest, r.pane == model.id { table.scroll(to: r.track) }

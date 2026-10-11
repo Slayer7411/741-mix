@@ -233,6 +233,13 @@ final class TrackHeaderView: NSTableHeaderView {
 /// Tabelle: Return = Inline-Bearbeitung (Rest wie NSTableView: Pfeile, ⇧/⌘-Auswahl, Tippen springt)
 final class TrackNSTable: NSTableView {
     var onReturn: (() -> Void)?
+    /// Klick ins Vorschau-Bild des vorgehörten Tracks: Sprung statt Auswahl
+    var onSeek: ((NSEvent) -> Bool)?
+
+    override func mouseDown(with e: NSEvent) {
+        if onSeek?(e) == true { return }
+        super.mouseDown(with: e)
+    }
 
     override func keyDown(with e: NSEvent) {
         if e.keyCode == 36 || e.keyCode == 76, e.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
@@ -373,6 +380,8 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         var played: Set<String>
         var cloud: Int
         var tick: Int
+        /// vorgehörter Track (Strich in Vorschau-Spalte bzw. hinter dem Titel)
+        var preview: String?
     }
 
     private var rows: [Track] = []
@@ -409,6 +418,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         tv.target = self
         tv.doubleAction = #selector(doubleClicked)
         tv.onReturn = { [weak self] in self?.returnKey() }
+        tv.onSeek = { [weak self] e in self?.seekClick(e) ?? false }
         let menu = NSMenu()
         menu.delegate = self
         tv.menu = menu
@@ -536,6 +546,82 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         generation = gen
         if model.selection != shownSelection { applySelection(model.selection) }
         syncSort(model.sortOrder)
+        followPreview()
+    }
+
+    // MARK: Vorhören
+
+    /// Strich des vorgehörten Tracks: eine Ebene in seiner Zeile, 10 × je Sekunde nachgeführt
+    private let playhead: CALayer = {
+        let l = CALayer()
+        l.backgroundColor = NSColor(Theme.state).cgColor
+        l.zPosition = 1
+        l.isHidden = true
+        l.actions = ["position": NSNull(), "bounds": NSNull(), "hidden": NSNull()]
+        return l
+    }()
+    private var playheadTimer: Timer?
+
+    /// Bereich verschwindet: Takt des Strichs anhalten
+    func detach() {
+        playheadTimer?.invalidate()
+        playheadTimer = nil
+    }
+
+    private func followPreview() {
+        let on = look?.preview != nil
+        if on, playheadTimer == nil {
+            let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.movePlayhead() } }
+            RunLoop.main.add(t, forMode: .common)
+            playheadTimer = t
+        } else if !on {
+            playheadTimer?.invalidate()
+            playheadTimer = nil
+        }
+        movePlayhead()
+    }
+
+    /// Bildfläche der Vorschau in der Zeile des vorgehörten Tracks (Tabellen-Koordinaten), nur sichtbare Zeilen
+    private func previewRect() -> (row: Int, rect: CGRect)? {
+        guard let tv = table, let key = look?.preview, let mode = look?.ui.previewMode else { return nil }
+        let id = mode == .column ? "preview" : mode == .behindTitle ? "title" : ""
+        let c = tv.column(withIdentifier: NSUserInterfaceItemIdentifier(id))
+        guard c >= 0, !tv.tableColumns[c].isHidden else { return nil }
+        let vis = tv.rows(in: tv.visibleRect)
+        for r in vis.location..<Swift.min(rows.count, vis.location + vis.length) where rows[r].key == key {
+            let l = line(tv.frameOfCell(atColumn: c, row: r))
+            if mode == .column {
+                let h = PreviewRenderer.heightPt.z
+                return (r, CGRect(x: l.minX, y: (l.midY - h / 2).rounded(), width: l.width, height: h))
+            }
+            return (r, l.insetBy(dx: 0, dy: 1))
+        }
+        return nil
+    }
+
+    private func movePlayhead() {
+        guard let tv = table, let (r, rect) = previewRect(), let f = mix?.previewFraction, f.isFinite,
+              let rv = tv.rowView(atRow: r, makeIfNecessary: false), let layer = rv.layer else {
+            playhead.isHidden = true
+            return
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if playhead.superlayer !== layer { layer.addSublayer(playhead) }
+        let o = tv.rect(ofRow: r).origin
+        playhead.frame = CGRect(x: rect.minX - o.x + CGFloat(f) * rect.width - 1, y: rect.minY - o.y, width: 2, height: rect.height)
+        playhead.isHidden = false
+        CATransaction.commit()
+    }
+
+    /// Vorschau-Spalte: Klick ins Bild des vorgehörten Tracks springt (hinter dem Titel bleibt der Klick beim Titel)
+    private func seekClick(_ e: NSEvent) -> Bool {
+        guard let tv = table, look?.ui.previewMode == .column, let key = look?.preview, let (r, rect) = previewRect() else { return false }
+        let p = tv.convert(e.locationInWindow, from: nil)
+        guard tv.row(at: p) == r, rect.contains(p), rect.width > 0 else { return false }
+        mix?.seekPreview(key, fraction: (p.x - rect.minX) / rect.width)
+        movePlayhead()
+        return true
     }
 
     /// Liste aus dem Hintergrund: direkt übernehmen (kein SwiftUI-Durchlauf für die Tabelle)
@@ -617,6 +703,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         }()
         v.owner = self
         v.needsDisplay = true
+        if playhead.superlayer === v.layer { playhead.isHidden = true }
         return v
     }
     private static let rowID = NSUserInterfaceItemIdentifier("row")
