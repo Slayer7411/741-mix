@@ -678,3 +678,6 @@
 "Lautstärke Vorhören" = "Preview volume";
 "am mischpult einen freien kanal auf dieses usb-paar stellen, fader zu, cue an -> vorhören nur im kopfhörer. ein deck-paar nur von hand wählbar." = "on the mixer set a free channel to this usb pair, fader down, cue on -> preview only in the headphones. a deck pair only by hand.";
 "läuft auf dem gewählten paar mit, unabhängig von main. ein paar fürs kopfhörer-signal des interfaces -> vorhören nur dort." = "plays on the chosen pair, independent of main. a pair for the interface's headphone signal -> preview only there.";
+"Vorhören lädt …" = "Preview loading …";
+"Vorhören: Datei fehlt" = "Preview: file missing";
+"Vorhören nicht möglich: %@" = "Preview not possible: %@";
