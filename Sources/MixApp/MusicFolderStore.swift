@@ -76,12 +76,33 @@ final class MusicFolderStore {
             if let key = index[f.match], let t = library.byKey[key] {
                 out.append(t)
             } else {
-                loose[f.loose.key] = f.loose
-                out.append(f.loose)
+                // lose Datei: eigene Analyse darüber (Tempo, Grid, Tonart, Lautheit)
+                let t = library.analysis.entry(for: f.loose.key).map { $0.apply(to: f.loose) } ?? f.loose
+                loose[t.key] = t
+                out.append(t)
             }
         }
         cache[k] = (stamp, out)
         return out
+    }
+
+    /// neue Analyse einer losen Datei übernehmen; die Listen bauen sich beim nächsten Lesen neu
+    func applyAnalysis(_ a: TrackAnalysis, to key: String) {
+        guard let t = loose[key] else { return }
+        loose[key] = a.apply(to: t)
+        invalidate()
+    }
+
+    /// Analyse einer losen Datei verworfen: beim nächsten Lesen wieder ohne Werte
+    func forget(_ key: String) {
+        loose[key] = nil
+        invalidate()
+    }
+
+    private func invalidate() {
+        cache = [:]
+        loads += 1
+        revision += 1
     }
 
     /// Ordner (und darunter gelesene) neu einlesen – Rechtsklick „Neu einlesen“ oder Änderung im Dateisystem
@@ -196,6 +217,7 @@ private struct MusicFolderRow: View {
             .contextMenu {
                 Button("Neu einlesen") { store.folders.rescan(path) }
                 OverviewMenuButton { store.folders.tracks(in: path, recursive: true, library: store) }
+                AnalysisMenuButtons { store.folders.tracks(in: path, recursive: true, library: store) }
                 Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
             }
     }

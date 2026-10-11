@@ -447,7 +447,17 @@ struct OverviewHook: View {
         let fill = !Session.isSelfTest || ProcessInfo.processInfo.environment["MIX741_OVERVIEW_IDLE"] == "1" ? mix.prefs.ui.previewFill : .off
         let ov = Overviews.shared
         Color.clear.frame(width: 0, height: 0)
-            .onChange(of: activity, initial: true) { ov.setDecks(playing: activity.playing, loading: activity.loading) }
+            .onChange(of: activity, initial: true) {
+                ov.setDecks(playing: activity.playing, loading: activity.loading)
+                Analyses.shared.setDecks(playing: activity.playing, loading: activity.loading)
+            }
+            .onAppear {
+                // eigene Analyse: Ergebnisse in die Library, Collection-Datei nach Einstellung, Grid-Änderung bei Neu analysieren
+                let a = Analyses.shared
+                a.library = store
+                a.writeBack = { [mix] in mix.prefs.ui.writeCollection }
+                a.clearGridEdit = { [mix] key in mix.clearGridEdit(key) }
+            }
             .onChange(of: fill, initial: true) { ov.setMode(fill) }
             .onChange(of: sig.keys, initial: true) {
                 for d in 0..<4 { if let t = mix.deck(d).track, let a = mix.audio(d) { ov.ingest(t, audio: a) } }
@@ -464,7 +474,7 @@ struct OverviewHook: View {
 struct OverviewStatus: View {
     @Environment(MixModel.self) private var mix
 
-    private static func state(_ g: OverviewPolicy.Gate) -> String? {
+    static func state(_ g: OverviewPolicy.Gate) -> String? {
         switch g {
         case .full: nil
         case .throttled: String(localized: "gedrosselt")

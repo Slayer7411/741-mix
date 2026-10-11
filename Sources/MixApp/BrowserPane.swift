@@ -280,6 +280,7 @@ struct SourceTree: View {
                     Button("Collection prüfen …") { ConsistencyWindow.show(store: store) }
                     Button("Reset Played State") { history.resetPlayed() }
                     OverviewMenuButton { store.tracks }
+                    AnalysisMenuButtons { store.tracks }
                     CloudMenuButton(label: "Track Collection") { store.tracks }
                 }
             row("▶", "RUNNING TRACKS").tag(BrowserSource.running)
@@ -287,6 +288,7 @@ struct SourceTree: View {
                 .contextMenu {
                     exportMenu(.preparation)
                     OverviewMenuButton { store.tracks(for: .preparation) }
+                    AnalysisMenuButtons { store.tracks(for: .preparation) }
                     CloudMenuButton(label: "Preparation") { store.tracks(for: .preparation) }
                 }
             DisclosureGroup {
@@ -309,6 +311,7 @@ struct SourceTree: View {
                         .contextMenu {
                             exportMenu(.custom(sl))
                             OverviewMenuButton { store.tracks(for: .custom(sl)) }
+                            AnalysisMenuButtons { store.tracks(for: .custom(sl)) }
                             CloudMenuButton(label: sl.name) { store.tracks(for: .custom(sl)) }
                             Button("Bearbeiten …") { editing = sl }
                             Button("Löschen") { store.customSmartlists.removeAll { $0.id == sl.id } }
@@ -328,6 +331,7 @@ struct SourceTree: View {
                         .contextMenu {
                             if node.kind != .folder { exportMenu(.node(node)) }
                             OverviewMenuButton { nodeTracks(node) }
+                            AnalysisMenuButtons { nodeTracks(node) }
                             CloudMenuButton(label: node.name) { nodeTracks(node) }
                         }
                 }
@@ -522,7 +526,11 @@ struct TrackTable: View {
             .width(16).customizationID("played")
         TableColumn(Text(verbatim: "☁").font(.system(size: 13))) { (t: Track) in CloudCell(path: t.path).modifier(PreviewRowCell(on: twoLine)) }
             .width(16).customizationID("cloud")
-        TableColumn("✓", value: \Track.analyzedSort) { (t: Track) in Text(t.analyzed ? "✓" : "").foregroundStyle(Theme.muted).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("✓", value: \Track.analyzedSort) { (t: Track) in
+                Text(t.analyzed ? "✓" : "").foregroundStyle(t.ownAnalysis ? Theme.secondary : Theme.muted)
+                    .help(t.ownAnalysis ? "analysiert von MINOS-741 (Tempo, Grid, Tonart, Lautheit ganz oder teilweise)" : "analysiert in der Collection")
+                    .modifier(PreviewRowCell(on: twoLine))
+            }
             .width(16).customizationID("analyzed")
         TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4).modifier(PreviewRowCell(on: twoLine)) }
             .width(6).customizationID("color")
@@ -670,6 +678,11 @@ struct TrackTable: View {
                 .keyboardShortcut("e", modifiers: .command)
             if store.hasEdits(ids) {
                 Button("Eigene Änderungen verwerfen") { store.revertEdits(Array(ids)) }
+            }
+            Divider()
+            AnalysisMenuButtons { ids.compactMap { store.track($0) } }
+            if store.hasAnalysis(ids) {
+                Button("Analyse verwerfen") { store.discardAnalysis(Array(ids)) }
             }
             Divider()
             Button("An Preparation anhängen") { store.preparation.append(contentsOf: ids.filter { !store.preparation.contains($0) }) }
