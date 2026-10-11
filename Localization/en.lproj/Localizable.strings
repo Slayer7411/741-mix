@@ -642,3 +642,10 @@
 "(Schnitt)" = "(cut)";
 "Vorhören: Restzeit bis zum Schnitt-Ende / Länge des Schnitts" = "Preview: time left to the cut end / length of the cut";
 "Vorhören beenden" = "Stop preview";
+
+/* Statusleiste: Audio, Browser-Baum */
+"Audio-Fehler: %@" = "Audio error: %@";
+"(intern %@ bis Neustart)" = "(internal %@ until restart)";
+"alle→%lld/%lld" = "all→%lld/%lld";
+"PREPARATION ARCHIV" = "PREPARATION ARCHIVE";
+"HISTORY ARCHIV" = "HISTORY ARCHIVE";

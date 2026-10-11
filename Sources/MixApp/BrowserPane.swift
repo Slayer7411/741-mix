@@ -367,7 +367,7 @@ struct SourceTree: View {
                     row("▤", Theme.dateTimeFormat.string(from: s.date)).tag(BrowserSource.prepArchive(s))
                         .contextMenu { exportMenu(.prepArchive(s)) }
                 }
-            } label: { row("▸", "PREPARATION ARCHIV") }
+            } label: { row("▸", String(localized: "PREPARATION ARCHIV")) }
             row("◷", "HISTORY").tag(BrowserSource.historyLive)
                 .favoriteDrag { BrowserFavorite.source(.historyLive, store: store) }
                 .contextMenu { exportMenu(.historyLive) }
@@ -376,7 +376,7 @@ struct SourceTree: View {
                     row(s.source == .external ? "◷" : "◴", s.label ?? Theme.dateTimeFormat.string(from: s.date)).tag(BrowserSource.history(s))
                         .contextMenu { exportMenu(.history(s)) }
                 }
-            } label: { row("▸", "HISTORY ARCHIV") }
+            } label: { row("▸", String(localized: "HISTORY ARCHIV")) }
             DisclosureGroup {
                 ForEach(store.customSmartlists) { sl in
                     row("◆", sl.name).tag(BrowserSource.custom(sl))

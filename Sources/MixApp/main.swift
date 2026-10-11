@@ -219,7 +219,7 @@ struct MixApp: App {
     @State private var controller: ControllerManager?
     @State private var sessionTimer: Timer?
 
-    private var appTitle: String {
+    static var appTitle: String {
         let info = Bundle.main.infoDictionary
         guard let v = info?["CFBundleShortVersionString"] as? String else { return "MINOS-741 dev" }
         let b = info?["CFBundleVersion"] as? String ?? ""
@@ -227,7 +227,7 @@ struct MixApp: App {
     }
 
     var body: some Scene {
-        WindowGroup(appTitle) {
+        WindowGroup(Self.appTitle) {
             MinSize(width: ZoomControl.minContent.width.z, height: ZoomControl.minContent.height.z) {
                 ContentView()
                     .environment(store)
@@ -427,6 +427,7 @@ MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest m
 MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=status:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { CloudShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cloud:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { ZoomShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=zoom:<ordner>, endet mit exit(0)
+MainActor.assumeIsolated { WindowShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=window:<png>, endet mit exit
 
 if ToggleBench.requested { MainActor.assumeIsolated { ToggleBench.run() } }   // Messung offscreen, ohne Fenster
 if ReloadBench.requested { MainActor.assumeIsolated { ReloadBench.run() } }   // Neu-Laden der Collection messen, offscreen

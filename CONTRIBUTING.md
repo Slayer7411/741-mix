@@ -58,6 +58,7 @@ MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 the self test plays, syncs, loops and jumps without sound and ends by itself. check the `[selftest]` lines: phase error should stay at ~0.00 beats.
 audio / sync changes -> also test live with 2 decks + keylock, note the cpu load.
 controller changes -> name the device and serial-free setup you tested with.
+readme screenshot -> `scripts/make-app.sh --no-install && MIX741_SELFTEST=1 MIX741_NOEXT=1 MIX741_SHOT=window:docs/assets/screenshot.png build/MINOS-741.app/Contents/MacOS/MINOS-741 -AppleLanguages '(en)'` (app bundle for the english strings).
 
 ## ◆ STYLE
 
