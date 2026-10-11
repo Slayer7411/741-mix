@@ -249,7 +249,9 @@ enum StateBench {
         installObserver()
         let n = Int(env["MIX741_BENCH_N"] ?? "") ?? 20
         let d = 0
-        var cueSet = false, tempo = false, loopIdx = 0, jumpIdx = 0
+        var cueSet = false, tempo = false, loopIdx = 0, jumpIdx = 0, cut = false
+        // MIX741_BENCH_EDIT=1: Deck A im EDIT-Modus (Grid- und Schnitt-Zeile, Griffe in der Wellenform)
+        if env["MIX741_BENCH_EDIT"] != nil { mix.prefs.ui.setEditing(d, true); try? await Task.sleep(for: .milliseconds(300)) }
         let actions: [(String, () -> Void)] = [
             ("play", { mix.togglePlay(d) }),
             ("sync", { mix.toggleSync(d) }),
@@ -261,6 +263,8 @@ enum StateBench {
             ("keylock", { mix.toggleKeylock(d) }),
             ("clock bpm", { tempo.toggle(); mix.setClockBPM(tempo ? 127 : 128) }),   // nur die Master-Clock-Leiste
             ("gain", { tempo.toggle(); mix.updateDeck(d) { $0.gainDb = tempo ? 1 : 0 } }),   // ohne Mixer unsichtbar: Grundkosten
+            ("edit", { mix.toggleEdit(d) }),   // EDIT-Modus an/aus: Zeilen tauschen, Griffe
+            ("cut", { cut.toggle(); if cut { mix.setTrimPoint(d, end: false, 55) } else { mix.clearTrim(d) } }),   // Schnitt-Anfang setzen/weg
         ].filter { a in env["MIX741_BENCH_ONLY"].map { $0.split(separator: ",").contains(Substring(a.0)) } ?? true }
         let sampler = startSample(seconds: max(5, actions.count * n * 2 * 60 / 1000))
         if sampler != nil { try? await Task.sleep(for: .milliseconds(500)) }
@@ -278,6 +282,13 @@ enum StateBench {
             await shot("state-1")
             mix.toggleSync(d); mix.toggleKeylock(d); mix.autoLoop(d); mix.hotcue(d, 7, delete: true); mix.setTempo(d, 0)
             mix.core.setLoopSize(d, 4); mix.setJumpSize(d, 4)
+            // EDIT-Modus mit Schnitt kurz vor der Position und eigenem Grid
+            let wasEditing = mix.editing(d)
+            if !wasEditing { mix.toggleEdit(d) }
+            mix.setTrimPoint(d, end: false, 58); mix.shiftGrid(d, ms: 1)
+            await shot("state-edit")
+            mix.clearTrim(d); mix.shiftGrid(d, ms: -1)
+            if !wasEditing { mix.toggleEdit(d) }
             try? await Task.sleep(for: .milliseconds(300))
         }
         var all: [Double] = [], allSync: [Double] = []

@@ -30,6 +30,11 @@ struct WaveScene: Equatable {
     var hasTrack = false
     /// Zoom des Hauptfensters (Schrift, Lineal, Marken)
     var zoom: CGFloat = 1
+    /// Grid von Hand gesetzt: Anker-Fahne rot
+    var gridEdited = false
+    /// Schnitt (außerhalb gedimmt) und EDIT-Modus (Griffe mit IN / OUT)
+    struct Trim: Equatable { var start: Double?, end: Double?, editing = false }
+    var trim = Trim()
 
     /// ändert sich das, müssen die Wellenform-Kacheln neu gerechnet werden
     var tileKey: String { "\(waveID.map { "\($0)" } ?? "-")|\(duration)|\(span)|\(hasTrack)" }
@@ -70,10 +75,14 @@ final class WaveLayerNSView: NSView {
     var scene = WaveScene() {
         didSet {
             guard scene != oldValue else { return }
-            // nur Cues geändert (Hotcue setzen/löschen, Cue-Punkt): Grid bleibt – es neu zu bauen kostete ~4 ms
+            // nur Cues (Hotcue setzen/löschen, Cue-Punkt) oder Schnitt geändert: Grid bleibt – es neu zu bauen kostete ~4 ms
             var a = scene, b = oldValue
             (a.cues, a.cuePoint, b.cues, b.cuePoint) = ([], 0, [], 0)
-            if a == b, builtSize == bounds.size { rebuildCues() } else { rebuild(tiles: scene.tileKey != oldValue.tileKey) }
+            (a.trim, b.trim) = (WaveScene.Trim(), WaveScene.Trim())
+            if a == b, builtSize == bounds.size {
+                if scene.cues != oldValue.cues || scene.cuePoint != oldValue.cuePoint { rebuildCues() }
+                if scene.trim != oldValue.trim { layoutTrim() }
+            } else { rebuild(tiles: scene.tileKey != oldValue.tileKey) }
         }
     }
 
@@ -81,6 +90,9 @@ final class WaveLayerNSView: NSView {
     private let strip = CALayer()
     private let tiles = CALayer(), gridLayer = CALayer(), cueLayer = CALayer()
     private let loopLayer = CALayer()
+    // Schnitt: gedimmt davor / dahinter, Ränder als Linie, im EDIT-Modus Griffe mit IN / OUT
+    private let trimLayer = CALayer(), trimDimLo = CALayer(), trimDimHi = CALayer(), trimLineLo = CALayer(), trimLineHi = CALayer()
+    private let trimFlagLo = CATextLayer(), trimFlagHi = CATextLayer()
     private let dim = CALayer()
     private let playhead = CALayer()
     private let countdown = CATextLayer()
@@ -129,9 +141,19 @@ final class WaveLayerNSView: NSView {
         countdown.font = Self.monoBold
         countdown.fontSize = 10
         countdown.contentsScale = 2
-        for l in [tiles, gridLayer, loopLayer, cueLayer] { strip.addSublayer(l) }
+        for l in [trimDimLo, trimDimHi] { l.backgroundColor = NSColor.black.withAlphaComponent(0.62).cgColor }
+        for (f, t) in [(trimFlagLo, "IN"), (trimFlagHi, "OUT")] {
+            f.string = t; f.font = Self.monoBold; f.alignmentMode = .center
+            f.foregroundColor = NSColor.black.cgColor; f.backgroundColor = NSColor(Theme.bone).cgColor
+        }
+        for l in [trimDimLo, trimDimHi, trimLineLo, trimLineHi, trimFlagLo, trimFlagHi] as [CALayer] {
+            l.actions = Self.noAnimation
+            trimLayer.addSublayer(l)
+        }
+        trimLayer.isHidden = true
+        for l in [tiles, gridLayer, loopLayer, cueLayer, trimLayer] { strip.addSublayer(l) }
         for l in [strip, dim, playhead, countdown] { content.addSublayer(l) }
-        for l in [strip, tiles, gridLayer, cueLayer, loopLayer, dim, playhead, countdown] as [CALayer] { l.actions = Self.noAnimation }
+        for l in [strip, tiles, gridLayer, cueLayer, loopLayer, trimLayer, dim, playhead, countdown] as [CALayer] { l.actions = Self.noAnimation }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -199,7 +221,43 @@ final class WaveLayerNSView: NSView {
         lastPos = .nan
         if scene.showGrid, let g = scene.grid, g.bpm > 0 { buildGrid(g, h: h) }
         buildCues(h: h)
+        layoutTrim()
         step()
+    }
+
+    /// Schnitt: nur Rahmen verschieben (beim Ziehen eines Griffs je Änderung)
+    private func layoutTrim() {
+        let t = scene.trim, h = bounds.height, z = scene.zoom
+        guard scene.hasTrack, h > 0, scene.duration > 0, t.start != nil || t.end != nil || t.editing else {
+            trimLayer.isHidden = true
+            return
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        trimLayer.isHidden = false
+        trimLayer.frame = strip.bounds
+        let total = strip.bounds.width
+        let x0 = px((t.start ?? 0) * pps), x1 = px((t.end ?? scene.duration) * pps)
+        trimDimLo.isHidden = t.start == nil
+        trimDimLo.frame = CGRect(x: 0, y: 0, width: max(0, x0), height: h)
+        trimDimHi.isHidden = t.end == nil
+        trimDimHi.frame = CGRect(x: x1, y: 0, width: max(0, total - x1), height: h)
+        // Linie: im EDIT-Modus kräftig (Griff), sonst Haarlinie
+        let bone = NSColor(Theme.bone)
+        for (l, x, set) in [(trimLineLo, x0, t.start != nil), (trimLineHi, x1, t.end != nil)] {
+            l.isHidden = !set && !t.editing
+            l.backgroundColor = (t.editing ? bone : bone.withAlphaComponent(0.6)).cgColor
+            l.frame = line(x, width: (t.editing ? 2.5 : 1) * z, y: 0, height: h)
+        }
+        // Fahnen außen am Rand (über dem weggeschnittenen Teil), die Grid-Fahne sitzt innen
+        let fh = 11 * z, size = 8 * z
+        for (f, x, w) in [(trimFlagLo, x0 - 18 * z, 18 * z), (trimFlagHi, x1, 24 * z)] {
+            f.isHidden = !t.editing
+            f.fontSize = size
+            f.contentsScale = scale
+            f.frame = CGRect(x: x, y: ruler + 1 * z, width: w, height: fh)
+        }
     }
 
     private func rebuildCues() {
@@ -323,11 +381,13 @@ final class WaveLayerNSView: NSView {
         gridLayer.addSublayer(labels)
         // Grid-Anker
         let ax = px(g.anchor * pps)
-        let anchor = CGMutablePath()
+        let anchor = CGMutablePath(), flag = CGMutablePath()
         anchor.addRect(line(ax, width: 2.5 * z, y: 0, height: h))
-        anchor.addRect(CGRect(x: ax, y: r, width: 10 * z, height: 10 * z))
+        flag.addRect(CGRect(x: ax, y: r, width: 10 * z, height: 10 * z))
         gridLayer.addSublayer(shape(anchor, bone))
-        gridLayer.addSublayer(text("G", .black, at: CGPoint(x: ax + 1.5 * z, y: r - 1 * z), size: 8))
+        // Fahne: von Hand gesetzt rot (Zustand, die Linie bleibt hell – rot ist der Spielkopf), sonst knochenweiß
+        gridLayer.addSublayer(shape(flag, scene.gridEdited ? NSColor(Theme.state) : bone))
+        gridLayer.addSublayer(text("G", scene.gridEdited ? bone : .black, at: CGPoint(x: ax + 1.5 * z, y: r - 1 * z), size: 8))
         countdown.isHidden = !scene.colorful
     }
 

@@ -1,4 +1,5 @@
 import AVFoundation
+import AppKit
 import Foundation
 import QuartzCore
 import Observation
@@ -269,6 +270,14 @@ final class MixModel {
         if !ok, deck(d).track != nil { StatusCenter.post(.warning, String(localized: "Schnitt zu kurz (mindestens 1 s)"), key: "trim.\(d)") }
     }
     func setTrimPoint(_ d: Int, end: Bool, _ t: Double) { run { _ = core.setTrimPoint(d, end: end, t) } }
+    /// Griff ziehen (Wellenform, Übersicht): Quantize rastet auf den Beat, ⌥ = frei
+    func dragTrim(_ d: Int, end: Bool, to time: Double) {
+        let s = deck(d)
+        var t = time
+        if prefs.engine.quantize, !NSEvent.modifierFlags.contains(.option), let g = s.grid, g.bpm > 0 { t = g.nearestBeat(to: t) }
+        if abs(t - (end ? s.trim.end ?? s.duration : s.trim.start ?? 0)) < 1e-6 { return }
+        setTrimPoint(d, end: end, t)
+    }
     func clearTrim(_ d: Int) { run { core.clearTrim(d) } }
 
     /// EDIT-Modus je Deck (Schnitt- und Grid-Werkzeuge statt Loop / Beatjump), gemerkt in den Einstellungen

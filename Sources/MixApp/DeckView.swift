@@ -12,6 +12,7 @@ struct DeckView: View {
 
     var body: some View {
         let rows = mix.prefs.ui.deckRows
+        let editing = mix.prefs.ui.editing(d)
         HStack(alignment: .top, spacing: 6.z) {
             VStack(alignment: .leading, spacing: 4.z) {
                 // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen), am Cover und an den Zusatzinfos
@@ -27,9 +28,15 @@ struct DeckView: View {
                 }
                 if rows.transport { row("transport", TransportRow(d: d)) }
                 if rows.hotcues { row("cues", CueRow(d: d)) }
-                if rows.loop { row("loop", LoopRow(d: d)) }
-                if rows.jump { row("jump", JumpRow(d: d)) }
-                if mix.prefs.ui.showGridTools { row("grid", GridToolsRow(d: d)) }
+                if editing {
+                    // EDIT: Grid und Schnitt statt Loop und Beatjump (Wellenform behält ihre Höhe)
+                    row("grid", GridToolsRow(d: d))
+                    row("cut", CutRow(d: d))
+                } else {
+                    if rows.loop { row("loop", LoopRow(d: d)) }
+                    if rows.jump { row("jump", JumpRow(d: d)) }
+                    if mix.prefs.ui.showGridTools { row("grid", GridToolsRow(d: d)) }
+                }
             }
             if rows.tempo { TempoColumn(d: d) }
         }
@@ -113,7 +120,7 @@ struct DeckHeader: View {
     struct Model: Equatable {
         var playing = false, title = "", subtitle = "", isError = false
         var showFX = false, fxUnits = 2, fxAssign: [Bool] = [], info = true
-        var bpm = 0.0, tempoPct = 0.0
+        var bpm = 0.0, tempoPct = 0.0, gridEdited = false
         var time = TimeReadout.Model(), code = CodeReadout.Model(), key = KeyReadout.Model(), phaseActive = false
     }
 
@@ -130,7 +137,9 @@ struct DeckHeader: View {
         m.info = ui.deckRows.info
         m.bpm = s.bpm
         m.tempoPct = s.tempoPct
-        m.time = .init(hasTrack: s.track != nil, duration: s.duration, playing: s.playing, grid: s.grid, warnAt: mix.prefs.engine.trackEndWarning)
+        m.gridEdited = s.gridEdited
+        m.time = .init(hasTrack: s.track != nil, end: s.duration > 0 ? s.playRange.upperBound : 0, playing: s.playing, grid: s.grid,
+                       warnAt: mix.prefs.engine.trackEndWarning)
         m.code = .init(hasTrack: s.track != nil, playing: s.playing, bars: max(4, ui.phraseBeats) / 4)
         m.key = KeyReadout.Model(track: s.track, deviation: mix.keyDeviation(d))
         m.phaseActive = s.playing && (mix.clockMaster || mix.effectiveMaster != nil)
@@ -171,7 +180,14 @@ struct DeckHeader: View {
                     TimeReadout(d: d, m: m.time).equatable()
                     VStack(alignment: .trailing, spacing: 0) {
                         Text(String(format: "%.2f", m.bpm)).font(Theme.mono(15.z, .bold))
-                        Text(String(format: "%+.2f%%", m.tempoPct)).font(Theme.mono(10.z)).foregroundStyle(.secondary)
+                        HStack(spacing: 3.z) {
+                            // Grid von Hand gesetzt: kleine rote Raute vor dem Tempo (Zustand, nicht Warnung)
+                            if m.gridEdited {
+                                Text("◆").font(Theme.mono(8.z)).foregroundStyle(Theme.state)
+                                    .help("Grid von Hand gesetzt (eigene Änderung) – RESET in der Grid-Zeile nimmt sie weg")
+                            }
+                            Text(String(format: "%+.2f%%", m.tempoPct)).font(Theme.mono(10.z)).foregroundStyle(.secondary)
+                        }
                     }
                     CodeReadout(d: d, m: m.code).equatable()
                     VStack(alignment: .trailing, spacing: 0) {
@@ -190,12 +206,14 @@ struct TransportRow: View {
     @Environment(MixModel.self) private var mix
     let d: Int
 
-    struct Model: Equatable { var playing = false, cueHeld = false, sync = false, master = false, keylock = false, reverse = false, flux = false }
+    struct Model: Equatable {
+        var playing = false, cueHeld = false, sync = false, master = false, keylock = false, reverse = false, flux = false, edit = false
+    }
 
     var body: some View {
         let s = mix.deck(d)
         Content(d: d, m: Model(playing: s.playing, cueHeld: s.cueHeld, sync: s.sync, master: mix.effectiveMaster == d,
-                               keylock: s.keylock, reverse: s.reverse, flux: s.flux)).equatable()
+                               keylock: s.keylock, reverse: s.reverse, flux: s.flux, edit: mix.prefs.ui.editing(d))).equatable()
     }
 
     struct Content: View, Equatable {
@@ -219,6 +237,8 @@ struct TransportRow: View {
                 DeckButton(title: "REV", active: m.reverse, color: Theme.state) { mix.toggleReverse(d) }.stable()
                 DeckButton(title: "FLUX", active: m.flux, color: Theme.state) { mix.toggleFlux(d) }.stable()
                 Spacer(minLength: 2.z)
+                DeckButton(title: "EDIT", active: m.edit, color: Theme.state) { mix.toggleEdit(d) }.stable()
+                    .help("EDIT-Modus: Schnitt und Grid setzen (⌥⌘E)")
             }
         }
     }
@@ -229,11 +249,12 @@ struct GridToolsRow: View {
     @Environment(MixModel.self) private var mix
     let d: Int
 
-    struct Model: Equatable { var bpm: Double?, suggestion: Int?, confidence = 0.0 }
+    struct Model: Equatable { var bpm: Double?, suggestion: Int?, confidence = 0.0, edited = false }
 
     var body: some View {
         let s = mix.deck(d)
-        Content(d: d, m: Model(bpm: s.grid?.bpm, suggestion: s.phraseSuggestion, confidence: s.phraseConfidence)).equatable()
+        Content(d: d, m: Model(bpm: s.grid?.bpm, suggestion: s.phraseSuggestion, confidence: s.phraseConfidence,
+                               edited: s.gridEdited)).equatable()
     }
 
     struct Content: View, Equatable {
@@ -244,7 +265,10 @@ struct GridToolsRow: View {
 
         var body: some View {
             HStack(spacing: 3.z) {
-                Text("GRID").font(Theme.label(9.z, .bold)).foregroundStyle(Theme.muted).frame(width: 30.z, alignment: .leading)
+                // rot = Grid von Hand gesetzt (eigene Änderung, gewinnt über Collection und Analyse)
+                Text("GRID").font(Theme.label(9.z, .bold)).foregroundStyle(m.edited ? Theme.state : Theme.muted)
+                    .frame(width: 30.z, alignment: .leading)
+                    .help(m.edited ? "Grid von Hand gesetzt – bleibt beim Laden und Analysieren, RESET nimmt es weg" : "Grid aus der Library")
                 DeckButton(title: "◂◂") { mix.shiftGrid(d, ms: -10) }.stable().help("Grid 10 ms früher")
                 DeckButton(title: "◂") { mix.shiftGrid(d, ms: -1) }.stable().help("Grid 1 ms früher")
                 DeckButton(title: "▸") { mix.shiftGrid(d, ms: 1) }.stable().help("Grid 1 ms später")
@@ -255,9 +279,11 @@ struct GridToolsRow: View {
                 DeckButton(title: "+") { mix.setGridBPM(d, (mix.deck(d).grid?.bpm ?? 0) + 0.01) }.stable()
                 DeckButton(title: "÷2") { mix.scaleGridBPM(d, 0.5) }.stable()
                 DeckButton(title: "×2") { mix.scaleGridBPM(d, 2) }.stable()
+                DeckButton(title: "TAP") { mix.tapGrid(d) }.stable().help("Auf die Beats tippen: ab 4 Taps BPM des Grids")
                 Divider().frame(height: 14.z)
                 DeckButton(title: "SET") { mix.setGridAnchorHere(d) }.stable().help("Beat 1 an die aktuelle Position")
-                DeckButton(title: "RESET") { mix.resetGrid(d) }.stable().help("Grid aus der Collection")
+                DeckButton(title: "RESET") { mix.resetGrid(d) }.stable()
+                    .help("Grid aus der Library (Collection oder eigene Analyse), eigene Änderung weg")
                 // Anker um ganze Beats/Takte: Raster bleibt, nur Takt- und Phrasenzählung wandert; schmale Decks: weniger Knöpfe
                 // FirstFit statt ViewThatFits: ViewThatFits baut seine Kandidaten bei jedem Layout neu auf (Knöpfe mit
                 // Tooltip, Fokus, Tastatur) – das kostete bei jeder Zustandsänderung ~40 ms über vier Decks
@@ -285,6 +311,72 @@ struct GridToolsRow: View {
                 DeckButton(title: short ? "PHR \(v)" : "PHRASE \(v)", active: true, color: Theme.state) { mix.applyPhraseAnchor(d) }.stable()
                     .help(String(localized: "Phrasen-Anker: Strukturwechsel liegen \(n) Beats neben den 8-Takt-Grenzen – Klick verschiebt den Anker (Sicherheit \(String(format: "%.2f", m.confidence)))"))
             }
+        }
+    }
+}
+
+/// Schnitt (EDIT-Modus): IN HERE / OUT HERE an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier), CLEAR CUT,
+/// rechts Anfang → Ende · Länge des gespielten Bereichs. Die Datei bleibt unverändert
+struct CutRow: View {
+    @Environment(MixModel.self) private var mix
+    let d: Int
+
+    struct Model: Equatable { var start: Double?, end: Double?, duration = 0.0 }
+
+    var body: some View {
+        let s = mix.deck(d)
+        Content(d: d, m: Model(start: s.trim.start, end: s.trim.end, duration: s.track != nil ? s.duration : 0)).equatable()
+    }
+
+    struct Content: View, Equatable {
+        @Environment(MixModel.self) private var mix
+        let d: Int
+        let m: Model
+        static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.m == b.m }
+
+        var body: some View {
+            HStack(spacing: 3.z) {
+                Text("CUT").font(Theme.label(9.z, .bold)).foregroundStyle(m.start != nil || m.end != nil ? Theme.state : Theme.muted)
+                    .frame(width: 30.z, alignment: .leading)
+                DeckButton(title: "IN HERE", active: m.start != nil, color: Theme.state) {
+                    mix.trimHere(d, end: false, free: NSEvent.modifierFlags.contains(.option))
+                }.stable()
+                    .help("Schnitt-Anfang an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier)")
+                DeckButton(title: "OUT HERE", active: m.end != nil, color: Theme.state) {
+                    mix.trimHere(d, end: true, free: NSEvent.modifierFlags.contains(.option))
+                }.stable()
+                    .help("Schnitt-Ende an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier)")
+                DeckButton(title: "CLEAR CUT") { mix.clearTrim(d) }.stable().help("Schnitt entfernen: ganze Datei")
+                Divider().frame(height: 14.z)
+                // schmale Decks: erst nur die Länge, dann nichts
+                FirstFit {
+                    readout(full: true)
+                    readout(full: false)
+                    Text(" ")
+                }
+                Spacer(minLength: 0)
+            }
+        }
+
+        private func readout(full: Bool) -> some View {
+            let lo = m.start ?? 0, hi = m.end ?? m.duration
+            return HStack(spacing: 4.z) {
+                if full {
+                    Text(Self.time(lo)).foregroundStyle(m.start != nil ? Theme.bone : Theme.muted)
+                    Text("→").foregroundStyle(Theme.muted)
+                    Text(Self.time(hi)).foregroundStyle(m.end != nil ? Theme.bone : Theme.muted)
+                    Text("·").foregroundStyle(Theme.muted)
+                }
+                Text(m.duration > 0 ? Self.time(max(0, hi - lo)) : "—")
+            }
+            .font(Theme.mono(10.z))
+            .fixedSize()
+        }
+
+        /// m:ss.s
+        static func time(_ t: Double) -> String {
+            let t = max(0, t), min = Int(t / 60)
+            return String(format: "%d:%04.1f", min, t - Double(min) * 60)
         }
     }
 }
@@ -394,15 +486,16 @@ struct TimeReadout: View, Equatable {
     let d: Int
     let m: Model
 
-    struct Model: Equatable { var hasTrack = false, duration = 0.0, playing = false, grid: BeatGrid?, warnAt = 0.0 }
+    /// end = Ende des gespielten Bereichs (Schnitt-Ende, sonst Track-Ende)
+    struct Model: Equatable { var hasTrack = false, end = 0.0, playing = false, grid: BeatGrid?, warnAt = 0.0 }
     static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.m == b.m }
 
     var body: some View {
         let m = m
         LiveCanvas(fps: 10, running: m.hasTrack) { [mix, d] _, size in
             let pos = mix.position(d)
-            let remain = max(0, m.duration - pos)
-            let warn = m.playing && m.warnAt > 0 && remain < m.warnAt && m.duration > 0
+            let remain = max(0, m.end - pos)
+            let warn = m.playing && m.warnAt > 0 && remain < m.warnAt && m.end > 0
             let blink = Int(Date().timeIntervalSince1970 * 2) % 2 == 0
             CG.text("-" + Theme.time(remain), size: 13, color: warn && blink ? CG.stateNS : CG.boneNS, rightAt: size.width, y: 0)
             if let g = m.grid {
@@ -601,7 +694,8 @@ struct TempoColumn: View {
 }
 
 /// Nur Selbsttest: MIX741_SHOT=deck:<pfad.png> rendert Deck A (Track geladen, Loop 8, Beatjump 4) ohne Fenster auf dem
-/// Bildschirm als PNG in zwei Größen (<pfad>-640x300.png Loop aus, <pfad>-480x260.png Loop an) und beendet sich.
+/// Bildschirm als PNG in zwei Größen (<pfad>-640x300.png Loop aus, <pfad>-480x260.png Loop an), dazu im EDIT-Modus mit
+/// Schnitt und eigenem Grid (<pfad>-edit-640x300.png, <pfad>-edit-480x260.png), und beendet sich.
 @MainActor
 enum DeckShot {
     static func runIfRequested() {
@@ -617,14 +711,17 @@ enum DeckShot {
                     Cue(name: "", kind: .cue, startMs: 30000, lengthMs: 0, hotcue: 1),
                     Cue(name: "", kind: .loop, startMs: 60000, lengthMs: 3750, hotcue: 3)]
         var paths: [String] = []
-        for (w, h, loop) in [(640.0, 300.0, false), (480.0, 260.0, true)] {
+        for (w, h, loop, edit) in [(640.0, 300.0, false, false), (480.0, 260.0, true, false), (640.0, 300.0, false, true), (480.0, 260.0, false, true)] {
+            mix.prefs.ui.setEditing(0, edit)
             mix.updateDeck(0) {
                 $0.track = t; $0.duration = 300; $0.grid = BeatGrid(anchor: 1, bpm: 128)
                 $0.phraseTarget = 1 - 60.0 / 128   // Phrasen-Vorschlag −1 (roter PHRASE-Knopf in der Grid-Zeile)
                 $0.hotcues = Dictionary(uniqueKeysWithValues: cues.map { ($0.hotcue, $0) })
                 $0.loopSize = 8; $0.jumpSize = 4; $0.loopActive = loop
+                $0.trim = edit ? TrackTrim(start: 1.0, end: 290) : TrackTrim()
+                $0.gridEdited = edit
             }
-            let path = "\(base)-\(Int(w))x\(Int(h)).png"
+            let path = "\(base)-\(edit ? "edit-" : "")\(Int(w))x\(Int(h)).png"
             render(mix: mix, size: CGSize(width: w, height: h), to: path)
             paths.append(path)
         }
