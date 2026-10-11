@@ -121,6 +121,7 @@ final class MixModel {
             core.pluginCatalog.update { $0.folders.append(f) }
         }
         if let c = core.pluginCatalog.crashedLastRun { print("[plugin] beim letzten Lauf abgestürzt beim Öffnen: \(c.name) -> blockiert") }
+        FileServiceSetup.attach(core)
         loadSetup()
         for d in decks.indices { decks[d].editing = prefs.ui.editing(d) }
         core.setPrefs(prefs.engine)
