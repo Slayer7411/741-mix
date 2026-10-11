@@ -231,20 +231,23 @@ public enum FXCatalog {
                     beats("delay.time", "Delay-Zeit", "TIME", group: "DELAY", def: 0.6),
                     pct("reverb", "Reverb-Stärke", "REVERB", group: "REVERB"),
                     FXParam(id: "reverb.on", name: "Reverb an/aus", short: "REVERB", group: "REVERB", steps: 1),
-                    pct("reverb.size", "Raumgröße", "ROOM", group: "REVERB", def: 0.6)]
+                    pct("reverb.size", "Raumgröße", "ROOM", group: "REVERB", def: 0.6),
+                    FXParam(id: "reverb.freeze", name: "Reverb-Freeze", short: "FRZ", group: "REVERB", steps: 1)]
         case "FILTER":
             return [dw, on, pct("cutoff", "Cutoff", "CUTOFF", bipolar: true), pct("res", "Resonanz", "RES", def: 0.45)]
         case "DELAY":
             return [dw, on, pct("filter", "Filter", "FILTER", bipolar: true), pct("feedback", "Feedback", "FEEDB", def: 0.45),
                     beats("rate", "Delay-Zeit", "RATE", def: 0.6)]
         case "REVERB":
-            return [dw, on, pct("size", "Größe", "SIZE"), pct("hp", "Hochpass", "HP", def: 0.45), pct("lp", "Tiefpass", "LP", def: 0.6)]
+            return [dw, on, pct("size", "Größe", "SIZE"), pct("hp", "Hochpass", "HP", def: 0.45), pct("lp", "Tiefpass", "LP", def: 0.6),
+                    FXParam(id: "freeze", name: "Freeze", short: "FRZ", steps: 1)]
         default:
             return [dw, on]
         }
     }
 
-    /// Standardbelegung (wie vor der Zuweisung): Gruppe = Stärke + an/aus je Slot, Single = die 3 Parameter, Taste 1 = an/aus.
+    /// Standardbelegung (wie vor der Zuweisung): Gruppe = Stärke + an/aus je Slot, Single = die 3 Parameter, Taste 1 = an/aus,
+    /// REVERB: Taste 2 = Freeze.
     /// Plugin: Regler 1–3 = die ersten drei Parameter
     public static func defaultTarget(_ c: FXControl, effect key: String, params: [FXParam]) -> String? {
         if c == .dryWet { return "dw" }
@@ -259,7 +262,7 @@ public enum FXCatalog {
             let plug = Array(params.lazy.filter { $0.pluginParam != nil }.prefix(3))
             knobs = (0..<3).map { $0 < plug.count ? plug[$0].id : nil }
         }
-        if c.isButton { return c == .button1 ? "on" : nil }
+        if c.isButton { return c == .button1 ? "on" : c == .button2 && key == "REVERB" ? "freeze" : nil }
         return knobs[c.slot - 1]
     }
 
@@ -275,6 +278,7 @@ public enum FXCatalog {
         case (groupKey, "reverb"): return fx.slots[2].amount
         case (groupKey, "reverb.on"): return fx.slots[2].on ? 1 : 0
         case (groupKey, "reverb.size"): return fx.reverbSize
+        case (groupKey, "reverb.freeze"), ("REVERB", "freeze"): return fx.reverbFreeze ? 1 : 0
         case (groupKey, _): return nil
         case (_, "on"): return fx.singleOn ? 1 : 0
         case ("FILTER", "cutoff"), ("DELAY", "filter"), ("REVERB", "size"): return fx.params[0]
@@ -297,6 +301,7 @@ public enum FXCatalog {
         case (groupKey, "reverb"): fx.slots[2].amount = v
         case (groupKey, "reverb.on"): fx.slots[2].on = on
         case (groupKey, "reverb.size"): fx.reverbSize = v
+        case (groupKey, "reverb.freeze"), ("REVERB", "freeze"): fx.reverbFreeze = on
         case (groupKey, _): break
         case (_, "on"): fx.singleOn = on
         case ("FILTER", "cutoff"), ("DELAY", "filter"), ("REVERB", "size"): fx.params[0] = v

@@ -20,6 +20,11 @@ public enum CrossfaderCurve: String, CaseIterable, Codable, Sendable {
     case smooth = "Weich", sharp = "Scharf (Cut)"
 }
 
+/// Hall-Typ der FX-Units: Allpass-Ring (Standard) oder FDN
+public enum ReverbType: String, CaseIterable, Codable, Sendable {
+    case classic = "Reverb", fdn = "Reverb (FDN)"
+}
+
 /// Einstellungen, die der Steuerkern braucht (alle in ⌘, änderbar)
 public struct EnginePrefs: Codable, Equatable, Sendable {
     /// Quant: Sprünge (Hotcue, Loop, Beatjump) halten die Beat-Phase
@@ -63,6 +68,7 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var reverbLevelDb = 0.0
     public var reverbBrightness = 0.6
     public var reverbPreDelayMs = 15.0
+    public var reverbType = ReverbType.classic
     /// Track gilt als gespielt (History), wenn er so viele Sekunden hörbar lief
     public var historyThreshold = 30.0
     /// Grid-Anker beim Laden auf Takt-/Phrasenanfang prüfen (aus / vorschlagen / automatisch verschieben)
@@ -166,6 +172,8 @@ public struct FXUnitState: Equatable, Sendable, Codable {
     /// Delay-Zeit (Index in MixEngine.delayBeats), Hallgröße 0–1
     public var delayIndex = 3
     public var reverbSize = 0.6
+    /// Freeze des Halls (Gruppe: Reverb-Slot, Single: REVERB), wird nicht mit der Sitzung geladen
+    public var reverbFreeze = false
     public var single = false
     public var singleType = Effect.delay.rawValue
     public var singleOn = false
@@ -1399,7 +1407,7 @@ public final class MixController: @unchecked Sendable {
             engine.applyFX(unit: u, deck: d, fx, assigned: state.decks[d].fxAssign[u], bpm: bpm,
                            feedback: state.prefs.delayFeedback, filterResonance: state.prefs.fxFilterResonance,
                            reverbLevel: pow(10, state.prefs.reverbLevelDb / 20), reverbBrightness: state.prefs.reverbBrightness,
-                           reverbPreDelay: state.prefs.reverbPreDelayMs / 1000)
+                           reverbPreDelay: state.prefs.reverbPreDelayMs / 1000, reverbFDN: state.prefs.reverbType == .fdn)
         }
     }
 

@@ -157,48 +157,53 @@ private final class Core {
 /// Vorher (fester +10-dB-Zuschlag): gesamt/trocken 4,19, Hall allein 4,08 (+12,2 dB), über 4 kHz 0,054.
 /// Kammfilter-Hall (0.x, Tiefpass ~4,7 kHz): gesamt/trocken 1,17, über 4 kHz 0,042. FDN-Hall: Fahne soll rauschen
 /// (Höhen bleiben), aber nicht heller sein als der Track selbst; gesamt/trocken bis 1,25.
+/// Allpass-Ring (Standard): Höhen gedämpft (Regal im Ring), dunkler als der Track, heller als der Kammfilter-Hall.
 @Test func reverbLevelMatchesDry() {
-    func run(reverb: Bool, bright: Float? = nil) -> [Float] {
-        let c = Core()
-        var seed: UInt32 = 777, b0: Float = 0, b1: Float = 0, b2: Float = 0
-        for i in 0..<c.frames {
-            seed = seed &* 1664525 &+ 1013904223; let w = Float(seed >> 8) / Float(1 << 24) - 0.5
-            b0 = 0.99765 * b0 + w * 0.0990; b1 = 0.963 * b1 + w * 0.2965; b2 = 0.57 * b2 + w * 1.0526   // rosa (P. Kellet)
-            let v = (b0 + b1 + b2 + w * 0.1848) * 0.2; c.left[i] = v; c.right[i] = v
+    for fdn in [true, false] {
+        func run(reverb: Bool, bright: Float? = nil) -> [Float] {
+            let c = Core()
+            var seed: UInt32 = 777, b0: Float = 0, b1: Float = 0, b2: Float = 0
+            for i in 0..<c.frames {
+                seed = seed &* 1664525 &+ 1013904223; let w = Float(seed >> 8) / Float(1 << 24) - 0.5
+                b0 = 0.99765 * b0 + w * 0.0990; b1 = 0.963 * b1 + w * 0.2965; b2 = 0.57 * b2 + w * 1.0526   // rosa (P. Kellet)
+                let v = (b0 + b1 + b2 + w * 0.1848) * 0.2; c.left[i] = v; c.right[i] = v
+            }
+            c.load(); c.render()
+            c.set(MD_FX1_ASSIGN, 1)
+            c.fx(MDFX_REVERB_TYPE, fdn ? 1 : 0)
+            c.fx(MDFX_REVERB_ON, reverb ? 1 : 0); c.fx(MDFX_REVERB_AMOUNT, 1); c.fx(MDFX_REVERB_HP, 0); c.fx(MDFX_REVERB_LP, 1)
+            c.fx(MDFX_REVERB_DWSEND, 1); c.fx(MDFX_DRYWET, 1)   // Single-Reverb, D/W 1 = alles geht in den Hall; Pegel/Vorverzögerung = Standard
+            if let bright { c.fx(MDFX_REVERB_BRIGHT, bright) }
+            c.set(MD_PLAYING, 1); c.render(seconds: 3)           // Hall aufbauen
+            var out: [Float] = []
+            for _ in 0..<172 { c.render(512); out += c.outL }    // ~2 s
+            return out
         }
-        c.load(); c.render()
-        c.set(MD_FX1_ASSIGN, 1)
-        c.fx(MDFX_REVERB_ON, reverb ? 1 : 0); c.fx(MDFX_REVERB_AMOUNT, 1); c.fx(MDFX_REVERB_HP, 0); c.fx(MDFX_REVERB_LP, 1)
-        c.fx(MDFX_REVERB_DWSEND, 1); c.fx(MDFX_DRYWET, 1)   // Single-Reverb, D/W 1 = alles geht in den Hall; Pegel/Vorverzögerung = Standard
-        if let bright { c.fx(MDFX_REVERB_BRIGHT, bright) }
-        c.set(MD_PLAYING, 1); c.render(seconds: 3)           // Hall aufbauen
-        var out: [Float] = []
-        for _ in 0..<172 { c.render(512); out += c.outL }    // ~2 s
-        return out
+        func rms(_ x: [Float]) -> Float { var s: Float = 0; for v in x { s += v * v }; return (s / Float(max(1, x.count))).squareRoot() }
+        let a = 1 - exp(-2 * Float.pi * 4000 / Float(44100))
+        let dry = run(reverb: false)
+        /// Hall allein und sein Anteil über 4 kHz (Einpol-Hochpass)
+        func wetOnly(_ wet: [Float]) -> (level: Float, hf: Float) {
+            var sum: Float = 0, hf: Float = 0, lp: Float = 0
+            for i in 0..<dry.count { let w = wet[i] - dry[i]; sum += w * w; lp += a * (w - lp); let h = w - lp; hf += h * h }
+            return ((sum / Float(dry.count)).squareRoot() / max(rms(dry), 1e-9), hf / max(sum, 1e-12))
+        }
+        let wet = run(reverb: true), w = wetOnly(wet)
+        let dark = wetOnly(run(reverb: true, bright: 0)).hf, bright = wetOnly(run(reverb: true, bright: 1)).hf
+        print(String(format: "[reverb] %@ level single D/W 1: gesamt/trocken %.3f · hall allein %.3f (%+.1f dB) · hall >4 kHz %.3f (dunkel %.3f · hell %.3f)",
+                     fdn ? "fdn" : "classic", rms(wet) / max(rms(dry), 1e-9), w.level, 20 * log10(w.level), w.hf, dark, bright))
+        let total = rms(wet) / max(rms(dry), 1e-9)
+        var dryHF: Float = 0, dryAll: Float = 0, dlp: Float = 0
+        for x in dry { dlp += a * (x - dlp); let h = x - dlp; dryHF += h * h; dryAll += x * x }
+        #expect(total > 0.6 && total < 1.25)
+        #expect(w.level > 0.4 && w.level < 0.9)   // Hall allein: einige dB unter dem Track
+        if fdn { #expect(w.hf > 0.1) }            // Luft: Höhen bleiben in der Fahne (Kammfilter-Hall: 0,042)
+        else { #expect(w.hf > 0.05 && w.hf < dryHF / dryAll) }   // gedämpft, aber nicht dumpf
+        let hfRatio = w.hf * w.level * w.level / (dryHF / dryAll)   // Hall-Energie über 4 kHz ÷ Track-Energie über 4 kHz
+        print(String(format: "[reverb] trocken >4 kHz %.3f · hall ÷ trocken über 4 kHz %.2f", dryHF / dryAll, hfRatio))
+        #expect(hfRatio < 1)                      // nicht schärfer als der Track
+        #expect(dark < w.hf && w.hf < bright)  // Helligkeit wirkt in die richtige Richtung
     }
-    func rms(_ x: [Float]) -> Float { var s: Float = 0; for v in x { s += v * v }; return (s / Float(max(1, x.count))).squareRoot() }
-    let a = 1 - exp(-2 * Float.pi * 4000 / Float(44100))
-    let dry = run(reverb: false)
-    /// Hall allein und sein Anteil über 4 kHz (Einpol-Hochpass)
-    func wetOnly(_ wet: [Float]) -> (level: Float, hf: Float) {
-        var sum: Float = 0, hf: Float = 0, lp: Float = 0
-        for i in 0..<dry.count { let w = wet[i] - dry[i]; sum += w * w; lp += a * (w - lp); let h = w - lp; hf += h * h }
-        return ((sum / Float(dry.count)).squareRoot() / max(rms(dry), 1e-9), hf / max(sum, 1e-12))
-    }
-    let wet = run(reverb: true), w = wetOnly(wet)
-    let dark = wetOnly(run(reverb: true, bright: 0)).hf, bright = wetOnly(run(reverb: true, bright: 1)).hf
-    print(String(format: "[reverb] level single D/W 1: gesamt/trocken %.3f · hall allein %.3f (%+.1f dB) · hall >4 kHz %.3f (dunkel %.3f · hell %.3f)",
-                 rms(wet) / max(rms(dry), 1e-9), w.level, 20 * log10(w.level), w.hf, dark, bright))
-    let total = rms(wet) / max(rms(dry), 1e-9)
-    var dryHF: Float = 0, dryAll: Float = 0, dlp: Float = 0
-    for x in dry { dlp += a * (x - dlp); let h = x - dlp; dryHF += h * h; dryAll += x * x }
-    #expect(total > 0.6 && total < 1.25)
-    #expect(w.level > 0.4 && w.level < 0.9)   // Hall allein: einige dB unter dem Track
-    #expect(w.hf > 0.1)                       // Luft: Höhen bleiben in der Fahne (Kammfilter-Hall: 0,042)
-    let hfRatio = w.hf * w.level * w.level / (dryHF / dryAll)   // Hall-Energie über 4 kHz ÷ Track-Energie über 4 kHz
-    print(String(format: "[reverb] trocken >4 kHz %.3f · hall ÷ trocken über 4 kHz %.2f", dryHF / dryAll, hfRatio))
-    #expect(hfRatio < 1)                      // nicht schärfer als der Track
-    #expect(dark < w.hf && w.hf < bright)  // Helligkeit wirkt in die richtige Richtung
 }
 
 /// Hall-Fahne messen: Anteil über 4 kHz und spektrale Flachheit (niedrig = einzelne Resonanzen = metallisch).

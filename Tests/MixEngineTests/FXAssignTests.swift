@@ -235,3 +235,20 @@ private func catalog(_ dir: URL, vst3: URL? = nil) -> PluginCatalog {
     #expect(control(s, 0, .knob1).param == nil)
     next.setPlugin(0, id: nil)
 }
+
+/// Single-REVERB: Taste 2 = Freeze (FRZ), Gruppe: Freeze zuweisbar; Freeze kommt nicht aus der Sitzung zurück
+@Test func fxReverbFreezeButton() throws {
+    let core = MixController()
+    core.updateFX(1) { $0.single = true; $0.singleType = FXUnitState.Effect.reverb.rawValue }
+    var s = core.snapshot()
+    #expect(s.fxControls[1].map(\.label) == ["D/W", "SIZE", "HP", "LP", "ON", "FRZ", "—"])
+    core.pressFXButton(1, 1)
+    s = core.snapshot()
+    #expect(s.fx[1].reverbFreeze && control(s, 1, .button2).active)
+    let again = try JSONDecoder().decode(FXUnitState.self, from: JSONEncoder().encode(s.fx[1]))
+    #expect(!again.reverbFreeze && again.singleType == FXUnitState.Effect.reverb.rawValue)
+    core.setFXMapping(0, .button3, "reverb.freeze")
+    core.pressFXButton(0, 2)
+    #expect(core.snapshot().fx[0].reverbFreeze && control(core.snapshot(), 0, .button3).label == "FRZ")
+    #expect(core.snapshot().prefs.reverbType == .classic)
+}

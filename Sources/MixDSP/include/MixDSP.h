@@ -1,6 +1,6 @@
 // MixDSP – schlanker Echtzeit-Audiokern von MINOS-741.
 // Ein einziger Render-Callback rechnet alle Decks: Abspielen (Tempo/Keylock/Loop/Reverse/Flux),
-// Kanalzug (Gain, EQ, Filter), 4 FX-Units (Filter, Delay, Reverb), Fader/Crossfader, Routing auf Kanalpaare.
+// Kanalzug (Gain, EQ, Filter), 4 FX-Units (Filter, Delay, Reverb – zwei Typen), Fader/Crossfader, Routing auf Kanalpaare.
 // Der Audio-Thread nimmt keine Sperren und fordert keinen Speicher an. Steuerwerte sind atomar.
 #ifndef MIXDSP_H
 #define MIXDSP_H
@@ -51,6 +51,8 @@ typedef enum {
     MDFX_REVERB_BRIGHT,                     // Helligkeit 0…1 (Höhen-Nachhall 35…90 %, Hochpass vor dem Hall 150…400 Hz, Höhenregal −4…+6 dB)
     MDFX_REVERB_PREDELAY,                   // Vorverzögerung in Sekunden (0…0,2)
     MDFX_PLUGIN_ON,                         // Plugin der Unit an (aus = Eingang zu, Fahne klingt aus)
+    MDFX_REVERB_TYPE,                       // 0 = Reverb (Allpass-Ring, Standard), 1 = Reverb (FDN)
+    MDFX_REVERB_FREEZE,                     // 1 = Eingang zu, Fahne steht (nur solange der Hall an ist)
     MDFX_PARAM_COUNT
 } MDFXParam;
 

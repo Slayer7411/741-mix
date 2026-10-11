@@ -106,6 +106,8 @@
 "Rechts" = "Right";
 "Reverse (halten)" = "Reverse (hold)";
 "Reverb-Pegel (dB)" = "Reverb level (dB)";
+"Reverb-Typ" = "Reverb type";
+"Reverb-Freeze" = "Reverb freeze";
 "Reverb-Helligkeit" = "Reverb brightness";
 "Reverb-Vorverzögerung (ms)" = "Reverb pre-delay (ms)";
 "Rot" = "Red";
