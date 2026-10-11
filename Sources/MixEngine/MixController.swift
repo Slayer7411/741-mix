@@ -1494,7 +1494,9 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
-    /// NaN im Deck (Kern hat das Deck geheilt): Plugin zurücksetzen, solange rechnet der Kern es nicht. Unter der Sperre
+    /// NaN im Deck (Kern hat das Deck geheilt): Plugin zurücksetzen, solange rechnet der Kern es nicht. Unter der Sperre.
+    /// Das Zurücksetzen selbst läuft außerhalb (VST3: UI-Thread, AU: Plugin-Queue – bei isolierten Plugins ein
+    /// XPC-Aufruf, der den Steuertakt nicht aufhalten darf)
     private var pluginsResetting = Set<Int>()
     private func healPlugins() {
         for u in plugins.indices {
@@ -1503,11 +1505,12 @@ public final class MixController: @unchecked Sendable {
                 guard !pluginsResetting.contains(key) else { continue }
                 guard let p = plugins[u][d] else { engine.pluginResetDone(unit: u, deck: d); continue }
                 pluginsResetting.insert(key)
-                p.reset { [weak self] in
+                let done = { [weak self] in
                     guard let self else { return }
                     self.engine.pluginResetDone(unit: u, deck: d)
                     self.locked { _ = self.pluginsResetting.remove(key) }
                 }
+                if p.isVST3 { p.reset(done) } else { pluginQueue.async { p.reset(done) } }
             }
         }
     }
