@@ -206,7 +206,7 @@ struct DeckHeader: View {
                         }
                     }
                     CodeReadout(d: d, m: m.code).equatable()
-                    DeckButton(title: "KEY SYNC") { mix.keySync(d) }.stable()
+                    KeySyncButton { mix.keySync(d) }
                         .help("Key Sync: Key-Shift auf den Key des Master-Decks (gleich oder Nachbar auf dem Open-Key-Rad, kleinster Schritt, höchstens ±6), Keylock an")
                     VStack(alignment: .trailing, spacing: 0) {
                         KeyReadout(m: m.key).equatable()
@@ -664,6 +664,29 @@ struct KeyReadout: View, Equatable {
     }
 }
 
+/// KEY SYNC im Kopf: zweizeilig, so schmal wie möglich (schmale Decks kürzen sonst Titel und Tempo)
+struct KeySyncButton: View, Equatable {
+    let action: () -> Void
+    static func == (a: Self, b: Self) -> Bool { true }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 0) {
+                Text(verbatim: "KEY")
+                Text(verbatim: "SYNC")
+            }
+            .font(Theme.label(8.z, .bold))
+            .foregroundStyle(Theme.bone.opacity(0.75))
+            .padding(.horizontal, 3.z)
+            .frame(height: 28.z)
+            .background(Rectangle().fill(Theme.void))
+            .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+            .fixedSize()
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 /// Phasenanzeige gegenüber dem Master
 struct PhaseMeter: View, Equatable {
     @Environment(MixModel.self) private var mix
@@ -825,6 +848,7 @@ enum DeckShot {
                 $0.track = t; $0.duration = 300; $0.grid = BeatGrid(anchor: 1, bpm: 128)
                 $0.phraseTarget = 1 - 60.0 / 128   // Phrasen-Vorschlag −1 (roter PHRASE-Knopf in der Grid-Zeile)
                 $0.hotcues = Dictionary(uniqueKeysWithValues: cues.map { ($0.hotcue, $0) })
+                $0.activeLoops = [3]   // Hotcue 4 als Active Loop (Punkt)
                 $0.loopSize = 8; $0.jumpSize = 4; $0.loopActive = loop
                 $0.trim = edit ? TrackTrim(start: 1.0, end: 290) : TrackTrim()
                 $0.gridEdited = edit
