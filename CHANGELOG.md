@@ -6,9 +6,12 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* deck header: tags from comment 2 as chips (browser colors) and the comment in grey, one line under the title, too long -> `…`. own row with a fixed height: play / tempo / key changes don't touch it, header layout per change unchanged (0.47 ms, bench). rows `Kommentar` / `Tags (Kommentar 2)`, on by default, old settings load with both on
+* compact decks: DECKS menu or ⌥⌘K -> pitch fader, hotcues and grid tools off / on together. without the pitch fader the waveform takes the width. also ⌘, -> DECKS
 * zoom like a web browser: ⌘+ / ⌘− / ⌘0 and view menu, 50-200 % in browser steps, saved, step in the status bar, also under ⌘, -> DISPLAY. fonts, controls, waveform marks, canvases and table columns scale, drawn at full resolution, minimum window size × zoom (capped to the screen). toolbar, settings and dialogs stay at 100 %. no extra cost per update at 100 % or 150 % (15 ms both), one step ~0.9 s relayout. offscreen check: `MIX741_SELFTEST=1 MIX741_SHOT=zoom:<folder>`
 
 ### fixed
+* bench: `MIX741_BENCH=state` / `play` waited forever when a deck failed to load (4 s limit under load). it picks local files only (cloud probe, no download), allows 15 s per load and stops with the reason
 * core: a stopped deck checked the fx tail through the pointer of a plugin that was swapped out and closed while the unit was not assigned to the deck (read from freed memory on the audio thread, AddressSanitizer). the pointer is now synced before the check
 * core: NaN / Inf control values (rate, seek, loop, fx, master, clock) are dropped at the c api instead of sticking in the core (position NaN = silent deck, clock stops). a loop with end <= start is not activated
 * plugins: the reset of an audio unit after a NaN block runs on the plugin queue, not under the control lock inside the 200 hz tick (an isolated plugin's reset is an xpc call: 0.06 ms median, 0.23 ms max measured, unbounded when the service hangs)
@@ -21,7 +24,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * fx mapping: D/W, knobs 1-3 and buttons 1-3 of every unit on any parameter of the loaded effect -> built-in parameters or the full audio unit / VST3 list (unit, range, groups, list entries). right click a knob / button or ⌘, -> MIXER & FX (table per unit, search). buttons toggle switches, step lists, jump continuous ones min / max. remembered per effect / plugin id, the session keeps each unit's mapping. the controller's fx knobs and buttons use the same mapping. labels show the parameter, value with unit on hover / turn
 * browser: favorites bar per pane, 6 slots above tree and list. slot = source (collection, preparation, running tracks, history, playlist, smartlist, playlist folder, smartlists 741, music folder) or filter (tags, roles, search). click switches the pane, active filter again clears it, red = active. right click -> put current source / filter here, rename, clear. drag a tree entry onto a slot. ⌃⌥1-6 on the last used pane
 * favorites saved per pane in the session: playlists + smartlists by collection uuid, then path, music folders by path. missing target after a reload -> grey, struck through. selftest image `MIX741_SHOT=browser:<png>` also renders the bar filled, narrow and empty
-* deck rows on / off: readouts, phase bar, overview, transport, hotcues, loop sizes, beatjump, pitch fader, grid tools -> menu DECKS -> ROWS or ⌘, -> DECKS
+* deck rows on / off: readouts, comment, tags, phase bar, overview, transport, hotcues (with IN / OUT / RE), loop sizes, beatjump, grid tools, pitch fader -> menu DECKS -> ROWS or ⌘, -> DECKS, same order in both
 * browser preview, full row: text above the band 12 pt semibold, band dimmed; size, weight and band opacity in ⌘, -> DISPLAY -> preview
 * browser: tags in the comment 2 column as chips -> click = filter by that tag, again = off, ⌥-click = exclude. double click on a chip does nothing, click next to the chips selects / edits as before
 * browser: active tag filter as chips in the pane header (excluded struck through), click removes one, ✕ TAGS clears all. TAGS ▾ takes ⌥-click too, the smartlist from tags keeps excluded ones (`!%`). whole tags, case and accents ignored. excluded tags saved per pane in the session

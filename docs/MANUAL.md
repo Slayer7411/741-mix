@@ -116,14 +116,24 @@ click on the meters -> details (keylock lookahead, own vs device overloads).
 ```
 A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
     artist                           33.2  +0.00%  ◆ CODE
+    peak dark vocal  comment …
 ```
 
 * deck letter turns red while playing
+* line under the title: tags from comment 2 as chips (colors + separators like the browser, ⌘, -> TAGS), then comment in grey. one line, too long -> `…`. fixed height, also without a track. off: DECKS -> ROWS
 * ▣ cover of the loaded track (embedded in the file, else `cover` / `folder` / `front` .jpg / .png in its folder), `◆` = no cover. off: ⌘, -> DISPLAY -> cover
 * FX1 / FX2 (… FX4) -> deck on that fx unit
 * code readout: bar of the track in its phrase (`5/16`, phrase start = grid anchor, length = waveform phrase, ⌘, -> DISPLAY) against the bar counter. purple `◆ CODE` -> same bar and beat as the counter, red `+2 BARS` / `−3 BEATS` -> the deck is that far ahead / behind (wrapped to half a phrase), grey -> deck stopped or no counter
 * remaining time, bpm, tempo offset, key readout: open key of the track (e.g. `11m`), next to it the audible key in red as soon as it deviates (`11m → 6m`), below the deviation in semitones (`+0.60`). keylock off -> the tempo detunes, keylock on -> only the key shift counts
 * `±8 ▾` -> tempo range ±6 / 8 / 10 / 16 / 50 / 100 %
+
+### rows
+
+DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, comment, tags (comment 2), phase bar, overview, transport, hotcues (with IN / OUT / RE), loop sizes, beatjump, grid tools, pitch fader. waveform and header always stay.
+
+* pitch fader off -> waveform and rows take its width
+* DECKS -> compact decks (⌥⌘K) -> pitch fader, hotcues and grid tools off / on together -> more room for waveform and beatgrid
+* hidden rows keep working from keys and controller
 
 ### transport
 
@@ -554,6 +564,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | ⌥⌘M | mixer on / off |
 | ⌥⌘4 | 2 / 4 decks |
 | ⌥⌘B | big browser |
+| ⌥⌘K | compact decks (pitch fader, hotcues, grid tools off / on) |
 | ⌘+ / ⌘− / ⌘0 | zoom in / out / actual size |
 | space | big browser (not while typing in a search field) |
 | ⌘O | open collection |
@@ -613,6 +624,7 @@ MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 ```
 
 waveform still without a window: `MIX741_SHOT=wave:/tmp/wave.png` in addition -> one deck with loop and hotcues as png, then exit.
+whole deck: `MIX741_SHOT=deck:<png>` -> deck A with comment + tags at 640×300 and 480×260, compact at 640×300 (`-compact`), built-in output, then exit.
 settings as png without a window: add `MIX741_SHOT=settings:<folder>` -> one image per section, then quit.
 status bar, failed and empty deck as png: `MIX741_SHOT=status:<folder>` (add `MIX741_SHOT_AUDIO=1` for live meters, silent on a built-in device).
 collection check without a window: add `MIX741_CHECK=1` -> counts per check and duration, `MIX741_CHECK_LIST=<n>` lists the first n findings each. `MIX741_SHOT=consistency:<png>` renders the check window mid-run and finished.
