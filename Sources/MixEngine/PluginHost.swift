@@ -140,9 +140,15 @@ public final class PluginInstance: @unchecked Sendable {
         public let id: AudioUnitParameterID
         public let name: String
         public let min: Float, max: Float, defaultValue: Float
-        /// VST3: Einheit, Stufen (0 = stufenlos)
+        /// Einheit, Stufen (0 = stufenlos, 1 = Schalter, n = n + 1 Stufen)
         public var units = ""
         public var steps = 0
+        /// Gruppe (AU: Clump, VST3: Unit), leer = keine
+        public var group = ""
+        /// Namen der Stufen (Schalter, Liste)
+        public var valueNames: [String] = []
+        /// Reglerkurve (AU-Display-Flags)
+        public var curve = ParamCurve.linear
     }
 
     public let info: PluginInfo
@@ -316,6 +322,7 @@ public final class PluginInstance: @unchecked Sendable {
               size > 0 else { return [] }
         var ids = [AudioUnitParameterID](repeating: 0, count: Int(size) / MemoryLayout<AudioUnitParameterID>.size)
         guard AudioUnitGetProperty(au, kAudioUnitProperty_ParameterList, kAudioUnitScope_Global, 0, &ids, &size) == noErr else { return [] }
+        var clumps: [UInt32: String] = [:]
         return ids.compactMap { id in
             var pi = AudioUnitParameterInfo()
             var s = UInt32(MemoryLayout<AudioUnitParameterInfo>.size)
@@ -328,8 +335,69 @@ public final class PluginInstance: @unchecked Sendable {
             } else {
                 name = withUnsafeBytes(of: pi.name) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
             }
-            return Parameter(id: id, name: name, min: pi.minValue, max: pi.maxValue, defaultValue: pi.defaultValue)
+            var p = Parameter(id: id, name: name, min: pi.minValue, max: pi.maxValue, defaultValue: pi.defaultValue)
+            p.units = Self.unitText(pi)
+            switch pi.unit {
+            case .boolean: p.steps = 1
+            case .indexed: p.steps = Swift.max(1, Int((pi.maxValue - pi.minValue).rounded()))
+            default: break
+            }
+            if p.steps > 0, pi.flags.contains(.flag_ValuesHaveStrings) { p.valueNames = Self.valueStrings(au, id, count: p.steps + 1) }
+            let display = pi.flags.rawValue & AudioUnitParameterOptions.flag_DisplayMask.rawValue
+            p.curve = switch display {
+                case AudioUnitParameterOptions.flag_DisplayLogarithmic.rawValue: .logarithmic
+                case AudioUnitParameterOptions.flag_DisplaySquareRoot.rawValue: .squareRoot
+                case AudioUnitParameterOptions.flag_DisplaySquared.rawValue: .squared
+                case AudioUnitParameterOptions.flag_DisplayCubeRoot.rawValue: .cubeRoot
+                case AudioUnitParameterOptions.flag_DisplayCubed.rawValue: .cubed
+                default: .linear
+            }
+            if pi.flags.contains(.flag_HasClump) {
+                if clumps[pi.clumpID] == nil { clumps[pi.clumpID] = Self.clumpName(au, pi.clumpID) }
+                p.group = clumps[pi.clumpID] ?? ""
+            }
+            return p
         }
+    }
+
+    /// Einheit eines AU-Parameters als Text
+    private static func unitText(_ pi: AudioUnitParameterInfo) -> String {
+        switch pi.unit {
+        case .percent, .equalPowerCrossfade: "%"
+        case .seconds: "s"
+        case .milliseconds: "ms"
+        case .hertz: "Hz"
+        case .decibels: "dB"
+        case .cents: "ct"
+        case .relativeSemiTones: "st"
+        case .BPM: "BPM"
+        case .beats: "beats"
+        case .degrees, .phase: "°"
+        case .octaves: "oct"
+        case .meters: "m"
+        case .sampleFrames: "smp"
+        case .rate: "×"
+        case .customUnit: pi.unitName?.takeUnretainedValue() as String? ?? ""
+        default: ""
+        }
+    }
+
+    /// Namen der Stufen eines Listen-Parameters
+    private static func valueStrings(_ au: AudioUnit, _ id: AudioUnitParameterID, count: Int) -> [String] {
+        var ref: Unmanaged<CFArray>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFArray>?>.size)
+        guard AudioUnitGetProperty(au, kAudioUnitProperty_ParameterValueStrings, kAudioUnitScope_Global, id, &ref, &size) == noErr,
+              let list = ref?.takeRetainedValue() as? [String], list.count >= count else { return [] }
+        return Array(list.prefix(count))
+    }
+
+    /// Name einer Parameter-Gruppe (Clump)
+    private static func clumpName(_ au: AudioUnit, _ clump: UInt32) -> String? {
+        var info = AudioUnitParameterNameInfo(inID: clump, inDesiredLength: Int32(kAudioUnitParameterName_Full), outName: nil)
+        var size = UInt32(MemoryLayout<AudioUnitParameterNameInfo>.size)
+        guard AudioUnitGetProperty(au, kAudioUnitProperty_ParameterClumpName, kAudioUnitScope_Global, 0, &info, &size) == noErr,
+              let n = info.outName?.takeRetainedValue() else { return nil }
+        return n as String
     }
 
     // MARK: VST3 (auf VST3Thread)
@@ -338,11 +406,27 @@ public final class PluginInstance: @unchecked Sendable {
     private func setupVST3() {
         var list: [Parameter] = []
         var info = MDVST3Param()
+        var units: [Int32: String] = [:]
+        var buf = [CChar](repeating: 0, count: 128)
         for i in 0..<mdvst3_param_count(ptr) where mdvst3_param_info(ptr, i, &info) {
             let skip = Int32(MDVST3_PARAM_READ_ONLY | MDVST3_PARAM_HIDDEN | MDVST3_PARAM_BYPASS | MDVST3_PARAM_PROGRAM_CHANGE)
             guard info.flags & skip == 0 else { continue }
-            list.append(Parameter(id: info.id, name: cText(info.title), min: 0, max: 1, defaultValue: Float(info.defaultValue),
-                                  units: cText(info.units), steps: Int(info.stepCount)))
+            var p = Parameter(id: info.id, name: cText(info.title), min: 0, max: 1, defaultValue: Float(info.defaultValue),
+                              units: cText(info.units), steps: Int(info.stepCount))
+            // Stufen mit Namen (Schalter, Listen bis 64 Einträge); Unit ≠ Wurzel = Gruppe
+            if p.steps > 0, p.steps <= 64 {
+                p.valueNames = (0...p.steps).map { k in
+                    mdvst3_param_text(ptr, info.id, Double(k) / Double(p.steps), &buf, Int32(buf.count))
+                        ? String(cString: buf) : String(k)
+                }
+            }
+            if info.unitId > 0 {
+                if units[info.unitId] == nil {
+                    units[info.unitId] = mdvst3_unit_name(ptr, info.unitId, &buf, Int32(buf.count)) ? String(cString: buf) : ""
+                }
+                p.group = units[info.unitId] ?? ""
+            }
+            list.append(p)
         }
         vst3Params = list
         shared.ptr = ptr

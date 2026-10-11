@@ -230,6 +230,30 @@ final class MixModel {
     func setCrossfader(_ v: Double) { run { core.setCrossfader(v) } }
     func updateFX(_ u: Int, _ f: (inout FXUnitState) -> Void) { run { core.updateFX(u, f) } }
     func toggleFXAssign(_ d: Int, _ u: Int) { run { core.toggleFXAssign(d, u) } }
+    func setFXControl(_ u: Int, _ c: FXControl, _ v: Double) { run { core.setFXControl(u, c, v) } }
+    func pressFXButton(_ u: Int, _ i: Int) { run { core.pressFXButton(u, i) } }
+    /// Zuweisung ändern (nil = Standard, "" = aus); die gemerkte Zuweisung je Effekt geht in die Einstellungen
+    func setFXMapping(_ u: Int, _ c: FXControl, _ target: String?) {
+        run { core.setFXMapping(u, c, target) }
+        prefs.engine.fxMappings = state.prefs.fxMappings
+    }
+    func resetFXMapping(_ u: Int) {
+        run { core.resetFXMapping(u) }
+        prefs.engine.fxMappings = state.prefs.fxMappings
+    }
+    /// Wert eines Bedienelements mit Einheit (VST3: Text vom Plugin)
+    func fxText(_ u: Int, _ info: FXControlInfo) -> String {
+        guard let p = info.param else { return "—" }
+        return core.pluginText(u, p, info.value) ?? p.text(info.value)
+    }
+    /// Name eines Effekts zur Kennung (Plugin: Name aus der Plugin-Liste)
+    func effectName(_ key: String) -> String {
+        switch key {
+        case FXCatalog.groupKey: String(localized: "Gruppe")
+        case "FILTER", "DELAY", "REVERB", "PLUGIN": key
+        default: core.pluginCatalog.knownInfo(key).map { "\($0.name) · \($0.manufacturer)" } ?? key
+        }
+    }
     func setPlugin(_ u: Int, _ id: String?) {
         if id != state.fx[u].pluginID { PluginWindow.close(u) }
         run { core.setPlugin(u, id: id) }

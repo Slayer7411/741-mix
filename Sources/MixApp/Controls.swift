@@ -63,11 +63,13 @@ struct DeckButton: View {
     var color: Color = Theme.state
     var width: CGFloat? = nil
     var fill = false
+    /// Titel nicht übersetzen (Namen aus Plugins)
+    var verbatim = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(LocalizedStringKey(title))
+            (verbatim ? Text(verbatim: title) : Text(LocalizedStringKey(title)))
                 .font(Theme.label(10, .bold))
                 .lineLimit(1)
                 .frame(minWidth: width ?? 0, maxWidth: fill ? .infinity : nil)

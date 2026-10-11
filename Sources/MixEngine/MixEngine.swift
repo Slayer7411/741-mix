@@ -160,7 +160,7 @@ public final class MixEngine: @unchecked Sendable {
             case .delay:
                 set(MDFX_FILTER_ON, filterOn(p[0]) ? 1 : 0); set(MDFX_FILTER_AMOUNT, p[0]); set(MDFX_FILTER_RES, filterResonance)
                 set(MDFX_DELAY_ON, on ? 1 : 0); set(MDFX_DELAY_AMOUNT, 1); set(MDFX_DELAY_FEEDBACK, p[1])
-                let i = max(0, min(Self.delayBeats.count - 1, Int(p[2] * Double(Self.delayBeats.count))))
+                let i = max(0, min(Self.delayBeats.count - 1, Int((p[2] * Double(Self.delayBeats.count - 1)).rounded())))
                 set(MDFX_DELAY_SECONDS, min(2, Self.delayBeats[i] * beat))
                 set(MDFX_REVERB_ON, 0)
             case .reverb:
