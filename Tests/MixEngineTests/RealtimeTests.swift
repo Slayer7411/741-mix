@@ -143,6 +143,31 @@ private func allFinite(_ blocks: [[Float]]) -> Bool { blocks.allSatisfy { $0.all
     #expect(mdsp_position(c.e, 1).isFinite)
 }
 
+/// Nicht-endliche Steuerwerte (NaN/Inf aus einer kaputten Rechnung) erreichen den Kern nicht: ein Deck liefe sonst mit
+/// Position NaN stumm weiter (healDeck greift nur bei NaN am Ausgang), die Clock stünde
+@Test func nonFiniteControlValuesAreIgnored() {
+    let c = Engine()
+    c.load(deck: 0, seconds: 4) { i, _ in Float(sin(2 * .pi * 220 * Double(i) / 44100)) * 0.5 }
+    c.set(0, MD_PLAYING, 1)
+    _ = c.render(512)
+    c.set(0, MD_RATE, .nan); c.set(0, MD_GAIN_DB, .infinity); c.set(0, MD_VOLUME, .nan); c.set(0, MD_EQ_LOW, -.infinity)
+    mdsp_seek(c.e, 0, .infinity); mdsp_seek(c.e, 0, .nan)
+    mdsp_set_loop(c.e, 0, true, .nan, 1)
+    mdsp_set_fx(c.e, 0, MDFX_DELAY_SECONDS, .nan)
+    mdsp_clock_set_bpm(c.e, 120); mdsp_clock_set_beat(c.e, 0)
+    mdsp_clock_set_bpm(c.e, .nan); mdsp_clock_set_beat(c.e, .infinity); mdsp_set_master(c.e, .nan)
+    var finite = true
+    for _ in 0..<40 { finite = finite && allFinite(c.render(512)) }
+    #expect(finite)
+    let p = mdsp_position(c.e, 0)
+    #expect(p.isFinite && p > 0.4)            // läuft mit Rate 1 weiter (41 Blöcke ≈ 0,48 s)
+    #expect(mdsp_playing(c.e, 0))
+    #expect(mdsp_clock_beat(c.e).isFinite && mdsp_clock_beat(c.e) > 0.5)
+    var s = 0.0, en = 0.0
+    #expect(!mdsp_loop(c.e, 0, &s, &en))      // Loop mit NaN-Grenze nicht übernommen
+    #expect(recoveredLevel(c) > 0.25)         // Sinus 0,5 -> RMS 0,35: Gain/Volume unverändert
+}
+
 /// Rechenzeit je Block: 2 Decks Keylock, 4 Decks Keylock + FX. Nur mit MIX741_BENCH=1 (Zahlen für CHANGELOG/PR).
 @Test(.enabled(if: ProcessInfo.processInfo.environment["MIX741_BENCH"] == "1"))
 func benchRenderCPU() {
