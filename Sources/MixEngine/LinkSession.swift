@@ -39,6 +39,16 @@ public final class LinkSession: @unchecked Sendable {
 
     public var peers: Int { Int(abl_link_num_peers(link)) }
 
+    /// Abstand des eigenen Beats (hörbar zur Host-Zeit) zur Link-Zeitachse in Beats (−quantum/2 … quantum/2)
+    public func phaseError(beat: Double, hostTime: UInt64) -> Double? {
+        guard enabled else { return nil }
+        abl_link_capture_app_session_state(link, state)
+        let t = Self.micros(hostTicks: hostTime) + offsetMicros
+        var diff = (beat - abl_link_beat_at_time(state, t, quantum)).truncatingRemainder(dividingBy: quantum)
+        if diff > quantum / 2 { diff -= quantum } else if diff < -quantum / 2 { diff += quantum }
+        return diff
+    }
+
     /// Tempo und Beat an Link geben. `beat` ist zur Host-Zeit `hostTime` hörbar (mach_absolute_time,
     /// gleiche Uhr wie Link). Kleine Abweichungen (Callback-Jitter) werden geglättet statt jedes Mal neu gesetzt.
     public func lead(bpm: Double, beat: Double, hostTime: UInt64) {

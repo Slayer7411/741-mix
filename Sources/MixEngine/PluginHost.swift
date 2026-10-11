@@ -262,6 +262,13 @@ public final class PluginInstance: @unchecked Sendable {
         return t == UInt32.max ? nil : Double(t) / sampleRate
     }
 
+    /// vom Kern nicht gerechnete Blöcke (Fehler, Zeitüberschreitung des Dienstes) und Sekunden, die zuletzt am Stück fehlschlugen
+    public var renderFailures: (blocks: UInt64, seconds: Double) {
+        var b: UInt64 = 0, f: UInt64 = 0
+        mdplug_failures(ptr, &b, &f)
+        return (b, Double(f) / sampleRate)
+    }
+
     /// einen Block durch das Plugin rechnen (Messungen, Tests; im Betrieb rechnet der Kern)
     public func process(_ l: UnsafeMutablePointer<Float>, _ r: UnsafeMutablePointer<Float>, _ n: Int) {
         mdplug_process(ptr, l, r, Int32(n))
@@ -445,6 +452,7 @@ public final class PluginInstance: @unchecked Sendable {
     /// Wert eines Parameters (AU: min…max, VST3: 0…1)
     public func value(_ id: AudioUnitParameterID) -> Float {
         guard let au = audioUnit else { return Float(shared.lock.withLock { shared.values[id] } ?? 0) }
+        if outOfProcess { paramQueue.sync {} }   // erst die offenen Setzungen (Lesen nach Schreiben)
         var v: AudioUnitParameterValue = 0
         AudioUnitGetParameter(au, id, kAudioUnitScope_Global, 0, &v)
         return v
@@ -460,8 +468,16 @@ public final class PluginInstance: @unchecked Sendable {
             return
         }
         var p = AudioUnitParameter(mAudioUnit: au, mParameterID: id, mScope: kAudioUnitScope_Global, mElement: 0)
-        AUParameterSet(nil, nil, &p, v, 0)
+        // isoliert: Aufruf geht an den Dienst – hängt der, darf der Steuer-Thread (unter der Sperre) nicht warten.
+        // Eigene serielle Queue: Reihenfolge bleibt
+        guard outOfProcess else { AUParameterSet(nil, nil, &p, v, 0); return }
+        paramQueue.async { [self] in   // hält die Instanz, bis gesetzt ist (deinit schließt sie)
+            guard let au = audioUnit else { return }
+            var q = AudioUnitParameter(mAudioUnit: au, mParameterID: id, mScope: kAudioUnitScope_Global, mElement: 0)
+            AUParameterSet(nil, nil, &q, v, 0)
+        }
     }
+    private let paramQueue = DispatchQueue(label: "minos741.plugin-params", qos: .userInitiated)
 
     /// Anzeige-Text eines Werts (VST3: vom Plugin, AU: Zahl)
     public func text(_ id: AudioUnitParameterID, _ v: Float) -> String {

@@ -22,6 +22,26 @@ extension MixEngine {
         return rate
     }
 
+    /// Gerät vorhanden und betriebsbereit (kAudioDevicePropertyDeviceIsAlive)
+    static func isAlive(_ id: AudioDeviceID) -> Bool {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceIsAlive, mScope: kAudioObjectPropertyScopeGlobal,
+                                              mElement: kAudioObjectPropertyElementMain)
+        var v: UInt32 = 0, size = UInt32(MemoryLayout<UInt32>.size)
+        return id != 0 && AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &v) == noErr && v != 0
+    }
+
+    /// Ausgabegerät zur UID (nil = nicht da oder ohne Ausgangskanäle)
+    static func device(uid: String) -> AudioDeviceID? {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyTranslateUIDToDevice, mScope: kAudioObjectPropertyScopeGlobal,
+                                              mElement: kAudioObjectPropertyElementMain)
+        var cf = uid as CFString, id = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let st = withUnsafeMutablePointer(to: &cf) {
+            AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, UInt32(MemoryLayout<CFString>.size), $0, &size, &id)
+        }
+        guard st == noErr, id != kAudioObjectUnknown, channelCount(id) > 0 else { return nil }
+        return id
+    }
+
     /// Raten, die das Gerät kann (aus den Bereichen die üblichen Werte)
     public static func availableRates(_ id: AudioDeviceID) -> [Double] {
         var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyAvailableNominalSampleRates,

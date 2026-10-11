@@ -273,7 +273,11 @@ public struct MixState: Equatable, Sendable {
 /// Der Audio-Thread nimmt die Sperre nie – er liest nur `DeckPlayer`.
 public final class MixController: @unchecked Sendable {
     /// Rate aus den Audio-Einstellungen (0 = Gerät) – der Kern rechnet ab dem Start damit
-    public let engine = MixEngine(rate: { let r = UserDefaults.standard.double(forKey: "sampleRate"); return r > 0 ? r : nil }())
+    /// Messung: MIX741_CORE_RATE setzt nur die Kernrate (Gerät bleibt, AUHAL rechnet um), z. B. Live-Rate am eingebauten Gerät
+    public let engine = MixEngine(rate: {
+        if let r = ProcessInfo.processInfo.environment["MIX741_CORE_RATE"].flatMap(Double.init), r > 0 { return r }
+        let r = UserDefaults.standard.double(forKey: "sampleRate"); return r > 0 ? r : nil
+    }())
     public let controlQueue = DispatchQueue(label: "minos741.control", qos: .userInteractive)
 
     private let lock = NSRecursiveLock()
@@ -1286,6 +1290,13 @@ public final class MixController: @unchecked Sendable {
     }
 
     public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on; link.enabled = on } }
+    /// Phasenabstand der Clock zu Link in Beats und Teilnehmer (Messung; auf der Steuer-Queue wie `lead`)
+    public func linkPhase() -> (error: Double, peers: Int)? {
+        controlQueue.sync {
+            guard let st = engine.clockStamp, let e = link.phaseError(beat: st.beat, hostTime: st.hostTime) else { return nil }
+            return (e, link.peers)
+        }
+    }
 
     /// Link – MINOS gibt Tempo und Takt vor
     public let link = LinkSession()
@@ -1645,7 +1656,12 @@ public final class MixController: @unchecked Sendable {
                     guard let info = catalog.info(want) ?? PluginHost.codes(want).map({
                         PluginInfo(id: want, name: PluginHost.fourCC($0.1), manufacturer: PluginHost.fourCC($0.2), type: $0.0, subtype: $0.1, manu: $0.2)
                     }) else { throw NSError(domain: "minos741.plugin", code: 2, userInfo: [NSLocalizedDescriptionKey: want]) }
+                    // live: Fremd-Plugins nur isoliert; nur im Prozess ladbare (VST3, eigener Ordner) erst nach Freigabe
+                    if let why = catalog.inProcessReason(want) {
+                        throw NSError(domain: "minos741.plugin", code: 3, userInfo: [NSLocalizedDescriptionKey: "\(info.name): \(why)"])
+                    }
                     let isolated = catalog.isolated(want)
+                    print("[plugin] FX \(u + 1): \(info.name) \(isolated ? "isoliert" : "im Prozess")")
                     // Absturz-Markierung: stürzt MINOS-741 beim Öffnen ab, ist das Plugin beim nächsten Start blockiert
                     catalog.beginOpen(key: want, name: info.name)
                     defer { catalog.endOpen() }
@@ -1750,14 +1766,70 @@ public final class MixController: @unchecked Sendable {
         locked {
             for u in plugins.indices {
                 guard let hit = plugins[u].compactMap({ $0 }).first(where: { OpaquePointer($0.audioUnit) == au }) else { continue }
-                let id = hit.info.id
-                pluginCatalog.block(id, reason: String(localized: "abgestürzt (isoliert, MINOS-741 lief weiter)"))
-                pluginGen[u] += 1; pluginLoading[u] = nil; pluginFailed[u] = id
-                for d in plugins[u].indices { installPlugin(nil, unit: u, deck: d) }
-                state.pluginErrors[u] = String(format: String(localized: "%@ abgestürzt – blockiert"), hit.info.name)
-                onNotice?(EngineNotice(.error, key: "plugin.\(u)", "FX \(u + 1): " + (state.pluginErrors[u] ?? "")))
-                applyFX(u)
+                pluginDown(u, hit, crashed: true)
             }
+        }
+    }
+
+    /// isoliertes Plugin abgestürzt oder hängt (rechnet seit `hangSeconds` keinen Block): Instanzen heraus (trocken),
+    /// Absturz zählen, Hinweis; unter `PluginCatalog.crashLimit` nach 2 s neu laden, sonst gesperrt. Unter der Sperre
+    private func pluginDown(_ u: Int, _ hit: PluginInstance, crashed: Bool) {
+        let id = hit.info.id
+        // ein Absturz trifft alle Instanzen im selben Dienst (mehrere Meldungen, auch für andere Units): einmal zählen
+        let now = Date()
+        let n: Int
+        if let t = lastPluginCrash[id], now.timeIntervalSince(t) < 1 {
+            n = pluginCatalog.settings.crashes[id] ?? 1
+        } else {
+            n = pluginCatalog.recordCrash(id)
+        }
+        lastPluginCrash[id] = now
+        pluginGen[u] += 1; pluginLoading[u] = nil; pluginFailed[u] = id
+        for d in plugins[u].indices { installPlugin(nil, unit: u, deck: d) }
+        let what = crashed ? String(localized: "abgestürzt") : String(localized: "antwortet nicht")
+        let limit = PluginCatalog.crashLimit
+        if n >= limit {
+            state.pluginErrors[u] = String(format: String(localized: "%@ %@ (%lld×) – blockiert"), hit.info.name, what, n)
+        } else {
+            state.pluginErrors[u] = String(format: String(localized: "%@ %@ (%lld/%lld) – trocken, lädt neu"), hit.info.name, what, n, limit)
+            let gen = pluginGen[u]
+            controlQueue.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self else { return }
+                self.locked {
+                    guard self.pluginGen[u] == gen, self.pluginFailed[u] == id, self.state.fx[u].pluginID == id else { return }
+                    self.pluginFailed[u] = nil
+                    self.applyFX(u)
+                }
+            }
+        }
+        print("[plugin] FX \(u + 1): \(hit.info.name) \(crashed ? "abgestürzt" : "hängt") (\(n)/\(limit))")
+        onNotice?(EngineNotice(n >= limit ? .error : .warning, key: "plugin.\(u)", "FX \(u + 1): " + (state.pluginErrors[u] ?? "")))
+        applyFX(u)
+    }
+    private var lastPluginCrash: [String: Date] = [:]
+    /// gemeldete Fehlblöcke je Unit (Hinweis nur bei neuen)
+    private var pluginFailuresSeen = [UInt64](repeating: 0, count: MixEngine.fxUnitCount)
+    /// isoliertes Plugin, das so lange am Stück keinen Block liefert, gilt als hängend
+    static let pluginHangSeconds = 2.0
+
+    /// 1 Hz: isolierte Plugins, die Blöcke nicht rechnen (Zeitüberschreitung des Dienstes) -> Hinweis, hängend -> pluginDown
+    private func checkPluginFailures() {
+        for u in plugins.indices {
+            let insts = plugins[u].compactMap { $0 }.filter(\.outOfProcess)
+            guard !insts.isEmpty else { pluginFailuresSeen[u] = 0; continue }
+            let f = insts.map(\.renderFailures)
+            let blocks = f.reduce(0) { $0 + $1.blocks }
+            if let worst = insts.indices.max(by: { f[$0].seconds < f[$1].seconds }), f[worst].seconds >= Self.pluginHangSeconds {
+                pluginDown(u, insts[worst], crashed: false)
+                pluginFailuresSeen[u] = 0
+                continue
+            }
+            if blocks > pluginFailuresSeen[u] {
+                onNotice?(EngineNotice(.warning, key: "plugin.\(u)",
+                                       String(format: String(localized: "FX %lld: %@ antwortet nicht rechtzeitig – %lld Blöcke trocken"),
+                                              u + 1, insts[0].info.name, Int(blocks))))
+            }
+            pluginFailuresSeen[u] = blocks
         }
     }
 
@@ -1832,6 +1904,7 @@ public final class MixController: @unchecked Sendable {
             if !played.isEmpty, let cb = onPlayed { DispatchQueue.global().async { for p in played { cb(p.0, p.1, p.2) } } }
             tickCount += 1
             if tickCount % 4 == 0 { healPlugins() }
+            if tickCount % 200 == 0 { checkPluginFailures() }
             // beat-synchrones Delay folgt dem Tempo
             if tickCount % 50 == 0, state.fx.contains(where: { $0.slots[1].on }) { applyAllFX() }
             if tickCount % 50 == 0, !loads.isEmpty { (expired, slow) = expiredLoads() }

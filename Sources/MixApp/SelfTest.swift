@@ -19,7 +19,8 @@ enum SelfTest {
             let env = ProcessInfo.processInfo.environment
             for _ in 0..<20 where mix.outputDevices.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
             core.engine.deviceRate = nil   // Geräterate nie umstellen (ein anderes MINOS könnte gerade darauf spielen)
-            if env["MIX741_NOEXT"] == nil, let ext = mix.outputDevices.first(where: { $0.channels >= 8 }) {   // externes Interface, jedes Deck auf ein eigenes Paar
+            let named = env["MIX741_OUT"].flatMap { n in mix.outputDevices.first { $0.channels >= 8 && $0.name.localizedCaseInsensitiveContains(n) } }
+            if env["MIX741_NOEXT"] == nil, let ext = named ?? mix.outputDevices.first(where: { $0.channels >= 8 }) {   // externes Interface, jedes Deck auf ein eigenes Paar
                 core.engine.apply(.init(device: ext.id, firstChannel: [0, 2, 4, 6]))
                 log("Routing \(ext.name) extern: läuft=\(core.engine.running) Fehler=\(core.engine.lastError ?? "keine")")
             } else if let dev = mix.outputDevices.first(where: { d in env["MIX741_OUT"].map { d.name.localizedCaseInsensitiveContains($0) } ?? false })
@@ -39,6 +40,8 @@ enum SelfTest {
             p.phraseAnchor = .suggest         // nur vorschlagen: der Test verschiebt keinen Anker (keine eigenen Änderungen)
             core.setPrefs(p)
             while store.tracks.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
+            if env["MIX741_BENCH"] == "memory" { await memoryProbe(core, tracks: store.tracks); exit(0) }
+            if env["MIX741_BENCH"] == "loadtest" { await LoadTest.run(core, tracks: store.tracks); exit(0) }
             let c = store.tracks.filter { $0.bpm > 120 && $0.bpm < 140 && $0.gridAnchorMs != nil && $0.fileExists }
             guard c.count >= 2 else { log("zu wenige Tracks"); exit(1) }
             log("A: \(c[0].artist) – \(c[0].title) \(c[0].bpm) · B: \(c[1].artist) – \(c[1].title) \(c[1].bpm)")
@@ -191,6 +194,7 @@ enum SelfTest {
                        "aufx:mrev:appl", pNames, pWet, pTail, pErr.map { " · Fehler: \($0)" } ?? ""))
             log(String(format: "Pegel A: trocken %.3f · Filter HP %.3f (%.0f %%) · Reverb %.3f (%.0f %%)",
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
+            await deviceProbe(core)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -203,14 +207,104 @@ enum SelfTest {
         }
     }
 
-    /// MIX741_BENCH=load: Lastprobe am Gerät. 4 Decks mit Keylock (Tempo ±3 %), Hall auf FX 1 (A/C), Plugin
-    /// AUMatrixReverb auf FX 2 (B/D), Puffer 64 / 128 / 256 je MIX741_BENCH_SECS s (8): DSP-Last (Mittel, Spitze),
-    /// Blöcke über Budget (eigene Messung) und Überlastmeldungen des Geräts. Stumm, nur eingebautes Gerät
-    /// (MIX741_NOEXT=1); die Puffergröße wird danach zurückgestellt. Statusleiste holt dieselben Werte (4 Hz) ab:
-    /// die Blockzahl zeigt, wie viel die Probe davon gesehen hat
-    static func loadProbe(_ core: MixController, tracks c: [Track]) async {
+    /// Geräte-Pfade ohne Ziehen/Stecken: Gerät weg (eingespeist) -> warten -> dasselbe Gerät neu öffnen, Ratenwechsel
+    /// (eingespeist, Geräterate bleibt), Puffer am Gerät geändert (echter Listener), Ruhezustand/Aufwachen. Deck A spielt
+    /// dabei weiter (Position läuft nach jedem Schritt)
+    static func deviceProbe(_ core: MixController) async {
         let engine = core.engine
-        let secs = Double(ProcessInfo.processInfo.environment["MIX741_BENCH_SECS"] ?? "") ?? 8
+        let wasPlaying = core.snapshot().decks[0].playing
+        if !wasPlaying { core.togglePlay(0) }
+        func waitRunning() async -> Double {
+            let t0 = Date()
+            for _ in 0..<60 where engine.watch.phase != .running { try? await Task.sleep(for: .milliseconds(50)) }
+            return Date().timeIntervalSince(t0)
+        }
+        func advancing() async -> Bool {
+            let p0 = core.position(0)
+            try? await Task.sleep(for: .milliseconds(300))
+            return core.position(0) > p0 + 0.1
+        }
+        let n0 = engine.watch.reconnects
+        engine.simulate(.alive(false))
+        let lost = engine.watch.phase, stopped = !engine.running
+        let back = await waitRunning()
+        log(String(format: "Gerät weg (eingespeist): %@, Ausgabe aus %@ -> wieder verbunden nach %.0f ms (Öffnen %.0f ms), Neuverbindungen %d, A läuft %@",
+                   lost.rawValue, "\(stopped)", back * 1000, (engine.lastReconnect ?? .nan) * 1000, engine.watch.reconnects - n0,
+                   "\(await advancing())"))
+        let rate = engine.outputRate
+        engine.simulate(.rate(rate + 1000))
+        let rr = await waitRunning()
+        log(String(format: "Ratenwechsel (eingespeist): neu geöffnet nach %.0f ms, Gerät %.0f Hz (unverändert %@), Kern %.0f Hz, A läuft %@",
+                   rr * 1000, engine.outputRate, "\(engine.outputRate == rate)", engine.sampleRate, "\(await advancing())"))
+        let buf = engine.takeLoad().bufferFrames, want: UInt32 = buf == 256 ? 512 : 256
+        engine.setDeviceBufferForTest(want)
+        for _ in 0..<20 where engine.takeLoad().bufferFrames != Int(want) { try? await Task.sleep(for: .milliseconds(50)) }
+        let l = engine.takeLoad()
+        log(String(format: "Puffer am Gerät %d -> %d: gemeldet %d Frames, Latenz %.1f ms, Pufferwechsel %d, A läuft %@",
+                   buf, want, l.bufferFrames, l.outputLatency * 1000, engine.watch.bufferChanges, "\(await advancing())"))
+        engine.setDeviceBufferForTest(UInt32(buf))
+        try? await Task.sleep(for: .milliseconds(200))
+        engine.willSleep()
+        let sleeping = engine.watch.phase, quiet = !engine.running, pos = core.position(0)
+        try? await Task.sleep(for: .milliseconds(300))
+        let frozen = abs(core.position(0) - pos) < 0.01
+        engine.didWake()
+        let woke = await waitRunning()
+        log(String(format: "Ruhezustand: %@, Ausgabe aus %@, Position steht %@ -> aufgewacht, läuft nach %.0f ms, A läuft %@, Deck spielt %@",
+                   sleeping.rawValue, "\(quiet)", "\(frozen)", woke * 1000, "\(await advancing())", "\(core.snapshot().decks[0].playing)"))
+        if !wasPlaying { core.togglePlay(0) }
+    }
+
+    /// MIX741_BENCH=memory: 4 lange Tracks (MIX741_BENCH_MIN Minuten, 10) laden, nur lokal vorhandene (nichts aus der
+    /// Cloud), alle 4 spielen; Speicher (RSS, Footprint, fest), mlock-Fehler, Speicherdruck, Aussetzer beim Laden.
+    /// Kernrate wie live mit MIX741_CORE_RATE (z. B. 96000)
+    static func memoryProbe(_ core: MixController, tracks all: [Track]) async {
+        let env = ProcessInfo.processInfo.environment
+        let minSecs = (Double(env["MIX741_BENCH_MIN"] ?? "") ?? 10) * 60
+        func local(_ t: Track) -> Bool {
+            var st = stat()
+            return stat(t.path, &st) == 0 && st.st_size > 0 && st.st_flags & UInt32(SF_DATALESS) == 0
+        }
+        let pick = Array(all.filter { $0.duration >= minSecs && $0.duration <= minSecs * 2.5 }
+            .sorted { $0.duration > $1.duration }.lazy.filter(local).prefix(4))
+        guard pick.count == 4 else { log("Speicherprobe: nur \(pick.count) lokale Tracks ≥ \(Int(minSecs / 60)) min"); return }
+        func mem() -> String { Mem.line() }
+        log(String(format: "Speicherprobe: Kern %.0f Hz, Gerät %.0f Hz · vorher %@", core.engine.sampleRate, core.engine.outputRate, mem()))
+        for (d, t) in pick.enumerated() { log(String(format: "  %@: %.1f min · %@", deckLetters[d], t.duration / 60, t.title)) }
+        core.engine.resetOverloads()
+        _ = core.engine.takeLoad()
+        let lock0 = core.fileService?.stats.lockFailures ?? 0, t0 = Date()
+        for (d, t) in pick.enumerated() { core.load(t, deck: d) }
+        for _ in 0..<1800 where (0..<4).contains(where: { core.trackAudio($0) == nil }) {
+            let s = core.snapshot()
+            if let e = (0..<4).compactMap({ s.decks[$0].error }).first { log("Speicherprobe: \(e)"); return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        let loaded = (0..<4).filter { core.trackAudio($0) != nil }.count
+        let bytes = (0..<4).compactMap { core.trackAudio($0) }.reduce(0) { $0 + $1.frames * 2 * 4 }
+        log(String(format: "Speicherprobe: %d/4 geladen in %.1f s, Audio %.2f GB (Float, Kernrate) · mlock fehlgeschlagen %d · %@",
+                   loaded, Date().timeIntervalSince(t0), Double(bytes) / 1_073_741_824,
+                   (core.fileService?.stats.lockFailures ?? 0) - lock0, mem()))
+        for d in 0..<4 { core.updateDeck(d) { $0.keylock = true } }
+        for d in 0..<4 where !core.snapshot().decks[d].playing { core.togglePlay(d) }
+        try? await Task.sleep(for: .seconds(Double(env["MIX741_BENCH_SECS"] ?? "") ?? 10))
+        let l = core.engine.takeLoad()
+        log(String(format: "Speicherprobe: 4 Decks Keylock spielen · DSP %.1f %% · Spitze %.0f %% · über Budget %d · Gerät überlastet %d · %@",
+                   l.average * 100, l.peak * 100, l.overloads, l.deviceOverloads, mem()))
+        for d in 0..<4 where core.snapshot().decks[d].playing { core.togglePlay(d) }
+    }
+
+    /// MIX741_BENCH=load: Lastprobe am Gerät. 4 Decks mit Keylock (Tempo ±3 %), Hall auf FX 1 (A/C), Plugin auf FX 2
+    /// (B/D, MIX741_BENCH_PLUGIN=<id>, Standard AUMatrixReverb, "none" = ohne), Delay auf FX 3 (alle 4 Decks).
+    /// Puffer MIX741_BENCH_BUFFERS (512,256,128) je MIX741_BENCH_SECS s (8; live 600 = 30 min): DSP-Last (Mittel,
+    /// Spitze), Blöcke über Budget (eigene Messung), Überlastmeldungen des Geräts, Zwischenstand jede Minute.
+    /// Stumm (Master 0); ohne MIX741_NOEXT auf dem externen Interface. Puffergröße wird danach zurückgestellt.
+    /// Die Statusleiste holt dieselben Werte (4 Hz) ab: die Blockzahl zeigt, wie viel die Probe davon gesehen hat
+    static func loadProbe(_ core: MixController, tracks c: [Track]) async {
+        let engine = core.engine, env = ProcessInfo.processInfo.environment
+        let secs = Double(env["MIX741_BENCH_SECS"] ?? "") ?? 8
+        let buffers = (env["MIX741_BENCH_BUFFERS"] ?? "512,256,128").split(separator: ",").compactMap { UInt32($0.trimmingCharacters(in: .whitespaces)) }
+        let plugin = env["MIX741_BENCH_PLUGIN"] ?? "aufx:mrev:appl"
         core.load(c[min(2, c.count - 1)], deck: 2)
         core.load(c[min(3, c.count - 1)], deck: 3)
         for _ in 0..<300 where core.trackAudio(2) == nil || core.trackAudio(3) == nil {
@@ -222,33 +316,52 @@ enum SelfTest {
         for d in 0..<4 { core.updateDeck(d) { $0.keylock = true; $0.tempoPct = d % 2 == 0 ? 3 : -3 } }
         core.updateFX(0) { $0.single = true; $0.singleType = FXUnitState.Effect.reverb.rawValue; $0.singleOn = true
                            $0.params = [0.8, 0.3, 1.0]; $0.dryWet = 1 }
-        core.setPlugin(1, id: "aufx:mrev:appl")
-        for _ in 0..<60 where core.pluginParamNames(1).isEmpty { try? await Task.sleep(for: .milliseconds(50)) }
-        core.updateFX(1) { $0.singleOn = true; $0.dryWet = 0.5 }
+        if plugin != "none" {
+            core.setPlugin(1, id: plugin)
+            for _ in 0..<200 where core.pluginParamNames(1).isEmpty && core.snapshot().pluginErrors[1] == nil {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            if let e = core.snapshot().pluginErrors[1] { log("Lastprobe: Plugin \(plugin): \(e)") }
+            core.updateFX(1) { $0.singleOn = true; $0.dryWet = 0.5 }
+        }
+        let delayAssigned = (0..<4).map { core.snapshot().decks[$0].fxAssign[2] }
+        for d in 0..<4 where !delayAssigned[d] { core.toggleFXAssign(d, 2) }
+        core.updateFX(2) { $0.single = true; $0.singleType = FXUnitState.Effect.delay.rawValue; $0.singleOn = true
+                           $0.params = [0.5, 0.6, 0.5]; $0.dryWet = 0.5 }
         for d in 0..<4 where !core.snapshot().decks[d].playing { core.togglePlay(d) }
         let saved = engine.bufferFrames
-        for frames: UInt32 in [64, 128, 256] {
+        log(String(format: "Lastprobe: Puffer %@ je %.0f s · Hall FX1 · Plugin FX2 %@ · Delay FX3 (A–D) · Keylock A–D",
+                   buffers.map(String.init).joined(separator: "/"), secs, plugin))
+        for frames in buffers {
             engine.bufferFrames = frames
             engine.apply(engine.routing, restart: true)
             try? await Task.sleep(for: .seconds(1))   // einschwingen, erste Blöcke nach dem Start nicht zählen
             engine.resetOverloads()
             _ = engine.takeLoad()
-            var busy = 0.0, blocks = 0, peak = 0.0
+            var busy = 0.0, blocks = 0, peak = 0.0, minute = 0
             let t0 = Date()
             while Date().timeIntervalSince(t0) < secs {
                 try? await Task.sleep(for: .milliseconds(50))
                 let l = engine.takeLoad()
                 busy += l.average * Double(l.blocks); blocks += l.blocks; peak = max(peak, l.peak)
+                let m = Int(Date().timeIntervalSince(t0) / 60)
+                if m > minute {
+                    minute = m
+                    log(String(format: "  Puffer %d · %d min: DSP %.1f %% · Spitze %.0f %% · über Budget %d · Gerät überlastet %d · Gerät neu verbunden %d",
+                               frames, m, busy / Double(max(1, blocks)) * 100, peak * 100, l.overloads, l.deviceOverloads, l.reconnects))
+                }
             }
             let l = engine.takeLoad()
             let playing = (0..<4).filter { core.snapshot().decks[$0].playing }.count
-            log(String(format: "Lastprobe Puffer %d (Gerät %d Frames, %.1f ms Latenz, %.0f Hz, %d Decks): DSP %.1f %% · Spitze %.0f %% · %d Blöcke in %.0f s · über Budget %d · Gerät überlastet %d",
-                       frames, l.bufferFrames, l.outputLatency * 1000, l.sampleRate, playing,
+            log(String(format: "Lastprobe Puffer %d (Gerät %d Frames, %.1f ms Latenz, %.0f Hz, Kern %.0f Hz, %d Decks): DSP %.1f %% · Spitze %.0f %% · %d Blöcke in %.0f s · über Budget %d · Gerät überlastet %d",
+                       frames, l.bufferFrames, l.outputLatency * 1000, l.sampleRate, engine.sampleRate, playing,
                        busy / Double(max(1, blocks)) * 100, peak * 100, blocks, secs, l.overloads, l.deviceOverloads))
         }
         engine.bufferFrames = saved
         engine.apply(engine.routing, restart: true)
         for d in 0..<4 where core.snapshot().decks[d].playing { core.togglePlay(d) }
+        core.updateFX(2) { $0.singleOn = false }
+        for d in 0..<4 where !delayAssigned[d] { core.toggleFXAssign(d, 2) }
         core.updateFX(1) { $0.singleOn = false }
         core.setPlugin(1, id: nil)
         core.updateFX(0) { $0.singleOn = false }
@@ -260,6 +373,39 @@ enum SelfTest {
     static func log(_ s: String) {
         print("[selftest] \(s)")
         fflush(stdout)
+    }
+}
+
+/// Speicher des Prozesses und des Systems (Messungen)
+@MainActor enum Mem {
+    static func rss() -> UInt64 {
+        var info = mach_task_basic_info()
+        var n = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+        let r = withUnsafeMutablePointer(to: &info) { $0.withMemoryRebound(to: integer_t.self, capacity: Int(n)) {
+            task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &n) } }
+        return r == KERN_SUCCESS ? info.resident_size : 0
+    }
+
+    /// fest (wired) im ganzen System
+    static func wired() -> UInt64 {
+        var vm = vm_statistics64()
+        var c = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let r = withUnsafeMutablePointer(to: &vm) { $0.withMemoryRebound(to: integer_t.self, capacity: Int(c)) {
+            host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &c) } }
+        return r == KERN_SUCCESS ? UInt64(vm.wire_count) * UInt64(vm_kernel_page_size) : 0
+    }
+
+    /// Speicherdruck des Systems: normal · warnung · kritisch
+    static func pressure() -> String {
+        var level: Int32 = 0, size = MemoryLayout<Int32>.size
+        sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0)
+        return [1: "normal", 2: "warnung", 4: "kritisch"][Int(level)] ?? "\(level)"
+    }
+
+    static func gb(_ b: UInt64) -> String { String(format: "%.2f GB", Double(b) / 1_073_741_824) }
+
+    static func line() -> String {
+        "RSS \(gb(rss())) · Footprint \(gb(MeterSampler.footprint())) · System fest \(gb(wired())) · Speicherdruck \(pressure())"
     }
 }
 

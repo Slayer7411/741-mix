@@ -152,7 +152,10 @@ public struct PluginValidation: Codable, Equatable, Sendable {
 public struct PluginSettings: Codable, Equatable, Sendable {
     /// für MINOS-741 abgeschaltete Plugins (stehen nicht im FX-Menü)
     public var disabled: Set<String> = []
-    /// Plugins anderer Hersteller isoliert laden (Standard an); Apple immer im Prozess
+    /// Fremd-Plugins im Prozess erlauben (riskant: ein Absturz beendet MINOS-741). Aus (Standard): Audio Units anderer
+    /// Hersteller nur isoliert, VST3 und Plugins aus eigenen Ordnern (nur im Prozess ladbar) gar nicht
+    public var allowInProcess = false
+    /// nur mit `allowInProcess`: Plugins anderer Hersteller isoliert laden (Standard an); Apple immer im Prozess
     public var isolateThirdParty = true
     /// Einstellung je Plugin (fehlt = Standard)
     public var isolation: [String: Bool] = [:]
@@ -160,6 +163,8 @@ public struct PluginSettings: Codable, Equatable, Sendable {
     public var folders: [String] = []
     /// gesperrt nach einem Absturz: Schlüssel (Plugin-ID oder "bundle:<pfad>") → Grund
     public var blocked: [String: String] = [:]
+    /// Abstürze isolierter Plugins (Plugin-ID → Anzahl); ab `PluginCatalog.crashLimit` gesperrt
+    public var crashes: [String: Int] = [:]
     /// auval-Ergebnisse je "id@version"
     public var validation: [String: PluginValidation] = [:]
 
@@ -168,10 +173,12 @@ public struct PluginSettings: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         disabled = try c.decodeIfPresent(Set<String>.self, forKey: .disabled) ?? []
+        allowInProcess = try c.decodeIfPresent(Bool.self, forKey: .allowInProcess) ?? false
         isolateThirdParty = try c.decodeIfPresent(Bool.self, forKey: .isolateThirdParty) ?? true
         isolation = try c.decodeIfPresent([String: Bool].self, forKey: .isolation) ?? [:]
         folders = try c.decodeIfPresent([String].self, forKey: .folders) ?? []
         blocked = try c.decodeIfPresent([String: String].self, forKey: .blocked) ?? [:]
+        crashes = try c.decodeIfPresent([String: Int].self, forKey: .crashes) ?? [:]
         validation = try c.decodeIfPresent([String: PluginValidation].self, forKey: .validation) ?? [:]
     }
 }
@@ -236,7 +243,22 @@ public final class PluginCatalog: @unchecked Sendable {
     public func setEnabled(_ id: String, _ on: Bool) { update { if on { $0.disabled.remove(id) } else { $0.disabled.insert(id) } } }
     public func isEnabled(_ id: String) -> Bool { !settings.disabled.contains(id) }
     public func block(_ key: String, reason: String) { update { $0.blocked[key] = reason } }
-    public func unblock(_ key: String) { update { $0.blocked[key] = nil } }
+    public func unblock(_ key: String) { update { $0.blocked[key] = nil; $0.crashes[key] = nil } }
+
+    /// so viele Abstürze eines isolierten Plugins, dann gesperrt
+    public static let crashLimit = 3
+
+    /// Absturz eines isolierten Plugins zählen; ab `crashLimit` gesperrt. Liefert die Anzahl
+    @discardableResult
+    public func recordCrash(_ id: String) -> Int {
+        var n = 0
+        update { s in
+            n = (s.crashes[id] ?? 0) + 1
+            s.crashes[id] = n
+            if n >= Self.crashLimit { s.blocked[id] = String(format: String(localized: "%lld× abgestürzt (isoliert)"), n) }
+        }
+        return n
+    }
     public func blockReason(_ key: String) -> String? { settings.blocked[key] }
 
     /// im FX-Menü wählbar und ladbar? nil = ja, sonst der Grund
@@ -247,11 +269,29 @@ public final class PluginCatalog: @unchecked Sendable {
         return nil
     }
 
-    /// isoliert laden? Apple im Prozess, andere nach Einstellung; Plugins aus eigenen Ordnern immer im Prozess
+    /// isoliert laden? Ohne `allowInProcess` jedes Fremd-Plugin; sonst Apple im Prozess, andere nach Einstellung.
+    /// Plugins aus eigenen Ordnern und VST3 nur im Prozess (siehe `inProcessOnly`)
     public func isolated(_ id: String) -> Bool {
-        let s = settings
-        guard let e = entries().first(where: { $0.id == id }), e.canIsolate, let info = e.info else { return false }
-        return s.isolation[id] ?? (!info.isApple && s.isolateThirdParty)
+        guard let e = entries().first(where: { $0.id == id }) else { return false }
+        return Self.isolated(e, settings)
+    }
+
+    public static func isolated(_ e: PluginEntry, _ s: PluginSettings) -> Bool {
+        guard e.canIsolate, let info = e.info else { return false }
+        if !s.allowInProcess && !info.isApple { return true }
+        return s.isolation[e.id] ?? (!info.isApple && s.isolateThirdParty)
+    }
+
+    /// Fremd-Plugin, das nur im Prozess läuft (VST3, eigener Ordner), solange das nicht erlaubt ist: nicht laden
+    public static func inProcessOnly(_ e: PluginEntry, _ s: PluginSettings) -> Bool {
+        guard let info = e.info else { return false }
+        return !s.allowInProcess && !info.isApple && !e.canIsolate
+    }
+
+    /// Grund, warum ein Plugin im Live-Betrieb nicht geladen wird (nil = ladbar). Liest die Liste ggf. ein
+    public func inProcessReason(_ id: String) -> String? {
+        guard let e = entries().first(where: { $0.id == id }), Self.inProcessOnly(e, settings) else { return nil }
+        return String(localized: "läuft nur im Prozess · erlauben: ⌘, → Plugins → Plugins im Prozess (riskant)")
     }
 
     public func setIsolation(_ id: String, _ on: Bool?) { update { $0.isolation[id] = on } }
@@ -302,7 +342,7 @@ public final class PluginCatalog: @unchecked Sendable {
     public func menuList(refresh: Bool = false) -> [PluginInfo] {
         let s = settings
         return entries(refresh: refresh).compactMap { e in
-            guard let i = e.info, !s.disabled.contains(e.id), s.blocked[e.id] == nil else { return nil }
+            guard let i = e.info, !s.disabled.contains(e.id), s.blocked[e.id] == nil, !Self.inProcessOnly(e, s) else { return nil }
             return i
         }
     }

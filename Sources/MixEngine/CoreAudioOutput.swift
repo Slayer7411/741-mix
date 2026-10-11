@@ -1,36 +1,61 @@
 import AudioToolbox
 import CoreAudio
+import Foundation
 import MixDSP
 
 /// Ein einziger CoreAudio-Ausgang (AUHAL) direkt auf dem Gerät. Der Render-Callback ist C++ (mdsp_au_render) –
-/// im Audio-Thread läuft kein Swift.
-final class CoreAudioOutput {
+/// im Audio-Thread läuft kein Swift. Start/Stop nur auf der Geräte-Queue der Engine; die Werte (`info`) von jedem Thread.
+final class CoreAudioOutput: @unchecked Sendable {
+    struct Info: Sendable {
+        var channels = 2
+        var deviceRate: Double = 44100
+        var running = false
+        /// Zeit vom Render-Callback bis zum Ausgang (Puffer + Geräte-, Sicherheits- und Stream-Latenz), Sekunden
+        var outputLatency: Double = 0
+        /// tatsächliche Puffergröße des Geräts (Frames)
+        var bufferFrameSize: UInt32 = 0
+        var device: AudioDeviceID = 0
+        /// bleibt über Aus-/Einstecken gleich (die ID nicht)
+        var uid = ""
+        var name = ""
+    }
+
+    /// Meldungen des laufenden Geräts, auf der Queue aus `init`
+    enum DeviceEvent: Sendable { case alive(Bool), rate(Double), buffer(UInt32) }
+    var onDeviceEvent: (@Sendable (DeviceEvent) -> Void)?
+
     private var unit: AudioUnit?
-    private(set) var channels = 2
-    private(set) var deviceRate: Double = 44100
-    private(set) var running = false
-    /// Zeit vom Render-Callback bis zum Ausgang (Puffer + Geräte-, Sicherheits- und Stream-Latenz), Sekunden
-    private(set) var outputLatency: Double = 0
-    /// tatsächliche Puffergröße des Geräts (Frames)
-    private(set) var bufferFrameSize: UInt32 = 0
+    private let infoLock = NSLock()
+    private var _info = Info()
+    var info: Info { infoLock.withLock { _info } }
+    var channels: Int { info.channels }
+    var deviceRate: Double { info.deviceRate }
+    var running: Bool { info.running }
+    var outputLatency: Double { info.outputLatency }
+    var bufferFrameSize: UInt32 { info.bufferFrameSize }
+
     /// Überlastmeldungen des Geräts (kAudioDeviceProcessorOverload) seit Start/Zurücksetzen
     var deviceOverloads: Int { overloadLock.withLock { overloadCount } }
     func resetDeviceOverloads() { overloadLock.withLock { overloadCount = 0 } }
     private let overloadLock = NSLock()
     private var overloadCount = 0
-    private var overloadDevice: AudioDeviceID?
-    private var overloadListener: AudioObjectPropertyListenerBlock?
     private let overloadQueue = DispatchQueue(label: "minos741.overload", qos: .utility)
-    private static var overloadAddress: AudioObjectPropertyAddress {
-        AudioObjectPropertyAddress(mSelector: kAudioDeviceProcessorOverload, mScope: kAudioObjectPropertyScopeGlobal,
-                                   mElement: kAudioObjectPropertyElementMain)
-    }
+    private let eventQueue: DispatchQueue
+    /// angemeldete Listener (Gerät, Selektor, Queue, Block) – beim Stop wieder ab
+    private var listeners: [(AudioDeviceID, AudioObjectPropertySelector, DispatchQueue, AudioObjectPropertyListenerBlock)] = []
+
+    init(eventQueue: DispatchQueue) { self.eventQueue = eventQueue }
 
     /// startet die Ausgabe auf `device` (nil = Systemstandard) mit allen Ausgangskanälen des Geräts
     /// `engineRate` = Rate des Kerns (AUHAL rechnet um, falls das Gerät anders läuft);
     /// `deviceRate` gesetzt = Gerät auf diese Rate stellen (wie im Audio-Setup üblich)
     func start(device: AudioDeviceID?, engine: OpaquePointer, engineRate: Double, bufferFrames: UInt32?, setDeviceRate: Double?) throws {
         stop()
+        do { try open(device, engine, engineRate, bufferFrames, setDeviceRate) } catch { stop(); throw error }
+    }
+
+    private func open(_ device: AudioDeviceID?, _ engine: OpaquePointer, _ engineRate: Double, _ bufferFrames: UInt32?,
+                      _ setDeviceRate: Double?) throws {
         var desc = AudioComponentDescription(componentType: kAudioUnitType_Output, componentSubType: kAudioUnitSubType_HALOutput,
                                              componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0)
         guard let comp = AudioComponentFindNext(nil, &desc) else { throw err("kein AUHAL") }
@@ -40,9 +65,10 @@ final class CoreAudioOutput {
         unit = au
 
         var dev = device ?? MixEngine.defaultOutputDevice() ?? 0
+        guard MixEngine.isAlive(dev) else { throw err("Gerät nicht bereit") }
         try check(AudioUnitSetProperty(au, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
                                        &dev, UInt32(MemoryLayout<AudioDeviceID>.size)), "Gerät setzen")
-        channels = max(2, MixEngine.channelCount(dev))
+        let channels = max(2, MixEngine.channelCount(dev))
         if let want = setDeviceRate, MixEngine.availableRates(dev).contains(want), MixEngine.nominalRate(dev) != want {
             var r = Float64(want)
             var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal,
@@ -50,7 +76,6 @@ final class CoreAudioOutput {
             AudioObjectSetPropertyData(dev, &addr, 0, nil, UInt32(MemoryLayout<Float64>.size), &r)
             for _ in 0..<50 where MixEngine.nominalRate(dev) != want { usleep(10_000) }   // Gerät schaltet asynchron um
         }
-        deviceRate = MixEngine.nominalRate(dev) ?? 44100
         if var frames = bufferFrames {
             var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyBufferFrameSize, mScope: kAudioObjectPropertyScopeGlobal,
                                                   mElement: kAudioObjectPropertyElementMain)
@@ -68,39 +93,66 @@ final class CoreAudioOutput {
                                        &cb, UInt32(MemoryLayout<AURenderCallbackStruct>.size)), "Callback")
         mdsp_load_set_rate(engineRate)   // DSP-Last: Blöcke kommen mit der Rate des Kerns
         try check(AudioUnitInitialize(au), "Initialisieren")
+        // vor dem Start als laufend melden: der erste Callback kann kommen, bevor Start zurückkehrt (Freigaben warten dann
+        // auf den Kern statt auf `running`); scheitert der Start, setzt stop() es zurück
+        infoLock.withLock { _info.running = true }
         try check(AudioOutputUnitStart(au), "Starten")
-        running = true
-        outputLatency = Double(Self.latencyFrames(dev)) / deviceRate
-        bufferFrameSize = Self.bufferFrames(dev)
-        listenForOverloads(dev)
+        let rate = MixEngine.nominalRate(dev) ?? 44100
+        infoLock.withLock {
+            _info = Info(channels: channels, deviceRate: rate, running: true,
+                         outputLatency: Double(Self.latencyFrames(dev)) / rate, bufferFrameSize: Self.bufferFrames(dev),
+                         device: dev, uid: MixEngine.stringProperty(dev, kAudioDevicePropertyDeviceUID),
+                         name: MixEngine.stringProperty(dev, kAudioObjectPropertyName))
+        }
+        listen(dev)
     }
 
-    private static func bufferFrames(_ dev: AudioDeviceID) -> UInt32 {
+    /// Rate, Puffer und Latenz des laufenden Geräts neu lesen (nach einer Änderung von außen)
+    func refresh() {
+        let dev = info.device
+        guard running, dev != 0 else { return }
+        let rate = MixEngine.nominalRate(dev) ?? info.deviceRate
+        let lat = Double(Self.latencyFrames(dev)) / rate, buf = Self.bufferFrames(dev)
+        infoLock.withLock { _info.deviceRate = rate; _info.outputLatency = lat; _info.bufferFrameSize = buf }
+    }
+
+    static func bufferFrames(_ dev: AudioDeviceID) -> UInt32 {
         var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyBufferFrameSize, mScope: kAudioObjectPropertyScopeGlobal,
                                               mElement: kAudioObjectPropertyElementMain)
         var v: UInt32 = 0, size = UInt32(MemoryLayout<UInt32>.size)
         return AudioObjectGetPropertyData(dev, &addr, 0, nil, &size, &v) == noErr ? v : 0
     }
 
-    /// Geräte-Überlast (HAL meldet einen verpassten Zyklus) zählen
-    private func listenForOverloads(_ dev: AudioDeviceID) {
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+    /// Geräte-Überlast zählen (HAL meldet einen verpassten Zyklus); Lebenszeichen, Rate und Puffer des Geräts melden.
+    /// Die Blöcke laufen auf den Queues (nie im Audio- oder HAL-Thread) und lesen nur den neuen Wert
+    private func listen(_ dev: AudioDeviceID) {
+        add(dev, kAudioDeviceProcessorOverload, overloadQueue) { [weak self] in
             guard let self else { return }
             self.overloadLock.withLock { self.overloadCount += 1 }
         }
-        var addr = Self.overloadAddress
-        if AudioObjectAddPropertyListenerBlock(dev, &addr, overloadQueue, block) == noErr {
-            overloadDevice = dev
-            overloadListener = block
+        add(dev, kAudioDevicePropertyDeviceIsAlive, eventQueue) { [weak self] in
+            self?.onDeviceEvent?(.alive(MixEngine.isAlive(dev)))
+        }
+        add(dev, kAudioDevicePropertyNominalSampleRate, eventQueue) { [weak self] in
+            if let r = MixEngine.nominalRate(dev) { self?.onDeviceEvent?(.rate(r)) }
+        }
+        add(dev, kAudioDevicePropertyBufferFrameSize, eventQueue) { [weak self] in
+            self?.onDeviceEvent?(.buffer(Self.bufferFrames(dev)))
         }
     }
 
-    private func stopOverloadListener() {
-        guard let dev = overloadDevice, let block = overloadListener else { return }
-        var addr = Self.overloadAddress
-        AudioObjectRemovePropertyListenerBlock(dev, &addr, overloadQueue, block)
-        overloadDevice = nil
-        overloadListener = nil
+    private func add(_ dev: AudioDeviceID, _ sel: AudioObjectPropertySelector, _ q: DispatchQueue, _ f: @escaping () -> Void) {
+        var addr = AudioObjectPropertyAddress(mSelector: sel, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        let block: AudioObjectPropertyListenerBlock = { _, _ in f() }
+        if AudioObjectAddPropertyListenerBlock(dev, &addr, q, block) == noErr { listeners.append((dev, sel, q, block)) }
+    }
+
+    private func removeListeners() {
+        for (dev, sel, q, block) in listeners {
+            var addr = AudioObjectPropertyAddress(mSelector: sel, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            AudioObjectRemovePropertyListenerBlock(dev, &addr, q, block)
+        }
+        listeners.removeAll()
     }
 
     private static func latencyFrames(_ dev: AudioDeviceID) -> UInt32 {
@@ -125,13 +177,13 @@ final class CoreAudioOutput {
     }
 
     func stop() {
-        stopOverloadListener()
+        removeListeners()
         guard let au = unit else { return }
-        AudioOutputUnitStop(au)
+        AudioOutputUnitStop(au)   // wartet, bis der Render-Callback durch ist
         AudioUnitUninitialize(au)
         AudioComponentInstanceDispose(au)
         unit = nil
-        running = false
+        infoLock.withLock { _info.running = false }
     }
 
     deinit { stop() }

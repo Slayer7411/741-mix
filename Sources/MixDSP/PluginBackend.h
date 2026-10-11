@@ -18,6 +18,9 @@ struct MDPlugin {
     const int kind;
     /// Nachklingzeit laut Plugin in Samples (UINT32_MAX = endlos); der Kern rechnet mindestens so lange weiter
     std::atomic<uint32_t> tailFrames{0};
+    /// Audio-Thread schreibt, Steuer-Thread liest: Blöcke, die das Plugin nicht gerechnet hat (Fehler, Zeitüberschreitung
+    /// eines isolierten Plugins), und Frames, die zuletzt ohne Unterbrechung fehlschlugen
+    std::atomic<uint64_t> failedBlocks{0}, failingFrames{0};
     /// Master-Clock vor jedem Block (nur Audio-Thread): BPM (0 = unbekannt) und Beat am Blockanfang
     double tempo = 0, beat = 0;
 };

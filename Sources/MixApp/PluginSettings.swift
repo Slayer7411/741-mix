@@ -84,13 +84,13 @@ final class PluginManager {
     func setEnabled(_ e: PluginEntry, _ on: Bool) { catalog.setEnabled(e.id, on); changed() }
     func setIsolation(_ e: PluginEntry, _ on: Bool?) { catalog.setIsolation(e.id, on); changed() }
     func setIsolateThirdParty(_ on: Bool) { catalog.update { $0.isolateThirdParty = on }; changed() }
+    func setAllowInProcess(_ on: Bool) { catalog.update { $0.allowInProcess = on }; changed() }
     func unblock(_ key: String) { catalog.unblock(key); changed(); rescan() }
 
     /// isoliert laden (Einstellung je Plugin oder Standard)
-    func isolated(_ e: PluginEntry) -> Bool {
-        guard e.canIsolate, let i = e.info else { return false }
-        return settings.isolation[e.id] ?? (!i.isApple && settings.isolateThirdParty)
-    }
+    func isolated(_ e: PluginEntry) -> Bool { PluginCatalog.isolated(e, settings) }
+    /// nur im Prozess ladbar und das nicht erlaubt (live gesperrt)
+    func inProcessOnly(_ e: PluginEntry) -> Bool { PluginCatalog.inProcessOnly(e, settings) }
 
     // MARK: Ordner
 
@@ -228,9 +228,14 @@ struct PluginSettingsPage: View {
         let s = pm.settings
         Form {
             Section("Laden") {
-                Toggle("Drittanbieter-Plugins isoliert laden", isOn: Binding(get: { s.isolateThirdParty }, set: { pm.setIsolateThirdParty($0) }))
-                Text("isoliert = in einem eigenen systemdienst. stürzt das plugin ab, läuft minos weiter, die fx-unit bleibt trocken und das plugin wird blockiert. kostet je block etwas zeit (siehe handbuch). apple-plugins laufen immer im prozess, plugins aus eigenen ordnern (nur in minos registriert) und vst3 auch – der dienst kennt nur audio units. gilt ab dem nächsten laden des plugins.")
+                Toggle("Plugins im Prozess (riskant)", isOn: Binding(get: { s.allowInProcess }, set: { pm.setAllowInProcess($0) }))
+                Text("aus (standard, live): audio units anderer hersteller laufen nur isoliert in einem eigenen systemdienst. stürzt eins ab oder antwortet nicht, läuft minos weiter, die fx-unit bleibt trocken, das plugin lädt nach 2 s neu und ist nach 3 abstürzen blockiert. vst3 und plugins aus eigenen ordnern laufen nur im prozess und werden nicht geladen. an: auch im prozess – ein absturz des plugins beendet minos, ein hänger stoppt den ton. apple-plugins laufen immer im prozess. gilt ab dem nächsten laden des plugins.")
                     .settingsHint()
+                if s.allowInProcess {
+                    Toggle("Drittanbieter-Plugins isoliert laden", isOn: Binding(get: { s.isolateThirdParty }, set: { pm.setIsolateThirdParty($0) }))
+                    Text("isoliert kostet je block etwas zeit (siehe handbuch). der dienst kennt nur installierte audio units, vst3 und eigene ordner laufen immer im prozess.")
+                        .settingsHint()
+                }
                 if let c = pm.catalog.crashedLastRun {
                     Text(String(format: String(localized: "beim letzten lauf beim öffnen abgestürzt: %@ -> blockiert"), c.name))
                         .font(Theme.mono(10)).foregroundStyle(Theme.state)
@@ -330,7 +335,10 @@ private struct PluginRow: View {
                     Text(verbatim: meta(e)).font(Theme.mono(10)).foregroundStyle(Theme.muted).lineLimit(1)
                 }
                 Spacer(minLength: 8)
-                if e.format == .vst3 && loadable {
+                if pm.inProcessOnly(e) {
+                    StatusBadge(status: .init(text: String(localized: "nur im Prozess – aus"), alert: true, strong: false))
+                        .help("läuft nur im Prozess von MINOS-741 – wird erst mit „Plugins im Prozess (riskant)“ geladen")
+                } else if e.format == .vst3 && loadable {
                     StatusBadge(status: .init(text: String(localized: "läuft im Prozess"), alert: false, strong: false))
                         .help("VST3 läuft im Prozess von MINOS-741 (isolieren geht nur für Audio Units)")
                 }
@@ -351,7 +359,7 @@ private struct PluginRow: View {
     @ViewBuilder private func details(_ e: PluginEntry) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(verbatim: e.path ?? e.id).font(Theme.mono(10)).foregroundStyle(Theme.muted).lineLimit(2).truncationMode(.middle)
-            if e.canIsolate {
+            if e.canIsolate && pm.settings.allowInProcess {
                 HStack(spacing: 8) {
                     Text("Laden").font(Theme.mono(10)).foregroundStyle(Theme.muted)
                     Picker("Laden", selection: Binding(get: { pm.settings.isolation[e.id].map { $0 ? 1 : 2 } ?? 0 },
@@ -362,11 +370,18 @@ private struct PluginRow: View {
                     }
                     .labelsHidden().frame(width: 190)
                 }
+            } else if e.canIsolate {
+                Text(LocalizedStringKey(pm.isolated(e) ? "läuft isoliert (plugins im prozess: aus)" : "apple: läuft im prozess"))
+                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
             } else if e.format == .vst3 && e.info != nil {
                 Text("vst3: läuft im prozess (isolieren geht nur für audio units). stürzt es beim öffnen ab, ist es beim nächsten start blockiert.")
                     .font(Theme.mono(10)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
             } else if e.info != nil {
                 Text("eigener ordner: läuft im prozess (isolieren geht nur für installierte)").font(Theme.mono(10)).foregroundStyle(Theme.muted)
+            }
+            if let n = pm.settings.crashes[e.id], n > 0, pm.settings.blocked[e.id] == nil {
+                Text(String(format: String(localized: "isoliert abgestürzt: %lld von %lld (danach blockiert)"), n, PluginCatalog.crashLimit))
+                    .font(Theme.mono(10)).foregroundStyle(Theme.state)
             }
             if let r = pm.settings.blocked[e.id] {
                 HStack(spacing: 8) {

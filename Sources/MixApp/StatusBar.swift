@@ -189,8 +189,11 @@ final class MeterSampler {
         sample.lastDropout = nil
     }
 
+    /// Lasttest holt die Last selbst ab (`takeLoad` hat nur einen Abholer)
+    var paused = false
+
     private func step() {
-        guard let engine else { return }
+        guard let engine, !paused else { return }
         let now = Date()
         var s = sample
         let l = engine.takeLoad()
@@ -328,6 +331,8 @@ struct MeterDetails: View {
                 row("Puffer", "\(l.bufferFrames) Frames · " + String(format: "%g kHz", l.sampleRate / 1000))
                 row("Blöcke über Budget (eigene Messung)", "\(l.overloads)")
                 row("Überlast-Meldungen des Geräts", "\(l.deviceOverloads)")
+                row("Gerät neu verbunden", "\(l.reconnects)" + (l.lastReconnect.map { String(format: " · %.0f ms", $0 * 1000) } ?? ""))
+                row("Raten-/Pufferwechsel am Gerät", "\(l.rateChanges) / \(l.bufferChanges)")
                 row("Speicher", StatusMeters.megabytes(s.memoryBytes))
                 row("CPU (alle Kerne, 100 % = ein Kern)", String(format: "%.0f %%", s.cpu * 100))
                 Button("Aussetzer zurücksetzen") { MeterSampler.shared.resetDropouts() }

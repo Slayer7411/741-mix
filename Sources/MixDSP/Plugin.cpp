@@ -14,4 +14,9 @@ void mdplug_reset(MDPlugin *p) { if (p) p->reset(); }
 
 void mdplug_process(MDPlugin *p, float *L, float *R, int n) { if (p) p->process(L, R, n); }
 
+void mdplug_failures(MDPlugin *p, uint64_t *blocks, uint64_t *frames) {
+    *blocks = p ? p->failedBlocks.load(std::memory_order_relaxed) : 0;
+    *frames = p ? p->failingFrames.load(std::memory_order_relaxed) : 0;
+}
+
 } // extern "C"
