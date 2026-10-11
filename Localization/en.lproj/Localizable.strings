@@ -423,6 +423,7 @@
 "Spektrum (3 Bänder)" = "Spectrum (3 bands)";
 "Höhen-Betonung" = "High emphasis";
 "Sub orange · Bass/Kick rot · Mitten grün, obere Mitten gelbgrün · kurze Höhen (geschlossene Hats) blau · gehaltene Höhen (offene Hats, Ride) hellblau. Jedes Band gegen den eigenen Track normiert, Höhe = echter Pegel." = "Sub orange · bass/kick red · mids green, upper mids yellow-green · short highs (closed hats) blue · sustained highs (open hats, ride) light blue. Each band normalized against the track itself, height = real level.";
+"Bass < 250 Hz hinten · Mitten 250 Hz – 4 kHz · Höhen > 4 kHz vorn, je Band eigene Amplitude. Das stärkste Band reicht bis zum echten Pegel." = "Bass < 250 Hz at the back · mids 250 Hz – 4 kHz · highs > 4 kHz in front, each band its own amplitude. The strongest band reaches the real level.";
 "Collection prüfen" = "Check collection";
 "Collection prüfen …" = "Check collection …";
 "◆ COLLECTION PRÜFEN" = "◆ CHECK COLLECTION";

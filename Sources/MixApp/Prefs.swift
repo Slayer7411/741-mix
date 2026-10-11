@@ -134,7 +134,7 @@ struct UIPrefs: Codable, Equatable {
     var waveformPalette = WaveformPalette.bone
     /// Spektrum-Stil: feine 6-Band-Farben oder die alten 3 Bänder
     var spectrumDetail = SpectrumDetail.fine
-    /// Höhen-Betonung im feinen Spektrum (0 = neutral, 1 = Standard, 2 = stark)
+    /// Höhen-Betonung (0 = neutral, 1 = Standard, 2 = stark): feines Spektrum 0…10 dB, 3-Band Höhen-Gewicht ×0,5…×2
     var waveformHighBoost = 1.0
     var showBeatgrid = true
     var showBarNumbers = true
