@@ -15,13 +15,15 @@ enum PreviewRow {
     }
 }
 
-/// Zelle zweizeilig: Inhalt oben, Mindesthöhe = Zeilenhöhe (die Tabelle wächst mit)
+/// Zelle zweizeilig: Inhalt oben, Mindesthöhe = Zeilenhöhe (die Tabelle wächst mit).
+/// Schriftgröße als Wert: Tabellenzellen haben beim Aktualisieren der Präferenzen nicht immer die Umgebung
+/// (@Environment(MixModel.self) ließ die App beim Laden der Collection abstürzen)
 struct PreviewRowCell: ViewModifier {
-    @Environment(MixModel.self) private var mix
     let on: Bool
+    let textSize: Double
     func body(content: Content) -> some View {
         if on {
-            content.frame(maxWidth: .infinity, minHeight: PreviewRow.rowHeight(textSize: mix.prefs.ui.previewTextSize), maxHeight: .infinity, alignment: .topLeading)
+            content.frame(maxWidth: .infinity, minHeight: PreviewRow.rowHeight(textSize: textSize), maxHeight: .infinity, alignment: .topLeading)
         } else {
             content
         }
