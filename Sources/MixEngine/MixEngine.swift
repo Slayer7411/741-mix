@@ -13,12 +13,24 @@ public final class MixEngine: @unchecked Sendable {
     public static let delayBeats: [Double] = [1.0 / 4, 1.0 / 2, 3.0 / 4, 1, 3.0 / 2, 2]
 
     let core: OpaquePointer
-    private let output = CoreAudioOutput()
+    /// Geräte-Queue: Start/Stop der Ausgabe, Listener des Geräts und der Geräteliste, Neuverbinden (nie Haupt-/Audio-Thread)
+    let deviceQueue = DispatchQueue(label: "minos741.device", qos: .userInitiated)
+    private static let queueKey = DispatchSpecificKey<Bool>()
+    private let output: CoreAudioOutput
     private var players: [DeckPlayer] = []
     /// Rate, mit der Tracks dekodiert werden (= Geräterate beim Start; andere Raten gleicht der Kern aus)
     public let sampleRate: Double
-    public private(set) var lastError: String?
-    public private(set) var routing = Routing()
+    private let stateLock = NSLock()
+    private var _lastError: String?
+    private var _routing = Routing()
+    private var _watch = OutputWatch()
+    private var _lastReconnect: Double?
+    public var lastError: String? { stateLock.withLock { _lastError } }
+    public var routing: Routing { stateLock.withLock { _routing } }
+    /// Zustand gegenüber dem Gerät (läuft, wartet auf das Gerät, Ruhezustand) und Zähler
+    public var watch: OutputWatch { stateLock.withLock { _watch } }
+    /// Dauer des letzten automatischen Neuverbindens: Gerät wieder da -> Ausgabe läuft (Sekunden)
+    public var lastReconnect: Double? { stateLock.withLock { _lastReconnect } }
     public var running: Bool { output.running }
     public var deviceChannels: Int { output.channels }
     /// Puffergröße in Frames (nil = Gerätestandard)
@@ -28,9 +40,20 @@ public final class MixEngine: @unchecked Sendable {
     /// aktuelle Rate des Geräts
     public var outputRate: Double { output.deviceRate }
 
-    /// Wird gerufen, wenn sich die Geräteliste ändert (Hauptthread); ob neu verbunden wird, entscheidet die Oberfläche
-    /// (unser Gerät weg, gewähltes Interface wieder da, Ausgabe läuft nicht)
+    /// Wird gerufen, wenn sich die Geräteliste oder das Standardgerät ändert (Geräte-Queue). Gerät weg/wieder da
+    /// erledigt die Engine selbst; ob auf ein anderes Gerät gewechselt wird, entscheidet die Oberfläche
     public var onConfigurationChange: (@Sendable () -> Void)?
+    /// Meldungen zur Ausgabe (Geräte-Queue): Gerät weg, wieder da, Rate/Puffer geändert
+    public var onOutputEvent: (@Sendable (OutputEvent) -> Void)?
+
+    public enum OutputEvent: Sendable, Equatable {
+        case lost(device: String)
+        /// wieder verbunden: `seconds` vom Wiederauftauchen bis zum laufenden Ausgang, `gap` ganze Pause
+        case restored(device: String, seconds: Double, gap: Double)
+        case rateChanged(from: Double, to: Double)
+        case bufferChanged(from: UInt32, to: UInt32)
+        case sleeping
+    }
 
     public struct Routing: Equatable, Sendable {
         public var device: AudioDeviceID?
@@ -46,11 +69,15 @@ public final class MixEngine: @unchecked Sendable {
         let dev = Self.defaultOutputDevice() ?? 0
         sampleRate = rate ?? Self.nominalRate(dev) ?? 44100
         core = mdsp_create(sampleRate)
+        output = CoreAudioOutput(eventQueue: deviceQueue)
         players = (0..<Self.deckCount).map { DeckPlayer(core, $0) }
+        deviceQueue.setSpecific(key: Self.queueKey, value: true)
+        output.onDeviceEvent = { [weak self] e in self?.deviceEvent(e) }
         listenForDeviceChanges()
     }
 
     deinit {
+        poll?.cancel()
         output.stop()
         mdsp_destroy(core)
     }
@@ -60,27 +87,178 @@ public final class MixEngine: @unchecked Sendable {
     // MARK: - Ausgabe
 
     public func start() { apply(routing) }
-    public func stop() { output.stop() }
-
-    /// Gerät und Kanalpaare setzen. Kanalwechsel ohne Neustart; nur ein Gerätewechsel (oder `restart`) startet die Ausgabe neu.
-    public func apply(_ r: Routing, restart: Bool = false) {
-        let deviceChanged = restart || r.device != routing.device || !output.running
-        routing = r
-        for d in 0..<Self.deckCount { mdsp_set_param(core, Int32(d), MD_OUT_CHANNEL, Float(r.firstChannel[d])) }
-        guard deviceChanged else { return }
-        do {
-            try output.start(device: r.device, engine: core, engineRate: sampleRate, bufferFrames: bufferFrames, setDeviceRate: deviceRate)
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
+    /// bewusst anhalten (kein Neuverbinden)
+    public func stop() {
+        onQueue {
+            output.stop()
+            update(.stopped)
         }
     }
 
-    private func listenForDeviceChanges() {
-        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal,
+    /// Gerät und Kanalpaare setzen. Kanalwechsel ohne Neustart; nur ein Gerätewechsel (oder `restart`) startet die Ausgabe neu.
+    /// Blockiert, bis die Ausgabe läuft (Geräte-Queue)
+    public func apply(_ r: Routing, restart: Bool = false) {
+        onQueue {
+            let deviceChanged = restart || r.device != routing.device || !output.running
+            stateLock.withLock { _routing = r }
+            for d in 0..<Self.deckCount { mdsp_set_param(core, Int32(d), MD_OUT_CHANNEL, Float(r.firstChannel[d])) }
+            guard deviceChanged else { return }
+            update(.stopped)   // von Hand: ein Fehlschlag wartet nicht auf das alte Gerät
+            open(r.device, setRate: deviceRate)
+        }
+    }
+
+    /// Ruhezustand: Ausgabe anhalten, Decks bleiben, wie sie sind (laufen nach dem Aufwachen weiter)
+    public func willSleep() { onQueue { act(.willSleep) } }
+    /// aufgewacht: dasselbe Gerät neu öffnen, sonst darauf warten
+    public func didWake() { onQueue { act(.didWake) } }
+
+    /// nur Selbsttest: Ereignis einspeisen, als käme es vom Gerät (Gerät weg, Ratenwechsel)
+    public func simulate(_ e: OutputWatch.Event) { onQueue { act(e) } }
+
+    /// nur Selbsttest: Puffergröße am laufenden Gerät setzen (gilt nur für diesen Prozess) – der Listener meldet sie
+    public func setDeviceBufferForTest(_ frames: UInt32) {
+        var f = frames
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyBufferFrameSize, mScope: kAudioObjectPropertyScopeGlobal,
                                               mElement: kAudioObjectPropertyElementMain)
-        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &addr, .main) { [weak self] _, _ in
-            self?.onConfigurationChange?()
+        AudioObjectSetPropertyData(output.info.device, &addr, 0, nil, UInt32(MemoryLayout<UInt32>.size), &f)
+    }
+
+    private func onQueue(_ f: () -> Void) {
+        if DispatchQueue.getSpecific(key: Self.queueKey) == true { f() } else { deviceQueue.sync(execute: f) }
+    }
+
+    @discardableResult
+    private func update(_ e: OutputWatch.Event) -> OutputWatch.Action {
+        let (a, wanted) = stateLock.withLock { (_watch.handle(e), _watch.wanted) }
+        keepAwake(wanted)
+        return a
+    }
+
+    /// Ausgabe öffnen (Geräte-Queue). `setRate` nur von Hand (Einstellungen) – automatisch wird die Geräterate nie gesetzt
+    private func open(_ device: AudioDeviceID?, setRate: Double?) {
+        do {
+            try output.start(device: device, engine: core, engineRate: sampleRate, bufferFrames: bufferFrames, setDeviceRate: setRate)
+            let i = output.info
+            stateLock.withLock { _lastError = nil; _routing.device = i.device }
+            update(.started(uid: i.uid, rate: i.deviceRate, buffer: i.bufferFrameSize))
+        } catch {
+            stateLock.withLock { _lastError = error.localizedDescription }
+            update(.startFailed)
+        }
+        pollWhileWaiting()
+    }
+
+    // MARK: - Gerät beobachten (Geräte-Queue)
+
+    private var poll: DispatchSourceTimer?
+    private var lostAt: UInt64 = 0, seenAt: UInt64 = 0
+    private var rateWork: DispatchWorkItem?
+    private var activity: NSObjectProtocol?
+
+    private func deviceEvent(_ e: CoreAudioOutput.DeviceEvent) {
+        switch e {
+        case let .alive(on): act(.alive(on))
+        case .rate:
+            // das Gerät meldet beim Umschalten mehrmals: erst nach Ruhe neu öffnen
+            rateWork?.cancel()
+            let w = DispatchWorkItem { [weak self] in
+                guard let self, let r = Self.nominalRate(self.output.info.device) else { return }
+                self.act(.rate(r))
+            }
+            rateWork = w
+            deviceQueue.asyncAfter(deadline: .now() + 0.15, execute: w)
+        case let .buffer(b): act(.buffer(b))
+        }
+    }
+
+    /// Ereignis an die Zustandsmaschine, Aktion ausführen (Geräte-Queue)
+    private func act(_ e: OutputWatch.Event) {
+        let before = watch
+        switch update(e) {
+        case .none: break
+        case .stop:
+            let name = output.info.name
+            output.stop()
+            lostAt = mach_absolute_time(); seenAt = 0
+            print(e == .willSleep ? "[audio] Ruhezustand: Ausgabe angehalten" : "[audio] \(name) weg: Ausgabe angehalten, warte auf das Gerät")
+            onOutputEvent?(e == .willSleep ? .sleeping : .lost(device: name))
+            pollWhileWaiting()
+        case .reopen:
+            if seenAt == 0 { seenAt = mach_absolute_time() }
+            let w = watch, oldRate = before.rate
+            guard let uid = w.uid, let dev = Self.device(uid: uid), Self.isAlive(dev) else {
+                pollWhileWaiting()
+                return
+            }
+            open(dev, setRate: nil)
+            let now = watch, info = output.info
+            guard now.phase == .running else { return }
+            if case .rate = e {
+                print(String(format: "[audio] Geräterate %.0f -> %.0f Hz: Ausgabe neu geöffnet (Kern bleibt %.0f Hz)", oldRate, info.deviceRate, sampleRate))
+                onOutputEvent?(.rateChanged(from: oldRate, to: info.deviceRate))
+            } else {
+                let secs = Double(LinkSession.micros(hostTicks: mach_absolute_time() - seenAt)) / 1e6
+                let gap = Double(LinkSession.micros(hostTicks: mach_absolute_time() - lostAt)) / 1e6
+                stateLock.withLock { _lastReconnect = secs }
+                print(String(format: "[audio] %@ wieder verbunden: %.0f ms nach dem Auftauchen, Pause %.1f s", info.name, secs * 1000, gap))
+                onOutputEvent?(.restored(device: info.name, seconds: secs, gap: gap))
+            }
+            seenAt = 0
+        case .reread:
+            let old = before.buffer
+            output.refresh()
+            let i = output.info
+            print(String(format: "[audio] Puffer %d -> %d Frames, Latenz %.1f ms", old, i.bufferFrameSize, i.outputLatency * 1000))
+            onOutputEvent?(.bufferChanged(from: old, to: i.bufferFrameSize))
+        }
+    }
+
+    /// solange auf das Gerät gewartet wird: alle 100 ms nachsehen (falls eine Meldung der Geräteliste ausbleibt)
+    private func pollWhileWaiting() {
+        guard watch.waiting else { poll?.cancel(); poll = nil; return }
+        guard poll == nil else { return }
+        let t = DispatchSource.makeTimerSource(queue: deviceQueue)
+        t.schedule(deadline: .now() + 0.1, repeating: 0.1, leeway: .milliseconds(20))
+        t.setEventHandler { [weak self] in self?.checkPresent() }
+        poll = t
+        t.resume()
+    }
+
+    private func checkPresent() {
+        let w = watch
+        guard w.waiting else { pollWhileWaiting(); return }
+        let present = w.uid.flatMap { Self.device(uid: $0) }.map { Self.isAlive($0) } ?? false
+        if present { act(.present(true)) }
+    }
+
+    /// App Nap und Ruhezustand bei Leerlauf aus, solange die Ausgabe läuft oder auf das Gerät wartet
+    private func keepAwake(_ on: Bool) {
+        if on, activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical, .idleSystemSleepDisabled],
+                                                            reason: "MINOS-741 audio output")
+        } else if !on, let a = activity {
+            ProcessInfo.processInfo.endActivity(a)
+            activity = nil
+        }
+    }
+
+    /// Geräteliste und Standardgerät beobachten (Geräte-Queue): unser Gerät weg -> anhalten und warten,
+    /// wieder da -> neu öffnen; danach die Oberfläche fragen (anderes Gerät gewählt, Standard gewechselt)
+    private func listenForDeviceChanges() {
+        for sel in [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultOutputDevice] {
+            var addr = AudioObjectPropertyAddress(mSelector: sel, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &addr, deviceQueue) { [weak self] _, _ in
+                guard let self else { return }
+                let w = self.watch
+                if let uid = w.uid, w.phase == .running || w.waiting {
+                    let dev = Self.device(uid: uid).flatMap { Self.isAlive($0) ? $0 : nil }
+                    // neu eingesteckt, bevor das alte Gerät als weg gemeldet war: alte ID ist tot -> erst weg, dann neu öffnen
+                    if w.phase == .running, let dev, dev != self.output.info.device { self.act(.present(false)) }
+                    self.act(.present(dev != nil))
+                }
+                self.onConfigurationChange?()
+            }
         }
     }
 
@@ -247,6 +425,11 @@ public final class MixEngine: @unchecked Sendable {
         public var bufferFrames = 0
         public var sampleRate = 0.0
         public var running = false
+        /// automatisch wieder verbunden (Gerät zurück, Aufwachen), Dauer des letzten (s), Raten-/Pufferwechsel von außen
+        public var reconnects = 0
+        public var lastReconnect: Double?
+        public var rateChanges = 0
+        public var bufferChanges = 0
         public init() {}
     }
 
@@ -258,6 +441,8 @@ public final class MixEngine: @unchecked Sendable {
         r.overloads = Int(l.overloads); r.deviceOverloads = output.deviceOverloads
         r.outputLatency = output.outputLatency; r.keylockLatency = mdsp_keylock_latency(core)
         r.bufferFrames = Int(output.bufferFrameSize); r.sampleRate = output.deviceRate; r.running = output.running
+        let w = watch
+        r.reconnects = w.reconnects; r.lastReconnect = lastReconnect; r.rateChanges = w.rateChanges; r.bufferChanges = w.bufferChanges
         return r
     }
 

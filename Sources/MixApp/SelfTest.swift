@@ -191,6 +191,7 @@ enum SelfTest {
                        "aufx:mrev:appl", pNames, pWet, pTail, pErr.map { " · Fehler: \($0)" } ?? ""))
             log(String(format: "Pegel A: trocken %.3f · Filter HP %.3f (%.0f %%) · Reverb %.3f (%.0f %%)",
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
+            await deviceProbe(core)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -201,6 +202,54 @@ enum SelfTest {
             fflush(stdout)
             if ProcessInfo.processInfo.environment["MIX741_STAY"] == nil { exit(0) }
         }
+    }
+
+    /// Geräte-Pfade ohne Ziehen/Stecken: Gerät weg (eingespeist) -> warten -> dasselbe Gerät neu öffnen, Ratenwechsel
+    /// (eingespeist, Geräterate bleibt), Puffer am Gerät geändert (echter Listener), Ruhezustand/Aufwachen. Deck A spielt
+    /// dabei weiter (Position läuft nach jedem Schritt)
+    static func deviceProbe(_ core: MixController) async {
+        let engine = core.engine
+        let wasPlaying = core.snapshot().decks[0].playing
+        if !wasPlaying { core.togglePlay(0) }
+        func waitRunning() async -> Double {
+            let t0 = Date()
+            for _ in 0..<60 where engine.watch.phase != .running { try? await Task.sleep(for: .milliseconds(50)) }
+            return Date().timeIntervalSince(t0)
+        }
+        func advancing() async -> Bool {
+            let p0 = core.position(0)
+            try? await Task.sleep(for: .milliseconds(300))
+            return core.position(0) > p0 + 0.1
+        }
+        let n0 = engine.watch.reconnects
+        engine.simulate(.alive(false))
+        let lost = engine.watch.phase, stopped = !engine.running
+        let back = await waitRunning()
+        log(String(format: "Gerät weg (eingespeist): %@, Ausgabe aus %@ -> wieder verbunden nach %.0f ms (Öffnen %.0f ms), Neuverbindungen %d, A läuft %@",
+                   lost.rawValue, "\(stopped)", back * 1000, (engine.lastReconnect ?? .nan) * 1000, engine.watch.reconnects - n0,
+                   "\(await advancing())"))
+        let rate = engine.outputRate
+        engine.simulate(.rate(rate + 1000))
+        let rr = await waitRunning()
+        log(String(format: "Ratenwechsel (eingespeist): neu geöffnet nach %.0f ms, Gerät %.0f Hz (unverändert %@), Kern %.0f Hz, A läuft %@",
+                   rr * 1000, engine.outputRate, "\(engine.outputRate == rate)", engine.sampleRate, "\(await advancing())"))
+        let buf = engine.takeLoad().bufferFrames, want: UInt32 = buf == 256 ? 512 : 256
+        engine.setDeviceBufferForTest(want)
+        for _ in 0..<20 where engine.takeLoad().bufferFrames != Int(want) { try? await Task.sleep(for: .milliseconds(50)) }
+        let l = engine.takeLoad()
+        log(String(format: "Puffer am Gerät %d -> %d: gemeldet %d Frames, Latenz %.1f ms, Pufferwechsel %d, A läuft %@",
+                   buf, want, l.bufferFrames, l.outputLatency * 1000, engine.watch.bufferChanges, "\(await advancing())"))
+        engine.setDeviceBufferForTest(UInt32(buf))
+        try? await Task.sleep(for: .milliseconds(200))
+        engine.willSleep()
+        let sleeping = engine.watch.phase, quiet = !engine.running, pos = core.position(0)
+        try? await Task.sleep(for: .milliseconds(300))
+        let frozen = abs(core.position(0) - pos) < 0.01
+        engine.didWake()
+        let woke = await waitRunning()
+        log(String(format: "Ruhezustand: %@, Ausgabe aus %@, Position steht %@ -> aufgewacht, läuft nach %.0f ms, A läuft %@, Deck spielt %@",
+                   sleeping.rawValue, "\(quiet)", "\(frozen)", woke * 1000, "\(await advancing())", "\(core.snapshot().decks[0].playing)"))
+        if !wasPlaying { core.togglePlay(0) }
     }
 
     /// MIX741_BENCH=load: Lastprobe am Gerät. 4 Decks mit Keylock (Tempo ±3 %), Hall auf FX 1 (A/C), Plugin

@@ -112,6 +112,8 @@ final class MixModel {
     private(set) var previewing: Previewing?
     struct Previewing: Equatable { var key: String; var cut: PreviewCut }
     @ObservationIgnored private var reroutePending = false
+    /// Gerät, auf das die Engine wartet (Statuszeile)
+    @ObservationIgnored private var lostDevice: String?
 
     /// Plugin-Verwaltung (⌘, → PLUGINS); teilt die Liste mit dem Kern
     @ObservationIgnored lazy var plugins = PluginManager(catalog: core.pluginCatalog)
@@ -143,8 +145,14 @@ final class MixModel {
                 if let why = self.rerouteReason() {
                     print("[audio] Geräteliste geändert: \(why) -> neu verbinden")
                     self.applyRouting()
+                } else {
+                    self.refreshEngineStatus()
                 }
             }
+        }
+        // Gerät weg / wieder da / Rate / Puffer: macht die Engine selbst (Geräte-Queue), hier nur Hinweis + Statuszeile
+        engine.onOutputEvent = { [weak self] e in
+            Task { @MainActor in self?.outputEvent(e) }
         }
         // .common: läuft auch, solange ein Menü offen ist oder das Fenster gezogen wird (sonst steht die Anzeige still)
         let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
@@ -392,14 +400,42 @@ final class MixModel {
 
     func refreshDevices() { outputDevices = MixEngine.outputDevices() }
 
-    /// Geräteliste hat sich geändert: neu verbinden, wenn unser Gerät weg ist, die Ausgabe steht oder das gewählte
-    /// Interface (USB-Aussetzer) wieder da ist. Folgt die Ausgabe dem Systemstandard, bleibt sie, solange ihr Gerät da ist.
+    /// Geräteliste hat sich geändert: auf ein anderes Gerät wechseln? Gerät weg / wieder da / Ruhezustand macht die
+    /// Engine (wartet auf dieselbe UID, kein Ausweichen auf die Lautsprecher). Hier: gewähltes Interface ist (wieder) da,
+    /// die Ausgabe steht, oder die Ausgabe folgt dem Systemstandard und der hat gewechselt.
     private func rerouteReason() -> String? {
-        let cur = engine.routing.device
+        let cur = engine.routing.device, w = engine.watch
+        let def = MixEngine.defaultOutputDevice().flatMap { d in outputDevices.contains { $0.id == d } ? d : nil }
+        if w.phase == .sleeping { return nil }
+        if w.waiting { return deviceUID == nil && def != nil ? "Standardgerät gewechselt" : nil }
         if !engine.running { return "Ausgabe steht" }
         if let cur, !outputDevices.contains(where: { $0.id == cur }) { return "Gerät weg" }
         if let uid = deviceUID, let want = outputDevices.first(where: { $0.uid == uid }), want.id != cur { return "\(want.name) wieder da" }
+        if deviceUID == nil, let def, def != cur { return "Standardgerät gewechselt" }
         return nil
+    }
+
+    /// Meldung der Engine zur Ausgabe (Hinweis in der Statusleiste, Audio-Zeile)
+    private func outputEvent(_ e: MixEngine.OutputEvent) {
+        let khz = { (r: Double) in String(format: "%g", r / 1000) }
+        switch e {
+        case let .lost(name):
+            lostDevice = name
+            StatusCenter.post(.error, String(format: String(localized: "%@ weg – Ausgabe angehalten, wartet auf das Gerät"), name), key: "audio.device")
+        case let .restored(name, secs, gap):
+            lostDevice = nil
+            StatusCenter.post(.ok, String(format: String(localized: "%@ wieder verbunden (%.0f ms nach dem Erkennen, Pause %.1f s)"),
+                                          name, secs * 1000, gap), key: "audio.device")
+        case let .rateChanged(from, to):
+            StatusCenter.post(.warning, String(format: String(localized: "Geräterate %@ → %@ kHz: Ausgabe neu geöffnet, Kern bleibt %@ kHz"),
+                                               khz(from), khz(to), khz(engine.sampleRate)), key: "audio.rate")
+        case let .bufferChanged(from, to):
+            StatusCenter.post(.info, String(format: String(localized: "Puffer %lld → %lld Frames"), Int(from), Int(to)), key: "audio.buffer")
+        case .sleeping:
+            StatusCenter.post(.info, String(localized: "Ruhezustand: Ausgabe angehalten"), key: "audio.device")
+        }
+        refreshDevices()
+        refreshEngineStatus()
     }
 
     /// Routing an die Engine geben (startet die Deck-Ausgänge neu) und speichern.
@@ -410,17 +446,27 @@ final class MixModel {
         engine.apply(MixEngine.Routing(device: dev?.id, firstChannel: firsts), restart: restart)
         core.setMasterVolume(core.snapshot().masterVolume)
         core.setExternalMixer(mixerMode == .external)
-        engineStatus = engine.running
-            ? "\(dev?.name ?? String(localized: "Standard")) · \(routeText)"
-            : String(localized: "Audio-Fehler: \(engine.lastError ?? "?")")
-        if engine.running {
-            let khz = { (r: Double) in String(format: "%g kHz", r / 1000) }
-            engineStatus += " · \(khz(engine.outputRate))"
-            if abs(engine.outputRate - engine.sampleRate) > 1 { engineStatus += " " + String(localized: "(intern \(khz(engine.sampleRate)) bis Neustart)") }
-        }
-        if engine.running, let e = engine.lastError { engineStatus += " · ⚠︎ \(e)" }
+        refreshEngineStatus()
         saveSetup()
         pull()
+    }
+
+    /// Audio-Zeile der Statusleiste aus dem Zustand der Engine
+    func refreshEngineStatus() {
+        let w = engine.watch
+        var s: String
+        if w.waiting || w.phase == .sleeping {
+            s = String(format: String(localized: "Warte auf %@ …"), lostDevice ?? outputDevices.first { $0.uid == w.uid }?.name ?? "?")
+        } else if engine.running {
+            let dev = outputDevices.first { $0.id == engine.routing.device }
+            let khz = { (r: Double) in String(format: "%g kHz", r / 1000) }
+            s = "\(dev?.name ?? String(localized: "Standard")) · \(routeText) · \(khz(engine.outputRate))"
+            if abs(engine.outputRate - engine.sampleRate) > 1 { s += " " + String(localized: "(intern \(khz(engine.sampleRate)) bis Neustart)") }
+            if let e = engine.lastError { s += " · ⚠︎ \(e)" }
+        } else {
+            s = String(localized: "Audio-Fehler: \(engine.lastError ?? "?")")
+        }
+        if s != engineStatus { engineStatus = s }
     }
 
     /// Modus und Kanäle für die Statusleiste

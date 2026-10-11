@@ -406,6 +406,14 @@
 "Puffer" = "Buffer";
 "Blöcke über Budget (eigene Messung)" = "Blocks over budget (own measurement)";
 "Überlast-Meldungen des Geräts" = "Device overload reports";
+"Gerät neu verbunden" = "Device reconnected";
+"Raten-/Pufferwechsel am Gerät" = "Rate / buffer changes on the device";
+"%@ weg – Ausgabe angehalten, wartet auf das Gerät" = "%@ gone – output stopped, waiting for the device";
+"%@ wieder verbunden (%.0f ms nach dem Erkennen, Pause %.1f s)" = "%@ reconnected (%.0f ms after detection, gap %.1f s)";
+"Geräterate %@ → %@ kHz: Ausgabe neu geöffnet, Kern bleibt %@ kHz" = "Device rate %@ → %@ kHz: output reopened, core stays at %@ kHz";
+"Puffer %lld → %lld Frames" = "Buffer %lld → %lld frames";
+"Ruhezustand: Ausgabe angehalten" = "Sleep: output stopped";
+"Warte auf %@ …" = "Waiting for %@ …";
 "Speicher" = "Memory";
 "CPU (alle Kerne, 100 % = ein Kern)" = "CPU (all cores, 100 % = one core)";
 "Aussetzer zurücksetzen" = "Reset dropouts";
