@@ -247,6 +247,10 @@ final class ControllerManager: @unchecked Sendable {
             // Lade-Schutz hier prüfen (Steuer-Queue): ein spielendes Deck bekommt keinen Track, Shift + LOAD erzwingt
             guard down else { return }
             let d = deck(s), pane = unit.info.pane, force = unit.shift
+            if force, p.shiftLoad == .double {   // Instant Double vom Deck der anderen Seite, Lade-Schutz gilt
+                core.instantDouble(from: deck(s == .left ? .right : .left), to: d)
+                return
+            }
             if !force, core.loadBlocked(d) { return }
             DispatchQueue.main.async { self.onLoad?(pane, d, force) }
         case let .browseTurn(delta):

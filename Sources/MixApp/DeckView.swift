@@ -312,6 +312,13 @@ struct TransportRow: View {
                 DeckButton(title: "REV", active: m.reverse, color: Theme.state) { mix.toggleReverse(d) }.stable()
                 DeckButton(title: "FLUX", active: m.flux, color: Theme.state) { mix.toggleFlux(d) }.stable()
                 Spacer(minLength: 2.z)
+                DeckButton(title: "DBL") { mix.instantDouble(from: d ^ 1, to: d) }.stable()
+                    .help(String(localized: "Instant Double: Track, Position, Tempo, Key, Loop von Deck \(deckLetters[d ^ 1]) übernehmen, läuft synchron mit (⌥-Klick: auch wenn dieses Deck spielt, Rechtsklick: anderes Deck)"))
+                    .contextMenu {
+                        ForEach((0..<4).filter { $0 != d }, id: \.self) { s in
+                            Button(String(localized: "Double von Deck \(deckLetters[s])")) { mix.instantDouble(from: s, to: d) }
+                        }
+                    }
                 DeckButton(title: "EDIT", active: m.edit, color: Theme.state) { mix.toggleEdit(d) }.stable()
                     .help("EDIT-Modus: Schnitt und Grid setzen (⌥⌘E)")
             }

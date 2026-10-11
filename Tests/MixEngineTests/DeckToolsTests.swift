@@ -44,3 +44,36 @@ private func controller(keys: [Int] = [21, 9], cues: [Cue] = [], _ edit: (inout 
     c.keySync(0)   // Deck ist selbst Master
     #expect(c.snapshot().decks[0].keyShift == 0)
 }
+
+@Test func instantDoubleTakesStateAndPosition() async throws {
+    let (c, url) = try await controller()
+    defer { try? FileManager.default.removeItem(at: url) }
+    c.seek(1, seconds: 6.25)
+    c.togglePlay(1)
+    c.shiftKey(1, 2)
+    c.setTempo(1, 3)
+    c.autoLoop(1, size: 4)
+    #expect(c.instantDouble(from: 1, to: 0))
+    let a = c.snapshot().decks[0], b = c.snapshot().decks[1]
+    #expect(a.track?.key == b.track?.key && a.playing && c.engine.player(0).playing)
+    #expect(a.keyShift == 2 && a.tempoPct == 3 && a.keylock == b.keylock && a.loopActive && a.loopSize == 4)
+    let la = c.engine.loop(0), lb = c.engine.loop(1)
+    #expect(la.active && la.start == lb.start && la.end == lb.end)
+    #expect(abs(c.position(0) - c.position(1)) < 1e-9)
+    #expect(c.trackAudio(0) === c.trackAudio(1))   // dieselben Audiodaten, kein Laden
+    // Lade-Schutz: Ziel spielt jetzt -> nichts, mit force -> wieder
+    c.shiftKey(1, 1)
+    #expect(!c.instantDouble(from: 1, to: 0))
+    #expect(c.snapshot().decks[0].keyShift == 2)
+    #expect(c.instantDouble(from: 1, to: 0, force: true))
+    #expect(c.snapshot().decks[0].keyShift == 3)
+}
+
+@Test func instantDoubleNeedsLoadedSource() async throws {
+    let (c, url) = try await controller(keys: [21])
+    defer { try? FileManager.default.removeItem(at: url) }
+    #expect(!c.instantDouble(from: 1, to: 0))   // Deck B leer
+    #expect(!c.instantDouble(from: 0, to: 0))
+    #expect(c.instantDouble(from: 0, to: 2))
+    #expect(c.snapshot().decks[2].track != nil && !c.snapshot().decks[2].playing)
+}

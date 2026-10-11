@@ -737,6 +737,7 @@ struct ControllerSettings: View {
                 Picker("Touchstrip", selection: $mix.prefs.controller.stripMode) { ForEach(ControllerStripMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
                 sliderRow("Touchstrip-Empfindlichkeit", $mix.prefs.controller.stripSensitivity, 0.2...3, format: "%.1f")
                 Stepper("Browse mit Shift: \(mix.prefs.controller.browseFastStep) Zeilen", value: $mix.prefs.controller.browseFastStep, in: 2...50)
+                Picker("Shift + LOAD", selection: $mix.prefs.controller.shiftLoad) { ForEach(ControllerShiftLoad.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
             }
             Section("LEDs") {
                 sliderRow("Helligkeit an", Binding(get: { Double(mix.prefs.controller.ledOn) }, set: { mix.prefs.controller.ledOn = Int($0) }),
@@ -748,7 +749,7 @@ struct ControllerSettings: View {
             Section("Feste Belegung (Standard)") {
                 Text("""
                 Play (Shift: CUP) · Sync (Shift: Master) · Hotcues 1–4 (Shift: löschen) · Loop-Encoder drehen = Loopgröße, \
-                drücken = Loop (Shift: drehen = Beatjump, drücken = Reloop) · Load (Shift: trotz Lade-Schutz) · Browse (drücken = Vorhören) · \
+                drücken = Loop (Shift: drehen = Beatjump, drücken = Reloop) · Load (Shift: siehe Belegung) · Browse (drücken = Vorhören) · \
                 FX: D/W, Regler 1–3, Tasten 1–3 nach FX-Belegung (Standard: Filter/Delay/Reverb + an/aus), Mode = alle aus bzw. Delay-Zeit · FX-Zuweisung.
                 """)
                 .settingsHint()

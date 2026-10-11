@@ -88,7 +88,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case hotcue1 = "deck.hotcue.1", hotcue2 = "deck.hotcue.2", hotcue3 = "deck.hotcue.3", hotcue4 = "deck.hotcue.4"
     case hotcue5 = "deck.hotcue.5", hotcue6 = "deck.hotcue.6", hotcue7 = "deck.hotcue.7", hotcue8 = "deck.hotcue.8"
     case editMode = "deck.edit", cutIn = "deck.cut.in", cutOut = "deck.cut.out", gridSet = "deck.grid.set"
-    case keySync = "deck.keysync"
+    case keySync = "deck.keysync", instantDouble = "deck.double"
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", loadSelectedForce = "browser.load.force"
     case previewSelected = "browser.preview"
     case reloadCollection = "browser.reload"
@@ -166,7 +166,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .settings: KeyCombo(",")
         case .closeWindow: KeyCombo("w")
         case .master, .keylock, .reloop, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .reconnectAudio,
-             .cutIn, .cutOut, .gridSet, .keySync: nil
+             .cutIn, .cutOut, .gridSet, .keySync, .instantDouble: nil
         }
     }
 }

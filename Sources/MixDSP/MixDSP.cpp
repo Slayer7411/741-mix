@@ -607,6 +607,7 @@ struct Deck {
     // vom Steuer-Thread geschrieben
     std::atomic<float> p[MD_PARAM_COUNT];
     std::atomic<double> pendingSeek{NAN};
+    std::atomic<int> pendingFollow{-1};   // Position dieses Decks übernehmen (Instant Double), -1 = nichts
     std::atomic<int> loopVersion{0};
     std::atomic<bool> loopActiveReq{false};
     std::atomic<double> loopStartReq{0}, loopEndReq{0};
@@ -675,6 +676,7 @@ struct MDEngine {
     float masterSm = 0.85f;
     uint64_t renderHost = 0;   // setzt der CoreAudio-Callback vor jedem Block
     std::atomic<uint64_t> renders{0};   // fertig gerechnete Blöcke (Plugin-Übergabe)
+    double blockPos[MDSP_DECKS] = {};   // hörbare Positionen am Anfang des laufenden Blocks (nur Audio-Thread)
 };
 
 // ---------- Lesen aus dem Track ----------
@@ -805,6 +807,12 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     double seek = d.pendingSeek.exchange(NAN);
     if (!std::isnan(seek) && d.cur.frames > 0) {
         d.pos = std::max(0.0, seek) * d.cur.rate; d.flux = d.pos; d.inAcc = 0;
+        jumped = true;
+    }
+    // Instant Double: hörbare Position des Quell-Decks am Blockanfang – beide Decks rechnen ab hier dieselben Samples
+    int fsrc = d.pendingFollow.exchange(-1);
+    if (fsrc >= 0 && fsrc < MDSP_DECKS && d.cur.frames > 0) {
+        d.pos = std::max(0.0, e->blockPos[fsrc]) * d.cur.rate; d.flux = d.pos; d.inAcc = 0;
         jumped = true;
     }
     int lv = d.loopVersion.load();
@@ -1082,6 +1090,13 @@ void mdsp_set_loop(MDEngine *e, int deck, bool active, double s, double en) {
     d.loopActiveOut.store(active); d.loopStartOut.store(s); d.loopEndOut.store(en);
 }
 
+void mdsp_follow(MDEngine *e, int deck, int source) {
+    if (source < 0 || source >= MDSP_DECKS || source == deck) return;
+    // bis zum nächsten Block meldet mdsp_position schon die Position der Quelle
+    e->decks[deck].pendingSeek.store(mdsp_position(e, source));
+    e->decks[deck].pendingFollow.store(source);
+}
+
 double mdsp_position(MDEngine *e, int deck) {
     Deck &d = e->decks[deck];
     double s = d.pendingSeek.load();
@@ -1105,6 +1120,7 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
         int n = std::min(kMaxFrames, frames - done);
         float *o[64];
         for (int c = 0; c < channels && c < 64; c++) o[c] = out[c] + done;
+        for (int i = 0; i < MDSP_DECKS; i++) e->blockPos[i] = e->decks[i].posOut.load(std::memory_order_relaxed);
         for (auto &d : e->decks) renderDeck(e, d, o, std::min(channels, 64), n);
         done += n;
     }

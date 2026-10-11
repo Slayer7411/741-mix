@@ -684,6 +684,50 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
+    /// Instant Double: Track von Deck `s` in Deck `d` – dieselben Audiodaten (kein Laden), dieselbe Position (im Kern
+    /// sample-genau zu `s`), Tempo, Keylock, Key-Shift, Sync, Loop, Cues, Grid, Schnitt. Spielt `s`, läuft `d` mit.
+    /// Mixer und FX von `d` bleiben. Lade-Schutz gilt (`force` übergeht ihn)
+    @discardableResult
+    public func instantDouble(from s: Int, to d: Int, force: Bool = false) -> Bool {
+        guard s != d, (0..<MixEngine.deckCount).contains(s), (0..<MixEngine.deckCount).contains(d) else { return false }
+        if !force, loadBlocked(d) { return false }
+        let r: (TrackAudio?, UInt32, Track)? = locked {
+            guard let a = audio[s], let t = state.decks[s].track, !state.decks[s].loading else { return nil }
+            loadSeq[d] += 1   // laufendes Laden in `d` verwerfen
+            let old = audio[d], src = state.decks[s], playing = engine.player(s).playing
+            var n = state.decks[d]
+            n.track = t; n.grid = src.grid; n.gridEdited = src.gridEdited
+            n.phraseTarget = src.phraseTarget; n.phraseConfidence = src.phraseConfidence
+            n.duration = src.duration; n.trim = src.trim; n.hotcues = src.hotcues; n.cuePoint = src.cuePoint
+            n.loading = false; n.error = nil
+            n.tempoPct = src.tempoPct; n.tempoRange = src.tempoRange; n.nudge = 0; n.bend = 0
+            n.keylock = src.keylock; n.keyShift = src.keyShift; n.sync = src.sync
+            n.loopSize = src.loopSize; n.jumpSize = src.jumpSize; n.loopIn = src.loopIn; n.loopActive = src.loopActive
+            n.reverse = false; n.flux = false; n.cueHeld = false; n.playing = playing
+            state.decks[d] = n
+            audio[d] = a
+            playedTime[d] = 0; playedLogged[d] = true; playStart[d] = nil   // derselbe Track: kein zweiter History-Eintrag
+            phaseOffset[d] = phaseOffset[s]; bigError[d] = 0
+            engine.player(d).flux = false
+            engine.setTrim(d, start: n.trim.start ?? 0, end: n.trim.end ?? 0)
+            let gen = engine.attach(a, deck: d, startAt: position(s))
+            let l = engine.loop(s)
+            engine.setLoop(d, active: l.active, start: l.start, end: l.end)
+            engine.follow(d, deck: s)
+            applyRate(d)
+            applyMixer(d)
+            applyAllFX()
+            engine.player(d).playing = playing   // nach attach (stoppt das Deck): startet im selben Block wie die Übernahme
+            applyRate(d)
+            return (old, gen, t)
+        }
+        guard let (old, gen, t) = r else { return false }
+        releaseWhenFree(old, deck: d, gen: gen)
+        onNotice?(EngineNotice(.info, key: "load.\(d)",
+                               String(localized: "Deck \(Self.deckLetter(d)): Double von \(Self.deckLetter(s)) · \(Self.displayName(t))")))
+        return true
+    }
+
     /// alten Puffer halten, bis der Audio-Thread den neuen übernommen hat – ohne Zeitlimit
     /// (steht die Ausgabe, liest ihn niemand; hängt sie, bleibt lieber ein Puffer liegen als dass sie in freien Speicher greift)
     private func releaseWhenFree(_ old: TrackAudio?, deck d: Int, gen: UInt32) {

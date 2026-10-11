@@ -187,7 +187,14 @@ final class MixModel {
             for d in decks.indices where s.decks[d] != decks[d].state {
                 decks[d].state = s.decks[d]
                 let key = s.decks[d].track?.key ?? ""
-                if key != decks[d].trackKey { decks[d].trackKey = key }
+                if key != decks[d].trackKey {
+                    decks[d].trackKey = key
+                    // Instant Double (auch vom Controller): Collection-Stand und gespeicherte Änderung vom Quell-Deck
+                    if !key.isEmpty, originals[d]?.key != key, let e = originals.first(where: { $0.value.key == key })?.key {
+                        originals[d] = originals[e]
+                        savedEdit[d] = savedEdit[e]
+                    }
+                }
             }
             if s.effectiveMaster != effectiveMaster { effectiveMaster = s.effectiveMaster }
             if s.clockMaster != clockMaster { clockMaster = s.clockMaster }
@@ -337,6 +344,10 @@ final class MixModel {
     func toggleKeylock(_ d: Int) { run { core.toggleKeylock(d) } }
     func shiftKey(_ d: Int, _ s: Int) { run { core.shiftKey(d, s) } }
     func keySync(_ d: Int) { run { core.keySync(d) } }
+    /// Instant Double; `force` nil = ⌥ beim Klick übergeht den Lade-Schutz
+    func instantDouble(from s: Int, to d: Int, force: Bool? = nil) {
+        run { core.instantDouble(from: s, to: d, force: force ?? NSEvent.modifierFlags.contains(.option)) }
+    }
     func bend(_ d: Int, _ v: Double) { run { core.bend(d, v) } }
     func updateDeck(_ d: Int, _ f: (inout DeckState) -> Void) { run { core.updateDeck(d, f) } }
     func setCrossfader(_ v: Double) { run { core.setCrossfader(v) } }

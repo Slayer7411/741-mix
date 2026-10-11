@@ -519,7 +519,7 @@
 "Größe" = "Size";
 "Hochpass" = "High-pass";
 "Tiefpass" = "Low-pass";
-"Play (Shift: CUP) · Sync (Shift: Master) · Hotcues 1–4 (Shift: löschen) · Loop-Encoder drehen = Loopgröße, drücken = Loop (Shift: drehen = Beatjump, drücken = Reloop) · Load (Shift: trotz Lade-Schutz) · Browse (drücken = Vorhören) · FX: D/W, Regler 1–3, Tasten 1–3 nach FX-Belegung (Standard: Filter/Delay/Reverb + an/aus), Mode = alle aus bzw. Delay-Zeit · FX-Zuweisung." = "Play (shift: CUP) · Sync (shift: master) · Hotcues 1–4 (shift: delete) · loop encoder turn = loop size, push = loop (shift: turn = beatjump, push = reloop) · Load (shift: despite load lock) · Browse (push = preview) · FX: D/W, knobs 1–3, buttons 1–3 by FX mapping (default: filter/delay/reverb + on/off), mode = all off or delay time · FX deck assign.";
+"Play (Shift: CUP) · Sync (Shift: Master) · Hotcues 1–4 (Shift: löschen) · Loop-Encoder drehen = Loopgröße, drücken = Loop (Shift: drehen = Beatjump, drücken = Reloop) · Load (Shift: siehe Belegung) · Browse (drücken = Vorhören) · FX: D/W, Regler 1–3, Tasten 1–3 nach FX-Belegung (Standard: Filter/Delay/Reverb + an/aus), Mode = alle aus bzw. Delay-Zeit · FX-Zuweisung." = "Play (shift: CUP) · Sync (shift: master) · Hotcues 1–4 (shift: delete) · loop encoder turn = loop size, push = loop (shift: turn = beatjump, push = reloop) · Load (shift: see mapping) · Browse (push = preview) · FX: D/W, knobs 1–3, buttons 1–3 by FX mapping (default: filter/delay/reverb + on/off), mode = all off or delay time · FX deck assign.";
 "CLOUD" = "CLOUD";
 "Cloud-Library" = "Cloud library";
 "Stand" = "State";
@@ -680,3 +680,10 @@
 "Deck %@: Key-Shift %@ -> %@ (Master %@)" = "Deck %@: key shift %@ -> %@ (master %@)";
 "Key Sync (Fokus-Deck)" = "Key sync (focused deck)";
 "Key Sync: Key-Shift auf den Key des Master-Decks (gleich oder Nachbar auf dem Open-Key-Rad, kleinster Schritt, höchstens ±6), Keylock an" = "Key sync: key shift to the master deck's key (same or neighbour on the open key wheel, smallest step, at most ±6), keylock on";
+"Deck %@: Double von %@ · %@" = "Deck %@: double of %@ · %@";
+"Instant Double ins Fokus-Deck (vom Nachbardeck A↔B, C↔D)" = "Instant double into focused deck (from the neighbour deck A↔B, C↔D)";
+"Instant Double: Track, Position, Tempo, Key, Loop von Deck %@ übernehmen, läuft synchron mit (⌥-Klick: auch wenn dieses Deck spielt, Rechtsklick: anderes Deck)" = "Instant double: take track, position, tempo, key, loop from deck %@, runs in sync (⌥-click: even if this deck is playing, right click: other deck)";
+"Double von Deck %@" = "Double of deck %@";
+"Shift + LOAD" = "Shift + LOAD";
+"Laden trotz Lade-Schutz" = "Load despite load lock";
+"Instant Double (Deck der anderen Seite)" = "Instant double (deck of the other side)";

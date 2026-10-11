@@ -97,3 +97,22 @@ private final class LoadRig {
     rig.core.cueUp(0)
     #expect(!rig.core.loadBlocked(0))
 }
+
+@MainActor @Test func shiftLoadAsInstantDouble() async throws {
+    let rig = try await LoadRig()
+    var p = ControllerPrefs()
+    p.shiftLoad = .double
+    rig.manager.prefs = p
+    rig.core.seek(1, seconds: 5)
+    rig.core.togglePlay(1)
+    rig.core.shiftKey(1, 2)
+    try await rig.pressLoad(left: true, shift: true)   // links = Deck A, Quelle = rechte Seite (B)
+    #expect(rig.loads.isEmpty)
+    let a = rig.core.snapshot().decks[0]
+    #expect(a.playing && a.keyShift == 2)
+    #expect(abs(rig.core.position(0) - rig.core.position(1)) < 1e-9)
+    // A spielt jetzt: Lade-Schutz gilt auch für Doubles
+    rig.core.shiftKey(1, 1)
+    try await rig.pressLoad(left: true, shift: true)
+    #expect(rig.core.snapshot().decks[0].keyShift == 2)
+}
