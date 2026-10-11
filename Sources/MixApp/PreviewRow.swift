@@ -17,11 +17,13 @@ enum PreviewRow {
 
 /// Zelle zweizeilig: Inhalt oben, Mindesthöhe = Zeilenhöhe (die Tabelle wächst mit)
 struct PreviewRowCell: ViewModifier {
-    @Environment(MixModel.self) private var mix
+    /// optional: Zellen, die die Tabelle nach einer Änderung der Zeilen noch einmal aktualisiert, haben die Umgebung
+    /// nicht mehr (nicht optional -> Absturz beim Suchen / Filtern)
+    @Environment(MixModel.self) private var mix: MixModel?
     let on: Bool
     func body(content: Content) -> some View {
         if on {
-            content.frame(maxWidth: .infinity, minHeight: PreviewRow.rowHeight(textSize: mix.prefs.ui.previewTextSize), maxHeight: .infinity, alignment: .topLeading)
+            content.frame(maxWidth: .infinity, minHeight: PreviewRow.rowHeight(textSize: mix?.prefs.ui.previewTextSize ?? 12), maxHeight: .infinity, alignment: .topLeading)
         } else {
             content
         }
