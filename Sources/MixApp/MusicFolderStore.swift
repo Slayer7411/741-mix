@@ -214,6 +214,7 @@ private struct MusicFolderRow: View {
         Self.label("▱", (path as NSString).lastPathComponent)
             .help(path)
             .tag(BrowserSource.folder(path))
+            .favoriteDrag { [path] in BrowserFavorite.source(.folder(path), store: store) }
             .contextMenu {
                 Button("Neu einlesen") { store.folders.rescan(path) }
                 OverviewMenuButton { store.folders.tracks(in: path, recursive: true, library: store) }
@@ -269,8 +270,9 @@ struct MusicFolderSettings: View {
 }
 
 /// Selbsttest-Bild (MIX741_SELFTEST=1 MIX741_SHOT=browser:<png>): Baum mit aufgeklapptem MUSIC FOLDERS und die
-/// Dateiliste eines Unterordners (MIX741_SHOT_FOLDER, sonst der erste), offscreen gerendert – kein Fenster auf dem
-/// Bildschirm, kein Audio, keine Controller, keine Einstellungen geschrieben
+/// Dateiliste eines Unterordners (MIX741_SHOT_FOLDER, sonst der erste), darüber die Favoritenleiste; dazu
+/// `<png>-fav-narrow/-click/-empty.png` (schmal, Klick in den Baum + Filter, leer). Offscreen gerendert – kein Fenster
+/// auf dem Bildschirm, kein Audio, keine Controller, keine Einstellungen geschrieben
 @MainActor
 enum BrowserShot {
     static func run(_ spec: String) -> Never {
@@ -306,27 +308,91 @@ enum BrowserShot {
         print(String(format: "[shot] unterordner %@: %d dateien (%d in der collection), lesen %.2f s",
                      root, all.count, all.filter { !$0.loose }.count, Date().timeIntervalSince(t2)))
 
-        let view = HStack(spacing: 0) {
-            SourceTree(selection: .constant(.folder(folder))).frame(width: 300)
-            ShotList(tracks: Array(tracks.sorted { ($0.loose ? 1 : 0, $0.artist) < ($1.loose ? 1 : 0, $1.artist) }.prefix(40)))
+        // Favoritenleiste: belegt (Ordner aktiv, Playlist, Smartlist, Filter, fehlendes Ziel), leer, schmal
+        let pane = BrowserPaneModel(name: "Shot", source: .folder(folder))
+        let browser = BrowserState()
+        browser.store = store
+        func nodes(_ n: PlaylistNode) -> [PlaylistNode] { (n.kind == .folder ? [] : [n]) + n.children.flatMap(nodes) }
+        let lists = nodes(store.root)
+        var favs: [BrowserFavorite?] = [BrowserFavorite.source(.collection, store: store),
+                                        BrowserFavorite.source(.folder(folder), store: store),
+                                        lists.first { $0.kind == .playlist }.flatMap { BrowserFavorite.source(.node($0), store: store) },
+                                        lists.first { $0.kind == .smartlist }.flatMap { BrowserFavorite.source(.node($0), store: store) },
+                                        BrowserFavorite.filter(tags: ["B sub"], roles: ["BASIS"], search: ""),
+                                        BrowserFavorite(.node, name: "Gelöschte Playlist", id: "0", path: ["—"], node: "playlist")]
+        if let f = favs[2] { favs[2]?.name = String(f.name.prefix(10)) }
+        pane.favorites = favs
+        for (i, f) in favs.enumerated() {
+            let t = f.map { String(describing: $0.target(store: store)).prefix(60) } ?? "leer"
+            print("[shot] favorit \(i + 1): \(f?.name ?? "—") -> \(t)")
         }
-        .frame(width: 1100, height: 720)
-        .background(Theme.background)
-        .environment(store)
-        .environment(history)
-        .preferredColorScheme(.dark)
-        let host = NSHostingView(rootView: view)
-        host.frame = NSRect(x: 0, y: 0, width: 1100, height: 720)
-        let win = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        win.appearance = NSAppearance(named: .darkAqua)
-        win.contentView = host
-        spin(3)   // Unterordner der sichtbaren Knoten einlesen lassen
-        host.layoutSubtreeIfNeeded()
-        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
-        host.cacheDisplay(in: host.bounds, to: rep)
-        try? rep.representation(using: .png, properties: [:])?.write(to: out)
-        print("[shot] \(out.path)")
+        let shotList = ShotList(tracks: Array(tracks.sorted { ($0.loose ? 1 : 0, $0.artist) < ($1.loose ? 1 : 0, $1.artist) }.prefix(40)))
+
+        func render(_ to: URL, width: CGFloat, height: CGFloat = 720, clickTree: Bool = false) {
+            let view = VStack(spacing: 0) {
+                FavoritesBar(model: pane)
+                HStack(spacing: 0) {
+                    SourceTree(selection: Binding(get: { pane.source }, set: { pane.source = $0 })).frame(width: min(300, width * 0.4))
+                    shotList.frame(minWidth: 0, maxWidth: .infinity).clipped()
+                }
+            }
+            .frame(width: width, height: height)
+            .background(Theme.background)
+            .environment(store)
+            .environment(history)
+            .environment(browser)
+            .preferredColorScheme(.dark)
+            let host = NSHostingView(rootView: view)
+            host.frame = NSRect(x: 0, y: 0, width: width, height: height)
+            let win = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            win.appearance = NSAppearance(named: .darkAqua)
+            win.contentView = host
+            spin(3)   // Unterordner der sichtbaren Knoten einlesen lassen
+            host.layoutSubtreeIfNeeded()
+            if clickTree { treeClick(host, win, pane, store) }
+            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: to)
+            print("[shot] \(to.path)")
+        }
+        let base = out.deletingPathExtension().path
+        render(out, width: 1100)
+        render(URL(fileURLWithPath: base + "-fav-narrow.png"), width: 620, height: 260)
+        // Klick in den Baum wählt trotz ziehbarer Einträge aus; Filter-Favorit aktiv
+        render(URL(fileURLWithPath: base + "-fav-click.png"), width: 1100, height: 260, clickTree: true)
+        pane.favorites = BrowserFavorite.normalized(nil)
+        render(URL(fileURLWithPath: base + "-fav-empty.png"), width: 1100, height: 260)
         exit(0)
+    }
+
+    /// Klick auf TRACK COLLECTION (Maus runter/hoch an die Baumliste) -> Quelle des Bereichs; danach Filter-Favorit
+    private static func treeClick(_ host: NSView, _ win: NSWindow, _ pane: BrowserPaneModel, _ store: LibraryStore) {
+        var stack: [NSView] = [host], outline: NSOutlineView?
+        while let v = stack.popLast() { if let o = v as? NSOutlineView { outline = o; break }; stack += v.subviews }
+        guard let o = outline, o.numberOfRows > 0 else { print("[shot] baum: keine liste"); return }
+        let before = pane.source
+        let p = o.convert(NSPoint(x: o.rect(ofRow: 0).midX, y: o.rect(ofRow: 0).midY), to: nil)
+        func ev(_ t: NSEvent.EventType) -> NSEvent? {
+            NSEvent.mouseEvent(with: t, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                               windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+        }
+        // wie das Fenster: tiefste Ansicht unter dem Klick bekommt mouseDown (ohne Aktivieren der App)
+        if let up = ev(.leftMouseUp) { NSApp.postEvent(up, atStart: false) }
+        if let down = ev(.leftMouseDown), let hit = win.contentView?.hitTest(win.contentView!.convert(p, from: nil)) {
+            print("[shot] baum-klick trifft \(type(of: hit))")
+            hit.mouseDown(with: down)
+        }
+        let end = Date().addingTimeInterval(1)
+        while Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        print("[shot] baum-klick: \(before.title) -> \(pane.source.title) \(pane.source == .collection ? "ok" : "FEHLER")")
+        // Ziehen: die Liste liefert für jede Zeile einen Favoriten (Ablegen selbst braucht eine echte Maus)
+        for row in [0, o.numberOfRows - 1] {
+            let w = o.dataSource?.outlineView?(o, pasteboardWriterForItem: o.item(atRow: row) as Any)
+            let f = FavoriteDrag.take()
+            print("[shot] ziehen zeile \(row): \(w == nil ? "-" : "pasteboard") · favorit \(f.map { "\($0.type) \($0.name) \($0.path ?? [])" } ?? "-")")
+        }
+        pane.applyFavorite(4, store: store)
+        host.layoutSubtreeIfNeeded()
     }
 
     /// vereinfachte Tabelle (die echte TrackTable braucht das Audio-Modell)

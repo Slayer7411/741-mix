@@ -15,6 +15,7 @@
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstmessage.h"
 #include "pluginterfaces/vst/ivstprocesscontext.h"
+#include "pluginterfaces/vst/ivstunits.h"
 #include "public.sdk/source/common/memorystream.h"
 #include "public.sdk/source/vst/hosting/connectionproxy.h"
 #include "public.sdk/source/vst/hosting/eventlist.h"
@@ -522,6 +523,7 @@ bool mdvst3_param_info(MDPlugin *mp, int index, MDVST3Param *out) {
     out->stepCount = pi.stepCount;
     out->defaultValue = pi.defaultNormalizedValue;
     out->flags = pi.flags;
+    out->unitId = pi.unitId;
     return true;
 }
 
@@ -546,6 +548,21 @@ bool mdvst3_param_text(MDPlugin *mp, uint32_t id, double v, char *out, int len) 
     if (p->controller->getParamStringByValue(id, v, s) != kResultOk) return false;
     copyStr(out, size_t(len), Steinberg::Vst::StringConvert::convert(s));
     return true;
+}
+
+bool mdvst3_unit_name(MDPlugin *mp, int32_t unitId, char *out, int len) {
+    auto *p = asVST3(mp);
+    if (!p || !p->controller || !out || len <= 0) return false;
+    auto units = U::cast<IUnitInfo>(p->controller);
+    if (!units) return false;
+    for (int32 i = 0, n = units->getUnitCount(); i < n; i++) {
+        UnitInfo ui{};
+        if (units->getUnitInfo(i, ui) == kResultOk && ui.id == unitId) {
+            copyStr(out, size_t(len), Steinberg::Vst::StringConvert::convert(ui.name));
+            return true;
+        }
+    }
+    return false;
 }
 
 // Zustand: "M7V3" · u32 Länge Komponente · Daten · u32 Länge Controller · Daten (little endian)

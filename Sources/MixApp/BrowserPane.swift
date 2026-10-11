@@ -29,6 +29,8 @@ final class BrowserPaneModel: Identifiable {
     var inlineText = ""
     /// offenes Bearbeiten-Fenster (⌘E, Rechtsklick -> Bearbeiten …)
     var editSession: TrackEditSession?
+    /// Favoritenleiste (6 Plätze, BrowserFavorites.swift)
+    var favorites: [BrowserFavorite?] = BrowserFavorite.normalized(nil)
 
     init(name: String, source: BrowserSource = .collection) {
         self.name = name
@@ -112,6 +114,8 @@ struct BrowserPane: View {
         // Baum bleibt im Split, ausgeblendet = Breite 0 (nur der 1-pt-Trenner bleibt): Entfernen/Einsetzen des
         // Split-Elements hängte jede Zeile aus dem Fenster aus und wieder ein (~850 ms beim Umschalten Browser groß ⇄ Decks)
         let tree = model.showTree && !(decks.prefs.ui.hideTreeWithDecks && !browserState.maximized)
+        VStack(spacing: 0) {
+        FavoritesBar(model: model, keys: decks.prefs.keys)
         HSplitView {
             SourceTree(selection: $model.source)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -127,6 +131,7 @@ struct BrowserPane: View {
                 }
             }
             .frame(minWidth: 380)
+        }
         }
         .background {
             // ⌘E: Bearbeiten-Fenster für die Auswahl (nur der zuletzt benutzte Bereich reagiert)
@@ -275,6 +280,7 @@ struct SourceTree: View {
     var body: some View {
         List(selection: Binding<BrowserSource?>(get: { selection }, set: { if let s = $0 { selection = s } })) {
             row("≣", "TRACK COLLECTION").tag(BrowserSource.collection)
+                .favoriteDrag { BrowserFavorite.source(.collection, store: store) }
                 .contextMenu {
                     exportMenu(.collection)
                     Button("Collection prüfen …") { ConsistencyWindow.show(store: store) }
@@ -284,7 +290,9 @@ struct SourceTree: View {
                     CloudMenuButton(label: "Track Collection") { store.tracks }
                 }
             row("▶", "RUNNING TRACKS").tag(BrowserSource.running)
+                .favoriteDrag { BrowserFavorite.source(.running, store: store) }
             row("▤", "PREPARATION").tag(BrowserSource.preparation)
+                .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
                 .contextMenu {
                     exportMenu(.preparation)
                     OverviewMenuButton { store.tracks(for: .preparation) }
@@ -298,6 +306,7 @@ struct SourceTree: View {
                 }
             } label: { row("▸", "PREPARATION ARCHIV") }
             row("◷", "HISTORY").tag(BrowserSource.historyLive)
+                .favoriteDrag { BrowserFavorite.source(.historyLive, store: store) }
                 .contextMenu { exportMenu(.historyLive) }
             DisclosureGroup {
                 ForEach(history.archive) { s in
@@ -308,6 +317,7 @@ struct SourceTree: View {
             DisclosureGroup {
                 ForEach(store.customSmartlists) { sl in
                     row("◆", sl.name).tag(BrowserSource.custom(sl))
+                        .favoriteDrag { BrowserFavorite.source(.custom(sl), store: store) }
                         .contextMenu {
                             exportMenu(.custom(sl))
                             OverviewMenuButton { store.tracks(for: .custom(sl)) }
@@ -328,6 +338,7 @@ struct SourceTree: View {
                     row(icon(node), node.name)
                         .tag(BrowserSource.node(node))
                         .lineLimit(1)
+                        .favoriteDrag { BrowserFavorite.source(.node(node), store: store) }
                         .contextMenu {
                             if node.kind != .folder { exportMenu(.node(node)) }
                             OverviewMenuButton { nodeTracks(node) }
@@ -487,6 +498,7 @@ struct TrackTable: View {
     @State private var rowBand = PreviewRowController()
     /// Vorschau „ganze Zeile“: Zellen zweizeilig, Inhalt oben
     private var twoLine: Bool { decks.prefs.ui.previewMode == .fullRow }
+    private var rowHeight: CGFloat { PreviewRow.rowHeight(textSize: decks.prefs.ui.previewTextSize) }
 
     /// Zelle: im Inline-Modus ein Eingabefeld, sonst die normale Anzeige
     @ViewBuilder private func cell(_ t: Track, _ f: TrackField, @ViewBuilder _ display: () -> some View) -> some View {
@@ -522,22 +534,22 @@ struct TrackTable: View {
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols0: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("▶") { (t: Track) in Text(history.played.contains(t.key) ? "✓" : "").foregroundStyle(Theme.secondary).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("▶") { (t: Track) in Text(history.played.contains(t.key) ? "✓" : "").foregroundStyle(Theme.secondary).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(16).customizationID("played")
-        TableColumn(Text(verbatim: "☁").font(.system(size: 13))) { (t: Track) in CloudCell(path: t.path).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn(Text(verbatim: "☁").font(.system(size: 13))) { (t: Track) in CloudCell(path: t.path).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(16).customizationID("cloud")
         TableColumn("✓", value: \Track.analyzedSort) { (t: Track) in
                 Text(t.analyzed ? "✓" : "").foregroundStyle(t.ownAnalysis ? Theme.secondary : Theme.muted)
                     .help(t.ownAnalysis ? "analysiert von MINOS-741 (Tempo, Grid, Tonart, Lautheit ganz oder teilweise)" : "analysiert in der Collection")
-                    .modifier(PreviewRowCell(on: twoLine))
+                    .modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(16).customizationID("analyzed")
-        TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(6).customizationID("color")
-        TableColumn("Cover") { (t: Track) in CoverThumb(path: t.path).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Cover") { (t: Track) in CoverThumb(path: t.path).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 22, ideal: 44).customizationID("cover").defaultVisibility(.hidden)
         TableColumn("Artist", value: \Track.artist) { (t: Track) in
-                cell(t, .artist) { Text(t.artist).foregroundStyle(t.loose ? Theme.muted : t.fileExists ? Theme.bone : Theme.state) }.modifier(PreviewRowCell(on: twoLine))
+                cell(t, .artist) { Text(t.artist).foregroundStyle(t.loose ? Theme.muted : t.fileExists ? Theme.bone : Theme.state) }.modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(min: 80, ideal: 150).customizationID("artist")
     }
@@ -545,89 +557,89 @@ struct TrackTable: View {
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols1: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Title", value: \Track.title) { (t: Track) in
-                cell(t, .title) { Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) }.modifier(PreviewBehindTitle(mix: decks, track: t)).modifier(PreviewRowCell(on: twoLine))
+                cell(t, .title) { Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) }.modifier(PreviewBehindTitle(mix: decks, track: t)).modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(min: 80, ideal: 200).customizationID("title")
         // Mini-Übersicht (Wellenform, Phrasen, Cues) – ⌘, → Anzeige → Browser-Vorschau
-        TableColumn("Preview") { (t: Track) in TrackPreviewCell(mix: decks, track: t).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Preview") { (t: Track) in TrackPreviewCell(mix: decks, track: t).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60, ideal: 150, max: 400).customizationID("preview")
-        TableColumn("Remixer", value: \Track.remixer) { (t: Track) in text(t, .remixer).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Remixer", value: \Track.remixer) { (t: Track) in text(t, .remixer).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60, ideal: 110).customizationID("remixer").defaultVisibility(.hidden)
-        TableColumn("Producer", value: \Track.producer) { (t: Track) in text(t, .producer).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Producer", value: \Track.producer) { (t: Track) in text(t, .producer).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60, ideal: 110).customizationID("producer").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols2: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Release", value: \Track.album) { (t: Track) in text(t, .album).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Release", value: \Track.album) { (t: Track) in text(t, .album).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60, ideal: 130).customizationID("release").defaultVisibility(.hidden)
-        TableColumn("Track #", value: \Track.trackNumber) { (t: Track) in text(t, .trackNumber).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Track #", value: \Track.trackNumber) { (t: Track) in text(t, .trackNumber).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(40).customizationID("trackno").defaultVisibility(.hidden)
         TableColumn("BPM", value: \Track.bpm) { (t: Track) in
-                cell(t, .bpm) { Text(t.bpm > 0 ? String(format: "%.2f", t.bpm) : "").monospacedDigit() }.modifier(PreviewRowCell(on: twoLine))
+                cell(t, .bpm) { Text(t.bpm > 0 ? String(format: "%.2f", t.bpm) : "").monospacedDigit() }.modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(56).customizationID("bpm")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols3: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Key", value: \Track.openKey) { (t: Track) in Text(t.openKey).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Key", value: \Track.openKey) { (t: Track) in Text(t.openKey).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(36).customizationID("key")
-        TableColumn("Key Text", value: \Track.keyText) { (t: Track) in text(t, .keyText).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Key Text", value: \Track.keyText) { (t: Track) in text(t, .keyText).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(40).customizationID("keytext").defaultVisibility(.hidden)
-        TableColumn("Time", value: \Track.duration) { (t: Track) in Text(Theme.time(t.duration)).monospacedDigit().modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Time", value: \Track.duration) { (t: Track) in Text(Theme.time(t.duration)).monospacedDigit().modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(44).customizationID("time")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols4: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Gain", value: \Track.gainSort) { (t: Track) in Text(t.perceivedDb.map { String(format: "%+.1f", $0) } ?? "").monospacedDigit().modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Gain", value: \Track.gainSort) { (t: Track) in Text(t.perceivedDb.map { String(format: "%+.1f", $0) } ?? "").monospacedDigit().modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(42).customizationID("gain").defaultVisibility(.hidden)
         TableColumn("Rating", value: \Track.rating) { (t: Track) in
-                cell(t, .rating) { Text(String(repeating: "★", count: max(0, min(5, t.rating)))) }.modifier(PreviewRowCell(on: twoLine))
+                cell(t, .rating) { Text(String(repeating: "★", count: max(0, min(5, t.rating)))) }.modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(56).customizationID("rating").defaultVisibility(.hidden)
-        TableColumn("Comment", value: \Track.comment) { (t: Track) in text(t, .comment).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Comment", value: \Track.comment) { (t: Track) in text(t, .comment).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 80, ideal: 170).customizationID("comment")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols5: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Comment 2", value: \Track.comment2) { (t: Track) in
-                cell(t, .comment2) { TagChips(tags: BrowserPaneModel.tags(of: t, separators: decks.prefs.ui.tagSeparators), ui: decks.prefs.ui) }.modifier(PreviewRowCell(on: twoLine))
+                cell(t, .comment2) { TagChips(tags: BrowserPaneModel.tags(of: t, separators: decks.prefs.ui.tagSeparators), ui: decks.prefs.ui) }.modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(min: 80, ideal: 260).customizationID("comment2")
-        TableColumn("Label", value: \Track.label) { (t: Track) in text(t, .label).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Label", value: \Track.label) { (t: Track) in text(t, .label).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60, ideal: 110).customizationID("label")
-        TableColumn("Catalog No", value: \Track.catalogNo) { (t: Track) in text(t, .catalogNo).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Catalog No", value: \Track.catalogNo) { (t: Track) in text(t, .catalogNo).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 50, ideal: 90).customizationID("catalog").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols6: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Genre", value: \Track.genre) { (t: Track) in text(t, .genre).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Genre", value: \Track.genre) { (t: Track) in text(t, .genre).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 50, ideal: 100).customizationID("genre").defaultVisibility(.hidden)
-        TableColumn("Plays", value: \Track.playCount) { (t: Track) in Text(t.playsText).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Plays", value: \Track.playCount) { (t: Track) in Text(t.playsText).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(38).customizationID("plays")
-        TableColumn("Last Played", value: \Track.lastPlayedSort) { (t: Track) in Text(Track.dateText(t.lastPlayed)).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Last Played", value: \Track.lastPlayedSort) { (t: Track) in Text(Track.dateText(t.lastPlayed)).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(74).customizationID("lastplayed").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols7: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Import", value: \Track.importSort) { (t: Track) in Text(t.importText).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Import", value: \Track.importSort) { (t: Track) in Text(t.importText).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(74).customizationID("import")
-        TableColumn("Release Date", value: \Track.releaseSort) { (t: Track) in text(t, .releaseDate).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Release Date", value: \Track.releaseSort) { (t: Track) in text(t, .releaseDate).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(74).customizationID("releasedate").defaultVisibility(.hidden)
-        TableColumn("Bitrate", value: \Track.bitrate) { (t: Track) in Text(t.bitrate > 0 ? "\(t.bitrate)" : "").modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Bitrate", value: \Track.bitrate) { (t: Track) in Text(t.bitrate > 0 ? "\(t.bitrate)" : "").modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(44).customizationID("bitrate").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols8: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("File Name", value: \Track.fileName) { (t: Track) in Text(t.fileName).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("File Name", value: \Track.fileName) { (t: Track) in Text(t.fileName).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 80, ideal: 220).customizationID("file").defaultVisibility(.hidden)
-        TableColumn("Mix", value: \Track.mix) { (t: Track) in text(t, .mix).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Mix", value: \Track.mix) { (t: Track) in text(t, .mix).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60, ideal: 110).customizationID("mix").defaultVisibility(.hidden)
     }
 
@@ -653,7 +665,7 @@ struct TrackTable: View {
         .onChange(of: columns) {
             if let d = try? JSONEncoder().encode(columns) { UserDefaults.standard.set(d, forKey: "columns.\(model.name)") }
         }
-        .font(Theme.mono(11))
+        .font(twoLine ? Theme.mono(decks.prefs.ui.previewTextSize, decks.prefs.ui.previewTextBold ? .semibold : .regular) : Theme.mono(11))
         .scrollContentBackground(.hidden)
         .background(Theme.void)
         .background(TableViewFinder(controller: inlineCtl))
