@@ -32,6 +32,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * selftest and benches no longer write audio routing, master volume, column layout, preparation and own smartlists
 * keylock: a track stopped when the stretcher's read head reached the end, the last ~0.12 s (lookahead) was never heard. it now stops when the audible position reaches the end
 * deck shot (`MIX741_SHOT=deck:`) opened the saved output device; now only a built-in 2-channel device, silent
+* english ui: status line (mode `Intern` / `Extern`, `alle→`, audio error, rate until restart) and `PREPARATION ARCHIV` / `HISTORY ARCHIV` in the browser tree stayed german
 * core: a stopped deck checked the fx tail through the pointer of a plugin that was swapped out and closed while the unit was not assigned to the deck (read from freed memory on the audio thread, AddressSanitizer). the pointer is now synced before the check
 * core: NaN / Inf control values (rate, seek, loop, fx, master, clock) are dropped at the c api instead of sticking in the core (position NaN = silent deck, clock stops). a loop with end <= start is not activated
 * plugins: the reset of an audio unit after a NaN block runs on the plugin queue, not under the control lock inside the 200 hz tick (an isolated plugin's reset is an xpc call: 0.06 ms median, 0.23 ms max measured, unbounded when the service hangs)

@@ -409,20 +409,24 @@ final class MixModel {
         engine.apply(MixEngine.Routing(device: dev?.id, firstChannel: firsts), restart: restart)
         core.setMasterVolume(core.snapshot().masterVolume)
         core.setExternalMixer(mixerMode == .external)
-        let route = mixerMode == .external
-            ? zip(deckLetters, deckPairs).map { "\($0)→\($1 + 1)/\($1 + 2)" }.joined(separator: " ")
-            : "alle→\(internalPair + 1)/\(internalPair + 2)"
         engineStatus = engine.running
-            ? "\(dev?.name ?? "Standard") · \(mixerMode.rawValue) · \(route)"
-            : "Audio-Fehler: \(engine.lastError ?? "?")"
+            ? "\(dev?.name ?? String(localized: "Standard")) · \(routeText)"
+            : String(localized: "Audio-Fehler: \(engine.lastError ?? "?")")
         if engine.running {
             let khz = { (r: Double) in String(format: "%g kHz", r / 1000) }
             engineStatus += " · \(khz(engine.outputRate))"
-            if abs(engine.outputRate - engine.sampleRate) > 1 { engineStatus += " (intern \(khz(engine.sampleRate)) bis Neustart)" }
+            if abs(engine.outputRate - engine.sampleRate) > 1 { engineStatus += " " + String(localized: "(intern \(khz(engine.sampleRate)) bis Neustart)") }
         }
         if engine.running, let e = engine.lastError { engineStatus += " · ⚠︎ \(e)" }
         saveSetup()
         pull()
+    }
+
+    /// Modus und Kanäle für die Statusleiste
+    var routeText: String {
+        mixerMode == .external
+            ? String(localized: "Extern") + " · " + zip(deckLetters, deckPairs).map { "\($0)→\($1 + 1)/\($1 + 2)" }.joined(separator: " ")
+            : String(localized: "Intern") + " · " + String(localized: "alle→\(internalPair + 1)/\(internalPair + 2)")
     }
 
     private func loadSetup() {
