@@ -680,13 +680,14 @@
 "☁ Cloud" = "☁ Cloud";
 "✓ Analysiert" = "✓ Analyzed";
 "Farbe" = "Color";
+"Match (Harmonie, Tempo zum Master)" = "Match (harmony, tempo to the master)";
+"◆ PASST" = "◆ MATCH";
+"Nur Tracks, die zum Master passen: Key (gleich, ±1, Relativ) und Tempo im Fenster – einstellbar unter ⌘, → Browser" = "Only tracks that fit the master: key (same, ±1, relative) and tempo within the window – set under ⌘, → Browser";
+"Browser: Matching an/aus (passt zum Master)" = "Browser: matching on/off (fits the master)";
 "BROWSER" = "BROWSER";
 "Harmonie zum Master" = "Harmony to the master";
 "Key-Spalte färben" = "Color the key column";
 "bezug: hörbarer key des master-decks (mit key-shift, ohne keylock mit dem tempo), spielt kein master: fokus-deck. ◆ lila = gleich · ▲▼ hell = ±1 auf dem rad · ◇ hell = relativ dur/moll · grau = ±2 (energie) · gedimmt = unpassend. spalte match: pitch in prozent, den der track bis zum master-tempo braucht" = "reference: audible key of the master deck (with key shift, without keylock with the tempo), no master playing: focused deck. ◆ purple = same · ▲▼ light = ±1 on the wheel · ◇ light = relative major/minor · grey = ±2 (energy) · dimmed = clash. column match: pitch in percent the track needs to reach the master tempo";
-"◆ PASST" = "◆ MATCH";
-"Nur Tracks, die zum Master passen: Key (gleich, ±1, Relativ) und Tempo im Fenster – einstellbar unter ⌘, → Browser" = "Only tracks that fit the master: key (same, ±1, relative) and tempo within the window – set under ⌘, → Browser";
-"Browser: Matching an/aus (passt zum Master)" = "Browser: matching on/off (fits the master)";
 "◆ PASST (Matching)" = "◆ MATCH (matching)";
 "±1 auf dem Rad (▲▼)" = "±1 on the wheel (▲▼)";
 "Relativ Dur/Moll (◇)" = "Relative major/minor (◇)";

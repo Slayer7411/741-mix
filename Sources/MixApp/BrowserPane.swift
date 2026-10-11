@@ -69,7 +69,7 @@ final class BrowserPaneModel: Identifiable {
         return store.tracks(for: source)
     }
 
-    /// Bezug und Regel für Matching (gesetzt mit dem MixModel; in einer Ansicht gelesen,
+    /// Bezug und Regel für Matching / Sortierung „Harmonie“ (gesetzt mit dem MixModel; in einer Ansicht gelesen,
     /// beobachtet sie so Key, Tempo und Regel – nur wenn der Bereich sie braucht)
     static var harmonySource: @MainActor () -> HarmonyInput = { HarmonyInput() }
     struct HarmonyInput: Hashable, Sendable {
@@ -77,8 +77,10 @@ final class BrowserPaneModel: Identifiable {
         var rule = MatchRule()
     }
 
-    /// Bezug nur, wenn Matching ihn braucht
-    private func harmony() -> HarmonyInput? { matching ? Self.harmonySource() : nil }
+    var harmonySorted: Bool { sortOrder.contains { $0.keyPath == \Track.harmonySort } }
+
+    /// Bezug nur, wenn Matching oder die Sortierung „Harmonie“ ihn braucht
+    private func harmony() -> HarmonyInput? { matching || harmonySorted ? Self.harmonySource() : nil }
 
     @ObservationIgnored private var sortedKey: [AnyHashable] = []
     @ObservationIgnored private var sortedBase: [Track] = []
@@ -99,11 +101,15 @@ final class BrowserPaneModel: Identifiable {
     var shown: [Track] { cachedRows }
 
     private func keys(_ store: LibraryStore, _ separators: String, _ h: HarmonyInput?) -> (base: [AnyHashable], all: [AnyHashable]) {
-        let base: [AnyHashable] = [source, "\(sortOrder)", store.revision, store.sourceRevision(source, subfolders: subfolders), subfolders]
+        var base: [AnyHashable] = [source, "\(sortOrder)", store.revision, store.sourceRevision(source, subfolders: subfolders), subfolders]
+        if harmonySorted, let h { base += [h.ref, h.rule.halfDouble] as [AnyHashable] }
         var all = base + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0] as [AnyHashable]
         if matching, let h { all += [h.ref, h.rule] as [AnyHashable] }
         return (base, all)
     }
+
+    /// vorsortierte Liste der Collection (nicht für „Harmonie“: hängt am Bezug)
+    private func presorted(_ store: LibraryStore) -> [Track]? { harmonySorted ? nil : store.presorted(source, order: sortOrder) }
 
     /// Gefilterte + sortierte Liste, sofort (Selbsttest, Messung). Die Quelle wird einmal sortiert (14k Tracks ≈ 80 ms,
     /// TrackSort) und bei Suche, Tags und Rollen nur noch gefiltert.
@@ -113,7 +119,7 @@ final class BrowserPaneModel: Identifiable {
         if baseKey != sortedKey {
             // nach dem Laden liegt die Liste meist schon sortiert vor (im Hintergrund, siehe LibraryStore.load)
             Self.dropLater(sortedBase)
-            sortedBase = store.presorted(source, order: sortOrder) ?? TrackSort.sorted(base(from: store, history: history), using: sortOrder)
+            sortedBase = presorted(store) ?? TrackSort.sorted(base(from: store, history: history), using: sortOrder, rank: Self.rank(h))
             sortedKey = baseKey
         }
         if key == cacheKey { return cachedRows }
@@ -129,7 +135,7 @@ final class BrowserPaneModel: Identifiable {
         let h = harmony()
         let (baseKey, key) = keys(store, separators, h)
         if key == cacheKey || key == jobKey { return cachedRows }
-        if baseKey != sortedKey, let pre = store.presorted(source, order: sortOrder) {
+        if baseKey != sortedKey, let pre = presorted(store) {
             Self.dropLater(sortedBase)
             sortedBase = pre
             sortedKey = baseKey
@@ -140,7 +146,7 @@ final class BrowserPaneModel: Identifiable {
         jobSerial += 1
         jobKey = key
         let serial = jobSerial
-        let job = ListJob(base: base, order: sorted ? nil : sortOrder, criteria: criteria(separators, h))
+        let job = ListJob(base: base, order: sorted ? nil : sortOrder, criteria: criteria(separators, h), rank: Self.rank(h))
         Task.detached(priority: .userInitiated) {
             let done = job.run()
             await MainActor.run { self.deliver(done, serial: serial, baseKey: baseKey, key: key) }
@@ -189,7 +195,7 @@ final class BrowserPaneModel: Identifiable {
     /// Kopie vorher losgelassen hat und die letzte Referenz im Hintergrund fällt
     nonisolated static func dropLater(_ old: [Track]) {
         guard old.count > 500 else { return }
-        let box = ListJob(base: old, order: nil, criteria: Criteria())
+        let box = ListJob(base: old, order: nil, criteria: Criteria(), rank: nil)
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1) { _ = box }
     }
 
@@ -217,19 +223,28 @@ final class BrowserPaneModel: Identifiable {
                  match: matching ? h.flatMap { h in h.ref.map { ($0, h.rule) } } : nil)
     }
 
+    /// Sortierwert „Harmonie“ (nur mit Bezug)
+    nonisolated private static func rank(_ h: HarmonyInput?) -> (@Sendable (Track) -> Double)? {
+        guard let h, let ref = h.ref else { return nil }
+        let rule = h.rule
+        return { rule.rank($0, ref) }
+    }
+
     /// Sortieren (falls `order`) und Filtern im Hintergrund, eigener Tag-Index (der geteilte gehört dem Hauptthread)
     final class ListJob: @unchecked Sendable {
         private(set) var base: [Track]
         let order: [KeyPathComparator<Track>]?
         let criteria: Criteria
+        let rank: (@Sendable (Track) -> Double)?
         private(set) var rows: [Track] = []
-        init(base: [Track], order: [KeyPathComparator<Track>]?, criteria: Criteria) {
+        init(base: [Track], order: [KeyPathComparator<Track>]?, criteria: Criteria, rank: (@Sendable (Track) -> Double)?) {
             self.base = base
             self.order = order
             self.criteria = criteria
+            self.rank = rank
         }
         func run() -> ListJob {
-            if let order { base = TrackSort.sorted(base, using: order) }
+            if let order { base = TrackSort.sorted(base, using: order, rank: rank) }
             rows = BrowserPaneModel.filtered(base, criteria, index: TagIndex())
             return self
         }

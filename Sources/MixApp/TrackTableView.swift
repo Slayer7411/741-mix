@@ -9,7 +9,7 @@ import MixEngine
 
 /// Spalte der Track-Tabelle. `id` = Schlüssel in der gespeicherten Anordnung (`columns.<bereich>`), Breiten bei 100 %
 struct TrackColumn {
-    enum Kind { case played, cloud, analyzed, color, cover, artist, title, preview, field(TrackField), bpm, key, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file }
+    enum Kind { case played, cloud, analyzed, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file }
     let id: String
     let title: String
     let kind: Kind
@@ -45,6 +45,7 @@ struct TrackColumn {
         .fixed("trackno", "Track #", .field(.trackNumber), 40, hidden: true, sort: KeyPathComparator(\Track.trackNumber)),
         .fixed("bpm", "BPM", .bpm, 56, sort: KeyPathComparator(\Track.bpm)),
         .fixed("key", "Key", .key, 36, sort: KeyPathComparator(\Track.openKey)),
+        .fixed("harmony", "Match", .harmony, 44, sort: KeyPathComparator(\Track.harmonySort), menu: String(localized: "Match (Harmonie, Tempo zum Master)")),
         .fixed("keytext", "Key Text", .field(.keyText), 40, hidden: true, sort: KeyPathComparator(\Track.keyText)),
         .fixed("time", "Time", .time, 44, sort: KeyPathComparator(\Track.duration)),
         .fixed("gain", "Gain", .gain, 42, hidden: true, sort: KeyPathComparator(\Track.gainSort)),
@@ -117,6 +118,7 @@ enum ColumnLayout {
         if !order.contains("cloud") { order.insert("cloud", at: order.firstIndex(of: "played").map { $0 + 1 } ?? 0) }
         if !order.contains("cover") { order.insert("cover", at: order.firstIndex(of: "color").map { $0 + 1 } ?? min(3, order.count)) }
         if !order.contains("preview") { order.insert("preview", at: order.firstIndex(of: "title").map { $0 + 1 } ?? order.count) }
+        if !order.contains("harmony") { order.insert("harmony", at: order.firstIndex(of: "key").map { $0 + 1 } ?? order.count) }
         for c in TrackColumn.all where !order.contains(c.id) { order.append(c.id) }
         return order
     }
@@ -860,6 +862,10 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             draw(t.bpm > 0 ? String(format: "%.2f", t.bpm) : "", TableStyle.bone, l, ctx)
         case .key:
             drawKey(t, l, ctx)
+        case .harmony:
+            guard refBPM > 0, let off = look?.ui.match.tempoOffset(t.bpm, to: refBPM), let rule = look?.ui.match else { return }
+            let v = (off * 10).rounded() / 10
+            draw(v == 0 ? "0.0" : String(format: "%+.1f", v), abs(off) <= rule.bpmWindow ? TableStyle.bone : TableStyle.clash, l, ctx)
         case .time:
             draw(Theme.time(t.duration), TableStyle.bone, l, ctx)
         case .gain:

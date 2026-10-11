@@ -79,3 +79,22 @@ private func track(_ key: String, code: Int = -1, text: String = "", bpm: Double
     #expect(rule.matches(far, HarmonyRef(key: ref.key, bpm: 0)))
     #expect(abs(MatchRule().tempoOffset(125, to: 128)! - 2.4) < 1e-9)
 }
+
+@Test func harmonySortOrdersByDistanceThenTempo() {
+    let rule = MatchRule()
+    let ref = HarmonyRef(key: Harmony.code(wheel: 8, minor: true), bpm: 128)
+    let tracks = [
+        track("clash", code: Harmony.code(wheel: 2, minor: true), bpm: 128),
+        track("same-far", code: Harmony.code(wheel: 8, minor: true), bpm: 120),
+        track("adj", code: Harmony.code(wheel: 9, minor: true), bpm: 128),
+        track("nokey", bpm: 128),
+        track("same-near", code: Harmony.code(wheel: 8, minor: true), bpm: 127.5),
+        track("energy", code: Harmony.code(wheel: 6, minor: true), bpm: 128),
+    ]
+    let up = TrackSort.sorted(tracks, using: [KeyPathComparator(\Track.harmonySort)]) { rule.rank($0, ref) }
+    #expect(up.map(\.key) == ["same-near", "same-far", "adj", "energy", "clash", "nokey"])
+    let down = TrackSort.sorted(tracks, using: [KeyPathComparator(\Track.harmonySort, order: .reverse)]) { rule.rank($0, ref) }
+    #expect(down.map(\.key) == up.map(\.key).reversed())
+    // ohne Bezug: Reihenfolge der Quelle
+    #expect(TrackSort.sorted(tracks, using: [KeyPathComparator(\Track.harmonySort)]).map(\.key) == tracks.map(\.key))
+}

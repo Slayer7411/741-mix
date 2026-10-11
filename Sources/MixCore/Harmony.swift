@@ -146,9 +146,19 @@ public struct MatchRule: Hashable, Sendable, Codable {
         guard let off = tempoOffset(t.bpm, to: ref.bpm) else { return false }
         return abs(off) <= bpmWindow + 1e-9
     }
+
+    /// Sortierwert „Harmonie“: Abstand zum Bezug, dann Tempo-Abweichung (kleiner = passender)
+    public func rank(_ t: Track, _ ref: HarmonyRef?) -> Double {
+        guard let ref else { return 0 }
+        var r = 0.0
+        if let rk = ref.key { r = Double(t.harmonyCode.map { Harmony.relation($0, to: rk).distance } ?? 99) * 1000 }
+        return r + min(999, tempoOffset(t.bpm, to: ref.bpm).map(abs) ?? 999)
+    }
 }
 
 extension Track {
     /// Key als Code (0–23): MUSICAL_KEY, sonst aus dem Key-Text; nil = unbekannt
     public var harmonyCode: Int? { (0...23).contains(musicalKey) ? musicalKey : Harmony.code(text: keyText) }
+    /// Platzhalter der Sortierspalte „Harmonie“ – der Wert hängt am Bezug (TrackSort `rank`)
+    public var harmonySort: Int { 0 }
 }
