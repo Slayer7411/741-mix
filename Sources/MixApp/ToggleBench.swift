@@ -39,9 +39,10 @@ enum ToggleProbe {
 /// (kein Dock-Symbol), 4 Decks geladen, Ausgabe stumm auf ein eingebautes Gerät; misst Layout + Übergabe an Core Animation je Umschalten.
 @MainActor
 enum ToggleBench {
-    /// toggle: Browser groß/klein · state: Zustandsänderungen an Deck A · play: Hauptthread-Last bei laufenden Decks
+    /// toggle: Browser groß/klein · state: Zustandsänderungen an Deck A · play: Hauptthread-Last bei laufenden Decks ·
+    /// browser: Suche, Tippen, Filter, Sortierung, Quelle, Scrollen, Laden, Analyse-Ergebnisse bei 4 spielenden Decks
     nonisolated static let mode = ProcessInfo.processInfo.environment["MIX741_BENCH"] ?? ""
-    nonisolated static let requested = ["toggle", "state", "play"].contains(mode)
+    nonisolated static let requested = ["toggle", "state", "play", "browser"].contains(mode)
 
     static func snapshot(_ v: NSView, to path: String) {
         guard let layer = v.layer else { return }
@@ -105,6 +106,7 @@ enum ToggleBench {
             for _ in 0..<30 { try? await Task.sleep(for: .milliseconds(100)); mix.pull(); pump() }
             if mode == "state" { await StateBench.run(mix: mix, host: host, log: log); exit(0) }
             if mode == "play" { await StateBench.play(mix: mix, log: log); exit(0) }
+            if mode == "browser" { await StateBench.browser(mix: mix, store: store, browser: browser, host: host, log: log); exit(0) }
             let waves = { (v: NSView) -> [NSView] in
                 var out: [NSView] = [], stack = [v]
                 while let n = stack.popLast() { if n is WaveLayerNSView { out.append(n) }; stack += n.subviews }
@@ -342,5 +344,315 @@ enum StateBench {
                        Double(px.filter { $0 == 0 }.count) / Double(px.count) * 100, px.count))
         }
         sampler?.waitUntilExit()
+    }
+}
+
+/// MIX741_BENCH=browser: Browser-Aktionen bei 4 spielenden Decks (MIX741_BENCH_UI=live: 2 Browser nebeneinander).
+/// Je Aktion „natural“ (Änderung bis Hauptthread frei) und alle Lücken des Hauptthreads > 16 ms im Abschnitt.
+/// Abschnitte: model search typing role tag sort source scroll prep load analysis session idle (MIX741_BENCH_ONLY=a,b),
+/// MIX741_BENCH_N Wiederholungen, MIX741_BENCH_ALL=1 alle Werte, MIX741_BENCH_PREVIEW=row|column|title|off,
+/// MIX741_BENCH_PROFILE=<abschnitt> Hauptthread-Profil (MainSampler), MIX741_BENCH_SAMPLE=<datei> `sample` des Prozesses.
+extension StateBench {
+    static func browser(mix: MixModel, store: LibraryStore, browser: BrowserState, host: NSView, log: (String) -> Void) async {
+        installObserver()
+        let n = Int(env["MIX741_BENCH_N"] ?? "") ?? 10
+        let only = env["MIX741_BENCH_ONLY"].map { Set($0.split(separator: ",").map(String.init)) }
+        for d in 0..<4 { mix.togglePlay(d) }
+        try? await Task.sleep(for: .seconds(1))
+        var gaps: [Double] = []
+        var last = CACurrentMediaTime()
+        let h = Timer(timeInterval: 1.0 / 240, repeats: true) { _ in
+            let now = CACurrentMediaTime()
+            if now - last > 0.016 { gaps.append((now - last) * 1000) }
+            last = now
+        }
+        RunLoop.main.add(h, forMode: .common)
+        func natural(_ act: () -> Void) async -> Double {
+            done = 0
+            pending = CACurrentMediaTime()
+            act()
+            _ = await nextTick()
+            try? await Task.sleep(for: .milliseconds(40))
+            return done * 1000
+        }
+        func report(_ name: String, _ v: [Double]) {
+            let g = gaps.sorted()
+            log("\(name.padding(toLength: 9, withPad: " ", startingAt: 0)) natural \(stats(v)) · lücken >16 ms: \(g.count)"
+                + (g.isEmpty ? "" : String(format: ", max %.0f ms", g.last!)))
+            if env["MIX741_BENCH_ALL"] != nil { log("   " + v.map { String(format: "%.0f", $0) }.joined(separator: " ")) }
+            gaps = []
+        }
+        let profiler = env["MIX741_BENCH_PROFILE"].map { _ in MainSampler() }
+        var profiling = false
+        func phase(_ name: String) -> Bool {
+            if profiling { profiler?.stop(log: log); profiling = false }
+            gaps = []
+            last = CACurrentMediaTime()   // Arbeit des vorigen Abschnitts nicht mitzählen
+            let on = only?.contains(name) ?? true
+            if on, env["MIX741_BENCH_PROFILE"] == name { profiler?.start(); profiling = true }
+            return on
+        }
+        // MIX741_BENCH_PREVIEW=row|column|title|off: Browser-Vorschau
+        if let m = env["MIX741_BENCH_PREVIEW"] {
+            mix.prefs.ui.previewMode = ["row": .fullRow, "column": .column, "title": .behindTitle][m] ?? .off
+            try? await Task.sleep(for: .seconds(1))
+        }
+        let sampler = startSample(seconds: Int(env["MIX741_BENCH_SECS"] ?? "") ?? 20)
+        let a = browser.paneA
+        log("4 decks spielen (stumm), browser \(mix.prefs.ui.browserLayout.rawValue), \(store.tracks.count) tracks, n=\(n)")
+
+        if phase("model") {
+            // nur die Liste (ohne Oberfläche): Filter / Sortierung je Aktion
+            let seps = mix.prefs.ui.tagSeparators
+            func cost(_ name: String, _ act: () -> Void) {
+                var v: [Double] = []
+                for _ in 0..<n {
+                    act()
+                    let t0 = CACurrentMediaTime()
+                    _ = a.rows(from: store, history: nil, separators: seps)
+                    v.append((CACurrentMediaTime() - t0) * 1000)
+                }
+                log("model \(name.padding(toLength: 7, withPad: " ", startingAt: 0)) \(stats(v))")
+            }
+            var i = 0
+            cost("search") { i += 1; a.search = i % 2 == 0 ? "tech" : "techn" }
+            a.search = ""
+            cost("role") { a.roles = a.roles.isEmpty ? [.basis] : [] }
+            a.roles = []
+            cost("sort") { i += 1; a.sortOrder = [i % 2 == 0 ? KeyPathComparator(\Track.title) : KeyPathComparator(\Track.artist)] }
+            a.sortOrder = [KeyPathComparator(\Track.artist)]
+            cost("prep") { store.preparation = store.preparation.isEmpty ? [store.tracks[0].key] : [] }
+            store.preparation = []
+            gaps = []
+        }
+        if phase("search") {
+            var v: [Double] = []
+            let word = Array("techno")
+            for _ in 0..<max(1, n / 4) {
+                for i in 1...word.count { v.append(await natural { a.search = String(word[0..<i]) }) }
+                for i in (0..<word.count).reversed() { v.append(await natural { a.search = String(word[0..<i]) }) }
+            }
+            report("search", v)
+        }
+        if phase("typing") {
+            // „techno“ ins Suchfeld von Bereich A tippen, 10 Zeichen je Sekunde: Neuaufbauten der Liste und Lücken
+            var fields: [NSTextField] = [], stack = [host]
+            while let v = stack.popLast() { if let f = v as? NSTextField, f.placeholderString == "SUCHEN" { fields.append(f) }; stack += v.subviews }
+            if let f = fields.min(by: { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }),
+               f.window?.makeFirstResponder(f) == true, let editor = f.currentEditor() {
+                for _ in 0..<max(1, n / 4) {
+                    let g0 = a.tableGeneration
+                    let t0 = CACurrentMediaTime()
+                    for c in "techno" {
+                        editor.insertText(String(c))
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                    while a.search != "techno", CACurrentMediaTime() - t0 < 5 { try? await Task.sleep(for: .milliseconds(10)) }
+                    _ = await natural {}
+                    log(String(format: "typing    6 tasten: %d neuaufbauten, fertig nach %.0f ms", a.tableGeneration - g0, (CACurrentMediaTime() - t0) * 1000))
+                    editor.selectAll(nil)
+                    editor.deleteBackward(nil)
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+                report("typing", [])
+            } else {
+                log("typing: kein Suchfeld")
+            }
+        }
+        if phase("role") {
+            var v: [Double] = []
+            for _ in 0..<n { v.append(await natural { if a.roles.isEmpty { a.roles = [.basis] } else { a.roles = [] } }) }
+            a.roles = []
+            report("role", v)
+        }
+        if phase("tag") {
+            let seps = mix.prefs.ui.tagSeparators
+            let counts = Dictionary(store.tracks.flatMap { BrowserPaneModel.tags(of: $0, separators: seps) }.map { ($0, 1) }, uniquingKeysWith: +)
+            if let top = counts.max(by: { $0.value < $1.value })?.key {
+                var v: [Double] = []
+                for _ in 0..<n { v.append(await natural { a.toggleTag(top, exclude: false) }) }
+                a.clearTags()
+                report("tag", v)
+            }
+        }
+        if phase("sort") {
+            let orders: [KeyPathComparator<Track>] = [KeyPathComparator(\Track.title), KeyPathComparator(\Track.bpm),
+                                                      KeyPathComparator(\Track.openKey), KeyPathComparator(\Track.artist)]
+            var v: [Double] = []
+            for i in 0..<n { v.append(await natural { a.sortOrder = [orders[i % orders.count]] }) }
+            a.sortOrder = [KeyPathComparator(\Track.artist)]
+            report("sort", v)
+        }
+        // Track-Tabelle von Bereich A (links)
+        func tableA() -> NSTableView? {
+            var tables: [NSTableView] = [], stack = [host]
+            while let v = stack.popLast() { if let t = v as? NSTableView, t.tableColumns.count > 1 { tables.append(t) }; stack += v.subviews }
+            return tables.min { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }
+        }
+        if phase("source") {
+            func lists(_ n: PlaylistNode) -> [PlaylistNode] { (n.kind == .playlist ? [n] : []) + n.children.flatMap(lists) }
+            if let big = lists(store.root).max(by: { $0.trackKeys.count < $1.trackKeys.count }) {
+                // Fokus in der Tabelle (Pfeiltasten): bleibt er nach dem Neuaufbau in der neuen Tabelle?
+                let old = tableA()
+                if let old { old.window?.makeFirstResponder(old) }
+                var v: [Double] = []
+                for i in 0..<n { v.append(await natural { a.source = i % 2 == 0 ? .node(big) : .collection }) }
+                a.source = .collection
+                try? await Task.sleep(for: .milliseconds(300))
+                let now = tableA()
+                log("source    fokus: " + (now != nil && now !== old && host.window?.firstResponder === now ? "neue tabelle" : "FEHLER: verloren"))
+                report("source", v)
+            }
+        }
+        if phase("scroll") {
+            // Liste von Bereich A scrollen wie mit Mausrad / Trackpad: je Schritt 3 Zeilen
+            if let tv = tableA(), let clip = tv.enclosingScrollView?.contentView {
+                let step = tv.rect(ofRow: 0).height * 3
+                var v: [Double] = []
+                for i in 0..<(n * 4) {
+                    v.append(await natural {
+                        clip.scroll(to: NSPoint(x: 0, y: CGFloat(i + 1) * step))
+                        tv.enclosingScrollView?.reflectScrolledClipView(clip)
+                    })
+                }
+                clip.scroll(to: .zero)
+                report("scroll", v)
+            }
+        }
+        if phase("prep") {
+            let keys = store.tracks.prefix(n).map(\.key)
+            var v: [Double] = []
+            for k in keys { v.append(await natural { store.preparation.append(k) }) }
+            store.preparation = []
+            report("prep", v)
+        }
+        if phase("load") {
+            let c = store.tracks.filter { $0.bpm > 120 && $0.bpm < 140 && $0.fileExists && $0.duration > 120 }.dropFirst(4).prefix(2)
+            if c.count == 2 {
+                var v: [Double] = []
+                for i in 0..<max(2, n / 2) {
+                    let t = c[c.startIndex + i % 2]
+                    v.append(await natural { mix.load(t, deck: 3) })
+                    for _ in 0..<200 where mix.deck(3).loading { try? await Task.sleep(for: .milliseconds(50)) }
+                    mix.togglePlay(3)
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+                report("load", v)
+            }
+        }
+        if phase("analysis") {
+            // Ergebnisse wie vom Analyse-Stapel: 2 je Sekunde, 10 s (Speicher nur im Arbeitsspeicher), Decks spielen ->
+            // gesammelt; natural = Übernahme am Ende des Stapels
+            let pick = store.tracks.filter { $0.bpm > 0 }.prefix(20)
+            for (i, t) in pick.enumerated() {
+                Analyses.shared.store.put(TrackAnalysis(bpm: t.bpm + 0.01, perceivedDb: -1 - Double(i % 3)), for: t.key, replace: false)
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            let v = await natural { Analyses.shared.flush() }
+            report("analysis", [v])
+        }
+        if phase("session") {
+            var v: [Double] = []
+            for _ in 0..<n {
+                let t0 = CACurrentMediaTime()
+                _ = try? JSONEncoder().encode(Session(mix: mix, browser: browser))
+                v.append((CACurrentMediaTime() - t0) * 1000)
+            }
+            report("session", v)
+        }
+        if phase("idle") {
+            try? await Task.sleep(for: .seconds(Double(env["MIX741_BENCH_SECS"] ?? "") ?? 10))
+            report("idle", [])
+        }
+        if profiling { profiler?.stop(log: log) }
+        h.invalidate()
+        sampler?.waitUntilExit()
+    }
+}
+
+/// Messung (MIX741_BENCH_PROFILE=<abschnitt>): Hauptthread alle 1 ms anhalten, Rücksprungadressen über die
+/// Frame-Pointer sammeln, am Ende nach Funktion zählen (inklusiv / selbst). Nur für die Messungen, nie in der App.
+final class MainSampler: @unchecked Sendable {
+    private let port = pthread_mach_thread_np(pthread_self())
+    private let lo: UInt, hi: UInt
+    private let lock = NSLock()
+    private var stacks: [[UInt]] = []
+    private var running = false
+
+    /// auf dem Hauptthread anlegen
+    init() {
+        let top = UInt(bitPattern: pthread_get_stackaddr_np(pthread_self()))
+        hi = top
+        lo = top - UInt(pthread_get_stacksize_np(pthread_self()))
+    }
+
+    func start() {
+        lock.withLock { stacks = []; running = true }
+        let t = Thread { [self] in
+            while lock.withLock({ running }) {
+                if let s = sample() { lock.withLock { stacks.append(s) } }
+                usleep(1000)
+            }
+        }
+        t.qualityOfService = .userInteractive
+        t.start()
+    }
+
+    private func sample() -> [UInt]? {
+        guard thread_suspend(port) == KERN_SUCCESS else { return nil }
+        defer { thread_resume(port) }
+        var st = arm_thread_state64_t()
+        var count = mach_msg_type_number_t(MemoryLayout<arm_thread_state64_t>.size / MemoryLayout<UInt32>.size)
+        let r = withUnsafeMutablePointer(to: &st) {
+            $0.withMemoryRebound(to: natural_t.self, capacity: Int(count)) { thread_get_state(port, ARM_THREAD_STATE64, $0, &count) }
+        }
+        guard r == KERN_SUCCESS else { return nil }
+        let mask: UInt = 0x0000_7FFF_FFFF_FFFF
+        var out = [UInt(st.__pc) & mask, UInt(st.__lr) & mask]
+        var fp = UInt(st.__fp)
+        for _ in 0..<160 {
+            guard fp >= lo, fp + 16 <= hi, fp % 8 == 0, let p = UnsafePointer<UInt>(bitPattern: fp) else { break }
+            let next = p[0], ret = p[1] & mask
+            if ret != 0 { out.append(ret) }
+            guard next > fp else { break }
+            fp = next
+        }
+        return out
+    }
+
+    /// stoppen und die häufigsten Funktionen melden
+    func stop(top: Int = Int(ProcessInfo.processInfo.environment["MIX741_BENCH_PROFILE_TOP"] ?? "") ?? 45, log: (String) -> Void) {
+        let all: [[UInt]] = lock.withLock { running = false; return stacks }
+        guard !all.isEmpty else { return }
+        var names: [UInt: String] = [:]
+        func name(_ a: UInt) -> String {
+            if let n = names[a] { return n }
+            var info = Dl_info()
+            var n = "?"
+            if dladdr(UnsafeRawPointer(bitPattern: a), &info) != 0 {
+                let img = info.dli_fname.map { (String(cString: $0) as NSString).lastPathComponent } ?? "?"
+                n = (info.dli_sname.map { String(cString: $0) } ?? String(format: "0x%lx", a)) + " [\(img)]"
+            }
+            names[a] = n
+            return n
+        }
+        var incl: [String: Int] = [:], selfc: [String: Int] = [:]
+        for s in all {
+            var seen = Set<String>()
+            for (i, a) in s.enumerated() {
+                let n = name(a)
+                if i == 0 { selfc[n, default: 0] += 1 }
+                if seen.insert(n).inserted { incl[n, default: 0] += 1 }
+            }
+        }
+        let total = Double(all.count)
+        log(String(format: "profil: %d proben (1 ms)", all.count))
+        for (n, c) in incl.sorted(by: { $0.value > $1.value }).prefix(top) {
+            log(String(format: "  %5.1f %% incl  %5.1f %% self  %@", Double(c) / total * 100, Double(selfc[n] ?? 0) / total * 100, n))
+        }
+        log("  -- selbst:")
+        for (n, c) in selfc.sorted(by: { $0.value > $1.value }).prefix(15) {
+            log(String(format: "  %5.1f %% self  %@", Double(c) / total * 100, n))
+        }
     }
 }
