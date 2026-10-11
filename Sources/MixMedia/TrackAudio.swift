@@ -19,6 +19,8 @@ public final class TrackAudio: @unchecked Sendable {
     public let high: UnsafeBufferPointer<Float>
     /// feines Spektrum je Block (6 Bänder + Höhen-Dauer), gleiche Blöcke wie `peak`
     public let spectrum: WaveSpectrum
+    /// Band-Hüllkurven je Block (Stil 3-Band Mischung), gleiche Blöcke wie `peak`
+    public let blend: WaveBlend
 
     /// Eigentümer des Speichers (Heap oder Abbildung); gibt ihn im eigenen deinit frei
     private let owner: AnyObject
@@ -34,10 +36,10 @@ public final class TrackAudio: @unchecked Sendable {
 
     init(left: UnsafePointer<Float>, right: UnsafePointer<Float>, frames: Int, sampleRate: Double,
          peak: UnsafeBufferPointer<Float>, low: UnsafeBufferPointer<Float>, mid: UnsafeBufferPointer<Float>,
-         high: UnsafeBufferPointer<Float>, spectrum: WaveSpectrum, owner: AnyObject) {
+         high: UnsafeBufferPointer<Float>, spectrum: WaveSpectrum, blend: WaveBlend, owner: AnyObject) {
         self.left = left; self.right = right; self.frames = frames; self.sampleRate = sampleRate
         self.peak = peak; self.low = low; self.mid = mid; self.high = high
-        self.spectrum = spectrum; self.owner = owner
+        self.spectrum = spectrum; self.blend = blend; self.owner = owner
     }
 
     public enum DecodeError: Error { case format, convert(String), cancelled }
@@ -94,23 +96,28 @@ public final class TrackAudio: @unchecked Sendable {
     }
 
     /// Wellenform-Analyse über fertige Samples (Einpol-Filter, Schichten-Stil, Browser-Übersicht) und parallel dazu
-    /// das feine Spektrum (6 Bänder) auf einem zweiten Kern – die Ladezeit wächst nur um den Teil, der länger dauert.
+    /// das feine Spektrum (6 Bänder) und die Band-Hüllkurven auf weiteren Kernen – die Ladezeit wächst nur um den Teil,
+    /// der länger dauert.
     public struct Analysis {
         public var peak: [Float], low: [Float], mid: [Float], high: [Float]
         public var spectrum: WaveSpectrum
+        public var blend: WaveBlend
         public var blocks: Int { peak.count }
     }
 
     public static func analyze(left: UnsafePointer<Float>, right: UnsafePointer<Float>, frames: Int, sampleRate: Double) -> Analysis {
         let block = blockFrames(sampleRate: sampleRate)
         let count = frames / block + 1
-        final class Box: @unchecked Sendable { var spectrum = WaveSpectrum.empty }
+        final class Box: @unchecked Sendable { var spectrum = WaveSpectrum.empty, blend = WaveBlend.empty }
         let box = Box()
         let group = DispatchGroup()
         DispatchQueue.global(qos: .userInitiated).async(group: group) {
             let sa = SpectrumAnalyzer(sampleRate: sampleRate, block: block)
             sa.feed(left: left, right: right, count: frames)
             box.spectrum = sa.finish(blocks: count)
+        }
+        DispatchQueue.global(qos: .userInitiated).async(group: group) {
+            box.blend = BlendAnalyzer.analyze(left: left, right: right, frames: frames, sampleRate: sampleRate, blocks: count)
         }
         var peak = [Float](repeating: 0, count: count)
         var low = [Float](repeating: 0, count: count)
@@ -140,7 +147,7 @@ public final class TrackAudio: @unchecked Sendable {
         // nicht normalisieren: volle Höhe = 0 dBFS der Datei
         for b in 0..<count { peak[b] = min(1, peak[b]) }
         group.wait()
-        return Analysis(peak: peak, low: low, mid: mid, high: high, spectrum: box.spectrum)
+        return Analysis(peak: peak, low: low, mid: mid, high: high, spectrum: box.spectrum, blend: box.blend)
     }
 }
 
@@ -184,6 +191,6 @@ final class HeapPCM {
         for (k, src) in [a.peak, a.low, a.mid, a.high].enumerated() { (base + k * n).update(from: src, count: n) }
         let view = { (k: Int) in UnsafeBufferPointer(start: base + k * n, count: n) }
         return TrackAudio(left: left, right: right, frames: frames, sampleRate: sampleRate,
-                          peak: view(0), low: view(1), mid: view(2), high: view(3), spectrum: a.spectrum, owner: self)
+                          peak: view(0), low: view(1), mid: view(2), high: view(3), spectrum: a.spectrum, blend: a.blend, owner: self)
     }
 }

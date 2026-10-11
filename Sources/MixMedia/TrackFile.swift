@@ -10,22 +10,23 @@ import MixCore
 /// Aufbau (little endian):
 /// ```
 /// 0      Kopf 4 KB: 'MTRK', Formatversion, Kopfgröße, Dekoderversion, Rate, Frames, Blöcke, Block-Frames,
-///        Quelle (Größe, mtime ns), Dateigröße, 7 Abschnitte (Offset, Länge), Pfad, Schlüssel, Prüfsumme (FNV-1a)
+///        Quelle (Größe, mtime ns), Dateigröße, 8 Abschnitte (Offset, Länge), Pfad, Schlüssel, Prüfsumme (FNV-1a)
 /// 16 K   L[frames] Float32          (Abschnitte auf 16 KB ausgerichtet = Seitengröße Apple Silicon)
 ///        R[frames] Float32
 ///        peak / low / mid / high [blocks] Float32
 ///        spectrum [blocks × 8] UInt8
+///        blend [blocks × 8] UInt8        (ab Format 2)
 /// ```
 public enum TrackFile {
     public static let magic: UInt32 = 0x4B52_544D   // "MTRK"
-    public static let formatVersion: UInt32 = 1
+    public static let formatVersion: UInt32 = 2
     /// Dekodierung + Wellenform-Analyse: bei jeder Änderung daran hochzählen, alte Dateien gelten dann nicht mehr
-    public static let decoderVersion: UInt32 = 1
+    public static let decoderVersion: UInt32 = 2
     public static let headerSize = 4096
     public static let alignment = 16384
     public static let fileExtension = "mtrk"
 
-    public enum Section: Int, CaseIterable, Sendable { case left, right, peak, low, mid, high, spectrum }
+    public enum Section: Int, CaseIterable, Sendable { case left, right, peak, low, mid, high, spectrum, blend }
 
     public enum FileError: Error, Equatable, Sendable {
         case io(Int32)
@@ -87,7 +88,8 @@ public enum TrackFile {
 
     /// Abschnitte für einen Track dieser Größe
     static func layout(frames: Int, blocks: Int) -> (offsets: [Int], lengths: [Int], fileSize: Int) {
-        let lengths = [frames * 4, frames * 4, blocks * 4, blocks * 4, blocks * 4, blocks * 4, blocks * WaveSpectrum.stride]
+        let lengths = [frames * 4, frames * 4, blocks * 4, blocks * 4, blocks * 4, blocks * 4, blocks * WaveSpectrum.stride,
+                       blocks * WaveBlend.stride]
         var offsets: [Int] = []
         var at = alignment
         for l in lengths {
@@ -101,7 +103,7 @@ public enum TrackFile {
     private enum Off {
         static let magic = 0, version = 4, headerSize = 8, decoder = 12, rate = 16, frames = 24, blocks = 32
         static let blockFrames = 40, srcSize = 48, srcMtime = 56, fileSize = 64, sectionCount = 72, sections = 80
-        static let pathLength = 192, path = 196, pathMax = 3800, keyName = 4000, checksum = 4088
+        static let pathLength = 208, path = 212, pathMax = 3784, keyName = 4000, checksum = 4088
     }
 
     static func fnv1a(_ p: UnsafeRawBufferPointer) -> UInt64 {
@@ -212,6 +214,9 @@ public enum TrackFile {
         if a.spectrum.data.count == l.lengths[6] {
             try a.spectrum.data.withUnsafeBytes { try put($0.baseAddress!, $0.count, at: l.offsets[6]) }
         }
+        if a.blend.data.count == l.lengths[7] {
+            try a.blend.data.withUnsafeBytes { try put($0.baseAddress!, $0.count, at: l.offsets[7]) }
+        }
         try encode(header).withUnsafeBytes { try put($0.baseAddress!, $0.count, at: 0) }
         // Reihenfolge sichern: Daten vor dem rename auf der Platte (billiger als F_FULLFSYNC, reicht für einen Cache)
         if fcntl(fd, F_BARRIERFSYNC) != 0 { fsync(fd) }
@@ -297,7 +302,7 @@ public enum TrackFile {
         return Mapping(header: h, base: UnsafeRawPointer(p), length: h.fileSize)
     }
 
-    /// `TrackAudio` als Sicht auf die Abbildung (kein Kopieren der Audiodaten; nur das Spektrum, ~1 MB, wird kopiert)
+    /// `TrackAudio` als Sicht auf die Abbildung (kein Kopieren der Audiodaten; nur Spektrum und Hüllkurven, je ~1 MB, werden kopiert)
     public static func audio(_ m: Mapping) -> TrackAudio {
         let h = m.header
         func floats(_ s: Section) -> UnsafeBufferPointer<Float> {
@@ -306,8 +311,10 @@ public enum TrackFile {
         }
         let sr = h.range(.spectrum)
         let spectrum = WaveSpectrum(data: Array(UnsafeRawBufferPointer(start: m.base + sr.offset, count: sr.length)))
+        let br = h.range(.blend)
+        let blend = WaveBlend(data: Array(UnsafeRawBufferPointer(start: m.base + br.offset, count: br.length)))
         return TrackAudio(left: floats(.left).baseAddress!, right: floats(.right).baseAddress!, frames: h.frames,
                           sampleRate: h.key.sampleRate, peak: floats(.peak), low: floats(.low), mid: floats(.mid),
-                          high: floats(.high), spectrum: spectrum, owner: m)
+                          high: floats(.high), spectrum: spectrum, blend: blend, owner: m)
     }
 }
