@@ -343,7 +343,7 @@ struct Reverb {
 
 // ---------- Reverb (Allpass-Ring, Standardtyp) ----------
 // Eingang stereo -> Filter (HP/LP-Regler, Tiefen-Schnitt nach Helligkeit) -> Vorverzögerung -> Diffusor (4 Allpässe je Kanal)
-// -> Ring aus zwei Hälften (L, R) in Achter-Form: je Hälfte Allpass -> Leitung -> Dämpfung (Tiefen-/Höhenregal, 1-Pol)
+// (+ 1-Pol-Tiefpass „Luft“) -> Ring aus zwei Hälften (L, R) in Achter-Form: je Hälfte Allpass -> Leitung -> Dämpfung (Tiefen-/Höhenregal, 1-Pol)
 // -> Allpass -> Leitung, deren Ausgang speist die andere Hälfte. Alle 8 Leitungen langsam moduliert (ein LFO, 8 Phasen),
 // Bruchteil per Allpass gelesen. Größe: Basislänge 9 … 44 ms (gleitet), Nachhall 0,35 … 7 s, Diffusion und Modulation steigen mit.
 // Dämpfung als Regal: Höhen klingen schneller ab, verschwinden nicht. Freeze: Eingang zu, Ring verlustfrei – Fahne steht.
@@ -374,6 +374,7 @@ struct ReverbClassic {
     float hiS[2] = {}, loS[2] = {}, fb[2] = {}, apY[kRcLines] = {};
     float inGain = 0, frz = 0;
     Biquad hp, lp, lowCut;
+    float airK = 0, airS[2] = {};                             // 1-Pol-Tiefpass am Eingang (Luft, mit der Helligkeit)
     std::vector<float> preL, preR; int preW = 0; float preSm = -1;
     float lastHP = -1, lastLP = -1, lastBright = -1, shelfKey[3] = {-1, -1, -1};
     bool hpOn = false, lpOn = false;
@@ -408,7 +409,7 @@ struct ReverbClassic {
     void clear() {
         std::fill(preL.begin(), preL.end(), 0); std::fill(preR.begin(), preR.end(), 0);
         std::fill(buf.begin(), buf.end(), 0); std::fill(dbuf.begin(), dbuf.end(), 0);
-        for (int h = 0; h < 2; h++) hiS[h] = loS[h] = fb[h] = 0;
+        for (int h = 0; h < 2; h++) hiS[h] = loS[h] = fb[h] = airS[h] = 0;
         for (float &v : apY) v = 0;
         send = tail = frz = 0;
     }
@@ -435,8 +436,8 @@ struct ReverbClassic {
     /// Gains je Block: Nachhall aus der Größe, Regale aus Helligkeit und HP/LP, Freeze blendet auf verlustfrei
     void tune(float size, float bright, float hpP, float lpP) {
         double t60 = reverbClassicT60(size);
-        // Nachhall der Höhen: Anteil am Nachhall (Helligkeit, LP; Standard 0,4) und Luftdämpfung (große Räume dunkler)
-        double hfT60 = 1 / (1 / (t60 * (0.16 + 0.4 * bright) * (0.2 + 0.8 * lpP)) + 0.2);
+        // Nachhall der Höhen: Anteil am Nachhall (Helligkeit, LP; Standard 0,54) und Luftdämpfung (große Räume dunkler)
+        double hfT60 = 1 / (1 / (t60 * (0.3 + 0.4 * bright) * (0.2 + 0.8 * lpP)) + 0.12);
         double lfT60 = t60 * (1 - 0.85 * hpP);                          // Tiefen: HP-Regler
         for (int h = 0; h < 2; h++) {
             double sec = 3 * kRcRatioSum * base[h] / fs;               // Durchlauf einer Hälfte, × 3 (dB/20 je s Nachhall)
@@ -465,7 +466,11 @@ struct ReverbClassic {
         }
         bright = std::clamp(bright, 0.f, 1.f); size = std::clamp(size, 0.f, 1.f);
         hpP = std::clamp(hpP, 0.f, 1.f); lpP = std::clamp(lpP, 0.f, 1.f);
-        if (bright != lastBright) { lastBright = bright; lowCut.highpass(120 * std::pow(300.0 / 120, double(bright)), 0.707, fs); }
+        if (bright != lastBright) {
+            lastBright = bright;
+            lowCut.highpass(120 * std::pow(300.0 / 120, double(bright)), 0.707, fs);
+            double ga = std::tan(kPi * Biquad::safeF(3000 * (1 + 1.5 * double(bright)), fs) / fs); airK = float(ga / (1 + ga));
+        }
         if (bright != shelfKey[0] || hpP != shelfKey[1] || lpP != shelfKey[2]) {
             shelfKey[0] = bright; shelfKey[1] = hpP; shelfKey[2] = lpP;
             double fh = Biquad::safeF(600 * (0.75 + 0.5 * bright) * std::pow(5.0, double(lpP)), fs), fl = Biquad::safeF(150 + 850 * double(hpP), fs);
@@ -492,6 +497,8 @@ struct ReverbClassic {
             if (hpOn) { xl = hp.tick(0, xl); xr = hp.tick(1, xr); }
             if (lpOn) { xl = lp.tick(0, xl); xr = lp.tick(1, xr); }
             xl = lowCut.tick(0, xl); xr = lowCut.tick(1, xr);
+            float t0 = (xl - airS[0]) * airK, t1 = (xr - airS[1]) * airK;
+            xl = t0 + airS[0]; airS[0] = xl + t0; xr = t1 + airS[1]; airS[1] = xr + t1;
             preL[preW] = xl; preR[preW] = xr;
             preSm += (preT - preSm) * 0.0005f;
             int d0 = int(preSm); float f = preSm - float(d0);
