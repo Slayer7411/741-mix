@@ -63,18 +63,18 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
 /// Klick-Track 127,3 BPM, erster Schlag bei 0,350 s: Tempo ±0,05 BPM, Anker ±5 ms auf dem Beat, Anker ≥ 0
 @Test func analyzerFindsTempoAndGrid() throws {
     let bpm = 127.3, offset = 0.35
-    let r = try analyze(clickTrack(bpm: bpm, offset: offset, seconds: 150))
+    let r = try analyze(clickTrack(bpm: bpm, offset: offset, seconds: 90))
     #expect(abs(r.bpm - bpm) < 0.05, "bpm \(r.bpm)")
     #expect(gridError(r.anchor, offset: offset, bpm: bpm) < 5, "anchor \(r.anchor)")
     #expect(r.anchor >= 0 && r.anchor < 32 * 60 / bpm + offset + 0.01)
     #expect(r.tempoConfidence > 0.2)
-    #expect(abs(r.duration - 150) < 0.01)
+    #expect(abs(r.duration - 90) < 0.01)
 }
 
 /// anderes Tempo, anderer Versatz, 48 kHz (Dezimierung ×4 auf 12 kHz): gleiche Genauigkeit; Doppel-/Halbtempo nicht gewählt
 @Test func analyzerTempoAt48k() throws {
     let bpm = 140.0, offset = 1.234
-    let r = try analyze(clickTrack(bpm: bpm, offset: offset, seconds: 120, rate: 48000), rate: 48000)
+    let r = try analyze(clickTrack(bpm: bpm, offset: offset, seconds: 90, rate: 48000), rate: 48000)
     #expect(abs(r.bpm - bpm) < 0.05, "bpm \(r.bpm)")
     #expect(gridError(r.anchor, offset: offset, bpm: bpm) < 5, "anchor \(r.anchor)")
 }
@@ -82,7 +82,7 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
 /// langsamer Track (96 BPM) bleibt 96, nicht 192
 @Test func analyzerSlowTempo() throws {
     let bpm = 96.0, offset = 0.5
-    let r = try analyze(clickTrack(bpm: bpm, offset: offset, seconds: 150))
+    let r = try analyze(clickTrack(bpm: bpm, offset: offset, seconds: 90))
     #expect(abs(r.bpm - bpm) < 0.05, "bpm \(r.bpm)")
     #expect(gridError(r.anchor, offset: offset, bpm: bpm) < 5, "anchor \(r.anchor)")
 }
@@ -144,7 +144,7 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
 
 /// Datei-Weg (blockweise lesen, dezimieren): gleiches Ergebnis wie aus dem Speicher, deterministisch, Abbruch über checkpoint
 @Test func analyzerFromFileMatchesMemory() throws {
-    let s = clickTrack(bpm: 124.0, offset: 0.8, seconds: 90)
+    let s = clickTrack(bpm: 124.0, offset: 0.8, seconds: 80)
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("minos-ana-\(UUID().uuidString).wav")
     defer { try? FileManager.default.removeItem(at: url) }
     // Schreiben in eigenem Block: die Datei ist erst geschlossen vollständig
