@@ -42,6 +42,8 @@ public struct TrackEdit: Codable, Equatable, Sendable {
     /// Schnitt in Sekunden (fehlt in älteren Dateien)
     public var trimStart: Double?
     public var trimEnd: Double?
+    /// Active Loops: Hotcues (0–7), deren Loop beim Erreichen von selbst einrastet (fehlt in älteren Dateien)
+    public var activeLoops: [Int]?
     public var modified = Date()
 
     public init(bpm: Double? = nil, gridAnchorMs: Double? = nil, hotcues: [Cue]? = nil, trim: TrackTrim = TrackTrim()) {
@@ -55,12 +57,13 @@ public struct TrackEdit: Codable, Equatable, Sendable {
         get { TrackTrim(start: trimStart, end: trimEnd) }
         set { trimStart = newValue.start; trimEnd = newValue.end }
     }
-    public var isEmpty: Bool { !hasGrid && hotcues == nil && trim.isEmpty }
+    public var isEmpty: Bool { !hasGrid && hotcues == nil && trim.isEmpty && (activeLoops ?? []).isEmpty }
 
     /// gleiche Änderung (ohne Zeitstempel)
     public func same(as o: TrackEdit?) -> Bool {
         guard let o else { return isEmpty }
         return bpm == o.bpm && gridAnchorMs == o.gridAnchorMs && hotcues == o.hotcues && trimStart == o.trimStart && trimEnd == o.trimEnd
+            && (activeLoops ?? []) == (o.activeLoops ?? [])
     }
 
     /// Track mit den Änderungen (Grid, Hotcues; den Schnitt übernimmt das Deck)

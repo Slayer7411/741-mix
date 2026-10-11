@@ -324,6 +324,11 @@ struct DeckSettings: View {
                         .settingsHint()
                 }
                 .disabled(!mix.prefs.engine.snap)
+                Picker("Active Loop greift", selection: $mix.prefs.engine.activeLoopMode) {
+                    ForEach(ActiveLoopMode.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                Text("rechtsklick auf einen loop-hotcue -> active loop (punkt auf der taste, gestrichelter rahmen in der wellenform). erreicht die position den loop-anfang, rastet der loop ein, die loop-taste verlässt ihn. gespeichert je track in den eigenen änderungen.")
+                    .settingsHint()
             }
             Section("History & Preparation") {
                 sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f", unit: "s")

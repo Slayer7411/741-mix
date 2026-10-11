@@ -254,7 +254,8 @@ final class MixModel {
         originals[d] = t
         let e = edits.edit(for: t.key)
         savedEdit[d] = e
-        core.load(e?.apply(to: t) ?? t, deck: d, trim: e?.trim ?? TrackTrim(), gridEdited: e?.hasGrid ?? false)
+        core.load(e?.apply(to: t) ?? t, deck: d, trim: e?.trim ?? TrackTrim(), gridEdited: e?.hasGrid ?? false,
+                  activeLoops: Set(e?.activeLoops ?? []))
         focusedDeck = d
         pull()
         return true
@@ -272,6 +273,7 @@ final class MixModel {
             if deck.gridEdited, let g = deck.grid { e.bpm = g.bpm; e.gridAnchorMs = g.anchor * 1000 }
             let cues = deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }
             if cues != orig.hotcues { e.hotcues = cues }
+            if !deck.activeLoops.isEmpty { e.activeLoops = deck.activeLoops.sorted() }
             let old = savedEdit[d] ?? nil
             if !e.same(as: old) {
                 let newEdit: TrackEdit? = e.isEmpty ? nil : e
@@ -329,6 +331,7 @@ final class MixModel {
     func toggleReverse(_ d: Int) { run { core.toggleReverse(d) } }
     func toggleFlux(_ d: Int) { run { core.toggleFlux(d) } }
     func hotcue(_ d: Int, _ n: Int, delete: Bool = false) { run { core.hotcue(d, n, delete: delete) } }
+    func toggleActiveLoop(_ d: Int, _ n: Int) { run { core.toggleActiveLoop(d, n) } }
     func autoLoop(_ d: Int, size: Double? = nil) { run { core.autoLoop(d, size: size) } }
     func exitLoop(_ d: Int) { run { core.exitLoop(d) } }
     func reloop(_ d: Int) { run { core.reloop(d) } }

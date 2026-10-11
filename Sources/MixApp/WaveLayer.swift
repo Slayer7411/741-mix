@@ -9,8 +9,10 @@ import MixEngine
 struct WaveScene: Equatable {
     struct Mark: Equatable {
         var t: Double, number: Int, rgba: [CGFloat]
-        init(t: Double, number: Int, color: NSColor) {
-            self.t = t; self.number = number
+        /// Active Loop: Ende des Loops (gestrichelter Rahmen über den Loop)
+        var activeEnd: Double?
+        init(t: Double, number: Int, color: NSColor, activeEnd: Double? = nil) {
+            self.t = t; self.number = number; self.activeEnd = activeEnd
             let c = color.usingColorSpace(.sRGB) ?? color
             rgba = [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent]
         }
@@ -401,6 +403,16 @@ final class WaveLayerNSView: NSView {
             p.addRect(CGRect(x: x, y: h - 26 * z, width: 13 * z, height: 12 * z))
             cueLayer.addSublayer(shape(p, c.color))
             cueLayer.addSublayer(text("\(c.number)", .black, at: CGPoint(x: x + 3 * z, y: h - 27 * z), size: 9))
+            if let e = c.activeEnd {   // Active Loop: gestrichelter Rahmen in der Cue-Farbe
+                let r = CAShapeLayer()
+                r.actions = Self.noAnimation
+                r.path = CGPath(rect: CGRect(x: x, y: 1 * z, width: max(2, px(e * pps) - x), height: h - 2 * z), transform: nil)
+                r.fillColor = nil
+                r.strokeColor = c.color.cgColor
+                r.lineWidth = 1.5 * z
+                r.lineDashPattern = [NSNumber(value: Double(5 * z)), NSNumber(value: Double(4 * z))]
+                cueLayer.addSublayer(r)
+            }
         }
         let cx = px(scene.cuePoint * pps)
         let tri = CGMutablePath()

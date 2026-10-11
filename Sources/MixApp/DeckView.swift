@@ -469,12 +469,15 @@ struct CueRow: View {
     @Environment(MixModel.self) private var mix
     let d: Int
 
-    struct Model: Equatable { var colors: [Color?] = [], inArmed = false }
+    /// loops: Hotcue ist ein Loop-Cue, active: Active Loop (Punkt)
+    struct Model: Equatable { var colors: [Color?] = [], loops: [Bool] = [], active: [Bool] = [], inArmed = false }
 
     var body: some View {
         let s = mix.deck(d), prefs = mix.prefs
         let colors = (0..<8).map { n in s.hotcues[n].map { Theme.cueColor($0, deck: s, prefs: prefs) } }
-        Content(d: d, m: Model(colors: colors, inArmed: s.loopIn != nil && !s.loopActive)).equatable()
+        let loops = (0..<8).map { s.hotcues[$0].map { $0.kind == .loop && $0.lengthMs > 0 } ?? false }
+        Content(d: d, m: Model(colors: colors, loops: loops, active: (0..<8).map { s.activeLoops.contains($0) },
+                               inArmed: s.loopIn != nil && !s.loopActive)).equatable()
     }
 
     struct Content: View, Equatable {
@@ -487,10 +490,16 @@ struct CueRow: View {
             HStack(spacing: 3.z) {
                 ForEach(0..<8, id: \.self) { n in
                     let c = m.colors[n]
-                    DeckButton(title: "\(n + 1)", active: c != nil, color: c ?? .gray, fill: true) {
+                    DeckButton(title: m.active[n] ? "\(n + 1) •" : "\(n + 1)", active: c != nil, color: c ?? .gray, fill: true) {
                         mix.hotcue(d, n, delete: NSEvent.modifierFlags.contains(.option))
                     }.stable()
-                    .help("Klick: springen/setzen · ⌥-Klick: löschen")
+                    .help(m.loops[n] ? "Klick: springen/setzen · ⌥-Klick: löschen · Rechtsklick: Active Loop" : "Klick: springen/setzen · ⌥-Klick: löschen")
+                    .contextMenu {
+                        if m.loops[n] {
+                            Toggle("Active Loop (rastet beim Erreichen ein)", isOn: Binding(get: { m.active[n] }, set: { _ in mix.toggleActiveLoop(d, n) }))
+                        }
+                        if c != nil { Button("Hotcue löschen") { mix.hotcue(d, n, delete: true) } }
+                    }
                 }
                 Divider().frame(height: 14.z)
                 DeckButton(title: "IN", active: m.inArmed, color: Theme.state) { mix.setLoopIn(d) }.stable()

@@ -20,6 +20,11 @@ public enum CrossfaderCurve: String, CaseIterable, Codable, Sendable {
     case smooth = "Weich", sharp = "Scharf (Cut)"
 }
 
+/// Active Loop: gespeicherter Loop greift bei jedem Erreichen des Anfangs oder nur beim ersten Mal nach dem Laden
+public enum ActiveLoopMode: String, CaseIterable, Codable, Sendable {
+    case always = "Bei jedem Durchlauf", once = "Einmal je Laden"
+}
+
 /// Hall-Typ der FX-Units: Allpass-Ring (Standard) oder FDN
 public enum ReverbType: String, CaseIterable, Codable, Sendable {
     case classic = "Reverb", fdn = "Reverb (FDN)"
@@ -81,6 +86,7 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var cacheLimitGB = 8.0
     /// Lade-Schutz: in ein spielendes Deck wird nicht geladen (⌥-Klick, Shift + LOAD laden trotzdem)
     public var loadProtection = true
+    public var activeLoopMode = ActiveLoopMode.always
     public init() {}
 }
 
@@ -130,6 +136,8 @@ public struct DeckState: Equatable, Sendable {
     public var jumpSize: Double = 4
     public var loopIn: Double?
     public var loopActive = false
+    /// Active Loop: Hotcues (0–7) mit Loop, die beim Erreichen ihres Anfangs von selbst einrasten (edits.json)
+    public var activeLoops: Set<Int> = []
 
     public var gainDb: Double = 0
     public var eqLow: Double = 0
@@ -285,6 +293,9 @@ public final class MixController: @unchecked Sendable {
     /// (zwei Ladevorgänge kurz hintereinander enden sonst in beliebiger Reihenfolge)
     private var loadSeq = [Int](repeating: 0, count: MixEngine.deckCount)
     private var fluxReverseRestore: [Int: Bool] = [:]
+    /// Active Loop je Deck: scharf (rastet beim Erreichen ein) bzw. schon benutzt (Modus „einmal je Laden“)
+    private var loopArmed = [Set<Int>](repeating: [], count: MixEngine.deckCount)
+    private var loopUsed = [Set<Int>](repeating: [], count: MixEngine.deckCount)
     private var timer: DispatchSourceTimer?
     private var tickCount = 0
     private var bigError = [Int](repeating: 0, count: MixEngine.deckCount)
@@ -389,8 +400,8 @@ public final class MixController: @unchecked Sendable {
         return blocked
     }
 
-    /// `trim` / `gridEdited`: eigene Änderungen des Tracks (Schnitt, von Hand gesetztes Grid im Track)
-    public func load(_ t: Track, deck d: Int, trim: TrackTrim = TrackTrim(), gridEdited: Bool = false) {
+    /// `trim` / `gridEdited` / `activeLoops`: eigene Änderungen des Tracks (Schnitt, von Hand gesetztes Grid, Active Loops)
+    public func load(_ t: Track, deck d: Int, trim: TrackTrim = TrackTrim(), gridEdited: Bool = false, activeLoops: Set<Int> = []) {
         let rate = engine.sampleRate
         let (seq, timeout): (Int, Double) = locked {
             loadSeq[d] += 1
@@ -404,14 +415,14 @@ public final class MixController: @unchecked Sendable {
         let service = fileService.flatMap { $0.unavailable ? nil : $0 }
         locked { loads.append(PendingLoad(deck: d, seq: seq, track: t, watch: watch, timeout: timeout, service: service != nil)) }
         if let service {
-            loadViaService(service, t, d, seq: seq, rate: rate, watch: watch, trim: trim, gridEdited: gridEdited)
+            loadViaService(service, t, d, seq: seq, rate: rate, watch: watch, trim: trim, gridEdited: gridEdited, activeLoops: activeLoops)
             return
         }
-        loadInProcess(t, d, seq: seq, rate: rate, watch: watch, trim: trim, gridEdited: gridEdited)
+        loadInProcess(t, d, seq: seq, rate: rate, watch: watch, trim: trim, gridEdited: gridEdited, activeLoops: activeLoops)
     }
 
     /// Dekodieren im eigenen Prozess (heutiger Weg): ein hängendes Lesen lässt sich nicht abbrechen, nur verwerfen
-    private func loadInProcess(_ t: Track, _ d: Int, seq: Int, rate: Double, watch: LoadWatch, trim: TrackTrim, gridEdited: Bool) {
+    private func loadInProcess(_ t: Track, _ d: Int, seq: Int, rate: Double, watch: LoadWatch, trim: TrackTrim, gridEdited: Bool, activeLoops: Set<Int>) {
         let decode = decoder
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             // Datei-Prüfung nicht auf dem aufrufenden (Haupt-)Thread: in einem Cloud-Ordner kann schon der Blick
@@ -432,7 +443,7 @@ public final class MixController: @unchecked Sendable {
                     print(String(format: "[load] deck %d: %.2f s, %.0f MB", d, Date().timeIntervalSince(t0), Double(a.frames) * 8 / 1e6))
                 }
                 watch.progress(Int.max)
-                finishLoad(t, a, d, seq: seq, trim: trim, gridEdited: gridEdited)
+                finishLoad(t, a, d, seq: seq, trim: trim, gridEdited: gridEdited, activeLoops: activeLoops)
             } catch TrackAudio.DecodeError.cancelled {
                 // abgebrochen: Zeitüberschreitung (schon gemeldet) oder ein anderer Track gewählt
             } catch {
@@ -445,7 +456,7 @@ public final class MixController: @unchecked Sendable {
     /// Dekodieren im Datei-Dienst: dieser Prozess berührt den Musikpfad nicht. Hängt die Datei, schießt der Client den
     /// Helfer nach `loadAbortTimeout` ohne Daten ab; ein anderer Track für das Deck schießt ihn sofort ab
     private func loadViaService(_ fs: FileServiceClient, _ t: Track, _ d: Int, seq: Int, rate: Double, watch: LoadWatch,
-                                trim: TrackTrim, gridEdited: Bool) {
+                                trim: TrackTrim, gridEdited: Bool, activeLoops: Set<Int>) {
         let hard = locked { max(5, state.prefs.loadAbortTimeout) }
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             let t0 = Date()
@@ -457,14 +468,14 @@ public final class MixController: @unchecked Sendable {
                     print(String(format: "[load] deck %d: %.2f s, %.0f MB (file service)", d, Date().timeIntervalSince(t0), Double(a.frames) * 8 / 1e6))
                 }
                 watch.progress(Int.max)
-                finishLoad(t, a, d, seq: seq, trim: trim, gridEdited: gridEdited)
+                finishLoad(t, a, d, seq: seq, trim: trim, gridEdited: gridEdited, activeLoops: activeLoops)
             } catch FileServiceClient.ServiceError.cancelled {
                 // anderer Track gewählt: Helfer schon abgeschossen
             } catch FileServiceClient.ServiceError.unavailable {
                 // Helfer startet nicht: dieses Mal im Prozess (alter Weg, mit seiner Zeitgrenze)
                 onNotice?(EngineNotice(.warning, key: "files", String(localized: "Datei-Dienst startet nicht – Tracks werden im Programm dekodiert")))
                 locked { if let i = loads.firstIndex(where: { $0.deck == d && $0.seq == seq }) { loads[i].service = false } }
-                loadInProcess(t, d, seq: seq, rate: rate, watch: watch, trim: trim, gridEdited: gridEdited)
+                loadInProcess(t, d, seq: seq, rate: rate, watch: watch, trim: trim, gridEdited: gridEdited, activeLoops: activeLoops)
             } catch FileServiceClient.ServiceError.missing {
                 watch.progress(Int.max)
                 failLoad(t, d, seq: seq, reason: String(localized: "Datei fehlt"), timeout: nil,
@@ -538,7 +549,7 @@ public final class MixController: @unchecked Sendable {
             audio[d] = nil
             var s = state.decks[d]
             s.track = nil; s.grid = nil; s.duration = 0; s.hotcues = [:]; s.cuePoint = 0
-            s.phraseTarget = nil; s.loopActive = false; s.loopIn = nil; s.reverse = false; s.flux = false
+            s.phraseTarget = nil; s.loopActive = false; s.loopIn = nil; s.activeLoops = []; s.reverse = false; s.flux = false
             s.loading = false; s.playing = false; s.trim = TrackTrim(); s.gridEdited = false
             s.error = String(localized: "Nicht ladbar: \(reason)")
             state.decks[d] = s
@@ -589,7 +600,7 @@ public final class MixController: @unchecked Sendable {
     /// MIX741_DEBUG=1: Lade-, Hänger- und Controller-Protokoll
     public static let debug = ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1"
 
-    private func finishLoad(_ t: Track, _ a: TrackAudio, _ d: Int, seq: Int, trim: TrackTrim, gridEdited: Bool) {
+    private func finishLoad(_ t: Track, _ a: TrackAudio, _ d: Int, seq: Int, trim: TrackTrim, gridEdited: Bool, activeLoops: Set<Int>) {
         let r: (TrackAudio?, UInt32)? = locked {
             guard seq == loadSeq[d] else { return nil }   // überholt: ein später gewählter Track lädt noch oder liegt schon
             let old = audio[d]
@@ -612,6 +623,7 @@ public final class MixController: @unchecked Sendable {
             if !s.playRange.contains(s.cuePoint) { s.cuePoint = s.playRange.lowerBound }
             s.loopActive = false
             s.loopIn = nil
+            s.activeLoops = activeLoops.filter { s.hotcues[$0].map(Self.isLoop) ?? false }
             s.reverse = false
             s.keyShift = 0
             s.loading = false
@@ -637,6 +649,8 @@ public final class MixController: @unchecked Sendable {
             playedTime[d] = 0
             playedLogged[d] = false
             playStart[d] = nil
+            loopUsed[d] = []
+            armLoops(d, at: s.cuePoint)
             engine.setTrim(d, start: s.trim.start ?? 0, end: s.trim.end ?? 0)   // vor dem Puffer: der erste Block kennt ihn schon
             let gen = engine.attach(a, deck: d, startAt: s.cuePoint)
             applyRate(d)
@@ -703,11 +717,13 @@ public final class MixController: @unchecked Sendable {
             n.tempoPct = src.tempoPct; n.tempoRange = src.tempoRange; n.nudge = 0; n.bend = 0
             n.keylock = src.keylock; n.keyShift = src.keyShift; n.sync = src.sync
             n.loopSize = src.loopSize; n.jumpSize = src.jumpSize; n.loopIn = src.loopIn; n.loopActive = src.loopActive
+            n.activeLoops = src.activeLoops
             n.reverse = false; n.flux = false; n.cueHeld = false; n.playing = playing
             state.decks[d] = n
             audio[d] = a
             playedTime[d] = 0; playedLogged[d] = true; playStart[d] = nil   // derselbe Track: kein zweiter History-Eintrag
             phaseOffset[d] = phaseOffset[s]; bigError[d] = 0
+            loopArmed[d] = loopArmed[s]; loopUsed[d] = loopUsed[s]
             engine.player(d).flux = false
             engine.setTrim(d, start: n.trim.start ?? 0, end: n.trim.end ?? 0)
             let gen = engine.attach(a, deck: d, startAt: position(s))
@@ -852,7 +868,7 @@ public final class MixController: @unchecked Sendable {
     public func hotcue(_ d: Int, _ n: Int, delete: Bool = false) {
         locked {
             guard audio[d] != nil else { return }
-            if delete { state.decks[d].hotcues[n] = nil; return }
+            if delete { state.decks[d].hotcues[n] = nil; state.decks[d].activeLoops.remove(n); return }
             if let c = state.decks[d].hotcues[n] {
                 var target = c.startMs / 1000
                 if state.prefs.quantize, state.prefs.hotcueKeepsPhase, state.decks[d].playing, let g = state.decks[d].grid {
@@ -861,10 +877,12 @@ public final class MixController: @unchecked Sendable {
                 jump(d, to: target, "hotcue \(n + 1)")
                 if c.kind == .loop, c.lengthMs > 0 { loopOn(d, start: c.startMs / 1000, end: (c.startMs + c.lengthMs) / 1000) }
             } else if state.decks[d].loopActive {
+                state.decks[d].activeLoops.remove(n)
                 let l = engine.loop(d)
                 state.decks[d].hotcues[n] = Cue(name: "Loop", kind: .loop, startMs: l.start * 1000,
                                                 lengthMs: (l.end - l.start) * 1000, hotcue: n)
             } else {
+                state.decks[d].activeLoops.remove(n)
                 state.decks[d].hotcues[n] = Cue(name: "Cue", kind: .cue, startMs: snapped(d, position(d)) * 1000,
                                                 lengthMs: 0, hotcue: n)
             }
@@ -956,6 +974,61 @@ public final class MixController: @unchecked Sendable {
         guard loopOn(d, start: c.start, end: c.end) else { return }
         let beats = (c.end - c.start) / beatLength(d)
         if let s = BeatSizes.loop.first(where: { abs($0 - beats) < 0.01 }) { state.decks[d].loopSize = s }
+    }
+
+    // MARK: Active Loop
+
+    /// so weit vor dem Loop-Anfang (s Track, × Tempo) wird eingeschaltet: der Kern springt erst am Loop-Ende zurück,
+    /// davor läuft die Position normal hinein – sample-genau, ohne dass der Steuertakt den Anfang genau treffen muss
+    private static let activeLoopLead = 0.05
+    /// so weit hinter dem Anfang rastet er noch ein (Steuertakt verspätet); weiter drin = hineingesprungen, nicht erreicht
+    private static let activeLoopGrace = 0.25
+
+    static func isLoop(_ c: Cue) -> Bool { c.kind == .loop && c.lengthMs > 0 }
+
+    /// Hotcue `n` als Active Loop an/aus (nur Loop-Cues)
+    public func toggleActiveLoop(_ d: Int, _ n: Int) {
+        locked {
+            guard let c = state.decks[d].hotcues[n], Self.isLoop(c) else { return }
+            if state.decks[d].activeLoops.remove(n) == nil {
+                state.decks[d].activeLoops.insert(n)
+                loopUsed[d].remove(n)
+                if position(d) < c.startMs / 1000 + Self.activeLoopGrace { loopArmed[d].insert(n) }
+            } else {
+                loopArmed[d].remove(n)
+            }
+        }
+    }
+
+    /// nach dem Laden: Active Loops, deren Anfang noch vor (oder an) der Position liegt, sind scharf
+    private func armLoops(_ d: Int, at t: Double) {
+        loopArmed[d] = state.decks[d].activeLoops.filter { n in
+            state.decks[d].hotcues[n].map { t < $0.startMs / 1000 + Self.activeLoopGrace } ?? false
+        }
+    }
+
+    /// Steuertakt: erreicht die Position (vorwärts, kein anderer Loop an) den Anfang eines scharfen Active Loops, rastet
+    /// er ein. Danach erst wieder scharf, wenn die Position vor dem Anfang liegt (Loop-Taste verlässt ihn, der nächste
+    /// Durchlauf greift wieder) – im Modus „einmal je Laden“ nicht mehr
+    private func checkActiveLoops(_ d: Int) {
+        let s = state.decks[d]
+        guard !s.activeLoops.isEmpty, audio[d] != nil else { return }
+        let pos = position(d), lead = Self.activeLoopLead * max(1, s.rate)
+        for n in s.activeLoops {
+            guard let c = s.hotcues[n], Self.isLoop(c) else { continue }
+            let start = c.startMs / 1000, end = (c.startMs + c.lengthMs) / 1000
+            if pos < start - lead {
+                if !loopUsed[d].contains(n) { loopArmed[d].insert(n) }
+                continue
+            }
+            guard loopArmed[d].contains(n) else { continue }
+            if pos >= min(end, start + Self.activeLoopGrace) { loopArmed[d].remove(n); continue }   // darüber gesprungen
+            guard s.playing, !s.reverse, !s.loopActive else { continue }
+            loopArmed[d].remove(n)
+            if state.prefs.activeLoopMode == .once { loopUsed[d].insert(n) }
+            activateLoopCue(d, (start, end))
+            if Self.debug { print(String(format: "[loop] deck %@: active loop %d at %.3f s (%.3f–%.3f)", Self.deckLetter(d), n + 1, pos, start, end)); fflush(stdout) }
+        }
     }
 
     public func autoLoop(_ d: Int, size: Double? = nil) {
@@ -1857,6 +1930,7 @@ public final class MixController: @unchecked Sendable {
                     state.decks[d].playing = p.playing
                     applyRate(d)
                 }
+                checkActiveLoops(d)
                 let hasMaster = state.clockMaster || (master != nil && master != d)
                 guard state.decks[d].sync, state.decks[d].playing, hasMaster,
                       let g = state.decks[d].grid, g.bpm > 0 else {

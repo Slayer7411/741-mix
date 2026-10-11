@@ -687,3 +687,10 @@
 "Shift + LOAD" = "Shift + LOAD";
 "Laden trotz Lade-Schutz" = "Load despite load lock";
 "Instant Double (Deck der anderen Seite)" = "Instant double (deck of the other side)";
+"Klick: springen/setzen · ⌥-Klick: löschen · Rechtsklick: Active Loop" = "Click: jump/set · ⌥-click: delete · right click: active loop";
+"Active Loop (rastet beim Erreichen ein)" = "Active loop (engages when reached)";
+"Hotcue löschen" = "Delete hotcue";
+"Active Loop greift" = "Active loop engages";
+"Bei jedem Durchlauf" = "Every pass";
+"Einmal je Laden" = "Once per load";
+"rechtsklick auf einen loop-hotcue -> active loop (punkt auf der taste, gestrichelter rahmen in der wellenform). erreicht die position den loop-anfang, rastet der loop ein, die loop-taste verlässt ihn. gespeichert je track in den eigenen änderungen." = "right click a loop hotcue -> active loop (dot on the button, dashed frame in the waveform). when the position reaches the loop start the loop engages, the loop button leaves it. saved per track with the own edits.";
