@@ -295,6 +295,10 @@ struct MixApp: App {
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
                 Divider()
+                ForEach([ShortcutID.editMode, .cutIn, .cutOut, .gridSet]) { a in
+                    Button(a.title) { run(a) }.shortcut(keys.combo(a))
+                }
+                Divider()
                 Menu("Zeilen") {
                     ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
                         Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui[keyPath: row.0] },
@@ -333,6 +337,7 @@ extension MixApp {
         history.start(store: store, mix: mix)
         appDelegate.onQuit = { [mix, browser, history] in
             Session.saveNow(mix: mix, browser: browser)
+            mix.flushEdits()
             history.finish()
             CloudLibrary.shared.handOff()
         }

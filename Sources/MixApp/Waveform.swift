@@ -300,8 +300,19 @@ struct WaveformView: View {
             cues: deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }.map {
                 WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)))
             },
-            cuePoint: deck.cuePoint, hasTrack: deck.track != nil, zoom: 1.z)
+            cuePoint: deck.cuePoint, hasTrack: deck.track != nil, zoom: 1.z, gridEdited: deck.gridEdited,
+            trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d)))
         Content(d: d, scene: scene, wave: wf, waiting: deck.track != nil && wf == nil).equatable()
+    }
+
+    /// Griff des Schnitts unter x (0 = Anfang, 1 = Ende), nur im EDIT-Modus; Abstand höchstens 8 pt
+    @MainActor static func trimHandle(at x: CGFloat, width: CGFloat, scene: WaveScene, position: Double) -> Int? {
+        guard scene.trim.editing, scene.hasTrack, scene.duration > 0, width > 0 else { return nil }
+        let secPerPt = scene.span * 2 / Double(width)
+        let xs = [scene.trim.start ?? 0, scene.trim.end ?? scene.duration].map { CGFloat(($0 - position) / secPerPt) + width / 2 }
+        let dist = xs.map { abs($0 - x) }
+        guard let i = dist.indices.min(by: { dist[$0] < dist[$1] }), dist[i] <= 8 * scene.zoom else { return nil }
+        return i
     }
 
     struct Content: View, Equatable {
@@ -311,6 +322,8 @@ struct WaveformView: View {
         let wave: RenderedWaveform?
         let waiting: Bool
         @State private var lastDrag: CGFloat?
+        /// gezogener Griff des Schnitts (EDIT-Modus), sonst wird gescrubbt
+        @State private var handle: Int?
         static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.scene == b.scene && a.wave === b.wave && a.waiting == b.waiting }
 
         var body: some View {
@@ -326,12 +339,27 @@ struct WaveformView: View {
                         Color.clear.contentShape(Rectangle())
                             .gesture(DragGesture(minimumDistance: 1)
                                 .onChanged { g in
+                                    let w = geo.size.width
+                                    if lastDrag == nil {
+                                        handle = WaveformView.trimHandle(at: g.startLocation.x, width: w, scene: scene, position: mix.position(d))
+                                    }
                                     let dx = g.translation.width - (lastDrag ?? 0)
                                     lastDrag = g.translation.width
-                                    let secPerPt = mix.prefs.ui.waveformSeconds * 2 / geo.size.width
-                                    mix.core.seek(d, seconds: mix.position(d) - Double(dx) * secPerPt)
+                                    let secPerPt = mix.prefs.ui.waveformSeconds * 2 / w
+                                    if let h = handle {   // Griff: Schnitt-Rand unter den Zeiger (Quantize: Beat, ⌥ = frei)
+                                        mix.dragTrim(d, end: h == 1, to: mix.position(d) + Double(g.location.x - w / 2) * secPerPt)
+                                    } else {
+                                        mix.core.seek(d, seconds: mix.position(d) - Double(dx) * secPerPt)
+                                    }
                                 }
-                                .onEnded { _ in lastDrag = nil })
+                                .onEnded { _ in lastDrag = nil; handle = nil })
+                            .onContinuousHover { phase in
+                                guard scene.trim.editing else { return }
+                                if case .active(let p) = phase,
+                                   WaveformView.trimHandle(at: p.x, width: geo.size.width, scene: scene, position: mix.position(d)) != nil {
+                                    NSCursor.resizeLeftRight.set()
+                                } else { NSCursor.arrow.set() }
+                            }
                     }
                 }
         }
@@ -347,6 +375,7 @@ struct OverviewView: View {
     struct Model: Equatable {
         var duration = 0.0, playing = false
         var cues: [WaveScene.Mark] = []
+        var trim = WaveScene.Trim()
     }
 
     var body: some View {
@@ -356,7 +385,8 @@ struct OverviewView: View {
         let cues = deck.hotcues.values.map {
             WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)))
         }
-        Content(d: d, m: Model(duration: deck.duration, playing: deck.playing, cues: cues), wave: wf).equatable()
+        Content(d: d, m: Model(duration: deck.duration, playing: deck.playing, cues: cues,
+                               trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d))), wave: wf).equatable()
     }
 
     struct Content: View, Equatable {
@@ -364,7 +394,18 @@ struct OverviewView: View {
         let d: Int
         let m: Model
         let wave: RenderedWaveform?
+        /// gezogener Griff des Schnitts (EDIT-Modus), sonst springt der Klick
+        @State private var handle: Int?
         static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.m == b.m && a.wave === b.wave }
+
+        /// Griff unter x (0 = Anfang, 1 = Ende), höchstens 6 pt entfernt
+        private func grip(at x: CGFloat, width: CGFloat) -> Int? {
+            guard m.trim.editing, m.duration > 0, width > 0 else { return nil }
+            let xs = [m.trim.start ?? 0, m.trim.end ?? m.duration].map { CGFloat($0 / m.duration) * width }
+            let dist = xs.map { abs($0 - x) }
+            guard let i = dist.indices.min(by: { dist[$0] < dist[$1] }), dist[i] <= 6.z else { return nil }
+            return i
+        }
 
         var body: some View {
             let m = m, wf = wave
@@ -386,14 +427,40 @@ struct OverviewView: View {
                         ctx.setFillColor(c.color.cgColor)
                         ctx.fill(CGRect(x: c.t / m.duration * size.width, y: 0, width: 2, height: size.height))
                     }
+                    // Schnitt: davor / dahinter gedimmt, im EDIT-Modus Griffe
+                    let t = m.trim
+                    if t.start != nil || t.end != nil || t.editing {
+                        let x0 = CGFloat((t.start ?? 0) / m.duration) * size.width, x1 = CGFloat((t.end ?? m.duration) / m.duration) * size.width
+                        ctx.setFillColor(NSColor.black.withAlphaComponent(0.62).cgColor)
+                        if t.start != nil { ctx.fill(CGRect(x: 0, y: 0, width: x0, height: size.height)) }
+                        if t.end != nil { ctx.fill(CGRect(x: x1, y: 0, width: size.width - x1, height: size.height)) }
+                        ctx.setFillColor(t.editing ? CG.bone : NSColor(Theme.bone).withAlphaComponent(0.6).cgColor)
+                        let lw: CGFloat = t.editing ? 2 : 1, tab = 4 * size.height / 18
+                        for (x, set, dir) in [(x0, t.start != nil, CGFloat(-1)), (x1, t.end != nil, CGFloat(1))] where set || t.editing {
+                            let lx = min(max(0, x - lw / 2), size.width - lw)
+                            ctx.fill(CGRect(x: lx, y: 0, width: lw, height: size.height))
+                            if t.editing {   // Griff-Laschen oben und unten, nach außen
+                                ctx.fill(CGRect(x: dir < 0 ? lx - tab : lx, y: 0, width: tab + lw, height: tab))
+                                ctx.fill(CGRect(x: dir < 0 ? lx - tab : lx, y: size.height - tab, width: tab + lw, height: tab))
+                            }
+                        }
+                    }
                     ctx.setFillColor(CG.state)
                     ctx.fill(CGRect(x: size.width * f - 1, y: 0, width: 2, height: size.height))
                 }
                 .clipShape(Rectangle())
                 .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0).onChanged { v in
-                    mix.seek(d, fraction: v.location.x / geo.size.width)
-                })
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { v in
+                        let w = geo.size.width
+                        if handle == nil { handle = grip(at: v.startLocation.x, width: w).map { $0 + 1 } ?? 0 }
+                        if let h = handle, h > 0 {   // 1 = Anfang, 2 = Ende; 0 = springen
+                            mix.dragTrim(d, end: h == 2, to: max(0, min(1, v.location.x / w)) * m.duration)
+                        } else {
+                            mix.seek(d, fraction: v.location.x / w)
+                        }
+                    }
+                    .onEnded { _ in handle = nil })
             }
         }
     }

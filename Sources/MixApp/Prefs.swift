@@ -204,6 +204,16 @@ struct UIPrefs: Codable, Equatable {
 
     /// alle Zeilen aus DeckRows.all an
     mutating func showAllDeckRows() { for (k, _) in DeckRows.all { self[keyPath: k] = true } }
+
+    /// EDIT-Modus je Deck A–D (Schnitt + Grid statt Loop / Beatjump), Standard aus
+    var editDecks = [false, false, false, false]
+
+    func editing(_ d: Int) -> Bool { editDecks.indices.contains(d) && editDecks[d] }
+    mutating func setEditing(_ d: Int, _ on: Bool) {
+        guard d >= 0, d < 4 else { return }
+        while editDecks.count < 4 { editDecks.append(false) }
+        editDecks[d] = on
+    }
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.

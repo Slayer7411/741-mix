@@ -103,6 +103,9 @@ public final class MixEngine: @unchecked Sendable {
         mdsp_set_loop(core, Int32(d), active, start, end)
     }
 
+    /// Schnitt (nicht destruktiv): hörbar nur zwischen Start und Ende (Sekunden, Ende 0 = Track-Ende)
+    public func setTrim(_ d: Int, start: Double, end: Double) { mdsp_set_trim(core, Int32(d), start, end) }
+
     public func loop(_ d: Int) -> (active: Bool, start: Double, end: Double) {
         var s = 0.0, e = 0.0
         let a = mdsp_loop(core, Int32(d), &s, &e)

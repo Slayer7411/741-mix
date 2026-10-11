@@ -22,6 +22,10 @@ extension ShortcutID: Identifiable {
         case .beatjumpForward: String(localized: "Beatjump vor")
         case .hotcue1, .hotcue2, .hotcue3, .hotcue4, .hotcue5, .hotcue6, .hotcue7, .hotcue8:
             String(localized: "Hotcue \((index ?? 0) + 1) (Fokus-Deck)")
+        case .editMode: String(localized: "EDIT-Modus (Fokus-Deck)")
+        case .cutIn: String(localized: "Schnitt-Anfang hier (Fokus-Deck)")
+        case .cutOut: String(localized: "Schnitt-Ende hier (Fokus-Deck)")
+        case .gridSet: String(localized: "Grid: Beat 1 hier (Fokus-Deck)")
         case .resetPlayed: String(localized: "Reset Played State")
         case .loadSelected: String(localized: "Auswahl ins Fokus-Deck laden")
         case .previewSelected: String(localized: "Auswahl vorhören")
@@ -143,6 +147,10 @@ struct AppActions {
         case .beatjumpBack: mix.beatjump(d, beats: -mix.deck(d).jumpSize)
         case .beatjumpForward: mix.beatjump(d, beats: mix.deck(d).jumpSize)
         case .hotcue1, .hotcue2, .hotcue3, .hotcue4, .hotcue5, .hotcue6, .hotcue7, .hotcue8: mix.hotcue(d, a.index ?? 0)
+        case .editMode: mix.toggleEdit(d)
+        case .cutIn: mix.trimHere(d, end: false)
+        case .cutOut: mix.trimHere(d, end: true)
+        case .gridSet: mix.setGridAnchorHere(d)
         case .resetPlayed: history.resetPlayed()
         case .loadSelected: if let t = browser.selectedTrack() { mix.load(t, deck: d) }
         case .previewSelected: if let t = browser.selectedTrack() { mix.togglePreview(t) }

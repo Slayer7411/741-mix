@@ -1,18 +1,69 @@
 import Foundation
 
-/// Eigene Änderungen an Tracks (Beatgrid, Hotcues) – dauerhaft, ohne die Collection anzufassen.
-/// Beim Laden eines Tracks werden sie über die Collection-Werte gelegt.
+/// Schnitt eines Tracks, nicht destruktiv: gespielt wird nur zwischen Start und Ende (Sekunden, nil = Anfang / Ende
+/// der Datei). Die Datei bleibt unverändert.
+public struct TrackTrim: Codable, Equatable, Hashable, Sendable {
+    public var start: Double?
+    public var end: Double?
+
+    /// kürzester Schnitt (s)
+    public static let minLength = 1.0
+
+    public init(start: Double? = nil, end: Double? = nil) { self.start = start; self.end = end }
+
+    public var isEmpty: Bool { start == nil && end == nil }
+
+    /// für eine Datei der Länge `duration`: Start ≤ 0 und Ende ≥ Dauer fallen weg (kein Schnitt dort);
+    /// nil, wenn weniger als `minLength` übrig bliebe
+    public func normalized(duration: Double) -> TrackTrim? {
+        let eps = 0.001
+        var t = TrackTrim()
+        if let s = start, s.isFinite, s > eps { t.start = s }
+        if let e = end, e.isFinite, duration <= 0 || e < duration - eps { t.end = max(0, e) }
+        let lo = t.start ?? 0, hi = t.end ?? duration
+        guard duration <= 0 || lo < duration, hi - lo >= Self.minLength - 1e-9 else { return nil }
+        return t
+    }
+
+    /// gespielter Bereich in einer Datei der Länge `duration`
+    public func range(duration: Double) -> ClosedRange<Double> {
+        let lo = max(0, start ?? 0)
+        return lo...max(lo, min(duration, end ?? duration))
+    }
+}
+
+/// Eigene Änderungen an Tracks (Beatgrid, Hotcues, Schnitt) – dauerhaft, ohne die Collection anzufassen.
+/// Beim Laden eines Tracks werden sie über die Collection-Werte (und die eigene Analyse) gelegt: ein von Hand gesetztes
+/// Grid gewinnt immer, nur RESET am Deck nimmt es weg.
 public struct TrackEdit: Codable, Equatable, Sendable {
     public var bpm: Double?
     public var gridAnchorMs: Double?
     public var hotcues: [Cue]?
+    /// Schnitt in Sekunden (fehlt in älteren Dateien)
+    public var trimStart: Double?
+    public var trimEnd: Double?
     public var modified = Date()
 
-    public init(bpm: Double? = nil, gridAnchorMs: Double? = nil, hotcues: [Cue]? = nil) {
+    public init(bpm: Double? = nil, gridAnchorMs: Double? = nil, hotcues: [Cue]? = nil, trim: TrackTrim = TrackTrim()) {
         self.bpm = bpm; self.gridAnchorMs = gridAnchorMs; self.hotcues = hotcues
+        trimStart = trim.start; trimEnd = trim.end
     }
 
-    /// Track mit den Änderungen
+    /// von Hand gesetztes Grid (BPM und/oder Anker)
+    public var hasGrid: Bool { bpm != nil || gridAnchorMs != nil }
+    public var trim: TrackTrim {
+        get { TrackTrim(start: trimStart, end: trimEnd) }
+        set { trimStart = newValue.start; trimEnd = newValue.end }
+    }
+    public var isEmpty: Bool { !hasGrid && hotcues == nil && trim.isEmpty }
+
+    /// gleiche Änderung (ohne Zeitstempel)
+    public func same(as o: TrackEdit?) -> Bool {
+        guard let o else { return isEmpty }
+        return bpm == o.bpm && gridAnchorMs == o.gridAnchorMs && hotcues == o.hotcues && trimStart == o.trimStart && trimEnd == o.trimEnd
+    }
+
+    /// Track mit den Änderungen (Grid, Hotcues; den Schnitt übernimmt das Deck)
     public func apply(to t: Track) -> Track {
         var t = t
         if let b = bpm { t.bpm = b }
@@ -35,25 +86,52 @@ public struct TrackEdit: Codable, Equatable, Sendable {
     }
 }
 
+/// Eigene Änderungen aller Tracks (Track-Schlüssel -> Änderung) in `edits.json`. Schreiben gesammelt (0,5 s nach der
+/// letzten Änderung) auf einer eigenen Queue, nie auf dem Haupt- oder Audio-Thread. `writes` false = nur lesen
+/// (Selbsttest, Messung: Christians Datei bleibt unangetastet).
 public final class TrackEditStore: @unchecked Sendable {
-    public private(set) var edits: [String: TrackEdit] = [:]
-    let url: URL
+    private var edits: [String: TrackEdit] = [:]
+    let url: URL?
+    let writes: Bool
     private let lock = NSLock()
+    private var savePending = false
+    private let queue = DispatchQueue(label: "minos741.edits", qos: .utility)
+    /// Sammelzeit vor dem Schreiben
+    var saveDelay: Double = 0.5
 
-    public init(url: URL) {
+    public init(url: URL?, writes: Bool = true) {
         self.url = url
-        if let d = try? Data(contentsOf: url), let e = try? JSONDecoder().decode([String: TrackEdit].self, from: d) { edits = e }
+        self.writes = writes
+        if let url, let d = try? Data(contentsOf: url), let e = try? JSONDecoder().decode([String: TrackEdit].self, from: d) { edits = e }
     }
 
+    public var all: [String: TrackEdit] { lock.lock(); defer { lock.unlock() }; return edits }
     public func edit(for key: String) -> TrackEdit? { lock.lock(); defer { lock.unlock() }; return edits[key] }
 
+    /// setzen (nil oder leer = entfernen); geschrieben wird gesammelt im Hintergrund
     public func set(_ e: TrackEdit?, for key: String) {
         lock.lock()
-        edits[key] = e
+        edits[key] = e.flatMap { $0.isEmpty ? nil : $0 }
+        let schedule = !savePending && writes && url != nil
+        if schedule { savePending = true }
+        lock.unlock()
+        guard schedule else { return }
+        queue.asyncAfter(deadline: .now() + saveDelay) { [self] in writePending() }
+    }
+
+    /// auf `queue`: letzten Stand schreiben, falls noch offen
+    private func writePending() {
+        lock.lock()
+        guard savePending, let url else { lock.unlock(); return }
+        savePending = false
         let snapshot = edits
         lock.unlock()
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let d = try? JSONEncoder().encode(snapshot) { try? d.write(to: url, options: .atomic) }
     }
+
+    /// offene Änderungen sofort schreiben und warten (Beenden, Tests)
+    public func flush() { queue.sync { writePending() } }
 }
 
 // MARK: - Metadaten bearbeiten (Browser: Inline, Bearbeiten-Fenster)

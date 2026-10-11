@@ -1,4 +1,5 @@
 import AVFoundation
+import AppKit
 import Foundation
 import QuartzCore
 import Observation
@@ -20,6 +21,8 @@ final class DeckMirror {
     var state = DeckState()
     /// geladener Track (Schlüssel) – für RUNNING TRACKS, ohne bei jeder Deck-Änderung mitzurendern
     var trackKey = ""
+    /// EDIT-Modus: hier statt in `prefs` beobachtet – Umschalten rendert nur dieses Deck neu (gespeichert mit den Einstellungen)
+    var editing = false
 }
 
 /// FX-Unit für die Oberfläche: eigenes Observable je Unit (FXUnitView liest nur ihre Unit)
@@ -70,9 +73,16 @@ final class MixModel {
     var prefs = AppPrefs.load() {
         didSet {
             guard prefs != oldValue else { return }
-            prefs.save()
+            savePrefs()
             if prefs.engine != oldValue.engine { core.setPrefs(prefs.engine) }
         }
+    }
+
+    /// Einstellungen speichern; der EDIT-Modus kommt aus den Deck-Spiegeln (in `prefs` steht er nur beim Start)
+    private func savePrefs() {
+        var p = prefs
+        p.ui.editDecks = decks.map(\.editing)
+        p.save()
     }
 
     var outputDevices: [MixEngine.OutputDevice] = []
@@ -86,8 +96,9 @@ final class MixModel {
     /// Puffergröße in Frames (0 = Gerätestandard)
     var bufferSize = 0
 
-    /// eigene Änderungen (Grid, Hotcues) dauerhaft je Track – die Collection bleibt unangetastet
-    @ObservationIgnored let edits = TrackEditStore(url: HistoryStore.baseDir.appendingPathComponent("edits.json"))
+    /// eigene Änderungen (Grid, Hotcues, Schnitt) dauerhaft je Track – die Collection bleibt unangetastet.
+    /// Selbsttest/Messung: nur lesen (Christians edits.json nie schreiben)
+    @ObservationIgnored let edits = TrackEditStore(url: HistoryStore.baseDir.appendingPathComponent("edits.json"), writes: !Session.isSelfTest)
     @ObservationIgnored private var originals: [Int: Track] = [:]
     @ObservationIgnored private var savedEdit: [Int: TrackEdit?] = [:]
     @ObservationIgnored private var timer: Timer?
@@ -111,6 +122,7 @@ final class MixModel {
         }
         if let c = core.pluginCatalog.crashedLastRun { print("[plugin] beim letzten Lauf abgestürzt beim Öffnen: \(c.name) -> blockiert") }
         loadSetup()
+        for d in decks.indices { decks[d].editing = prefs.ui.editing(d) }
         core.setPrefs(prefs.engine)
         outputDevices = MixEngine.outputDevices()
         applyRouting()
@@ -225,43 +237,34 @@ final class MixModel {
         originals[d] = t
         let e = edits.edit(for: t.key)
         savedEdit[d] = e
-        core.load(e?.apply(to: t) ?? t, deck: d)
+        core.load(e?.apply(to: t) ?? t, deck: d, trim: e?.trim ?? TrackTrim(), gridEdited: e?.hasGrid ?? false)
         focusedDeck = d
         pull()
     }
 
-    /// Grid/Hotcue-Änderungen eines Decks gegenüber der Collection speichern (nur wenn sich etwas geändert hat)
+    /// eigene Änderungen eines Decks speichern (nur wenn sich etwas geändert hat): von Hand gesetztes Grid ganz (BPM +
+    /// Anker, gewinnt über Collection und spätere Analyse), Hotcues gegenüber der Collection, Schnitt.
+    /// Geschrieben wird gesammelt im Hintergrund (TrackEditStore)
     private func persistEdits() {
         guard !Session.isSelfTest else { return }   // Selbsttest/Messung: Christians edits.json nie anfassen
         for d in state.decks.indices {
             guard let orig = originals[d], let t = state.decks[d].track, t.key == orig.key, !state.decks[d].loading else { continue }
             let deck = state.decks[d]
-            var e = TrackEdit()
-            if let g = deck.grid, let og = BeatGrid(track: orig) {
-                if abs(g.bpm - og.bpm) > 0.0001 { e.bpm = g.bpm }
-                if abs(g.anchor - og.anchor) > 0.0001 { e.gridAnchorMs = g.anchor * 1000 }
-            } else if let g = deck.grid {
-                e.bpm = g.bpm; e.gridAnchorMs = g.anchor * 1000
-            }
+            var e = TrackEdit(trim: deck.trim)
+            if deck.gridEdited, let g = deck.grid { e.bpm = g.bpm; e.gridAnchorMs = g.anchor * 1000 }
             let cues = deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }
             if cues != orig.hotcues { e.hotcues = cues }
-            let newEdit: TrackEdit? = (e.bpm == nil && e.gridAnchorMs == nil && e.hotcues == nil) ? nil : e
             let old = savedEdit[d] ?? nil
-            if newEdit?.bpm != old?.bpm || newEdit?.gridAnchorMs != old?.gridAnchorMs || newEdit?.hotcues != old?.hotcues {
+            if !e.same(as: old) {
+                let newEdit: TrackEdit? = e.isEmpty ? nil : e
                 edits.set(newEdit, for: orig.key)
                 savedEdit[d] = newEdit
             }
         }
     }
 
-    /// Neu analysieren: eigene Grid-Änderung (BPM, Anker) des Tracks verwerfen, Hotcues bleiben.
-    /// Liegt der Track gerade auf einem Deck, bleibt die Änderung bis zum nächsten Laden
-    func clearGridEdit(_ key: String) {
-        guard var e = edits.edit(for: key), e.bpm != nil || e.gridAnchorMs != nil,
-              !originals.values.contains(where: { $0.key == key }) else { return }
-        e.bpm = nil; e.gridAnchorMs = nil
-        edits.set(e.hotcues == nil ? nil : e, for: key)
-    }
+    /// offene Änderungen sofort schreiben (Beenden)
+    func flushEdits() { edits.flush() }
 
     func shiftGrid(_ d: Int, ms: Double) { run { core.shiftGrid(d, ms: ms) } }
     func setGridBPM(_ d: Int, _ v: Double) { run { core.setGridBPM(d, v) } }
@@ -270,6 +273,35 @@ final class MixModel {
     func shiftGridBeats(_ d: Int, _ n: Int) { run { core.shiftGridBeats(d, n) } }
     func applyPhraseAnchor(_ d: Int) { run { core.applyPhraseAnchor(d) } }
     func resetGrid(_ d: Int) { if let o = originals[d] { run { core.resetGrid(d, original: o) } } }
+    func tapGrid(_ d: Int) { run { core.tapGrid(d) } }
+
+    // Schnitt
+    /// IN HERE / OUT HERE: Quantize rastet auf den Beat, ⌥ = genau hier
+    func trimHere(_ d: Int, end: Bool, free: Bool = false) {
+        var ok = false
+        run { ok = core.trimHere(d, end: end, free: free) }
+        if !ok, deck(d).track != nil { StatusCenter.post(.warning, String(localized: "Schnitt zu kurz (mindestens 1 s)"), key: "trim.\(d)") }
+    }
+    func setTrimPoint(_ d: Int, end: Bool, _ t: Double) { run { _ = core.setTrimPoint(d, end: end, t) } }
+    /// Griff ziehen (Wellenform, Übersicht): Quantize rastet auf den Beat, ⌥ = frei
+    func dragTrim(_ d: Int, end: Bool, to time: Double) {
+        let s = deck(d)
+        var t = time
+        if prefs.engine.quantize, !NSEvent.modifierFlags.contains(.option), let g = s.grid, g.bpm > 0 { t = g.nearestBeat(to: t) }
+        if abs(t - (end ? s.trim.end ?? s.duration : s.trim.start ?? 0)) < 1e-6 { return }
+        setTrimPoint(d, end: end, t)
+    }
+    func clearTrim(_ d: Int) { run { core.clearTrim(d) } }
+
+    /// EDIT-Modus je Deck (Schnitt- und Grid-Werkzeuge statt Loop / Beatjump), gemerkt in den Einstellungen
+    func editing(_ d: Int) -> Bool { decks[d].editing }
+    func toggleEdit(_ d: Int) { setEditing(d, !decks[d].editing) }
+    /// nur das Deck beobachtet den Schalter; gespeichert wird ohne `prefs` zu ändern (das rendert sonst das ganze Fenster)
+    func setEditing(_ d: Int, _ on: Bool) {
+        guard decks.indices.contains(d), decks[d].editing != on else { return }
+        decks[d].editing = on
+        savePrefs()
+    }
     func togglePlay(_ d: Int) { run { core.togglePlay(d) } }
     func cueDown(_ d: Int) { run { core.cueDown(d) } }
     func cueUp(_ d: Int) { run { core.cueUp(d) } }

@@ -94,6 +94,10 @@ public struct DeckState: Equatable, Sendable {
     /// Phrasen-Anker-Vorschlag: Ankerzeit (s), auf der die Strukturwechsel auf 8-Takt-Grenzen fallen, und Sicherheit
     public var phraseTarget: Double?
     public var phraseConfidence = 0.0
+    /// Grid von Hand gesetzt (eigene Änderung, gewinnt über Collection und Analyse; RESET nimmt sie weg)
+    public var gridEdited = false
+    /// Schnitt (nicht destruktiv): gespielt wird nur dazwischen
+    public var trim = TrackTrim()
 
     public var playing = false
     public var cuePoint: Double = 0
@@ -127,6 +131,8 @@ public struct DeckState: Equatable, Sendable {
     public init() {}
 
     public var rate: Double { (1 + tempoPct / 100) * (1 + nudge + bend) }
+    /// gespielter Bereich (Schnitt, sonst die ganze Datei), Sekunden
+    public var playRange: ClosedRange<Double> { trim.range(duration: duration) }
     public var bpm: Double { (grid?.bpm ?? track?.bpm ?? 0) * (1 + tempoPct / 100) }
 }
 
@@ -350,7 +356,8 @@ public final class MixController: @unchecked Sendable {
 
     // MARK: Laden
 
-    public func load(_ t: Track, deck d: Int) {
+    /// `trim` / `gridEdited`: eigene Änderungen des Tracks (Schnitt, von Hand gesetztes Grid im Track)
+    public func load(_ t: Track, deck d: Int, trim: TrackTrim = TrackTrim(), gridEdited: Bool = false) {
         let rate = engine.sampleRate
         let (seq, timeout): (Int, Double) = locked {
             loadSeq[d] += 1
@@ -382,7 +389,7 @@ public final class MixController: @unchecked Sendable {
                     print(String(format: "[load] deck %d: %.2f s, %.0f MB", d, Date().timeIntervalSince(t0), Double(a.frames) * 8 / 1e6))
                 }
                 watch.progress(Int.max)
-                finishLoad(t, a, d, seq: seq)
+                finishLoad(t, a, d, seq: seq, trim: trim, gridEdited: gridEdited)
             } catch TrackAudio.DecodeError.cancelled {
                 // abgebrochen: Zeitüberschreitung (schon gemeldet) oder ein anderer Track gewählt
             } catch {
@@ -438,11 +445,12 @@ public final class MixController: @unchecked Sendable {
             var s = state.decks[d]
             s.track = nil; s.grid = nil; s.duration = 0; s.hotcues = [:]; s.cuePoint = 0
             s.phraseTarget = nil; s.loopActive = false; s.loopIn = nil; s.reverse = false; s.flux = false
-            s.loading = false; s.playing = false
+            s.loading = false; s.playing = false; s.trim = TrackTrim(); s.gridEdited = false
             s.error = String(localized: "Nicht ladbar: \(reason)")
             state.decks[d] = s
             playedTime[d] = 0; playedLogged[d] = false; playStart[d] = nil
             engine.setLoop(d, active: false, start: 0, end: 0)
+            engine.setTrim(d, start: 0, end: 0)
             return (old, engine.attach(nil, deck: d, startAt: 0))
         }
         guard let (old, gen) = r else { return }
@@ -472,7 +480,7 @@ public final class MixController: @unchecked Sendable {
     /// MIX741_DEBUG=1: Lade-, Hänger- und Controller-Protokoll
     public static let debug = ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1"
 
-    private func finishLoad(_ t: Track, _ a: TrackAudio, _ d: Int, seq: Int) {
+    private func finishLoad(_ t: Track, _ a: TrackAudio, _ d: Int, seq: Int, trim: TrackTrim, gridEdited: Bool) {
         let r: (TrackAudio?, UInt32)? = locked {
             guard seq == loadSeq[d] else { return nil }   // überholt: ein später gewählter Track lädt noch oder liegt schon
             let old = audio[d]
@@ -480,8 +488,10 @@ public final class MixController: @unchecked Sendable {
             let p = state.prefs
             s.track = t
             s.grid = BeatGrid(track: t)
+            s.gridEdited = gridEdited && s.grid != nil
             s.phraseTarget = nil
             s.duration = a.duration
+            s.trim = trim.normalized(duration: a.duration) ?? TrackTrim()
             s.hotcues = Dictionary(t.hotcues.map { ($0.hotcue, $0) }, uniquingKeysWith: { x, _ in x })
             let loadCue = (t.cues.first { $0.kind == .load }?.startMs ?? t.gridAnchorMs ?? 0) / 1000
             s.cuePoint = switch p.loadPosition {
@@ -489,6 +499,8 @@ public final class MixController: @unchecked Sendable {
                 case .start: 0
                 case .firstHotcue: (s.hotcues[0]?.startMs ?? loadCue * 1000) / 1000
             }
+            // Cue im Schnitt (Ladeposition, CUE, CUP): davor oder dahinter -> Schnitt-Anfang
+            if !s.playRange.contains(s.cuePoint) { s.cuePoint = s.playRange.lowerBound }
             s.loopActive = false
             s.loopIn = nil
             s.reverse = false
@@ -516,6 +528,7 @@ public final class MixController: @unchecked Sendable {
             playedTime[d] = 0
             playedLogged[d] = false
             playStart[d] = nil
+            engine.setTrim(d, start: s.trim.start ?? 0, end: s.trim.end ?? 0)   // vor dem Puffer: der erste Block kennt ihn schon
             let gen = engine.attach(a, deck: d, startAt: s.cuePoint)
             applyRate(d)
             applyMixer(d)
@@ -541,6 +554,7 @@ public final class MixController: @unchecked Sendable {
                 guard audio[d] === a, state.decks[d].grid == grid else { return false }
                 if mode == .auto {
                     state.decks[d].grid?.anchor += Double(r.shiftBeats) * grid.beat
+                    state.decks[d].gridEdited = true   // eigene Änderung (edits.json), RESET nimmt sie weg
                 } else {
                     state.decks[d].phraseTarget = grid.anchor + Double(r.shiftBeats) * grid.beat
                     state.decks[d].phraseConfidence = r.confidence
@@ -692,10 +706,7 @@ public final class MixController: @unchecked Sendable {
                     target += position(d) - g.beatFloor(position(d))
                 }
                 jump(d, to: target, "hotcue \(n + 1)")
-                if c.kind == .loop, c.lengthMs > 0 {
-                    engine.setLoop(d, active: true, start: c.startMs / 1000, end: (c.startMs + c.lengthMs) / 1000)
-                    state.decks[d].loopActive = true
-                }
+                if c.kind == .loop, c.lengthMs > 0 { loopOn(d, start: c.startMs / 1000, end: (c.startMs + c.lengthMs) / 1000) }
             } else if state.decks[d].loopActive {
                 let l = engine.loop(d)
                 state.decks[d].hotcues[n] = Cue(name: "Loop", kind: .loop, startMs: l.start * 1000,
@@ -711,9 +722,41 @@ public final class MixController: @unchecked Sendable {
 
     private func beatLength(_ d: Int) -> Double { state.decks[d].grid?.beat ?? 0.5 }
 
+    /// Zeit in den gespielten Bereich (Schnitt); ohne Track unverändert
+    private func inRange(_ d: Int, _ t: Double) -> Double {
+        guard state.decks[d].duration > 0 else { return max(0, t) }
+        let r = state.decks[d].playRange
+        return min(max(t, r.lowerBound), r.upperBound)
+    }
+
+    /// Sprungziel, das die Beat-Phase hält: um ganze Beats in den gespielten Bereich
+    private func inRangeKeepingPhase(_ d: Int, _ t: Double, beat: Double) -> Double {
+        guard beat > 0, state.decks[d].duration > 0 else { return inRange(d, t) }
+        let r = state.decks[d].playRange
+        var t = t
+        if t < r.lowerBound { t += ((r.lowerBound - t) / beat).rounded(.up) * beat }
+        if t > r.upperBound { t -= (((t - r.upperBound) / beat).rounded(.down) + 1) * beat }   // vor dem Ende, nicht darauf
+        return inRange(d, t)
+    }
+
+    /// Loop einschalten, auf den gespielten Bereich gekürzt; false = kein Platz (Loop bleibt, wie er war)
+    @discardableResult
+    private func loopOn(_ d: Int, start: Double, end: Double) -> Bool {
+        var s = start, e = end
+        if state.decks[d].duration > 0 {
+            let r = state.decks[d].playRange
+            s = max(s, r.lowerBound); e = min(e, r.upperBound)
+        }
+        guard e > s + 0.01 else { return false }
+        engine.setLoop(d, active: true, start: s, end: e)
+        state.decks[d].loopActive = true
+        return true
+    }
+
     /// jeder Sprung des Kerns läuft hier durch; MIX741_DEBUG=1: `[jump] deck A: von → nach (Grund)`
-    private func jump(_ d: Int, to t: Double, _ reason: @autoclosure () -> String) {
+    private func jump(_ d: Int, to target: Double, _ reason: @autoclosure () -> String) {
         let from = Self.debug ? position(d) : 0
+        let t = inRange(d, target)
         engine.seek(d, seconds: t)
         guard Self.debug else { return }
         let deck = String(UnicodeScalar(UInt8(65 + d)))
@@ -757,8 +800,7 @@ public final class MixController: @unchecked Sendable {
 
     /// Loop-Cue als Loop übernehmen, ohne Sprung (die Position läuft hinein bzw. ist schon drin)
     private func activateLoopCue(_ d: Int, _ c: (start: Double, end: Double)) {
-        engine.setLoop(d, active: true, start: c.start, end: c.end)
-        state.decks[d].loopActive = true
+        guard loopOn(d, start: c.start, end: c.end) else { return }
         let beats = (c.end - c.start) / beatLength(d)
         if let s = BeatSizes.loop.first(where: { abs($0 - beats) < 0.01 }) { state.decks[d].loopSize = s }
     }
@@ -772,9 +814,8 @@ public final class MixController: @unchecked Sendable {
             state.decks[d].loopSize = s
             let pos = position(d)
             // 4-Takt-Grenze: Loop beginnt dort, die Position läuft hinein oder ist schon drin (sonst normaler Snap)
-            if !state.decks[d].loopActive, let start = nearbyPhraseStart(d), pos < start + s * beatLength(d) {
-                engine.setLoop(d, active: true, start: start, end: start + s * beatLength(d))
-                state.decks[d].loopActive = true
+            if !state.decks[d].loopActive, let start = nearbyPhraseStart(d), pos < start + s * beatLength(d),
+               loopOn(d, start: start, end: start + s * beatLength(d)) {
                 return
             }
             var start = state.decks[d].loopActive ? engine.loop(d).start : pos
@@ -782,8 +823,7 @@ public final class MixController: @unchecked Sendable {
                 let unit = min(1, s)
                 start = g.time(ofBeat: (g.beatPosition(at: pos) / unit).rounded(.down) * unit)
             }
-            engine.setLoop(d, active: true, start: start, end: start + s * beatLength(d))
-            state.decks[d].loopActive = true
+            loopOn(d, start: start, end: start + s * beatLength(d))   // am Schnitt-Ende gekürzt
         }
     }
 
@@ -801,9 +841,9 @@ public final class MixController: @unchecked Sendable {
             let l = engine.loop(d)
             guard l.end > l.start else { return }
             if state.decks[d].loopActive { exitLoop(d); return }
-            engine.setLoop(d, active: true, start: l.start, end: l.end)
-            if position(d) > l.end || position(d) < l.start { jump(d, to: l.start, "reloop") }
-            state.decks[d].loopActive = true
+            guard loopOn(d, start: l.start, end: l.end) else { return }
+            let r = engine.loop(d)
+            if position(d) > r.end || position(d) < r.start { jump(d, to: r.start, "reloop") }
         }
     }
 
@@ -814,7 +854,7 @@ public final class MixController: @unchecked Sendable {
             state.decks[d].loopSize = sizes[max(0, min(sizes.count - 1, i + step))]
             if state.decks[d].loopActive {
                 let l = engine.loop(d)
-                engine.setLoop(d, active: true, start: l.start, end: l.start + state.decks[d].loopSize * beatLength(d))
+                loopOn(d, start: l.start, end: l.start + state.decks[d].loopSize * beatLength(d))
             }
         }
     }
@@ -836,10 +876,8 @@ public final class MixController: @unchecked Sendable {
         locked {
             guard let a = state.decks[d].loopIn else { return }
             let b = snapped(d, position(d))
-            guard b > a + 0.01 else { return }
-            engine.setLoop(d, active: true, start: a, end: b)
-            jump(d, to: a, "loop out")
-            state.decks[d].loopActive = true
+            guard b > a + 0.01, loopOn(d, start: a, end: b) else { return }
+            jump(d, to: engine.loop(d).start, "loop out")
         }
     }
 
@@ -848,10 +886,13 @@ public final class MixController: @unchecked Sendable {
             guard audio[d] != nil else { return }
             let delta = beats * beatLength(d)
             if state.decks[d].loopActive {
-                let l = engine.loop(d)
+                // Loop wandert mit; passt er nicht mehr in den Schnitt, bleibt alles stehen
+                let l = engine.loop(d), r = state.decks[d].playRange
+                guard l.start + delta >= r.lowerBound - 1e-6, l.end + delta <= r.upperBound + 1e-6 else { return }
                 engine.setLoop(d, active: true, start: l.start + delta, end: l.end + delta)
             }
-            jump(d, to: max(0, position(d) + delta), String(format: "beatjump %+g", beats))
+            // über den Schnitt hinaus: um ganze Beats zurück hinein (Phase bleibt)
+            jump(d, to: inRangeKeepingPhase(d, position(d) + delta, beat: beatLength(d)), String(format: "beatjump %+g", beats))
         }
     }
 
@@ -943,7 +984,7 @@ public final class MixController: @unchecked Sendable {
         phaseOffset[d] = 0
         applyRate(d)
         if hard, let e = phaseErrorLocked(d) {
-            jump(d, to: position(d) - e * g.beat, "sync align")
+            jump(d, to: inRangeKeepingPhase(d, position(d) - e * g.beat, beat: g.beat), "sync align")
         }
     }
 
@@ -954,11 +995,12 @@ public final class MixController: @unchecked Sendable {
         guard state.semiSync, !state.decks[d].sync, let g = state.decks[d].grid, g.bpm > 0 else { return }
         if !state.clockMaster { guard let m = state.effectiveMaster, m != d, state.decks[m].playing else { return } }
         guard let e = rawPhaseError(d) else { return }
-        let t = position(d) - e * g.beat
-        jump(d, to: t < 0 ? t + g.beat : t, "semi start")   // vor dem Trackanfang: einen Beat später
+        // vor dem Trackanfang / Schnitt-Start: einen Beat später
+        jump(d, to: inRangeKeepingPhase(d, position(d) - e * g.beat, beat: g.beat), "semi start")
     }
 
     // MARK: Beatgrid bearbeiten
+    // jede Änderung ist eine eigene (gridEdited): sie gewinnt über Collection und Analyse, bis RESET
 
     /// Grid verschieben (ms, + = später)
     public func shiftGrid(_ d: Int, ms: Double) {
@@ -966,6 +1008,7 @@ public final class MixController: @unchecked Sendable {
             guard var g = state.decks[d].grid else { return }
             g.anchor += ms / 1000
             state.decks[d].grid = g
+            state.decks[d].gridEdited = true
         }
     }
 
@@ -975,6 +1018,7 @@ public final class MixController: @unchecked Sendable {
             guard var g = state.decks[d].grid, bpm > 20, bpm < 400 else { return }
             g.bpm = bpm
             state.decks[d].grid = g
+            state.decks[d].gridEdited = true
             applyRate(d)
         }
     }
@@ -990,7 +1034,8 @@ public final class MixController: @unchecked Sendable {
                 state.decks[d].grid = g
             } else if let t = state.decks[d].track, t.bpm > 0 {
                 state.decks[d].grid = BeatGrid(anchor: pos, bpm: t.bpm)
-            }
+            } else { return }
+            state.decks[d].gridEdited = true
         }
     }
 
@@ -1000,6 +1045,7 @@ public final class MixController: @unchecked Sendable {
             guard var g = state.decks[d].grid, g.bpm > 0 else { return }
             g.anchor += Double(n) * g.beat
             state.decks[d].grid = g
+            state.decks[d].gridEdited = true
         }
     }
 
@@ -1011,8 +1057,82 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
-    /// Grid auf den Wert aus der Collection zurücksetzen
-    public func resetGrid(_ d: Int, original: Track) { locked { state.decks[d].grid = BeatGrid(track: original) } }
+    /// Grid auf den Wert der Library (Collection bzw. eigene Analyse) zurücksetzen: eigene Änderung weg
+    public func resetGrid(_ d: Int, original: Track) {
+        locked {
+            state.decks[d].grid = BeatGrid(track: original)
+            state.decks[d].gridEdited = false
+            applyRate(d)
+        }
+    }
+
+    private var gridTaps: [Int: [Double]] = [:]
+    /// Tap auf die Beats: ab 4 Taps BPM des Grids aus dem mittleren Abstand (Pause > 2 s beginnt neu). Ohne Grid
+    /// entsteht eines mit Beat 1 an der Position des letzten Taps. Anker bleibt sonst
+    public func tapGrid(_ d: Int, at time: Double = ProcessInfo.processInfo.systemUptime) {
+        locked {
+            guard audio[d] != nil else { return }
+            var taps = gridTaps[d] ?? []
+            if let last = taps.last, time - last > 2 || time < last { taps.removeAll() }
+            taps.append(time)
+            if taps.count > 16 { taps.removeFirst() }
+            gridTaps[d] = taps
+            guard taps.count >= 4, let first = taps.first, let last = taps.last, last > first else { return }
+            let bpm = 60 / ((last - first) / Double(taps.count - 1))
+            guard bpm > 40, bpm < 300 else { return }
+            let rounded = (bpm * 100).rounded() / 100
+            if var g = state.decks[d].grid { g.bpm = rounded; state.decks[d].grid = g }
+            else { state.decks[d].grid = BeatGrid(anchor: position(d), bpm: rounded) }
+            state.decks[d].gridEdited = true
+            applyRate(d)
+        }
+    }
+
+    // MARK: Schnitt (nicht destruktiv)
+
+    /// Schnitt setzen (Sekunden, nil = Anfang / Ende der Datei). Zu kurz (< 1 s) oder ohne Track: nichts, false.
+    /// Cue-Punkt und Loop rücken in den Schnitt, die Position springt bei Bedarf hinein (Kern)
+    @discardableResult
+    public func setTrim(_ d: Int, _ trim: TrackTrim) -> Bool {
+        locked {
+            guard audio[d] != nil, state.decks[d].duration > 0,
+                  let t = trim.normalized(duration: state.decks[d].duration) else { return false }
+            state.decks[d].trim = t
+            engine.setTrim(d, start: t.start ?? 0, end: t.end ?? 0)
+            let r = state.decks[d].playRange
+            if !r.contains(state.decks[d].cuePoint) { state.decks[d].cuePoint = r.lowerBound }
+            if state.decks[d].loopActive {
+                let l = engine.loop(d)
+                if l.start < r.lowerBound || l.end > r.upperBound, !loopOn(d, start: l.start, end: l.end) {
+                    engine.setLoop(d, active: false, start: l.start, end: l.end)
+                    state.decks[d].loopActive = false
+                }
+            }
+            return true
+        }
+    }
+
+    /// Schnitt-Anfang bzw. -Ende an die Position (Quantize: auf den nächsten Beat, `free` = genau hier)
+    @discardableResult
+    public func trimHere(_ d: Int, end: Bool, free: Bool = false) -> Bool {
+        locked {
+            var t = position(d)
+            if !free, state.prefs.quantize, let g = state.decks[d].grid, g.bpm > 0 { t = g.nearestBeat(to: t) }
+            return setTrimPoint(d, end: end, t)
+        }
+    }
+
+    /// einen Rand des Schnitts setzen (Ziehen in Wellenform und Übersicht)
+    @discardableResult
+    public func setTrimPoint(_ d: Int, end: Bool, _ t: Double) -> Bool {
+        locked {
+            var trim = state.decks[d].trim
+            if end { trim.end = t } else { trim.start = t }
+            return setTrim(d, trim)
+        }
+    }
+
+    public func clearTrim(_ d: Int) { locked { _ = setTrim(d, TrackTrim()) } }
 
     // MARK: Master-Clock
 
@@ -1571,7 +1691,7 @@ public final class MixController: @unchecked Sendable {
                     // harter Sprung nur, wenn der Fehler groß ist und > 100 ms anhält – sonst weich nachziehen
                     bigError[d] = abs(e) > 0.25 ? bigError[d] + 1 : 0
                     if bigError[d] >= 20 {
-                        jump(d, to: position(d) - e * g.beat, "phase lock")
+                        jump(d, to: inRangeKeepingPhase(d, position(d) - e * g.beat, beat: g.beat), "phase lock")
                         state.decks[d].nudge = 0
                         bigError[d] = 0
                     } else {

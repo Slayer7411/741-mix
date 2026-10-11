@@ -102,16 +102,26 @@ enum ToggleBench {
             // nur Dateien, die auf der Platte liegen: ein Platzhalter (Cloud, nur online) lädt im Selbsttest nie
             let fs = SystemCloudFileSystem()
             let c = Array(store.tracks.lazy.filter { $0.bpm > 120 && $0.bpm < 140 && $0.gridAnchorMs != nil && $0.fileExists
-                && fs.probe($0.path).state == .local }.prefix(4))
+                && fs.probe($0.path).state == .local }.prefix(8))
             guard c.count >= 4 else { log("zu wenige lokale Tracks"); exit(1) }
             // vier Ladevorgänge gleichzeitig mit niedriger Priorität (nice) brauchen länger als die 4 s des Wächters
             var p = mix.prefs.engine
             p.loadTimeout = 15   // nur im Kern, nicht gespeichert
             core.setPrefs(p)
             for d in 0..<4 { mix.load(c[d], deck: d) }
-            while (0..<4).contains(where: { core.trackAudio($0) == nil }) {
-                if let e = core.snapshot().decks.compactMap(\.error).first { log("Laden fehlgeschlagen: \(e)"); exit(1) }
+            // nicht ladbar (Cloud-Datei hängt, Zeitlimit): nächster Kandidat statt endlos zu warten
+            var next = 4
+            while true {
+                let s = core.snapshot()
+                var waiting = false
+                for d in 0..<4 where core.trackAudio(d) == nil {
+                    if s.decks[d].loading { waiting = true } else if next < c.count { mix.load(c[next], deck: d); next += 1; waiting = true }
+                }
+                if !waiting { break }
                 try? await Task.sleep(for: .milliseconds(100)); pump()
+            }
+            if let d = (0..<4).first(where: { core.trackAudio($0) == nil }) {
+                log("Laden fehlgeschlagen: \(core.snapshot().decks[d].error ?? "kein Kandidat mehr")"); exit(1)
             }
             for d in 0..<4 { core.seek(d, seconds: 60) }
             for _ in 0..<30 { try? await Task.sleep(for: .milliseconds(100)); mix.pull(); pump() }
@@ -252,7 +262,9 @@ enum StateBench {
         installObserver()
         let n = Int(env["MIX741_BENCH_N"] ?? "") ?? 20
         let d = 0
-        var cueSet = false, tempo = false, loopIdx = 0, jumpIdx = 0
+        var cueSet = false, tempo = false, loopIdx = 0, jumpIdx = 0, cut = false
+        // MIX741_BENCH_EDIT=1: Deck A im EDIT-Modus (Grid- und Schnitt-Zeile, Griffe in der Wellenform)
+        if env["MIX741_BENCH_EDIT"] != nil { mix.setEditing(d, true); try? await Task.sleep(for: .milliseconds(300)) }
         let actions: [(String, () -> Void)] = [
             ("play", { mix.togglePlay(d) }),
             ("sync", { mix.toggleSync(d) }),
@@ -264,6 +276,8 @@ enum StateBench {
             ("keylock", { mix.toggleKeylock(d) }),
             ("clock bpm", { tempo.toggle(); mix.setClockBPM(tempo ? 127 : 128) }),   // nur die Master-Clock-Leiste
             ("gain", { tempo.toggle(); mix.updateDeck(d) { $0.gainDb = tempo ? 1 : 0 } }),   // ohne Mixer unsichtbar: Grundkosten
+            ("edit", { mix.toggleEdit(d) }),   // EDIT-Modus an/aus: Zeilen tauschen, Griffe
+            ("cut", { cut.toggle(); if cut { mix.setTrimPoint(d, end: false, 55) } else { mix.clearTrim(d) } }),   // Schnitt-Anfang setzen/weg
         ].filter { a in env["MIX741_BENCH_ONLY"].map { $0.split(separator: ",").contains(Substring(a.0)) } ?? true }
         let sampler = startSample(seconds: max(5, actions.count * n * 2 * 60 / 1000))
         if sampler != nil { try? await Task.sleep(for: .milliseconds(500)) }
@@ -281,6 +295,13 @@ enum StateBench {
             await shot("state-1")
             mix.toggleSync(d); mix.toggleKeylock(d); mix.autoLoop(d); mix.hotcue(d, 7, delete: true); mix.setTempo(d, 0)
             mix.core.setLoopSize(d, 4); mix.setJumpSize(d, 4)
+            // EDIT-Modus mit Schnitt kurz vor der Position und eigenem Grid
+            let wasEditing = mix.editing(d)
+            if !wasEditing { mix.toggleEdit(d) }
+            mix.setTrimPoint(d, end: false, 58); mix.shiftGrid(d, ms: 1)
+            await shot("state-edit")
+            mix.clearTrim(d); mix.shiftGrid(d, ms: -1)
+            if !wasEditing { mix.toggleEdit(d) }
             try? await Task.sleep(for: .milliseconds(300))
         }
         var all: [Double] = [], allSync: [Double] = []

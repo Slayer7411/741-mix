@@ -452,11 +452,10 @@ struct OverviewHook: View {
                 Analyses.shared.setDecks(playing: activity.playing, loading: activity.loading)
             }
             .onAppear {
-                // eigene Analyse: Ergebnisse in die Library, Collection-Datei nach Einstellung, Grid-Änderung bei Neu analysieren
+                // eigene Analyse: Ergebnisse in die Library, Collection-Datei nach Einstellung (ein von Hand gesetztes Grid bleibt)
                 let a = Analyses.shared
                 a.library = store
                 a.writeBack = { [mix] in mix.prefs.ui.writeCollection }
-                a.clearGridEdit = { [mix] key in mix.clearGridEdit(key) }
             }
             .onChange(of: fill, initial: true) { ov.setMode(fill) }
             .onChange(of: sig.keys, initial: true) {
