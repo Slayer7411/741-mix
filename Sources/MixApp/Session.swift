@@ -1,4 +1,5 @@
 import Foundation
+import LibraryCloud
 import MixCore
 import MixEngine
 
@@ -148,9 +149,14 @@ struct Session: Codable {
             return store.customSmartlists.first { $0.id.uuidString == u }.map { .custom($0) }
         }
         if id.hasPrefix("folder:") {
+            // ohne Materialisieren (Hauptthread, Ordner oft im Cloud-Laufwerk): ein noch nicht geladener Ordner
+            // meldet EDEADLK statt auf den Anbieter zu warten – er ist da, die Liste liest MusicFolderStore im Hintergrund
             let p = String(id.dropFirst(7))
-            var dir: ObjCBool = false
-            return FileManager.default.fileExists(atPath: p, isDirectory: &dir) && dir.boolValue ? .folder(p) : nil
+            let folder = SystemCloudFileSystem.withoutMaterializing {
+                var st = stat()
+                return stat(p, &st) == 0 ? st.st_mode & S_IFMT == S_IFDIR : errno == EDEADLK
+            }
+            return folder ? .folder(p) : nil
         }
         if id.hasPrefix("node:") {
             let name = String(id.dropFirst(5))

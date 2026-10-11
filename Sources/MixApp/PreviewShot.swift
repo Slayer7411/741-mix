@@ -83,7 +83,7 @@ enum PreviewShot {
         // echte Track-Tabelle offscreen
         let model = BrowserPaneModel(name: "Shot")
         func host(_ rows: [Track], size: NSSize) -> (NSHostingView<AnyView>, NSWindow) {
-            let view = AnyView(TrackTable(rows: rows, model: model)
+            let view = AnyView(TrackTable(rows: rows, generation: 0, model: model)
                 .frame(width: size.width, height: size.height)
                 .background(Theme.background)
                 .environment(store).environment(mix).environment(browser).environment(history)

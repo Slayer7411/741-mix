@@ -360,15 +360,18 @@ public final class MixController: @unchecked Sendable {
             engine.player(d).playing = false
             return (loadSeq[d], max(0.5, state.prefs.loadTimeout))
         }
-        guard FileManager.default.fileExists(atPath: t.path) else {
-            failLoad(t, d, seq: seq, reason: String(localized: "Datei fehlt"), timeout: nil,
-                     text: String(localized: "Datei fehlt: \(Self.displayName(t))"))
-            return
-        }
         let watch = LoadWatch()
         locked { loads.append(PendingLoad(deck: d, seq: seq, track: t, watch: watch, timeout: timeout)) }
         let decode = decoder
         DispatchQueue.global(qos: .userInitiated).async { [self] in
+            // Datei-Prüfung nicht auf dem aufrufenden (Haupt-)Thread: in einem Cloud-Ordner kann schon der Blick
+            // ins Verzeichnis auf den Anbieter warten. Hängt sie, bricht der Wächter nach der Zeitgrenze ab
+            guard FileManager.default.fileExists(atPath: t.path) else {
+                watch.progress(Int.max)
+                failLoad(t, d, seq: seq, reason: String(localized: "Datei fehlt"), timeout: nil,
+                         text: String(localized: "Datei fehlt: \(Self.displayName(t))"))
+                return
+            }
             do {
                 let t0 = Date()
                 let a = try decode(URL(fileURLWithPath: t.path), rate) { [self] frames in

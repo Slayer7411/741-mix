@@ -71,19 +71,26 @@ final class BrowserPaneModel: Identifiable {
     @ObservationIgnored private var sortedBase: [Track] = []
     @ObservationIgnored private var cacheKey: [AnyHashable] = []
     @ObservationIgnored private var cachedRows: [Track] = []
+    /// Identität der Tabelle: neu, wenn sich die Zeilen stark ändern (Quelle, Sortierung, Filter, Suche). SwiftUI
+    /// vergleicht sonst alte und neue Zeilen (Aufwand ~ Zeilen × Änderungen): Collection ⇄ Playlist bei 14k Tracks
+    /// ~2,5 s Hauptthread, neu aufbauen ~0,3 s. Kleine Änderungen (neue Werte, ein paar Tracks dazu/weg) behalten
+    /// Tabelle und Scrollposition. Gelesen nach `rows`, nicht beobachtet
+    @ObservationIgnored private(set) var tableGeneration = 0
 
-    /// Gefilterte + sortierte Liste. Die Quelle wird einmal sortiert (14k Tracks lokalisiert ≈ 100 ms) und bei
+    /// Gefilterte + sortierte Liste. Die Quelle wird einmal sortiert (14k Tracks ≈ 60 ms, TrackSort) und bei
     /// Suche, Tags und Rollen nur noch gefiltert – ein Tastendruck im Suchfeld kostet so ~5 ms statt der Sortierung.
     func rows(from store: LibraryStore, history: HistoryStore?, separators: String) -> [Track] {
         let baseKey: [AnyHashable] = [source, "\(sortOrder)", store.revision, store.sourceRevision(source, subfolders: subfolders), subfolders]
         if baseKey != sortedKey {
             // nach dem Laden liegt die Liste meist schon sortiert vor (im Hintergrund, siehe LibraryStore.load)
-            sortedBase = store.presorted(source, order: sortOrder) ?? base(from: store, history: history).sorted(using: sortOrder)
+            sortedBase = store.presorted(source, order: sortOrder) ?? TrackSort.sorted(base(from: store, history: history), using: sortOrder)
             sortedKey = baseKey
         }
         let key = baseKey + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0] as [AnyHashable]
         if key == cacheKey { return cachedRows }
-        cachedRows = filtered(sortedBase, separators: separators)
+        let rows = filtered(sortedBase, separators: separators)
+        if !ListChange.isSmall(from: cachedRows, to: rows, limit: 64) { tableGeneration += 1 }
+        cachedRows = rows
         cacheKey = key
         return cachedRows
     }
@@ -144,7 +151,7 @@ struct BrowserPane: View {
                 if model.source.isHistory {
                     HistoryTable(entries: historyEntries, model: model)
                 } else {
-                    TrackTable(rows: rows, model: model)
+                    TrackTable(rows: rows, generation: model.tableGeneration, model: model)
                 }
             }
             .frame(minWidth: 380.z)
@@ -189,7 +196,7 @@ struct BrowserPane: View {
                         .help("Dateien aus allen Unterordnern zeigen")
                 }
                 Spacer(minLength: 8.z)
-                TextField("SUCHEN", text: $model.search)
+                SearchField(model: model)
                     .textFieldStyle(.plain)
                     .font(Theme.mono(11.z))
                     .padding(.horizontal, 6.z).padding(.vertical, 3.z)
@@ -230,6 +237,36 @@ struct BrowserPane: View {
         .padding(.horizontal, 8.z)
         .padding(.vertical, 5.z)
         .background(Theme.panelHeader)
+    }
+}
+
+/// Suchfeld eines Bereichs: Text sofort im Feld, in die Liste nach 0,15 s Tipp-Pause (leer und ⏎ sofort). Jede neue
+/// Suche baut die Liste neu (Collection 14k Tracks: ~0,25 s Hauptthread, die Wellenformen stehen so lange) – schnelles
+/// Tippen kostet so einen Neuaufbau statt einen je Taste
+struct SearchField: View {
+    @Bindable var model: BrowserPaneModel
+    @State private var text = ""
+    @State private var pending: DispatchWorkItem?
+
+    var body: some View {
+        TextField("SUCHEN", text: $text)
+            .onSubmit { apply(text) }
+            .onAppear { text = model.search }
+            // von außen gesetzt (Favoriten, Sitzung): ins Feld
+            .onChange(of: model.search) { _, s in if s != text { pending?.cancel(); text = s } }
+            .onChange(of: text) { _, s in
+                pending?.cancel()
+                guard s != model.search else { return }
+                if s.isEmpty { apply(s); return }
+                let w = DispatchWorkItem { MainActor.assumeIsolated { apply(s) } }
+                pending = w
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: w)
+            }
+    }
+
+    private func apply(_ s: String) {
+        pending?.cancel()
+        if model.search != s { model.search = s }
     }
 }
 
@@ -520,6 +557,8 @@ struct TrackTable: View {
     @Environment(MixModel.self) private var decks
     @Environment(HistoryStore.self) private var history
     let rows: [Track]
+    /// BrowserPaneModel.tableGeneration zu genau diesen Zeilen (neu = Tabelle neu aufbauen statt vergleichen)
+    let generation: Int
     @Bindable var model: BrowserPaneModel
     @State private var columns = TableColumnCustomization<Track>()
     @State private var inlineCtl = InlineEditController()
@@ -694,6 +733,7 @@ struct TrackTable: View {
             cols7
             cols8
         }
+        .id(generation)
         .onAppear {
             if let d = UserDefaults.standard.data(forKey: "columns.\(model.name)"),
                let c = try? JSONDecoder().decode(TableColumnCustomization<Track>.self, from: Self.withNewColumnsFirst(PreviewColumn.placed(d))) { columns = c }
@@ -701,7 +741,8 @@ struct TrackTable: View {
         }
         .onChange(of: decks.prefs.ui.previewMode) { _, m in columns[visibility: "preview"] = m == .column ? .visible : .hidden }
         .onChange(of: columns) {
-            if let d = try? JSONEncoder().encode(columns) { UserDefaults.standard.set(d, forKey: "columns.\(model.name)") }
+            guard !Session.isSelfTest, let d = try? JSONEncoder().encode(columns) else { return }
+            UserDefaults.standard.set(d, forKey: "columns.\(model.name)")
         }
         .onChange(of: UIZoom.shared.factor) { old, new in
             // Spaltenbreiten wachsen mit dem Zoom; die Tabelle meldet sie zurück in die gespeicherte Anordnung
@@ -761,6 +802,13 @@ struct TrackTable: View {
         } primaryAction: { ids in
             // Return = Inline-Bearbeitung der gewählten Zeile, Doppelklick = ins Fokus-Deck laden
             if NSApp.currentEvent?.type == .keyDown { inlineCtl.beginFromKeyboard(ids) } else { load(ids, decks.focusedDeck) }
+        }
+        .onChange(of: generation) {
+            // neu aufgebaut: hatte die alte Tabelle den Fokus (Pfeiltasten), bekommt ihn die neue
+            DispatchQueue.main.async {
+                guard let tv = inlineCtl.table, let w = tv.window, w.firstResponder === w else { return }
+                w.makeFirstResponder(tv)
+            }
         }
         .onChange(of: model.selection) { browser.activePaneID = model.id }
         .onChange(of: browser.scrollRequest?.track) {

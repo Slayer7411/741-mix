@@ -38,7 +38,13 @@ private func waitLoaded(_ c: MixController, _ d: Int, max seconds: Double) async
     let (c, n) = controller(timeout: 4)
     var t = Track(key: "gone", path: "/nonexistent/minos-\(UUID().uuidString).aiff")
     t.artist = "Somebody"; t.title = "Gone"
+    // geprüft im Hintergrund (nie auf dem aufrufenden Hauptthread): Meldung nach Millisekunden (Zeitstempel der
+    // Meldung, das Abfragen aus dem Test kommt unter Last Sekunden zu spät)
+    let t0 = Date()
     c.load(t, deck: 0)
+    _ = try await waitLoaded(c, 0, max: 5)
+    let failed = n.time(of: { $0.key == "load.0" }).map { $0.timeIntervalSince(t0) } ?? .nan
+    #expect(failed < 1)
     let s = c.snapshot().decks[0]
     #expect(!s.loading)
     #expect(s.track == nil)

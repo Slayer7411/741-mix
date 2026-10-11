@@ -29,7 +29,8 @@ final class LibraryStore {
     }
 
     var tracks: [Track] = [] { didSet { revision += 1 } }
-    /// zählt jede Änderung an Collection/Preparation/Smartlists (für Browser-Zwischenspeicher)
+    /// zählt jede Änderung der Tracks (für Browser-Zwischenspeicher). Preparation und eigene Smartlists zählen getrennt
+    /// (`sourceRevision`): sonst sortierte „An Preparation anhängen“ jeden Bereich neu, auch die Collection
     private(set) var revision = 0
     var root = PlaylistNode(name: "Playlists", kind: .folder)
     /// Tracks, die gerade auf den Decks liegen (A-D) – Quelle RUNNING TRACKS
@@ -49,17 +50,20 @@ final class LibraryStore {
 
     /// Eigene Smartlists (Smartlist-Regel-Syntax), gespeichert in UserDefaults
     var customSmartlists: [CustomSmartlist] = CustomSmartlist.load() {
-        didSet { revision += 1; CustomSmartlist.save(customSmartlists) }
+        didSet { smartlistRevision += 1; if !Session.isSelfTest { CustomSmartlist.save(customSmartlists) } }
     }
+    private(set) var smartlistRevision = 0
 
-    /// Preparation: wird gespeichert, beim nächsten Start archiviert und geleert
-    var preparation: [String] = UserDefaults.standard.stringArray(forKey: "prep.current") ?? [] {
+    /// Preparation: wird gespeichert, beim nächsten Start archiviert und geleert (Selbsttest/Messung: nur im Speicher)
+    var preparation: [String] = Session.isSelfTest ? [] : UserDefaults.standard.stringArray(forKey: "prep.current") ?? [] {
         didSet {
-            revision += 1
+            preparationRevision += 1
+            guard !Session.isSelfTest else { return }
             UserDefaults.standard.set(preparation, forKey: "prep.current")
             UserDefaults.standard.set(Date(), forKey: "prep.date")
         }
     }
+    private(set) var preparationRevision = 0
     @ObservationIgnored var preparationArchived = false
     var preparationDate: Date { UserDefaults.standard.object(forKey: "prep.date") as? Date ?? Date() }
     /// einmal nach dem ersten Laden der Collection
@@ -74,6 +78,8 @@ final class LibraryStore {
     func sourceRevision(_ s: BrowserSource, subfolders: Bool = false) -> Int {
         switch s {
         case .running: runningRevision
+        case .preparation: preparationRevision
+        case .custom: smartlistRevision
         case let .folder(p): folders.stamp(p, recursive: subfolders)
         default: 0
         }
@@ -263,7 +269,7 @@ final class LibraryStore {
         var custom: [UUID: (query: String, tracks: [Track])] = [:]
     }
 
-    /// Listen der Bereiche parallel sortieren (gleiches `sorted(using:)` wie im Bereich, nur nicht auf dem Hauptthread)
+    /// Listen der Bereiche parallel sortieren (gleiches `TrackSort` wie im Bereich, nur nicht auf dem Hauptthread)
     /// Gleiche Liste wie beim letzten Laden -> derselbe Speicher: die Tabelle sieht keine Änderung und baut nichts neu.
     nonisolated private static func presort(_ targets: [PresortKey], tracks: [Track], byKey: [String: Track],
                                             nodes: [UUID: PlaylistNode], previous: [PresortKey: [Track]]) -> Presorted {
@@ -276,7 +282,7 @@ final class LibraryStore {
                 DispatchQueue.concurrentPerform(iterations: targets.count) { i in
                     guard let base = baseTracks(targets[i].source, tracks: tracks, byKey: byKey, nodes: nodes) else { return }
                     b[i] = base
-                    let list = base.sorted(using: targets[i].order)
+                    let list = TrackSort.sorted(base, using: targets[i].order)
                     if let prev = previous[targets[i]], prev == list { r[i] = prev } else { r[i] = list }
                 }
             }

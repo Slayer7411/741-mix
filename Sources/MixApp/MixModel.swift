@@ -92,6 +92,9 @@ final class MixModel {
     @ObservationIgnored private var savedEdit: [Int: TrackEdit?] = [:]
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var previewPlayer: AVAudioPlayer?
+    /// Vorhören: zählt jede Anfrage (eine spät geöffnete Datei spielt nur, wenn danach nichts mehr kam)
+    @ObservationIgnored private var previewSeq = 0
+    @ObservationIgnored private var previewOpening = false
     @ObservationIgnored private var reroutePending = false
 
     /// Plugin-Verwaltung (⌘, → PLUGINS); teilt die Liste mit dem Kern
@@ -324,7 +327,7 @@ final class MixModel {
     }
     func setMasterVolume(_ v: Double) {
         run { core.setMasterVolume(v) }
-        UserDefaults.standard.set(v, forKey: "masterVolume")
+        if !Session.isSelfTest { UserDefaults.standard.set(v, forKey: "masterVolume") }
     }
     /// MAIN wirkt nur im internen Modus oder mit „Main-Volume wirkt auch extern“ (sonst setzt der Kern 1)
     var masterVolumeActive: Bool { mixerMode == .internalMixer || prefs.engine.masterVolumeExternal }
@@ -411,6 +414,7 @@ final class MixModel {
     }
 
     private func saveSetup() {
+        guard !Session.isSelfTest else { return }   // Selbsttest/Messung (eingebautes Gerät): Christians Routing bleibt
         let d = UserDefaults.standard
         d.set(mixerMode.rawValue, forKey: "mixerMode")
         d.set(deviceUID, forKey: "deviceUID")
@@ -422,14 +426,36 @@ final class MixModel {
 
     // MARK: - Vorhören im Browser
 
+    /// Datei im Hintergrund öffnen: eine Datei nur in der Cloud lädt der Anbieter beim Öffnen erst ganz herunter,
+    /// auf dem Hauptthread stand die Oberfläche (Wellenformen, Browser) so lange
     func preview(_ t: Track) {
-        previewPlayer?.stop()
-        previewPlayer = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: t.path))
-        previewPlayer?.currentTime = (previewPlayer?.duration ?? 0) * prefs.ui.previewStart
-        previewPlayer?.play()
+        stopPreview()
+        previewOpening = true
+        let seq = previewSeq, url = URL(fileURLWithPath: t.path), start = prefs.ui.previewStart
+        DispatchQueue.global(qos: .userInitiated).async {
+            let p = try? AVAudioPlayer(contentsOf: url)
+            p?.prepareToPlay()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard seq == self.previewSeq else { return }
+                    self.previewOpening = false
+                    guard let p else { return }
+                    p.currentTime = p.duration * start
+                    p.play()
+                    self.previewPlayer = p
+                }
+            }
+        }
     }
 
     func togglePreview(_ t: Track) {
-        if previewPlayer?.isPlaying == true { previewPlayer?.stop() } else { preview(t) }
+        if previewPlayer?.isPlaying == true || previewOpening { stopPreview() } else { preview(t) }
+    }
+
+    private func stopPreview() {
+        previewSeq += 1
+        previewOpening = false
+        previewPlayer?.stop()
+        previewPlayer = nil
     }
 }
