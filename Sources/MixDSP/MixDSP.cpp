@@ -22,6 +22,7 @@ constexpr int kMaxFrames = MDSP_MAX_FRAMES;
 constexpr int kMaxIn = kMaxFrames * 5;   // Eingang je Block bei Tempo bis 4× (+Reserve)
 constexpr double kPi = 3.14159265358979323846;
 constexpr float kReverbRef = 0.42f;       // Hall-Eingangsgewicht bei Pegel 1 (Abgleich: siehe Reverb::run)
+constexpr double kTrimFadeS = 0.003;      // Rampe an geschnittenen Rändern: kein Knacken, kein Gleichanteil am Rand
 
 inline float dbToLin(float db) { return db <= -95.f ? 0.f : std::pow(10.f, db / 20.f); }
 
@@ -398,6 +399,9 @@ struct Deck {
     std::atomic<int> loopVersion{0};
     std::atomic<bool> loopActiveReq{false};
     std::atomic<double> loopStartReq{0}, loopEndReq{0};
+    // Schnitt (Sekunden, Ende 0 = Track-Ende), als Paar per Sequenzzähler (ungerade = wird geschrieben)
+    std::atomic<uint32_t> trimSeq{0};
+    std::atomic<double> trimStartReq{0}, trimEndReq{0};
     // Track-Übergabe: Steuer-Thread füllt Slot (gen & 1) und veröffentlicht gen, Audio-Thread übernimmt und bestätigt
     TrackSlot slots[2];
     std::atomic<uint32_t> pendingGen{0};    // 0 = nichts ausstehend
@@ -414,6 +418,11 @@ struct Deck {
     TrackSlot cur;
     double pos = 0, flux = 0, inAcc = 0;
     bool loopActive = false; double loopStart = 0, loopEnd = 0; int seenLoop = 0;
+    double trimS = 0, trimE = 0; uint32_t seenTrim = 0;   // übernommener Schnitt (Sekunden)
+    // je Block aus Track, Schnitt und Loop (Frames): hörbarer Bereich [lo, hi), Rampen an geschnittenen Rändern,
+    // wirksamer Loop (nur der Teil im Schnitt)
+    double lo = 0, hi = 0, fadeIn = 0, fadeOut = 0;
+    bool loopWrap = false; double loopLo = 0, loopHi = 0;
     bool wasStretching = false;
     double latSm = 0;   // geglättete Keylock-Latenz (sonst springt die Position bei Tempowechseln)
     int latDir = 1;     // Richtung, in die der Lesekopf der Latenz vorausläuft
@@ -459,19 +468,58 @@ struct MDEngine {
 
 // ---------- Lesen aus dem Track ----------
 
+/// Grenzen für diesen Block: Schnitt (falls gültig, sonst die ganze Datei) und der Loop innerhalb davon
+static void updateBounds(Deck &d) {
+    uint32_t q = d.trimSeq.load(std::memory_order_acquire);
+    if (q != d.seenTrim && !(q & 1)) {
+        double s = d.trimStartReq.load(std::memory_order_relaxed), en = d.trimEndReq.load(std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (d.trimSeq.load(std::memory_order_relaxed) == q) { d.trimS = s; d.trimE = en; d.seenTrim = q; }
+    }
+    const TrackSlot &t = d.cur;
+    double fr = double(t.frames), s = d.trimS * t.rate, en = d.trimE * t.rate;
+    if (!(en > 0) || en > fr) en = fr;
+    if (!(s > 0)) s = 0;
+    if (!(en > s)) { s = 0; en = fr; }   // Schnitt hinter dem Track-Ende o. Ä.: ganze Datei
+    d.lo = s; d.hi = en;
+    double f = std::min(kTrimFadeS * t.rate, (en - s) / 2);
+    d.fadeIn = s > 0 ? f : 0;
+    d.fadeOut = en < fr ? f : 0;
+    double ls = std::max(d.loopStart * t.rate, s), le = std::min(d.loopEnd * t.rate, en);
+    d.loopWrap = d.loopActive && le > ls;
+    d.loopLo = ls; d.loopHi = le;
+}
+
+/// Faktor eines Samples: 0 außerhalb des hörbaren Bereichs (Schnitt bzw. Datei), Rampe an geschnittenen Rändern
+static inline float gate(const Deck &d, int64_t k) {
+    double x = double(k);
+    if (x < d.lo || x >= d.hi) return 0.f;
+    double g = 1;
+    if (x < d.lo + d.fadeIn) g = (x - d.lo) / d.fadeIn;
+    if (x > d.hi - 1 - d.fadeOut) g = std::min(g, (d.hi - 1 - x) / d.fadeOut);
+    return float(g);
+}
+
+/// Position nach einem Schritt: Loop (nur im Schnitt), rückwärts nicht vor den Start
+static inline void wrap(Deck &d, double step) {
+    if (d.loopWrap) {
+        if (step > 0 && d.pos >= d.loopHi) d.pos -= (d.loopHi - d.loopLo);
+        if (step < 0 && d.pos < d.loopLo) d.pos += (d.loopHi - d.loopLo);
+    }
+    if (d.pos < d.lo) d.pos = d.lo;
+}
+
 /// ganzzahlig lesen (für den Keylock-Weg), mit Richtung und Loop
 static void readInput(Deck &d, float *L, float *R, int n, int dir) {
     const TrackSlot &t = d.cur;
+    const double full0 = d.lo + d.fadeIn, full1 = d.hi - 1 - d.fadeOut;   // hier ohne Rampe
     for (int i = 0; i < n; i++) {
         int64_t k = int64_t(d.pos);
-        if (k >= 0 && k < t.frames) { L[i] = t.L[k]; R[i] = t.R[k]; } else { L[i] = R[i] = 0; }
+        double x = double(k);
+        if (x >= full0 && x <= full1) { L[i] = t.L[k]; R[i] = t.R[k]; }
+        else { float g = gate(d, k); if (g > 0) { L[i] = t.L[k] * g; R[i] = t.R[k] * g; } else { L[i] = R[i] = 0; } }
         d.pos += dir;
-        if (d.loopActive) {
-            double ls = d.loopStart * t.rate, le = d.loopEnd * t.rate;
-            if (dir > 0 && d.pos >= le) d.pos -= (le - ls);
-            if (dir < 0 && d.pos < ls) d.pos += (le - ls);
-        }
-        if (d.pos < 0) d.pos = 0;
+        wrap(d, dir);
     }
 }
 
@@ -481,8 +529,9 @@ static void primeStretch(Deck &d, int dir, double rateSrc) {
     int n = std::min(kMaxIn, d.stretch.inputLatency() * 2 + 1024);
     for (int i = 0; i < n; i++) {
         int64_t k = int64_t(d.pos) - int64_t(dir) * (n - i);
-        d.inL[i] = (k >= 0 && k < t.frames) ? t.L[k] : 0.f;
-        d.inR[i] = (k >= 0 && k < t.frames) ? t.R[k] : 0.f;
+        float g = gate(d, k);
+        d.inL[i] = g > 0 ? t.L[k] * g : 0.f;
+        d.inR[i] = g > 0 ? t.R[k] * g : 0.f;
     }
     float *ins[2] = {d.inL.data(), d.inR.data()};
     d.stretch.seek(ins, n, rateSrc);
@@ -491,24 +540,24 @@ static void primeStretch(Deck &d, int dir, double rateSrc) {
 /// gebrochen lesen mit 4-Punkt-Hermite (Varispeed, Tonhöhe folgt dem Tempo)
 static void readResampled(Deck &d, float *L, float *R, int n, double step) {
     const TrackSlot &t = d.cur;
-    auto at = [&](const float *b, int64_t k) -> float { return (k >= 0 && k < t.frames) ? b[k] : 0.f; };
+    // alle vier Stützstellen ohne Rampe im Bereich -> direkt lesen, sonst je Stützstelle mit Faktor
+    const double full0 = d.lo + d.fadeIn + 1, full1 = d.hi - 1 - d.fadeOut - 2;
+    auto at = [&](const float *b, int64_t k) -> float { float g = gate(d, k); return g > 0 ? b[k] * g : 0.f; };
     for (int i = 0; i < n; i++) {
         int64_t k = int64_t(std::floor(d.pos));
         float f = float(d.pos - double(k));
+        bool direct = double(k) >= full0 && double(k) <= full1;
         for (int c = 0; c < 2; c++) {
             const float *b = c == 0 ? t.L : t.R;
-            float xm1 = at(b, k - 1), x0 = at(b, k), x1 = at(b, k + 1), x2 = at(b, k + 2);
+            float xm1, x0, x1, x2;
+            if (direct) { xm1 = b[k - 1]; x0 = b[k]; x1 = b[k + 1]; x2 = b[k + 2]; }
+            else { xm1 = at(b, k - 1); x0 = at(b, k); x1 = at(b, k + 1); x2 = at(b, k + 2); }
             float c1 = 0.5f * (x1 - xm1), c2 = xm1 - 2.5f * x0 + 2 * x1 - 0.5f * x2, c3 = 0.5f * (x2 - xm1) + 1.5f * (x0 - x1);
             float y = ((c3 * f + c2) * f + c1) * f + x0;
             (c == 0 ? L : R)[i] = y;
         }
         d.pos += step;
-        if (d.loopActive) {
-            double ls = d.loopStart * t.rate, le = d.loopEnd * t.rate;
-            if (step > 0 && d.pos >= le) d.pos -= (le - ls);
-            if (step < 0 && d.pos < ls) d.pos += (le - ls);
-        }
-        if (d.pos < 0) d.pos = 0;
+        wrap(d, step);
     }
 }
 
@@ -551,6 +600,15 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
         d.seenLoop = lv;
         d.loopActive = d.loopActiveReq.load(); d.loopStart = d.loopStartReq.load(); d.loopEnd = d.loopEndReq.load();
     }
+    // Schnitt: hörbare Position außerhalb (Sprung, Ladeposition, Schnitt geändert) -> auf die Grenze, Stretch neu vorfüllen
+    updateBounds(d);
+    if (d.cur.frames > 0) {
+        double heard = d.wasStretching && !jumped ? d.pos - d.latSm * d.latDir : d.pos;
+        if (heard < d.lo || heard > d.hi) {
+            d.pos = std::clamp(heard, d.lo, d.hi); d.inAcc = 0;
+            jumped = true;
+        }
+    }
 
     bool playing = d.p[MD_PLAYING].load() > 0.5f && d.cur.frames > 0;
     // Keylock aus oder Stopp: Lesekopf (läuft der Stretch-Latenz voraus) auf die hörbare Position zurück
@@ -571,6 +629,7 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     if (!playing && !fxTail) {   // Deck steht, kein Hall/Echo-Rest → nichts rechnen
         d.rms.store(d.rms.load() * 0.8f); d.peak.store(d.peak.load() * 0.8f);
         d.playingOut.store(false);
+        if (d.cur.frames > 0) d.pos = std::clamp(d.pos, d.lo, d.hi);   // am Ende ein Stück darüber hinaus gelaufen
         d.posOut.store(d.pos / d.cur.rate); d.fluxOut.store(d.flux / d.cur.rate);
         return;
     }
@@ -617,7 +676,9 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     // Flux: Schattenposition läuft normal weiter, solange Loop/Reverse aktiv
     if (fluxOn && (dir < 0 || d.loopActive)) d.flux += n * rate * srcRatio; else d.flux = d.pos;
 
-    if (playing && d.pos >= double(d.cur.frames)) { d.p[MD_PLAYING].store(0); }
+    // Ende (Track oder Schnitt): stoppt, sobald die hörbare Position es erreicht (Keylock: der Lesekopf läuft voraus,
+    // dahinter liest er Stille – das Ende bleibt hörbar, nichts dahinter)
+    if (playing && dir > 0 && (stretching ? d.pos - d.latSm * d.latDir : d.pos) >= d.hi) { d.p[MD_PLAYING].store(0); }
 
     // Kanalzug: Gain, EQ, Filter
     float g = dbToLin(d.p[MD_GAIN_DB].load());
@@ -691,7 +752,7 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
 
     // Zustand nach außen: hörbare Position (Keylock-Latenz abgezogen)
     if (stretching) d.latSm += (latencySrc - d.latSm) * 0.02;   // Latenz hängt leicht vom Tempo ab → glätten
-    double heard = std::max(0.0, d.pos - d.latSm * d.latDir);
+    double heard = std::clamp(d.pos - d.latSm * d.latDir, d.lo, std::max(d.lo, d.hi));
     d.posOut.store(heard / d.cur.rate);
     d.fluxOut.store(std::max(0.0, d.flux - d.latSm * d.latDir) / d.cur.rate);
     d.playingOut.store(d.p[MD_PLAYING].load() > 0.5f);
@@ -775,7 +836,26 @@ bool mdsp_fx_plugin_needs_reset(MDEngine *e, int unit, int deck) {
 void mdsp_fx_plugin_reset_done(MDEngine *e, int unit, int deck) {
     e->decks[deck].fx[unit].plug.resetPending.store(false, std::memory_order_release);
 }
-void mdsp_seek(MDEngine *e, int deck, double s) { if (std::isfinite(s)) e->decks[deck].pendingSeek.store(std::max(0.0, s)); }
+void mdsp_seek(MDEngine *e, int deck, double s) {
+    if (!std::isfinite(s)) return;
+    Deck &d = e->decks[deck];
+    // gleich im Schnitt (mdsp_position meldet das Ziel sofort); die Länge der Datei prüft der Audio-Thread
+    double ts = d.trimStartReq.load(std::memory_order_relaxed), te = d.trimEndReq.load(std::memory_order_relaxed);
+    s = std::max(s, std::max(0.0, ts));
+    if (te > ts) s = std::min(s, te);
+    d.pendingSeek.store(s);
+}
+
+void mdsp_set_trim(MDEngine *e, int deck, double s, double en) {
+    if (!std::isfinite(s) || !std::isfinite(en)) return;
+    s = std::max(0.0, s);
+    if (en <= 0) en = 0;                    // Track-Ende
+    else if (en <= s) { s = 0; en = 0; }    // leer oder verkehrt: kein Schnitt
+    Deck &d = e->decks[deck];
+    d.trimSeq.fetch_add(1, std::memory_order_acq_rel);
+    d.trimStartReq.store(s, std::memory_order_relaxed); d.trimEndReq.store(en, std::memory_order_relaxed);
+    d.trimSeq.fetch_add(1, std::memory_order_release);
+}
 
 void mdsp_set_loop(MDEngine *e, int deck, bool active, double s, double en) {
     Deck &d = e->decks[deck];

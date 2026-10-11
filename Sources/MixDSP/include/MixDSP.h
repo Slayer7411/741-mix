@@ -78,6 +78,10 @@ void mdsp_fx_plugin_reset_done(MDEngine *e, int unit, int deck);
 
 void mdsp_seek(MDEngine *e, int deck, double seconds);
 void mdsp_set_loop(MDEngine *e, int deck, bool active, double startSeconds, double endSeconds);
+/// Schnitt (nicht destruktiv): nur zwischen Start und Ende ist etwas hörbar (Sekunden, Ende <= 0 = Track-Ende).
+/// Sprünge und Ladeposition landen im Schnitt, ein Loop wirkt nur bis zu dessen Ende, vorwärts stoppt das Deck am Ende
+/// wie am Track-Ende, rückwärts bleibt es am Start stehen. Ende <= Start = kein Schnitt. Gilt bis zum nächsten Aufruf.
+void mdsp_set_trim(MDEngine *e, int deck, double startSeconds, double endSeconds);
 
 double mdsp_position(MDEngine *e, int deck);      // Sekunden (hörbare Position)
 double mdsp_flux_position(MDEngine *e, int deck);
