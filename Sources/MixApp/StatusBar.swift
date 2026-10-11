@@ -34,6 +34,7 @@ struct StatusBar: View {
                 HStack(spacing: 4.z) {
                     Text("Preparation: \(store.preparation.count)")
                     OverviewStatus()
+                    AnalysisStatus()
                 }
                 .fixedSize()
             }

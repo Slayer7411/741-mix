@@ -6,8 +6,9 @@ import MixCore
 /// Zellen verbinden -> eine AppKit-Ansicht über dem sichtbaren Bereich der Tabelle zeichnet je sichtbare Zeile das Band
 /// in die untere Hälfte (ein Bild über die ganze Zeilenbreite, Spaltengrenzen spielen keine Rolle). Klicks gehen durch.
 enum PreviewRow {
-    /// Mindesthöhe des Zelleninhalts zweizeilig; mit dem Rand der Tabelle ~34 pt je Zeile (Text ~17 pt + Band)
-    static let rowHeight: CGFloat = 26
+    /// Mindesthöhe des Zelleninhalts zweizeilig; mit dem Rand der Tabelle ~34 pt je Zeile (Text ~17 pt + Band).
+    /// Größere Schrift: Zeile wächst mit, das Band bleibt gleich hoch
+    static func rowHeight(textSize: Double) -> CGFloat { 26 + max(0, CGFloat(textSize) - 12) * 1.5 }
     /// Band: untere Hälfte, 2 pt Luft unten
     @MainActor static func band(in row: NSRect) -> NSRect {
         NSRect(x: row.minX + 2.z, y: row.minY + row.height * 0.5, width: row.width - 4.z, height: row.height * 0.5 - 2.z)
@@ -17,9 +18,11 @@ enum PreviewRow {
 /// Zelle zweizeilig: Inhalt oben, Mindesthöhe = Zeilenhöhe (die Tabelle wächst mit)
 struct PreviewRowCell: ViewModifier {
     let on: Bool
+    /// Zeilenhöhe (PreviewRow.rowHeight) – als Wert, Zellen haben keine Umgebung
+    let height: CGFloat
     func body(content: Content) -> some View {
         if on {
-            content.frame(maxWidth: .infinity, minHeight: PreviewRow.rowHeight.z, maxHeight: .infinity, alignment: .topLeading)
+            content.frame(maxWidth: .infinity, minHeight: height, maxHeight: .infinity, alignment: .topLeading)
         } else {
             content
         }
@@ -34,6 +37,8 @@ final class PreviewRowController {
     var rows: [Track] = [] { didSet { view?.needsDisplay = true } }
     var mix: MixModel?
     var on = false { didSet { if on != oldValue { sync() } } }
+    /// Deckkraft des Bandes (Prefs)
+    var alpha: CGFloat = 1 { didSet { if alpha != oldValue { view?.needsDisplay = true } } }
     private var view: BandView?
     private var observers: [NSObjectProtocol] = []
 
@@ -115,6 +120,7 @@ final class PreviewRowController {
                 let rect = convert(band, from: tv)
                 guard rect.intersects(dirtyRect), let img = c.image(c.rows[r]) else { continue }
                 ctx.saveGState()
+                ctx.setAlpha(c.alpha)
                 // Bild steht in CG-Koordinaten (y nach oben): in der gespiegelten Ansicht umdrehen
                 ctx.translateBy(x: rect.minX, y: rect.maxY)
                 ctx.scaleBy(x: 1, y: -1)
@@ -155,6 +161,7 @@ struct PreviewRowHost: NSViewRepresentable {
         controller.mix = mix
         controller.rows = rows
         controller.on = on
+        controller.alpha = CGFloat(mix.prefs.ui.previewBandAlpha)
         // Tabelle entsteht erst nach diesem Durchlauf
         DispatchQueue.main.async { controller.refresh() }
     }

@@ -14,6 +14,7 @@ struct SettingsView: View {
         SettingsTab("AUDIO") { AudioSettings() },
         SettingsTab("CONTROLLER") { ControllerSettings() },
         SettingsTab("TAGS") { TagColorSettings() },
+        SettingsTab("CLOUD") { CloudSettings() },
         SettingsTab("TASTATUR") { ShortcutSettings() },
     ]
 
@@ -331,12 +332,21 @@ struct DeckSettings: View {
                 Toggle("4 Decks anzeigen", isOn: $mix.prefs.ui.showFourDecks)
                 sliderRow("Vorhören im Browser ab (Anteil)", $mix.prefs.ui.previewStart, 0...0.9, format: "%.1f")
             }
+            Section("Zeilen je Deck") {
+                ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
+                    Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui.deckRows[keyPath: row.0] },
+                                                                  set: { mix.prefs.ui.deckRows[keyPath: row.0] = $0 }))
+                }
+                Toggle("Grid-Werkzeuge", isOn: $mix.prefs.ui.showGridTools)
+                Text("auch im menü decks -> zeilen. wellenform und kopfzeile bleiben immer.").settingsHint()
+            }
         }
     }
 }
 
 struct MixerFXSettings: View {
     @Environment(MixModel.self) private var mix
+    @State private var search = ""
 
     var body: some View {
         @Bindable var mix = mix
@@ -371,6 +381,67 @@ struct MixerFXSettings: View {
                 sliderRow("Reverb-Helligkeit", $mix.prefs.engine.reverbBrightness, 0...1)
                 sliderRow("Reverb-Vorverzögerung (ms)", $mix.prefs.engine.reverbPreDelayMs, 0...120, step: 1, format: "%.0f")
             }
+            Section("FX-Belegung (D/W · Regler · Tasten)") {
+                LabeledContent("Parameter suchen") {
+                    TextField("", text: $search, prompt: Text("Name oder Gruppe")).settingsField()
+                }
+                ForEach(0..<min(mix.prefs.ui.fxUnitCount, MixEngine.fxUnitCount), id: \.self) { u in
+                    LabeledContent {
+                        HStack(spacing: 10) {
+                            Text(verbatim: mix.effectName(mix.fxUnits[u].state.effectKey)).foregroundStyle(Theme.bone)
+                            Button("Alle auf Standard") { mix.resetFXMapping(u) }
+                        }
+                    } label: {
+                        Text(verbatim: "FX \(u + 1)").font(Theme.label(11, .bold))
+                    }
+                    ForEach(FXControl.allCases, id: \.self) { c in
+                        LabeledContent { FXAssignRow(u: u, c: c, search: search) } label: { Text(c.title) }
+                    }
+                }
+                Text("rechtsklick auf einen regler oder eine taste der fx-unit wählt den parameter direkt. gilt für die unit und wird je effekt bzw. plugin gemerkt: lädt die unit denselben effekt wieder, ist die belegung wieder da. die sitzung behält die belegung jeder unit. tasten: schalter um, listen eine stufe weiter, stufenlose zwischen min und max. d/w der unit wirkt nur, solange ein bedienelement darauf liegt.")
+                    .settingsHint()
+            }
+            Section("Gemerkte Belegungen") {
+                let stored = mix.prefs.engine.fxMappings
+                if stored.isEmpty { Text("keine – alle effekte in standardbelegung").settingsHint() }
+                ForEach(stored.keys.sorted(), id: \.self) { k in
+                    LabeledContent {
+                        HStack(spacing: 10) {
+                            Text("\(stored[k]?.targets.count ?? 0) Bedienelemente").foregroundStyle(Theme.muted)
+                            Button("Vergessen") { mix.prefs.engine.fxMappings[k] = nil }
+                        }
+                    } label: {
+                        Text(verbatim: mix.effectName(k))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Zeile der FX-Belegung: Menü mit dem Ziel, dahinter der Wert
+private struct FXAssignRow: View {
+    @Environment(MixModel.self) private var mix
+    let u: Int
+    let c: FXControl
+    let search: String
+
+    var body: some View {
+        let info = mix.fxUnits[u].controls[c.slot]
+        HStack(spacing: 10) {
+            Menu {
+                FXAssignMenu(u: u, c: c, filter: search)
+            } label: {
+                if let p = info.param {
+                    fxParamName(p) + (info.isDefault ? Text(verbatim: " · ") + Text("Standard") : Text(verbatim: ""))
+                } else {
+                    Text("Nicht zugewiesen")
+                }
+            }
+            .frame(maxWidth: 240, alignment: .leading)
+            Text(verbatim: info.param == nil ? "" : mix.fxText(u, info))
+                .font(Theme.mono(11)).monospacedDigit().foregroundStyle(Theme.muted)
+                .lineLimit(1)
         }
     }
 }
@@ -633,7 +704,7 @@ struct ControllerSettings: View {
                 Text("""
                 Play (Shift: CUP) · Sync (Shift: Master) · Hotcues 1–4 (Shift: löschen) · Loop-Encoder drehen = Loopgröße, \
                 drücken = Loop (Shift: drehen = Beatjump, drücken = Reloop) · Load · Browse (drücken = Vorhören) · \
-                FX: D/W, Regler 1–3 = Filter/Delay/Reverb, Tasten 1–3 = an/aus, Mode = alle aus bzw. Delay-Zeit · FX-Zuweisung.
+                FX: D/W, Regler 1–3, Tasten 1–3 nach FX-Belegung (Standard: Filter/Delay/Reverb + an/aus), Mode = alle aus bzw. Delay-Zeit · FX-Zuweisung.
                 """)
                 .settingsHint()
             }

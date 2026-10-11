@@ -53,7 +53,6 @@ struct ContentView: View {
         .background(Theme.background)
         .foregroundStyle(Theme.bone)
         .tint(Theme.state)
-        .environment(\.uiZoom, UIZoom.shared.factor)
         .preferredColorScheme(.dark)
         .toolbar {
             ToolbarItemGroup {
@@ -89,10 +88,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeMainNotification)) { n in
             if (n.object as? NSWindow) === MainWindow.window { ZoomControl.fit(mix: mix) }   // gespeicherter Zoom zu groß für den Bildschirm
         }
+        .background(RunningTracks())
         .background(OverviewHook())   // Browser-Vorschau: Deck-Tracks, Pause-Regel, Leerlauf
-        .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
-            store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
-        }
+        .background(CloudHook())      // Cloud-Library: Prüfen, Lokal-halten, Pause beim Laden
         .onChange(of: mix.prefs.ui.musicFolders, initial: true) { _, f in store.folders.configured = f }
         .onAppear {
             if store.tracks.isEmpty { store.load() }
@@ -103,6 +101,19 @@ struct ContentView: View {
                 if l.contains("nobrowser") { mix.prefs.ui.browserLayout = .single; mix.prefs.ui.browserHeight = 120 }
             }
             SelfTest.run(store: store, mix: mix)
+        }
+    }
+
+    /// RUNNING TRACKS im Browser nachführen – eigene leere Ansicht: liest alle vier Decks, ohne dass
+    /// ContentView bei jeder Deck-Änderung neu ausgewertet wird
+    struct RunningTracks: View {
+        @Environment(LibraryStore.self) private var store
+        @Environment(MixModel.self) private var mix
+        var body: some View {
+            Color.clear
+                .onChange(of: mix.decks.map(\.trackKey), initial: true) { _, keys in
+                    store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
+                }
         }
     }
 
@@ -128,19 +139,20 @@ struct ContentView: View {
         VStack(spacing: 6.z) {
             TopBar()
             // Decks mit fester Höhe: zwei flexible Decks übereinander ließen SwiftUI jede Zustandsänderung
-            // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks)
+            // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks); jedes Deck in eigener
+            // Hosting-View (DeckHost), damit eine Deck-Änderung nicht das ganze Fenster neu misst
             GeometryReader { geo in
                 let rows: CGFloat = mix.showFourDecks ? 2 : 1
                 let deckH = max(120.z, (geo.size.height - (rows - 1) * 6.z) / rows)
                 HStack(alignment: .top, spacing: 6.z) {
                     VStack(spacing: 6.z) {
-                        DeckView(d: 0).frame(height: deckH)
-                        if mix.showFourDecks { DeckView(d: 2).frame(height: deckH) }
+                        DeckHost(d: 0).frame(height: deckH)
+                        if mix.showFourDecks { DeckHost(d: 2).frame(height: deckH) }
                     }
                     if mix.prefs.ui.showMixer { MixerView().fixedSize(horizontal: true, vertical: false) }
                     VStack(spacing: 6.z) {
-                        DeckView(d: 1).frame(height: deckH)
-                        if mix.showFourDecks { DeckView(d: 3).frame(height: deckH) }
+                        DeckHost(d: 1).frame(height: deckH)
+                        if mix.showFourDecks { DeckHost(d: 3).frame(height: deckH) }
                     }
                 }
             }
@@ -181,6 +193,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let a = NSAlert()
         a.messageText = String(localized: "MINOS-741 beenden?")
         a.informativeText = String(localized: "Sitzung und History werden gespeichert.")
+        let pending = MainActor.assumeIsolated { CloudLibrary.shared.pendingCount }
+        if pending > 0 {
+            let handOff = MainActor.assumeIsolated { CloudLibrary.shared.handOffOnQuit }
+            a.informativeText += "\n" + (handOff
+                ? String(localized: "\(pending) Cloud-Downloads offen: der Anbieter lädt sie nach dem Beenden weiter.")
+                : String(localized: "\(pending) Cloud-Downloads offen: sie werden abgebrochen."))
+        }
         a.addButton(withTitle: String(localized: "Beenden"))
         a.addButton(withTitle: String(localized: "Abbrechen"))
         guard a.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
@@ -209,14 +228,15 @@ struct MixApp: App {
 
     var body: some Scene {
         WindowGroup(appTitle) {
-            ContentView()
-                .environment(store)
-                .environment(mix)
-                .environment(browser)
-                .environment(controllerStatus)
-                .environment(waveforms)
-                .environment(history)
-                .frame(minWidth: ZoomControl.minContent.width.z, minHeight: ZoomControl.minContent.height.z)
+            MinSize(width: ZoomControl.minContent.width.z, height: ZoomControl.minContent.height.z) {
+                ContentView()
+                    .environment(store)
+                    .environment(mix)
+                    .environment(browser)
+                    .environment(controllerStatus)
+                    .environment(waveforms)
+                    .environment(history)
+            }
                 .onAppear { startControllers() }
                 .onChange(of: mix.prefs.controller) { controller?.prefs = mix.prefs.controller }
                 .onChange(of: mix.prefs.ui.fxUnitCount) { controller?.fxUnits = mix.prefs.ui.fxUnitCount }
@@ -224,6 +244,7 @@ struct MixApp: App {
         }
         Settings {
             SettingsView()
+                .zoomExempt()
                 .environment(mix)
                 .environment(store)
                 .environment(controllerStatus)
@@ -273,12 +294,26 @@ struct MixApp: App {
                 ForEach([ShortcutID.hotcue1, .hotcue2, .hotcue3, .hotcue4, .hotcue5, .hotcue6, .hotcue7, .hotcue8]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
+                Divider()
+                Menu("Zeilen") {
+                    ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
+                        Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui.deckRows[keyPath: row.0] },
+                                                                      set: { mix.prefs.ui.deckRows[keyPath: row.0] = $0 }))
+                    }
+                    Toggle("Grid-Werkzeuge", isOn: Binding(get: { mix.prefs.ui.showGridTools }, set: { mix.prefs.ui.showGridTools = $0 }))
+                    Divider()
+                    Button("Alle Zeilen") { mix.prefs.ui.deckRows = DeckRows(); mix.prefs.ui.showGridTools = true }
+                }
             }
             CommandMenu("Browser") {
                 ForEach([ShortcutID.resetPlayed, .loadSelected, .previewSelected, .reloadCollection]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
                 Button(String(localized: "Collection prüfen …")) { ConsistencyWindow.show(store: store) }
+                Divider()
+                ForEach(ShortcutID.favorites) { a in
+                    Button(a.title) { run(a) }.shortcut(keys.combo(a))
+                }
                 Divider()
                 Button(ShortcutID.reconnectAudio.title) { run(.reconnectAudio) }.shortcut(keys.combo(.reconnectAudio))
             }
@@ -298,6 +333,7 @@ extension MixApp {
         appDelegate.onQuit = { [mix, browser, history] in
             Session.saveNow(mix: mix, browser: browser)
             history.finish()
+            CloudLibrary.shared.handOff()
         }
         let session = Session.load()
         session?.applyEngine(to: mix)
@@ -379,9 +415,11 @@ if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SH
 }
 MainActor.assumeIsolated { PreviewColorShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=previewcolors:<ordner>, kein Fenster
 MainActor.assumeIsolated { CoverShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cover:<ordner>, endet mit exit
+MainActor.assumeIsolated { TagShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=tags:<ordner>, endet mit exit
 MainActor.assumeIsolated { SettingsShot.runPluginsIfRequested() }   // nur PLUGINS-Tab, ohne Audio: MIX741_SHOT=plugins:<ordner>
 MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=status:<ordner>, endet mit exit(0)
+MainActor.assumeIsolated { CloudShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cloud:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { ZoomShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=zoom:<ordner>, endet mit exit(0)
 
 if ToggleBench.requested { MainActor.assumeIsolated { ToggleBench.run() } }   // Messung offscreen, ohne Fenster

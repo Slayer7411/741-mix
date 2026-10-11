@@ -95,23 +95,27 @@ enum ZoomControl {
 }
 
 extension EnvironmentValues {
-    /// Zoom für gemeinsame Bausteine (DeckButton, Knob …): im Hauptfenster gesetzt, Nebenfenster bleiben bei 1
-    @Entry var uiZoom: CGFloat = 1
+    /// Nebenfenster und Dialoge: gemeinsame Bausteine (DeckButton, Knob …) bei 100 %. Hosting-Ansichten im Hauptfenster
+    /// (Deck, Zeilen) erben die Umgebung nicht und zoomen deshalb ohne Zutun mit.
+    @Entry var zoomExempt = false
 }
 
 extension View {
-    /// Systemsteuerelemente (Slider, Segmente) wachsen stufenweise mit: ab 130 % eine Größe größer, ab 170 % zwei
+    /// Bausteine in diesem Fenster / Dialog ohne Zoom
+    func zoomExempt() -> some View { environment(\.zoomExempt, true) }
+
+    /// Systemsteuerelemente (Slider, Segmente, Menüs) wachsen stufenweise mit: ab 130 % eine Größe größer, ab 170 % zwei
     func controlSize(zoomed base: ControlSize) -> some View { modifier(ZoomedControlSize(base: base)) }
 }
 
 private struct ZoomedControlSize: ViewModifier {
-    @Environment(\.uiZoom) private var zoom
     let base: ControlSize
 
     func body(content: Content) -> some View {
         let all: [ControlSize] = [.mini, .small, .regular, .large]
         let i = all.firstIndex(of: base) ?? 0
-        let step = zoom >= 1.7 ? 2 : zoom >= 1.3 ? 1 : zoom < 0.85 ? -1 : 0
+        let z = 1.z
+        let step = z >= 1.7 ? 2 : z >= 1.3 ? 1 : z < 0.85 ? -1 : 0
         content.controlSize(all[max(0, min(all.count - 1, i + step))])
     }
 }

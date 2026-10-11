@@ -13,6 +13,10 @@ struct Session: Codable {
         var source: String?, sort: String?, ascending: Bool?, roles: [String]?, tags: [String]?, showTree: Bool?
         /// MUSIC FOLDERS: Unterordner einbeziehen
         var subfolders: Bool?
+        /// Favoritenleiste (6 Plätze, leer = null)
+        var favorites: [BrowserFavorite?]?
+        /// ausgeschlossene Tags (⌥-Klick)
+        var excludedTags: [String]?
     }
     var decks: [Deck]?
     var fx: [FXUnitState]?
@@ -24,7 +28,7 @@ struct Session: Codable {
     static let url = HistoryStore.baseDir.appendingPathComponent("session.json")
 
     /// Selbsttest oder Messung (MIX741_BENCH): nichts von Christians Einstellungen, Sitzung, History anfassen
-    static var isSelfTest: Bool { ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" || ToggleBench.requested }
+    static let isSelfTest = ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" || ToggleBench.requested
 
     static func load() -> Session? {
         guard !isSelfTest, let d = try? Data(contentsOf: url) else { return nil }
@@ -63,7 +67,9 @@ struct Session: Codable {
             let c = p.sortOrder.first
             return Pane(source: Session.sourceID(p.source), sort: c.flatMap { Session.sortName($0) },
                         ascending: c.map { $0.order == .forward }, roles: p.roles.map(\.rawValue),
-                        tags: Array(p.tags), showTree: p.showTree, subfolders: p.subfolders)
+                        tags: p.tags.sorted(), showTree: p.showTree, subfolders: p.subfolders,
+                        favorites: p.favorites.contains { $0 != nil } ? p.favorites : nil,
+                        excludedTags: p.excludedTags.isEmpty ? nil : p.excludedTags.sorted())
         }
         maximized = browser.maximized
     }
@@ -107,8 +113,10 @@ struct Session: Codable {
             if let n = p.sort, let c = Session.comparator(n, ascending: p.ascending ?? true) { pane.sortOrder = [c] }
             if let r = p.roles { pane.roles = Set(r.compactMap(RoleFilter.init(rawValue:))) }
             if let t = p.tags { pane.tags = Set(t) }
+            if let t = p.excludedTags { pane.excludedTags = Set(t) }
             if let v = p.showTree { pane.showTree = v }
             if let v = p.subfolders { pane.subfolders = v }
+            if let f = p.favorites { pane.favorites = BrowserFavorite.normalized(f) }
         }
     }
 

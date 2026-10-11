@@ -41,6 +41,8 @@ import Testing
     #expect([m.combo(.zoomIn), m.combo(.zoomOut), m.combo(.zoomReset)].map { $0?.symbols } == ["⌘+", "⌘-", "⌘0"])
     #expect(ShortcutID.zoomIn.group == .view)
     #expect(m.action(for: KeyCombo("y")) == .sync)
+    #expect(m.combo(.favorite1)?.symbols == "⌃⌥1" && m.combo(.favorite6)?.symbols == "⌃⌥6")
+    #expect(ShortcutID.favorite4.group == .browser && ShortcutID.favorite4.index == 3)
     // eigener Wert, Konflikt, frei, zurück auf Standard
     m.set(.sync, KeyCombo("l"))
     #expect(m.overrides == ["deck.sync": "cmd+l"])

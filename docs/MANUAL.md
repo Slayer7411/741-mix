@@ -67,7 +67,7 @@ settings, session and history survive updates.
 5. double click a track = load into the focused deck (⌘1-4), right click -> load into deck A-D, or LOAD on the controller
 
 nothing is analyzed. bpm, key, grid, cues and loudness come from the collection.
-tracks without an analysis in the collection play, but have no grid -> no sync.
+tracks without an analysis in the collection play, but have no grid -> no sync. right click -> `Analysieren` computes tempo, grid, key and loudness in MINOS-741 (see [analyze](#analyze)).
 
 ## ◆ 03 · SCREEN
 
@@ -151,7 +151,7 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 | ◀◀ 1/4 … 64 ▶▶ | beatjump size + jump. inside a loop = move the loop |
 
 * hotcues, loop sizes and beatjump sizes each span the full deck width
-* the selected loop size and beatjump size are red, also when changed from the controller (loop encoder, flux + pads)
+* the selected loop size is purple, the selected beatjump size red, also when changed from the controller (loop encoder, flux + pads)
 
 * hotcues come from the collection. colors: start cue red, cues white, loops green, short loops magenta (⌘, -> DISPLAY)
 * edits are saved in an own file. the collection stays untouched
@@ -247,7 +247,7 @@ LINK 1 │ AUTO  128.00  − +  SEMI │ TICK ◯ │ S │ MAIN ◯ ⚙
 * tempo: drag the number or − / +, TAP = tap tempo
 * TICK -> metronome on the clock beat, own volume, own output pair (setting)
 * S = snap, Q = quant
-* MAIN -> main volume (internal mode)
+* MAIN -> main volume. hidden in external mode unless `main volume also in external mode` (⌘, -> MIXER & FX)
 
 sync modes (⌘, -> DECKS):
 
@@ -305,13 +305,28 @@ the status bar shows device, mode and routing.
 
 effects so far: filter, delay, reverb, PLUGIN. more -> [roadmap](roadmap.md).
 
+### MAPPING
+
+D/W, knobs 1-3 and buttons 1-3 of every unit sit on any parameter of the loaded effect. the controller uses the same mapping.
+
+* right click a knob or button -> `Standard` (default) · `Nicht zugewiesen` (off) · every parameter of the effect
+* built-in effects -> their own parameters. group: amounts, on / off, delay time, room size · single: the 3 parameters, on / off, d/w
+* audio unit / VST3 -> the full parameter list with unit and range, in the plugin's groups, long lists in submenus of 20. D/W lists mix / wet / dry parameters first
+* buttons: switch -> toggles, list -> next entry (wraps), continuous -> min / max
+* label under a knob = short parameter name, bright = own mapping. hover, drag or turn -> value with unit (VST3: text from the plugin)
+* the unit's D/W only acts while a control sits on it. D/W on the plugin's mix -> the unit runs fully wet
+* remembered per effect (`GROUP`, `FILTER`, `DELAY`, `REVERB`) or plugin id -> the same effect loads with its mapping again, on any unit
+* the session keeps each unit's mapping and the values of mapped plugin parameters
+* table per unit with search, remembered mappings with forget -> ⌘, -> MIXER & FX
+* default = the layout below: group = amount + on / off per slot, single = 3 parameters + button 1 on / off, plugin = first three parameters
+
 ### PLUGIN
 
 any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect in the single mode, e.g. AUMatrixReverb or AUReverb2 instead of the built-in reverb.
 
 * SNGL -> effect menu -> PLUGIN -> the menu below lists every installed effect (`name · manufacturer`, VST3 with a small `VST3` behind)
-* knobs 1-3 -> the first three parameters of the plugin, labels from the plugin
-* D/W -> dry / wet of the unit (on top of the plugin's own mix)
+* knobs 1-3 -> the first three parameters of the plugin (default), labels from the plugin. any parameter -> [mapping](#mapping)
+* D/W -> dry / wet of the unit (on top of the plugin's own mix), or mapped to the plugin's mix
 * ON -> on / off. off = spillover: the plugin gets no new audio and rings out
 * EDIT -> window with the plugin's own view (or a generic one) · changes go to every deck on that unit
 * one instance per deck · loads in the background, the deck plays on dry meanwhile
@@ -335,7 +350,7 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
 * every effect class of a `.vst3` bundle (category audio effect, sub category Fx) is an own entry. the classes come from `Contents/Resources/moduleinfo.json` without loading code, otherwise the bundle is loaded once (with crash marker)
 * runs in-process, `läuft im prozess` in the list. isolation is audio unit only -> a crashing VST3 takes MINOS-741 down, the crash marker blocks it on the next start
 * stereo in / out (a mono plugin gets the mid signal), 32-bit float, blocks up to 4096 frames, the sample rate of the audio device
-* knobs 1-3 -> the first three plugin parameters, bypass, program change, read-only and hidden ones skipped
+* parameters for knobs / buttons: all except bypass, program change, read-only and hidden. groups = the plugin's units, lists with their entry names
 * the plugin gets the tempo of the master clock (tempo-synced delays follow)
 * latency reported by the plugin is not compensated (same as audio units)
 * tail: rendered until 1 s below -100 dB, or as long as the plugin's own tail time (max 30 s)
@@ -354,6 +369,7 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
 
 * one or two panes, side by side or stacked
 * each pane: own tree, search, sort, role chips, tags
+* favorites bar on top of each pane: 6 slots, source or filter. click = switch, right click = assign / rename / clear, drag a tree entry onto a slot, ⌃⌥1-6. details: [library · favorites](library.md#-favorites)
 * tree: TRACK COLLECTION, PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, MUSIC FOLDERS, then all playlists + smartlists of the collection
 * MUSIC FOLDERS = the music library on disk, folder by folder. click a folder -> its audio files (mp3, m4a, aac, aiff, wav, flac, ogg, opus)
   * files in the collection show bpm, key, tags, comments like everywhere else
@@ -362,7 +378,7 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
   * right click a folder -> rescan, show in finder. folders that change on disk are rescanned on their own
   * default folder = the folder holding 90 % of the collection's files, own folders: ⌘, -> DISPLAY -> browser
 * all library columns: move by drag, hide via right click on the header, saved
-* `√` = analyzed in the collection, missing files show the artist in red
+* `√` = analyzed in the collection, purple `√` = own analysis (see [analyze](#analyze)), missing files show the artist in red
 * search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match, case and accents ignored
 * right click a track -> load into deck A-D, add to / remove from preparation, preview, show in finder, reset played state
 * played column ▶: ✓ = played since the last reset. reset: right click a track or TRACK COLLECTION -> Reset Played State, or ⌥⌘P
@@ -370,6 +386,10 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
 * tree can hide while decks are visible (setting)
 * cover preview below the tree: cover of the selected track, `◆ KEIN COVER` (`◆ NO COVER`) = none (setting)
 * cover column (hidden by default): right click on the header -> Cover. thumbnails load only for visible rows, in the background
+* cloud column ☁ (library in a cloud folder): ● local · ☁ online only · ↓ downloading · ✕ missing
+* right click tracks or a source in the tree -> `Bereitmachen (herunterladen)`, progress + ✕ in the status bar
+* ● LOKAL in the header -> local tracks only. SET-CHECK -> preparation + this list: what is not local, `ALLE HOLEN`
+* details: [library · cloud libraries](library.md#-cloud-libraries)
 
 ### preview
 
@@ -398,6 +418,21 @@ a mini overview of the whole track per row. modes (⌘, -> DISPLAY -> browser pr
 * reload ↻ / ⌘O during a set: parsing, file check and sorting run in the background, the decks keep drawing. the lists switch in one step when everything is ready
 
 role chips `BASIS · SYNTH · DRUMS · VOLL · ATMO` -> filter on the role at the end of comment 2 (`» BASIS`). several chips = any of them.
+
+### analyze
+
+right click tracks, TRACK COLLECTION, PREPARATION, a playlist, smartlist, playlist folder or music folder -> `Analysieren` / `Neu analysieren`.
+
+* `Analysieren` = only what is missing: tempo + grid, key, loudness. nothing to do -> message. `Neu analysieren` = everything again (tracks locked in the collection: only what is missing)
+* runs in the background like the previews: 2 files at a time, one file throttled while a deck plays, pause while a deck loads and 4 s after. status bar `Analyse 12/240`, `gedrosselt`, ✕ = cancel. done -> `Analysiert: 240 Tracks`, unreadable files are counted
+* results: `analysis.json` in the MINOS-741 folder, on top of the collection and the metadata edits on every load. list, columns, sorting, search, smartlists, deck, sync, key readout and auto-gain use them. purple `√` in the list = own values (hover = what)
+* right click -> `Analyse verwerfen` = back to the collection's values. `Neu analysieren` also drops an own grid edit (bpm / anchor) of the track, hotcues stay
+* a track on a deck keeps its grid until it is loaded again
+* files from MUSIC FOLDERS without a collection entry get all four values too
+* `Änderungen in die Collection-Datei schreiben` on (⌘, -> ANZEIGE -> browser): after a batch the analyzed entries go into `collection.nml` as `TEMPO`, `LOUDNESS`, `MUSICAL_KEY` and a grid marker (`CUE_V2` type 4, an existing marker keeps its place and hotcue slot), same backup and byte-exact replacement as the metadata edits, not while the library software runs
+* values: bpm with 3 decimals, grid anchor in ms, key as `MUSICAL_KEY` 0–23 (shown as open key `1d`–`12m`), `PERCEIVED_DB` = gain to the collection's reference (positive = quiet track), `PEAK_DB`
+* method: mono at ~11 kHz · tempo from the spectral flux: fourier tempogram with a harmonic comb over 60–200 bpm, fine search at the beat frequency to 0.001 bpm, then whole beats between the start and the end of the track (constant tempo assumed) · grid anchor: onset envelope (bass < 150 Hz + full band) folded on the beat with 1 ms resolution, the phrase start from the structural changes (same logic as the phrase anchor), else the first beat · key: chroma (energy per semitone, 55 Hz–3.5 kHz) against krumhansl and temperley profiles · loudness: block loudness with a −10 dB gate
+* synthetic checks (`swift test`): click track -> tempo ±0.05 bpm, grid ±5 ms at 44.1 and 48 kHz, chords -> key, sine -> loudness and peak. 20 tracks of the collection: bpm 18 / 20 within 0.1 (the other two 0.7–1.0 off, old vinyl tracks), key 6 / 20 exact + 2 related, loudness ±1.3 dB (median deviation from the collection's value), grid within 20 ms of the collection's marker 10 / 18, ~1 s per track
 
 ### edit tracks
 
@@ -465,9 +500,12 @@ K tief kurz · B sub leicht roll · H off » BASIS
 -> K tief kurz | B sub leicht roll | H off » BASIS
 ```
 
-* TAGS ▾ -> all tags of the source with counts, click = filter, several = all must match
+* TAGS ▾ -> all tags of the source with counts, click = filter, ⌥-click = exclude, several = all must match
+* comment 2 column: tags as chips -> click = filter by that tag, again = off, ⌥-click = exclude. click next to the chips selects / edits as before
+* active filter as chips in the pane header (included filled, excluded struck through) -> click removes one, ✕ TAGS clears all. saved per pane in the session
+* whole tags, case and accents ignored (`Kühl` = `kuhl`)
 * tags get highlight colors
-* "smartlist from tags" -> saves the current tag filter as smartlist
+* "smartlist from tags" -> saves the current tag filter as smartlist (excluded tags as `!%`)
 
 smartlists:
 
@@ -520,6 +558,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | space | big browser (not while typing in a search field) |
 | ⌘O | open collection |
 | ⌘E | edit the selected tracks (browser) |
+| ⌃⌥1-6 | browser favorite 1-6 (last used pane) |
 | ⌘, | settings |
 | ⌘W | close window -> main window: quit (asks first) |
 
@@ -539,6 +578,7 @@ controller mapping -> [controllers.md](controllers.md). flux on the controller =
 | session (decks, fx, clock, browser) | `~/Library/Application Support/MINOS-741/session.json` |
 | hotcue + grid edits | `~/Library/Application Support/MINOS-741/edits.json` |
 | browser previews (track overviews) | `~/Library/Application Support/MINOS-741/overviews/overviews.bin` |
+| own analysis (tempo, grid, key, loudness) | `~/Library/Application Support/MINOS-741/analysis.json` |
 | history | `~/Library/Application Support/MINOS-741/History` |
 | preparation archive | `~/Library/Application Support/MINOS-741/Preparation` |
 | cover thumbnails (cache, safe to delete) | `~/Library/Caches/MINOS-741/artwork` |
@@ -558,7 +598,10 @@ backup = copy the `MINOS-741` folder.
 | DROPOUTS counts up | DSP near or above 100 % -> bigger buffer (⌘, -> AUDIO), fewer keylock decks / plugins. DSP low but dropouts -> device or system (other audio apps, usb hub, energy saver) |
 | DSP red | single blocks over 70 %: plugins, 4 decks with keylock, small buffer. average matters, a single peak after loading is normal |
 | latency too high | buffer size in ⌘, -> AUDIO. LATENCY = buffer + device + safety offset; keylock lookahead is compensated and not audible as delay |
-| track won't load | status bar message: `Datei fehlt` = path in the collection wrong; `(4 s) keine Audiodaten` = cloud file not on disk -> make it available offline; otherwise the format reason |
+| track won't load | status bar message: `Datei fehlt` = path in the collection wrong; `(4 s) keine Audiodaten` = cloud file not on disk -> the download is already requested (`Cloud-Datei wird heruntergeladen`), load again when ● shows; otherwise the format reason |
+| ☁ in the list, set-check not clean | right click -> `Bereitmachen`, or `ALLE HOLEN` in the set-check. for good: finder -> right click the library folder -> make available offline |
+| local tracks turn ☁ again | macos evicted them (optimize storage, low disk space) -> keep local in ⌘, -> CLOUD fetches them again; pin the folder, free some space |
+| downloads don't start | a deck is loading (status bar `pausiert`), or less than the free space floor left (⌘, -> CLOUD) |
 | artist in red | file missing or moved -> fix the path in the collection, reload ↻. all of them at once: BROWSER -> `Collection prüfen …` |
 | check takes long | cloud drive downloads files on first access -> ABBRECHEN keeps what was found, check again later |
 | ui hangs | audio + sync keep running. report it with the version from the title bar |
@@ -574,6 +617,9 @@ settings as png without a window: add `MIX741_SHOT=settings:<folder>` -> one ima
 status bar, failed and empty deck as png: `MIX741_SHOT=status:<folder>` (add `MIX741_SHOT_AUDIO=1` for live meters, silent on a built-in device).
 collection check without a window: add `MIX741_CHECK=1` -> counts per check and duration, `MIX741_CHECK_LIST=<n>` lists the first n findings each. `MIX741_SHOT=consistency:<png>` renders the check window mid-run and finished.
 reload stall: add `MIX741_BENCH=reload` -> loads and reloads the collection offscreen, prints the longest main-thread gap per reload (`MIX741_BENCH_N` rounds).
+ui cost (no selftest needed, offscreen, silent on a built-in output): `MIX741_BENCH=state` -> play, sync, loop, sizes, hotcue, tempo, keylock, clock bpm on deck A, median / p95 / max per action (`MIX741_BENCH_N`, `MIX741_BENCH_UI=live` = two browsers without mixer, `MIX741_BENCH_LAYOUT=1` layout time per hosting view, `MIX741_BENCH_ONLY=play,hotcue`). `MIX741_BENCH=play` -> 2 or 4 decks play (`MIX741_BENCH_DECKS`, `MIX741_BENCH_SECS`): main thread load, hitches, waveform steps per frame (`MIX741_BENCH_RAW=1` = playhead unsmoothed).
+cloud column + set-check as png: `MIX741_SHOT=cloud:<folder>` -> real check of the collection in the log, images with real and with set states, nothing downloaded.
+tag chips as png: `MIX741_SHOT=tags:<folder>` -> pane with tag filter, chip click checks, filter and paging times (`MIX741_SHOT_FULLROW=1` two-line rows, `MIX741_SHOT_TEXT=<pt>` their text size, `MIX741_SHOT_PAGES=<n>`).
 
 bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) with version, macos, device, mode, controller.
 

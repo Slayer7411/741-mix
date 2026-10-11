@@ -57,6 +57,8 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var loopSnapPhraseBeats = 1.0
     public var delayFeedback = 0.45
     public var fxFilterResonance = 0.4
+    /// FX-Belegung je Effekt-Kennung (GROUP, FILTER, DELAY, REVERB, Plugin-ID): gilt beim nächsten Laden des Effekts
+    public var fxMappings: [String: FXMapping] = [:]
     /// Reverb: Pegel in dB (0 = Hall bei vollem D/W ≈ 4 dB unter dem Track), Helligkeit 0…1, Vorverzögerung in ms
     public var reverbLevelDb = 0.0
     public var reverbBrightness = 0.6
@@ -144,7 +146,7 @@ public struct FXUnitState: Equatable, Sendable, Codable {
             case .filter: ["CUTOFF", "RES", "—"]
             case .delay: ["FILTER", "FEEDB", "RATE"]
             case .reverb: ["SIZE", "HP", "LP"]
-            case .plugin: ["P1", "P2", "P3"]   // echte Namen: MixState.pluginParams
+            case .plugin: ["P1", "P2", "P3"]   // echte Namen: MixState.fxControls
             }
         }
     }
@@ -161,6 +163,11 @@ public struct FXUnitState: Equatable, Sendable, Codable {
     /// Effekt-Plugin (PluginInfo.id, z. B. "aufx:mrev:appl") und sein Zustand (ClassInfo, Binär-Plist)
     public var pluginID: String?
     public var pluginState: Data?
+    /// Zuweisung der Bedienelemente und die Effekt-Kennung, zu der sie gehört
+    public var mapping = FXMapping()
+    public var mappingKey: String?
+    /// Plugin-Parameter, die über die Bedienelemente liefen (Schlüssel → Stellung 0…1); beim Laden der Sitzung gesetzt
+    public var pluginValues: [String: Double] = [:]
     public var anyOn: Bool { single ? singleOn : slots.contains { $0.on } }
     public init() {}
 
@@ -178,6 +185,14 @@ public struct FXUnitState: Equatable, Sendable, Codable {
         if params.count != 3 { params = [0.5, 0.45, 0.6] }
         pluginID = try c.decodeIfPresent(String.self, forKey: .pluginID)
         pluginState = try c.decodeIfPresent(Data.self, forKey: .pluginState)
+        mapping = try c.decodeIfPresent(FXMapping.self, forKey: .mapping) ?? FXMapping()
+        mappingKey = try c.decodeIfPresent(String.self, forKey: .mappingKey)
+        if let v = try c.decodeIfPresent([String: Double].self, forKey: .pluginValues) {
+            pluginValues = v
+        } else if pluginID != nil, pluginActive {
+            // ältere Sitzung: Regler 1–3 = die ersten drei Plugin-Parameter ("@i" = Index, beim Laden aufgelöst)
+            for i in 0..<3 { pluginValues["@\(i)"] = params[i] }
+        }
     }
 }
 
@@ -208,8 +223,11 @@ public struct MixState: Equatable, Sendable {
     public var masterVolume: Double = 0.85
     public var externalMixer = false
     public var prefs = EnginePrefs()
-    /// je FX-Unit: Namen der ersten 3 Plugin-Parameter (Regler) und letzter Ladefehler
-    public var pluginParams = [[String]](repeating: [], count: MixEngine.fxUnitCount)
+    /// je FX-Unit: zuweisbare Parameter des geladenen Effekts, Bedienelemente (FXControl.slot) mit Ziel und Stellung
+    public var fxParams = [[FXParam]](repeating: [], count: MixEngine.fxUnitCount)
+    public var fxControls = [[FXControlInfo]](repeating: Array(repeating: FXControlInfo(), count: FXControl.allCases.count),
+                                              count: MixEngine.fxUnitCount)
+    /// je FX-Unit: letzter Plugin-Ladefehler
     public var pluginErrors = [String?](repeating: nil, count: MixEngine.fxUnitCount)
 
     public init() {}
@@ -271,6 +289,7 @@ public final class MixController: @unchecked Sendable {
 
     public init() {
         observeInvalidation()
+        for u in state.fx.indices { prepareControls(u, adopt: false) }   // Standardbelegung; gemerkte kommt mit setPrefs
         timer = DispatchSource.makeTimerSource(flags: .strict, queue: controlQueue)
         timer?.schedule(deadline: .now(), repeating: .milliseconds(5), leeway: .milliseconds(1))
         timer?.setEventHandler { [weak self] in self?.tick() }
@@ -1095,7 +1114,8 @@ public final class MixController: @unchecked Sendable {
     private func applyMixer(_ d: Int) {
         let s = state.decks[d], p = state.prefs
         let ext = state.externalMixer
-        let auto = (ext ? p.autoGainExternal : p.autoGain) ? -(s.track?.perceivedDb ?? 0) : 0
+        // PERCEIVED_DB is the gain that brings the track to reference level (quiet track -> positive): add it
+        let auto = (ext ? p.autoGainExternal : p.autoGain) ? (s.track?.perceivedDb ?? 0) : 0
         engine.setGain(d, db: s.gainDb + auto + (ext ? p.headroomExternal : p.headroomInternal))
         engine.setChannelFilter(d, s.filter, resonance: p.channelFilterResonance)
         if state.externalMixer {
@@ -1131,12 +1151,15 @@ public final class MixController: @unchecked Sendable {
     // MARK: FX
 
     public func updateFX(_ u: Int, _ f: (inout FXUnitState) -> Void) {
-        locked {
-            let oldSize = state.fx[u].reverbSize
-            f(&state.fx[u])
-            if state.fx[u].reverbSize != oldSize { engine.setReverbSize(unit: u, state.fx[u].reverbSize) }
-            applyFX(u)
-        }
+        locked { changeFX(u, f) }
+    }
+
+    /// Änderung an einer Unit übernehmen (unter der Sperre)
+    private func changeFX(_ u: Int, _ f: (inout FXUnitState) -> Void) {
+        let oldSize = state.fx[u].reverbSize
+        f(&state.fx[u])
+        if state.fx[u].reverbSize != oldSize { engine.setReverbSize(unit: u, state.fx[u].reverbSize) }
+        applyFX(u)
     }
 
     public func toggleFXAssign(_ d: Int, _ u: Int) {
@@ -1145,7 +1168,10 @@ public final class MixController: @unchecked Sendable {
 
     private func applyFX(_ u: Int) {
         syncPlugins(u)
-        let fx = state.fx[u]
+        prepareControls(u)
+        var fx = state.fx[u]
+        // D/W der Unit wirkt nur, wenn ein Bedienelement darauf liegt (sonst voll nass, z. B. D/W auf dem Mix des Plugins)
+        if !state.fxControls[u].contains(where: { $0.param?.id == "dw" }) { fx.dryWet = 1 }
         for d in state.decks.indices {
             let bpm = state.masterTempo > 0 ? state.masterTempo : 125
             engine.applyFX(unit: u, deck: d, fx, assigned: state.decks[d].fxAssign[u], bpm: bpm,
@@ -1157,6 +1183,127 @@ public final class MixController: @unchecked Sendable {
 
     private func applyAllFX() { for u in state.fx.indices { applyFX(u) } }
 
+    // MARK: FX-Belegung (Oberfläche und Controller gehen denselben Weg)
+
+    private var paramIndex = [[String: Int]](repeating: [:], count: MixEngine.fxUnitCount)
+    private var paramsKey = [String?](repeating: nil, count: MixEngine.fxUnitCount)
+    private var paramsInst = [ObjectIdentifier?](repeating: nil, count: MixEngine.fxUnitCount)
+
+    /// Regler oder D/W bewegt (0…1): an das zugewiesene Ziel, nicht zugewiesen = nichts
+    public func setFXControl(_ u: Int, _ c: FXControl, _ v: Double) {
+        locked {
+            guard let p = state.fxControls[u][c.slot].param else { return }
+            setFXParam(u, p, v)
+        }
+    }
+
+    /// Taste gedrückt: Schalter um, Liste eine Stufe weiter, stufenlos zwischen min und max
+    public func pressFXButton(_ u: Int, _ i: Int) {
+        locked {
+            let info = state.fxControls[u][FXControl.button(i).slot]
+            guard let p = info.param else { return }
+            var next = info.value >= 0.5 ? 0.0 : 1.0
+            if p.steps > 1 {
+                let k = (info.value * Double(p.steps)).rounded() + 1
+                next = k > Double(p.steps) ? 0 : k / Double(p.steps)
+            }
+            setFXParam(u, p, next)
+        }
+    }
+
+    /// Bedienelement zuweisen: Parameter-Schlüssel, "" = nicht zugewiesen, nil = Standard.
+    /// Gilt für die Unit (Sitzung) und wird je Effekt-Kennung gemerkt (EnginePrefs.fxMappings)
+    public func setFXMapping(_ u: Int, _ c: FXControl, _ target: String?) {
+        locked {
+            state.fx[u].mapping[c] = target
+            storeMapping(u)
+        }
+    }
+
+    /// alle Bedienelemente der Unit auf Standard
+    public func resetFXMapping(_ u: Int) {
+        locked {
+            state.fx[u].mapping = FXMapping()
+            storeMapping(u)
+        }
+    }
+
+    private func storeMapping(_ u: Int) {
+        let key = state.fx[u].effectKey
+        state.fx[u].mappingKey = key
+        state.prefs.fxMappings[key] = state.fx[u].mapping.isEmpty ? nil : state.fx[u].mapping
+        applyFX(u)
+    }
+
+    /// Ziel setzen: eigener Parameter -> Feld der Unit, Plugin-Parameter -> alle Instanzen der Unit (Steuer-Weg wie das Fenster)
+    private func setFXParam(_ u: Int, _ p: FXParam, _ v: Double) {
+        let pos = p.snapped(v)
+        guard let pid = p.pluginParam else {
+            let key = state.fx[u].effectKey
+            changeFX(u) { FXCatalog.set(p.id, effect: key, pos, &$0) }
+            return
+        }
+        let plain = Float(p.plain(pos))
+        for case let inst? in plugins[u] { inst.set(pid, plain) }
+        state.fx[u].pluginValues[p.id] = pos
+        refreshControls(u)
+    }
+
+    /// Effekt gewechselt: Zuweisung der neuen Kennung aus den Einstellungen, Parameterliste neu; dann Ziele auflösen
+    private func prepareControls(_ u: Int, adopt: Bool = true) {
+        let key = state.fx[u].effectKey
+        if adopt, state.fx[u].mappingKey != key {
+            state.fx[u].mapping = state.prefs.fxMappings[key] ?? FXMapping()
+            state.fx[u].mappingKey = key
+        }
+        let inst = state.fx[u].pluginActive ? loadedPlugin(u) : nil
+        let id = inst.map(ObjectIdentifier.init)
+        if paramsKey[u] != key || paramsInst[u] != id {
+            paramsKey[u] = key; paramsInst[u] = id
+            var list = FXCatalog.params(for: key)
+            if let inst { list += inst.parameters.map { FXParam(plugin: $0, normalized: inst.isVST3) } }
+            state.fxParams[u] = list
+            paramIndex[u] = Dictionary(list.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
+        }
+        refreshControls(u)
+    }
+
+    /// Plugin der Unit, wenn es für alle Decks geladen ist
+    private func loadedPlugin(_ u: Int) -> PluginInstance? {
+        guard let want = state.fx[u].pluginID, plugins[u].allSatisfy({ $0?.info.id == want }) else { return nil }
+        return plugins[u][0]
+    }
+
+    /// Ziele der Bedienelemente auflösen und ihre Stellung lesen
+    private func refreshControls(_ u: Int) {
+        let mapping = state.fx[u].mapping, key = state.fx[u].effectKey, list = state.fxParams[u]
+        var out = [FXControlInfo]()
+        out.reserveCapacity(FXControl.allCases.count)
+        for c in FXControl.allCases {
+            var info = FXControlInfo()
+            let mapped = mapping[c]
+            info.isDefault = mapped == nil
+            if let k = mapped ?? FXCatalog.defaultTarget(c, effect: key, params: list), let i = paramIndex[u][k] {
+                let p = list[i]
+                info.param = p
+                info.value = fxValue(u, p)
+                info.label = c.isButton && info.isDefault && (p.id == "on" || p.id.hasSuffix(".on")) ? "ON" : p.short
+            }
+            out.append(info)
+        }
+        if out != state.fxControls[u] { state.fxControls[u] = out }
+    }
+
+    /// Stellung eines Ziels: eigenes Feld, Plugin = zuletzt gesetzter Wert, sonst vom Plugin gelesen (und gemerkt)
+    private func fxValue(_ u: Int, _ p: FXParam) -> Double {
+        guard let pid = p.pluginParam else { return FXCatalog.value(p.id, effect: state.fx[u].effectKey, state.fx[u]) ?? 0 }
+        if let v = state.fx[u].pluginValues[p.id] { return v }
+        guard let inst = plugins[u][0] else { return p.defaultValue }
+        let v = p.position(Double(inst.value(pid)))
+        state.fx[u].pluginValues[p.id] = v
+        return v
+    }
+
     // MARK: Plugins
     // je FX-Unit eine Instanz pro Deck (auch nicht zugewiesene: Zuweisen wirkt sofort, ohne Ladepause).
     // Laden auf eigener Queue außerhalb der Sperre (Plugins brauchen teils lange), Einsetzen unter der Sperre;
@@ -1166,11 +1313,6 @@ public final class MixController: @unchecked Sendable {
     private var pluginGen = [Int](repeating: 0, count: MixEngine.fxUnitCount)
     private var pluginLoading = [String?](repeating: nil, count: MixEngine.fxUnitCount)
     private var pluginFailed = [String?](repeating: nil, count: MixEngine.fxUnitCount)
-    /// Regler steuern das Plugin gerade (Single + PLUGIN); zuletzt gesendete Werte
-    private var knobsLive = [Bool](repeating: false, count: MixEngine.fxUnitCount)
-    private var lastKnobs = [[Double]](repeating: [], count: MixEngine.fxUnitCount)
-    /// beim nächsten Aktivieren die gespeicherten Regler senden (Sitzung) statt sie vom Plugin zu lesen (neues Plugin)
-    private var pushKnobsOnActivate = [Bool](repeating: false, count: MixEngine.fxUnitCount)
     private let pluginQueue = DispatchQueue(label: "minos741.plugins", qos: .userInitiated)
     private let pluginEvents = DispatchQueue(label: "minos741.plugin-events", qos: .userInitiated)
     /// Plugin-Liste, Einstellungen, Absturz-Markierung (die App setzt vor dem ersten Laden eine gespeicherte ein)
@@ -1182,8 +1324,17 @@ public final class MixController: @unchecked Sendable {
     /// Effekt-Plugins fürs FX-Menü: eingeschaltet und nicht blockiert (einmal eingelesen, `refresh` liest neu)
     public func pluginList(refresh: Bool = false) -> [PluginInfo] { pluginCatalog.menuList(refresh: refresh) }
 
-    /// Namen der Plugin-Parameter auf den 3 Reglern
-    public func pluginParamNames(_ u: Int) -> [String] { locked { state.pluginParams[u] } }
+    /// Beschriftung der Regler 1–3, soweit sie auf Plugin-Parametern liegen (leer, solange kein Plugin geladen ist)
+    public func pluginParamNames(_ u: Int) -> [String] {
+        locked { (1...3).compactMap { state.fxControls[u][$0].param?.pluginParam != nil ? state.fxControls[u][$0].label : nil } }
+    }
+
+    /// Anzeige eines Plugin-Werts vom Plugin selbst (VST3; außerhalb der Sperre, Haupt-Thread). Sonst nil
+    public func pluginText(_ u: Int, _ p: FXParam, _ pos: Double) -> String? {
+        guard let pid = p.pluginParam, let inst = locked({ plugins[u][0] }), inst.isVST3 else { return nil }
+        let t = inst.text(pid, Float(p.plain(pos)))
+        return p.unit.isEmpty || t.hasSuffix(p.unit) ? t : t + " " + p.unit
+    }
 
     /// Plugin einer Unit wählen (schaltet auf Single + PLUGIN)
     public func setPlugin(_ u: Int, id: String?) {
@@ -1191,6 +1342,7 @@ public final class MixController: @unchecked Sendable {
             if state.fx[u].pluginID != id {
                 state.fx[u].pluginID = id
                 state.fx[u].pluginState = nil
+                state.fx[u].pluginValues = [:]
             }
             pluginFailed[u] = nil   // nochmals gewählt = neuer Versuch
             state.pluginErrors[u] = nil
@@ -1225,12 +1377,12 @@ public final class MixController: @unchecked Sendable {
         locked {
             guard plugins[u].contains(where: { $0 === src }) else { return }
             for case let p? in plugins[u] where p !== src && p.value(id) != v { p.set(id, v) }
-            // Regler in der Oberfläche folgen dem Fenster
-            if knobsLive[u], let i = src.parameters.prefix(3).firstIndex(where: { $0.id == id }), let k = src.knob(i),
-               abs(k - state.fx[u].params[i]) > 1e-4 {
-                state.fx[u].params[i] = k
-                if i < lastKnobs[u].count { lastKnobs[u][i] = k }
-            }
+            // Bedienelemente folgen dem Fenster; gemerkte Stellungen bleiben aktuell
+            let key = FXParam.pluginKey(id)
+            guard state.fx[u].pluginValues[key] != nil || state.fxControls[u].contains(where: { $0.param?.id == key }),
+                  let par = src.parameters.first(where: { $0.id == id }) else { return }
+            state.fx[u].pluginValues[key] = FXParam(plugin: par).position(Double(v))
+            refreshControls(u)
         }
     }
 
@@ -1240,14 +1392,11 @@ public final class MixController: @unchecked Sendable {
             if plugins[u].contains(where: { $0 != nil }) || pluginLoading[u] != nil {
                 pluginGen[u] += 1; pluginLoading[u] = nil
                 for d in plugins[u].indices { installPlugin(nil, unit: u, deck: d) }
-                state.pluginParams[u] = []
-                knobsLive[u] = false
             }
             return
         }
         let loaded = plugins[u].allSatisfy { $0?.info.id == want }
         if !loaded {
-            knobsLive[u] = false
             guard pluginLoading[u] != want, pluginFailed[u] != want else { return }
             // blockiert (Absturz) oder abgeschaltet: nicht laden, auch nicht aus einer gespeicherten Sitzung
             if let why = pluginCatalog.unusableReason(want) {
@@ -1290,22 +1439,6 @@ public final class MixController: @unchecked Sendable {
             }
             return
         }
-        guard fx.single, fx.singleType == FXUnitState.Effect.plugin.rawValue, let first = plugins[u][0] else { knobsLive[u] = false; return }
-        if !knobsLive[u] {
-            knobsLive[u] = true
-            if pushKnobsOnActivate[u] {
-                for p in plugins[u] { for i in 0..<3 { p?.setKnob(i, fx.params[i]) } }
-            } else {
-                for i in 0..<3 { if let k = first.knob(i) { state.fx[u].params[i] = k } }
-            }
-            pushKnobsOnActivate[u] = false
-            lastKnobs[u] = state.fx[u].params
-            return
-        }
-        for i in 0..<3 where lastKnobs[u].count == 3 && fx.params[i] != lastKnobs[u][i] {
-            for p in plugins[u] { p?.setKnob(i, fx.params[i]) }
-            lastKnobs[u][i] = fx.params[i]
-        }
     }
 
     private func finishPluginLoad(_ u: Int, _ gen: Int, _ insts: [PluginInstance], restored: Bool, initialState: Data?) {
@@ -1314,12 +1447,27 @@ public final class MixController: @unchecked Sendable {
             guard gen == pluginGen[u], state.fx[u].pluginID == insts[0].info.id else { return }
             pluginLoading[u] = nil; pluginFailed[u] = nil; state.pluginErrors[u] = nil
             for d in insts.indices { installPlugin(insts[d], unit: u, deck: d) }
-            state.pluginParams[u] = insts[0].parameters.prefix(3).map { Self.shortName($0.name) }
-            knobsLive[u] = false
-            pushKnobsOnActivate[u] = restored
+            // Sitzung: Stellungen der Bedienelemente wieder setzen (neuer als der gespeicherte Zustand); neues Plugin: frisch
+            if restored { pushPluginValues(u, insts) } else { state.fx[u].pluginValues = [:] }
             if state.fx[u].pluginState == nil { state.fx[u].pluginState = initialState }
             applyFX(u)
         }
+    }
+
+    /// gemerkte Stellungen an die neuen Instanzen ("@i" aus älteren Sitzungen = i-ter Parameter)
+    private func pushPluginValues(_ u: Int, _ insts: [PluginInstance]) {
+        let params = insts[0].parameters
+        var out: [String: Double] = [:]
+        for (k, v) in state.fx[u].pluginValues {
+            let par = k.hasPrefix("@")
+                ? Int(k.dropFirst()).flatMap { $0 < params.count ? params[$0] : nil }
+                : UInt32(k.dropFirst()).flatMap { id in params.first { $0.id == id } }
+            guard let par else { continue }
+            let p = FXParam(plugin: par)
+            for inst in insts { inst.set(par.id, Float(p.plain(v))) }
+            out[p.id] = v
+        }
+        state.fx[u].pluginValues = out
     }
 
     private func installPlugin(_ p: PluginInstance?, unit u: Int, deck d: Int) {
@@ -1373,21 +1521,11 @@ public final class MixController: @unchecked Sendable {
                 pluginCatalog.block(id, reason: String(localized: "abgestürzt (isoliert, MINOS-741 lief weiter)"))
                 pluginGen[u] += 1; pluginLoading[u] = nil; pluginFailed[u] = id
                 for d in plugins[u].indices { installPlugin(nil, unit: u, deck: d) }
-                state.pluginParams[u] = []
                 state.pluginErrors[u] = String(format: String(localized: "%@ abgestürzt – blockiert"), hit.info.name)
                 onNotice?(EngineNotice(.error, key: "plugin.\(u)", "FX \(u + 1): " + (state.pluginErrors[u] ?? "")))
-                knobsLive[u] = false
                 applyFX(u)
             }
         }
-    }
-
-    /// Parametername für einen Regler: versal, kurz
-    static func shortName(_ n: String) -> String {
-        let up = n.uppercased()
-        if up.count <= 7 { return up }
-        let first = up.split(whereSeparator: { $0 == " " || $0 == "_" || $0 == "-" }).first.map(String.init) ?? up
-        return String(first.prefix(7))
     }
 
     // MARK: Steuertakt (200 Hz, Steuer-Queue)

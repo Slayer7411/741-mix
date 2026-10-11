@@ -25,7 +25,7 @@
 | link, network tempo sync (minos leads tempo and bar) | ■ | |
 | midi clock in / out | □ p2 | |
 | beatgrid editing (shift, bpm, anchor, reset) | ■ | |
-| own bpm / key / grid analysis | □ p2 | values come from the collection |
+| own bpm / key / grid / loudness analysis | ■ | right click -> `Analysieren`, own file, collection file on request |
 
 ## ◆ MIXER / FX
 

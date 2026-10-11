@@ -40,6 +40,7 @@ final class InlineEditController {
     func install() {
         guard mouseMonitor == nil else { return }
         mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] e in
+            if self?.chipDown(e) == true { return nil }   // Tag-Chip: Tabelle bekommt den Klick nicht
             self?.mouseDown(e)
             return e
         }
@@ -52,6 +53,38 @@ final class InlineEditController {
         pending?.cancel()
         pending = nil
         model?.inline = nil
+    }
+
+    /// Tag-Chip in Kommentar 2 unter dem Klick: (Track, x ab linkem Zellrand, Zellbreite) -> Tag oder nil
+    var chipAt: ((Track, CGFloat, CGFloat) -> String?)?
+    /// Zeilen zweizeilig (Vorschau „ganze Zeile“): Chips nur in der oberen Hälfte, unten liegt das Band
+    var twoLine: () -> Bool = { false }
+
+    /// Zeit des letzten Chip-Klicks (Folgeklicks eines Doppelklicks verfallen)
+    private var lastChipClick: TimeInterval = -1
+
+    /// Klick (ohne ⌘/⇧/⌃) in die Spalte Kommentar 2 auf einen Chip: Tag in den Filter / lösen, ⌥ = ausschließen.
+    /// Doppelklick auf einen Chip: Folgeklicks verfallen, auch wenn nach dem Filtern eine andere Zeile darunter liegt
+    /// (lädt nicht, schaltet nicht zurück). Nicht während einer Inline-Bearbeitung.
+    private func chipDown(_ e: NSEvent) -> Bool {
+        guard let chipAt, let tv = table, let model, model.inline == nil, e.window === tv.window else { return false }
+        if e.clickCount > 1, e.timestamp - lastChipClick < NSEvent.doubleClickInterval * Double(e.clickCount - 1) { return true }
+        guard e.modifierFlags.intersection([.command, .shift, .control]).isEmpty else { return false }
+        let p = tv.convert(e.locationInWindow, from: nil)
+        guard tv.visibleRect.contains(p) else { return false }
+        let r = tv.row(at: p), c = tv.column(at: p), list = rows()
+        guard r >= 0, r < list.count, field(ofColumn: c, in: tv) == .comment2,
+              !twoLine() || p.y < tv.rect(ofRow: r).midY,
+              let cv = tv.view(atColumn: c, row: r, makeIfNecessary: false) else { return false }
+        let f = tv.convert(cv.bounds, from: cv)
+        guard p.x - f.minX < f.width, let tag = chipAt(list[r], p.x - f.minX, f.width) else { return false }
+        pending?.cancel()
+        pending = nil
+        if e.clickCount == 1 {
+            lastChipClick = e.timestamp
+            model.toggleTag(tag, exclude: e.modifierFlags.contains(.option))
+        }
+        return true
     }
 
     func field(ofColumn c: Int, in tv: NSTableView) -> TrackField? {
@@ -187,6 +220,11 @@ struct TableViewFinder: NSViewRepresentable {
 
     func updateNSView(_ v: FinderView, context: Context) { controller.finder = v }
 
+    /// nimmt den angebotenen Platz, ohne Auto-Layout-Messung (fittingSize) bei jedem Layout
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: FinderView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+
     final class FinderView: NSView {
         private weak var cached: NSTableView?
 
@@ -253,7 +291,8 @@ struct StarPicker: View {
     let value: Int
     var dim = false
     let set: (Int) -> Void
-    @Environment(\.uiZoom) private var zoom
+    @Environment(\.zoomExempt) private var exempt
+    private var zoom: CGFloat { exempt ? 1 : 1.z }
 
     var body: some View {
         HStack(spacing: 1 * zoom) {

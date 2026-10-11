@@ -161,7 +161,7 @@ enum ConsistencyWindow {
         }
         if window == nil {
             let host = NSHostingView(rootView: ConsistencyView(model: model, musicFolders: { AppPrefs.load().ui.checkMusicFolders })
-                .environment(store))
+                .environment(store).zoomExempt())
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 720),
                              styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
             w.title = String(localized: "Collection prüfen")

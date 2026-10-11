@@ -17,28 +17,47 @@ final class BrowserPaneModel: Identifiable {
     var roles: Set<RoleFilter> = []
     /// gewählte Tags aus Kommentar 2 (alle müssen passen)
     var tags: Set<String> = []
+    /// ausgeschlossene Tags (⌥-Klick): keiner darf vorkommen
+    var excludedTags: Set<String> = []
     var sortOrder: [KeyPathComparator<Track>] = [KeyPathComparator(\Track.artist)]
     var selection: Set<Track.ID> = []
     var showTree = true
     /// MUSIC FOLDERS: Dateien aus allen Unterordnern zeigen
     var subfolders = false
+    /// nur lokale Dateien (Cloud: ohne ☁ nur online / fehlend)
+    var localOnly = false
     /// Inline-Bearbeitung: Zelle (Track + Feld) und der Text im Feld
     var inline: InlineEdit?
     var inlineText = ""
     /// offenes Bearbeiten-Fenster (⌘E, Rechtsklick -> Bearbeiten …)
     var editSession: TrackEditSession?
+    /// Favoritenleiste (6 Plätze, BrowserFavorites.swift)
+    var favorites: [BrowserFavorite?] = BrowserFavorite.normalized(nil)
 
     init(name: String, source: BrowserSource = .collection) {
         self.name = name
         self.source = source
     }
 
-    /// Tags eines Tracks: Kommentar 2 an den eingestellten Trennzeichen zerlegt
-    static func tags(of t: Track, separators: String) -> [String] {
-        let seps = Set(separators.isEmpty ? " " : separators)
-        return t.comment2.split(whereSeparator: { seps.contains($0) })
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+    /// Tags eines Tracks: Kommentar 2 an den eingestellten Trennzeichen zerlegt (einmal je Text, dann aus dem Speicher)
+    static func tags(of t: Track, separators: String) -> [String] { tagIndex.entry(t.comment2, separators: separators).tags }
+    static let tagIndex = TagIndex()
+
+    @ObservationIgnored private var filterMemo = TagFilter()
+    /// Tag-Filter aus `tags` + `excludedTags` (Vergleichsformen gemerkt)
+    var tagFilter: TagFilter {
+        let inc = tags, exc = excludedTags
+        if filterMemo.include != inc || filterMemo.exclude != exc { filterMemo = TagFilter(include: inc, exclude: exc) }
+        return filterMemo
+    }
+
+    /// Klick auf einen Tag: einschließen/lösen, ⌥ (`exclude`): ausschließen/lösen
+    func toggleTag(_ tag: String, exclude: Bool) { setTagFilter(tagFilter.toggling(tag, exclude: exclude)) }
+    func removeTag(_ tag: String) { setTagFilter(tagFilter.removing(tag)) }
+    func clearTags() { tags = []; excludedTags = [] }
+    private func setTagFilter(_ f: TagFilter) {
+        if tags != f.include { tags = f.include }
+        if excludedTags != f.exclude { excludedTags = f.exclude }
     }
 
     /// Tracks der Quelle vor Tag-Filter/Suche (für die Tag-Auswahl)
@@ -62,7 +81,7 @@ final class BrowserPaneModel: Identifiable {
             sortedBase = store.presorted(source, order: sortOrder) ?? base(from: store, history: history).sorted(using: sortOrder)
             sortedKey = baseKey
         }
-        let key = baseKey + [search, roles, tags, separators] as [AnyHashable]
+        let key = baseKey + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0] as [AnyHashable]
         if key == cacheKey { return cachedRows }
         cachedRows = filtered(sortedBase, separators: separators)
         cacheKey = key
@@ -83,11 +102,17 @@ final class BrowserPaneModel: Identifiable {
         if !roles.isEmpty {
             list = list.filter { t in roles.contains { t.comment2.localizedCaseInsensitiveContains("» " + $0.rawValue) } }
         }
-        if !tags.isEmpty {
-            list = list.filter { t in tags.isSubset(of: Set(Self.tags(of: t, separators: separators))) }
+        let tf = tagFilter
+        if !tf.isEmpty {
+            let index = Self.tagIndex
+            list = list.filter { tf.matches(keys: index.entry($0.comment2, separators: separators).keys) }
         }
         let words = search.split(separator: " ").map { Track.fold(String($0)) }
         if !words.isEmpty { list = list.filter { $0.matches(words: words) } }
+        if localOnly {
+            let c = CloudLibrary.shared
+            list = list.filter { c.isLocal($0.path) }
+        }
         return list
     }
 }
@@ -106,6 +131,8 @@ struct BrowserPane: View {
         // Baum bleibt im Split, ausgeblendet = Breite 0 (nur der 1-pt-Trenner bleibt): Entfernen/Einsetzen des
         // Split-Elements hängte jede Zeile aus dem Fenster aus und wieder ein (~850 ms beim Umschalten Browser groß ⇄ Decks)
         let tree = model.showTree && !(decks.prefs.ui.hideTreeWithDecks && !browserState.maximized)
+        VStack(spacing: 0) {
+        FavoritesBar(model: model, keys: decks.prefs.keys)
         HSplitView {
             SourceTree(selection: $model.source)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -122,6 +149,7 @@ struct BrowserPane: View {
             }
             .frame(minWidth: 380.z)
         }
+        }
         .background {
             // ⌘E: Bearbeiten-Fenster für die Auswahl (nur der zuletzt benutzte Bereich reagiert)
             if browserState.activePane.id == model.id, !model.source.isHistory {
@@ -135,7 +163,7 @@ struct BrowserPane: View {
                 model.selection = [key]
                 browserState.scrollRequest = (model.id, key)
             }
-            .environment(\.uiZoom, 1)   // Dialog bleibt bei 100 %
+            .zoomExempt()   // Dialog bleibt bei 100 %
         }
         .onChange(of: decks.prefs.ui.writeCollection) { _, on in if on { store.scheduleWriteBack() } }
     }
@@ -180,11 +208,21 @@ struct BrowserPane: View {
                     .popover(isPresented: $showTags, arrowEdge: .bottom) {
                         TagPicker(model: model, separators: separators)
                     }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4.z) {
-                        ForEach(model.tags.sorted(), id: \.self) { t in
-                            DeckButton(title: t + " ✕", active: true) { model.tags.remove(t) }
-                        }
+                if CloudLibrary.shared.hasCloudTracks {
+                    Text("│").foregroundStyle(Theme.hairline)
+                    DeckButton(title: "● LOKAL", active: model.localOnly) { model.localOnly.toggle() }
+                        .help("Nur lokale Tracks (ohne ☁ nur online)")
+                    SetCheckButton(model: model)
+                }
+                // aktiver Tag-Filter: eingeschlossene gefüllt, ausgeschlossene durchgestrichen – Klick löst den Tag
+                if !model.tagFilter.isEmpty {
+                    if CloudLibrary.shared.hasCloudTracks { Text("│").foregroundStyle(Theme.hairline) }
+                    DeckButton(title: "✕ TAGS") { model.clearTags() }
+                        .help("Tag-Filter löschen")
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        TagChips(tags: model.tags.sorted() + model.excludedTags.sorted(), ui: decks.prefs.ui,
+                                 filter: model.tagFilter) { t, _ in model.removeTag(t) }
+                            .font(Theme.mono(11.z))
                     }
                 }
             }
@@ -210,21 +248,24 @@ struct TagPicker: View {
             .flatMap { BrowserPaneModel.tags(of: $0, separators: separators) }.map { ($0, 1) }, uniquingKeysWith: +)
         let list = counts.filter { filter.isEmpty || $0.key.localizedCaseInsensitiveContains(filter) }
             .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+        let tf = model.tagFilter
         VStack(alignment: .leading, spacing: 6.z) {
             Text("TAGS · KOMMENTAR 2").font(Theme.label(12.z, .bold))
             Text("trennzeichen: '\(separators)' (einstellbar unter ⌘, → anzeige)").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
+            Text("klick = filter · ⌥-klick = ausschließen · auch in der liste").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
             TextField("FILTERN", text: $filter).textFieldStyle(.plain).font(Theme.mono(11.z))
                 .padding(4.z).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
             ScrollView {
                 VStack(alignment: .leading, spacing: 2.z) {
                     ForEach(list, id: \.key) { k, n in
+                        let mark = tf.mark(k)
                         Button {
-                            if model.tags.contains(k) { model.tags.remove(k) } else { model.tags.insert(k) }
+                            model.toggleTag(k, exclude: NSApp.currentEvent?.modifierFlags.contains(.option) == true)
                         } label: {
                             HStack {
-                                Text(model.tags.contains(k) ? "■" : "□").foregroundStyle(model.tags.contains(k) ? Theme.state : Theme.muted)
-                                Text(k).foregroundStyle(Theme.bone).padding(.horizontal, 3.z)
-                                    .background(ui.tagHighlight ? TagColors.color(k, ui) : .clear)
+                                Text(mark == .include ? "■" : mark == .exclude ? "⊘" : "□")
+                                    .foregroundStyle(mark == .none ? Theme.muted : Theme.state)
+                                TagChip(tag: k, mark: mark, style: TagChipStyle.of(k, ui))
                                 Spacer()
                                 Text("\(n)").foregroundStyle(Theme.muted)
                             }
@@ -236,15 +277,16 @@ struct TagPicker: View {
                 }
             }
             .frame(height: 320.z)
-            if !model.tags.isEmpty {
+            if !tf.isEmpty {
                 HStack {
-                    DeckButton(title: "ALLE TAGS LÖSEN") { model.tags.removeAll() }
+                    DeckButton(title: "✕ TAGS") { model.clearTags() }
                     DeckButton(title: "ALS SMARTLIST") {
-                        let tags = model.tags.sorted()
-                        let q = tags.map { "$COMMENT2 % \"\($0.replacingOccurrences(of: "\"", with: ""))\"" }.joined(separator: " & ")
-                        store.customSmartlists.append(CustomSmartlist(name: tags.joined(separator: " + "), query: q))
+                        let inc = model.tags.sorted(), exc = model.excludedTags.sorted()
+                        let quote = { (t: String) in "\"\(t.replacingOccurrences(of: "\"", with: ""))\"" }
+                        let q = (inc.map { "$COMMENT2 % \(quote($0))" } + exc.map { "$COMMENT2 !% \(quote($0))" }).joined(separator: " & ")
+                        store.customSmartlists.append(CustomSmartlist(name: (inc + exc.map { "!" + $0 }).joined(separator: " + "), query: q))
                     }
-                    .help("Smartlist aus den gewählten Tags anlegen (alle müssen passen)")
+                    .help("Smartlist aus den gewählten Tags anlegen (alle müssen passen, ausgeschlossene nicht)")
                 }
             }
         }
@@ -264,17 +306,24 @@ struct SourceTree: View {
     var body: some View {
         List(selection: Binding<BrowserSource?>(get: { selection }, set: { if let s = $0 { selection = s } })) {
             row("≣", "TRACK COLLECTION").tag(BrowserSource.collection)
+                .favoriteDrag { BrowserFavorite.source(.collection, store: store) }
                 .contextMenu {
                     exportMenu(.collection)
                     Button("Collection prüfen …") { ConsistencyWindow.show(store: store) }
                     Button("Reset Played State") { history.resetPlayed() }
                     OverviewMenuButton { store.tracks }
+                    AnalysisMenuButtons { store.tracks }
+                    CloudMenuButton(label: "Track Collection") { store.tracks }
                 }
             row("▶", "RUNNING TRACKS").tag(BrowserSource.running)
+                .favoriteDrag { BrowserFavorite.source(.running, store: store) }
             row("▤", "PREPARATION").tag(BrowserSource.preparation)
+                .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
                 .contextMenu {
                     exportMenu(.preparation)
                     OverviewMenuButton { store.tracks(for: .preparation) }
+                    AnalysisMenuButtons { store.tracks(for: .preparation) }
+                    CloudMenuButton(label: "Preparation") { store.tracks(for: .preparation) }
                 }
             DisclosureGroup {
                 ForEach(history.prepArchive) { s in
@@ -283,6 +332,7 @@ struct SourceTree: View {
                 }
             } label: { row("▸", "PREPARATION ARCHIV") }
             row("◷", "HISTORY").tag(BrowserSource.historyLive)
+                .favoriteDrag { BrowserFavorite.source(.historyLive, store: store) }
                 .contextMenu { exportMenu(.historyLive) }
             DisclosureGroup {
                 ForEach(history.archive) { s in
@@ -293,9 +343,12 @@ struct SourceTree: View {
             DisclosureGroup {
                 ForEach(store.customSmartlists) { sl in
                     row("◆", sl.name).tag(BrowserSource.custom(sl))
+                        .favoriteDrag { BrowserFavorite.source(.custom(sl), store: store) }
                         .contextMenu {
                             exportMenu(.custom(sl))
                             OverviewMenuButton { store.tracks(for: .custom(sl)) }
+                            AnalysisMenuButtons { store.tracks(for: .custom(sl)) }
+                            CloudMenuButton(label: sl.name) { store.tracks(for: .custom(sl)) }
                             Button("Bearbeiten …") { editing = sl }
                             Button("Löschen") { store.customSmartlists.removeAll { $0.id == sl.id } }
                         }
@@ -311,9 +364,12 @@ struct SourceTree: View {
                     row(icon(node), node.name)
                         .tag(BrowserSource.node(node))
                         .lineLimit(1)
+                        .favoriteDrag { BrowserFavorite.source(.node(node), store: store) }
                         .contextMenu {
                             if node.kind != .folder { exportMenu(.node(node)) }
                             OverviewMenuButton { nodeTracks(node) }
+                            AnalysisMenuButtons { nodeTracks(node) }
+                            CloudMenuButton(label: node.name) { nodeTracks(node) }
                         }
                 }
             }
@@ -327,7 +383,7 @@ struct SourceTree: View {
                 else { store.customSmartlists.append(saved) }
                 selection = .custom(saved)
             }
-            .environment(\.uiZoom, 1)
+            .zoomExempt()
         }
     }
 
@@ -470,6 +526,7 @@ struct TrackTable: View {
     @State private var rowBand = PreviewRowController()
     /// Vorschau „ganze Zeile“: Zellen zweizeilig, Inhalt oben
     private var twoLine: Bool { decks.prefs.ui.previewMode == .fullRow }
+    private var rowHeight: CGFloat { PreviewRow.rowHeight(textSize: decks.prefs.ui.previewTextSize).z }
 
     /// Zelle: im Inline-Modus ein Eingabefeld, sonst die normale Anzeige
     @ViewBuilder private func cell(_ t: Track, _ f: TrackField, @ViewBuilder _ display: () -> some View) -> some View {
@@ -482,14 +539,29 @@ struct TrackTable: View {
 
     private func text(_ t: Track, _ f: TrackField) -> some View { cell(t, f) { Text(f.value(of: t)) } }
 
+    /// Kommentar 2 als Tag-Chips; gewählte Tags des Bereichs hell gefüllt. Klicks: `chipAt` (InlineEditController)
+    @ViewBuilder private func tagCell(_ t: Track) -> some View {
+        if TagChips.benchPlain {
+            Text(t.comment2)
+        } else {
+            let e = BrowserPaneModel.tagIndex.entry(t.comment2, separators: decks.prefs.ui.tagSeparators)
+            TagChipsText(tags: e.tags, keys: e.keys, ui: decks.prefs.ui, filter: model.tagFilter)
+        }
+    }
+
     /// gespeicherte Spaltenreihenfolge: neue Spalten (z. B. „played“) vorne einsetzen statt hinten anhängen
     private static func withNewColumnsFirst(_ data: Data) -> Data {
         guard var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               var order = obj["columnOrder"] as? [Any] else { return data }
         let id = { (e: Any) in ((e as? [String: Any])?["base"] as? [String: Any]).flatMap { ($0["explicit"] as? [String: Any])?["_0"] as? String } }
         let ids = order.compactMap(id)
-        guard !ids.contains("played") || !ids.contains("cover") else { return data }
+        guard !ids.contains("played") || !ids.contains("cover") || !ids.contains("cloud") else { return data }
         if !ids.contains("played") { order.insert(["base": ["explicit": ["_0": "played"]]], at: 0) }
+        // Cloud-Spalte hinter „played“
+        if !ids.contains("cloud") {
+            let at = order.firstIndex { id($0) == "played" }.map { $0 + 1 } ?? 0
+            order.insert(["base": ["explicit": ["_0": "cloud"]]], at: at)
+        }
         // Cover-Spalte neben die Farbe statt ans Ende
         if !ids.contains("cover") {
             order.insert(["base": ["explicit": ["_0": "cover"]]], at: order.firstIndex { id($0) == "color" }.map { $0 + 1 } ?? min(3, order.count))
@@ -500,16 +572,22 @@ struct TrackTable: View {
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols0: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("▶") { (t: Track) in Text(history.played.contains(t.key) ? "✓" : "").foregroundStyle(Theme.secondary).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("▶") { (t: Track) in Text(history.played.contains(t.key) ? "✓" : "").foregroundStyle(Theme.secondary).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(16.z).customizationID("played")
-        TableColumn("✓", value: \Track.analyzedSort) { (t: Track) in Text(t.analyzed ? "✓" : "").foregroundStyle(Theme.muted).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn(Text(verbatim: "☁").font(.system(size: 13))) { (t: Track) in CloudCell(path: t.path).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
+            .width(16.z).customizationID("cloud")
+        TableColumn("✓", value: \Track.analyzedSort) { (t: Track) in
+                Text(t.analyzed ? "✓" : "").foregroundStyle(t.ownAnalysis ? Theme.secondary : Theme.muted)
+                    .help(t.ownAnalysis ? "analysiert von MINOS-741 (Tempo, Grid, Tonart, Lautheit ganz oder teilweise)" : "analysiert in der Collection")
+                    .modifier(PreviewRowCell(on: twoLine, height: rowHeight))
+            }
             .width(16.z).customizationID("analyzed")
-        TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4.z).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4.z).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(6.z).customizationID("color")
-        TableColumn("Cover") { (t: Track) in CoverThumb(path: t.path).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Cover") { (t: Track) in CoverThumb(path: t.path).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 22.z, ideal: 44.z).customizationID("cover").defaultVisibility(.hidden)
         TableColumn("Artist", value: \Track.artist) { (t: Track) in
-                cell(t, .artist) { Text(t.artist).foregroundStyle(t.loose ? Theme.muted : t.fileExists ? Theme.bone : Theme.state) }.modifier(PreviewRowCell(on: twoLine))
+                cell(t, .artist) { Text(t.artist).foregroundStyle(t.loose ? Theme.muted : t.fileExists ? Theme.bone : Theme.state) }.modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(min: 80.z, ideal: 150.z).customizationID("artist")
     }
@@ -517,89 +595,89 @@ struct TrackTable: View {
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols1: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Title", value: \Track.title) { (t: Track) in
-                cell(t, .title) { Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) }.modifier(PreviewBehindTitle(mix: decks, track: t)).modifier(PreviewRowCell(on: twoLine))
+                cell(t, .title) { Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) }.modifier(PreviewBehindTitle(mix: decks, track: t)).modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(min: 80.z, ideal: 200.z).customizationID("title")
         // Mini-Übersicht (Wellenform, Phrasen, Cues) – ⌘, → Anzeige → Browser-Vorschau
-        TableColumn("Preview") { (t: Track) in TrackPreviewCell(mix: decks, track: t).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Preview") { (t: Track) in TrackPreviewCell(mix: decks, track: t).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60.z, ideal: 150.z, max: 400.z).customizationID("preview")
-        TableColumn("Remixer", value: \Track.remixer) { (t: Track) in text(t, .remixer).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Remixer", value: \Track.remixer) { (t: Track) in text(t, .remixer).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60.z, ideal: 110.z).customizationID("remixer").defaultVisibility(.hidden)
-        TableColumn("Producer", value: \Track.producer) { (t: Track) in text(t, .producer).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Producer", value: \Track.producer) { (t: Track) in text(t, .producer).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60.z, ideal: 110.z).customizationID("producer").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols2: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Release", value: \Track.album) { (t: Track) in text(t, .album).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Release", value: \Track.album) { (t: Track) in text(t, .album).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60.z, ideal: 130.z).customizationID("release").defaultVisibility(.hidden)
-        TableColumn("Track #", value: \Track.trackNumber) { (t: Track) in text(t, .trackNumber).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Track #", value: \Track.trackNumber) { (t: Track) in text(t, .trackNumber).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(40.z).customizationID("trackno").defaultVisibility(.hidden)
         TableColumn("BPM", value: \Track.bpm) { (t: Track) in
-                cell(t, .bpm) { Text(t.bpm > 0 ? String(format: "%.2f", t.bpm) : "").monospacedDigit() }.modifier(PreviewRowCell(on: twoLine))
+                cell(t, .bpm) { Text(t.bpm > 0 ? String(format: "%.2f", t.bpm) : "").monospacedDigit() }.modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(56.z).customizationID("bpm")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols3: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Key", value: \Track.openKey) { (t: Track) in Text(t.openKey).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Key", value: \Track.openKey) { (t: Track) in Text(t.openKey).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(36.z).customizationID("key")
-        TableColumn("Key Text", value: \Track.keyText) { (t: Track) in text(t, .keyText).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Key Text", value: \Track.keyText) { (t: Track) in text(t, .keyText).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(40.z).customizationID("keytext").defaultVisibility(.hidden)
-        TableColumn("Time", value: \Track.duration) { (t: Track) in Text(Theme.time(t.duration)).monospacedDigit().modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Time", value: \Track.duration) { (t: Track) in Text(Theme.time(t.duration)).monospacedDigit().modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(44.z).customizationID("time")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols4: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Gain", value: \Track.gainSort) { (t: Track) in Text(t.perceivedDb.map { String(format: "%+.1f", $0) } ?? "").monospacedDigit().modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Gain", value: \Track.gainSort) { (t: Track) in Text(t.perceivedDb.map { String(format: "%+.1f", $0) } ?? "").monospacedDigit().modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(42.z).customizationID("gain").defaultVisibility(.hidden)
         TableColumn("Rating", value: \Track.rating) { (t: Track) in
-                cell(t, .rating) { Text(String(repeating: "★", count: max(0, min(5, t.rating)))) }.modifier(PreviewRowCell(on: twoLine))
+                cell(t, .rating) { Text(String(repeating: "★", count: max(0, min(5, t.rating)))) }.modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(56.z).customizationID("rating").defaultVisibility(.hidden)
-        TableColumn("Comment", value: \Track.comment) { (t: Track) in text(t, .comment).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Comment", value: \Track.comment) { (t: Track) in text(t, .comment).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 80.z, ideal: 170.z).customizationID("comment")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols5: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Comment 2", value: \Track.comment2) { (t: Track) in
-                cell(t, .comment2) { TagChips(tags: BrowserPaneModel.tags(of: t, separators: decks.prefs.ui.tagSeparators), ui: decks.prefs.ui) }.modifier(PreviewRowCell(on: twoLine))
+                cell(t, .comment2) { tagCell(t) }.modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(min: 80.z, ideal: 260.z).customizationID("comment2")
-        TableColumn("Label", value: \Track.label) { (t: Track) in text(t, .label).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Label", value: \Track.label) { (t: Track) in text(t, .label).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60.z, ideal: 110.z).customizationID("label")
-        TableColumn("Catalog No", value: \Track.catalogNo) { (t: Track) in text(t, .catalogNo).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Catalog No", value: \Track.catalogNo) { (t: Track) in text(t, .catalogNo).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 50.z, ideal: 90.z).customizationID("catalog").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols6: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Genre", value: \Track.genre) { (t: Track) in text(t, .genre).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Genre", value: \Track.genre) { (t: Track) in text(t, .genre).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 50.z, ideal: 100.z).customizationID("genre").defaultVisibility(.hidden)
-        TableColumn("Plays", value: \Track.playCount) { (t: Track) in Text(t.playsText).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Plays", value: \Track.playCount) { (t: Track) in Text(t.playsText).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(38.z).customizationID("plays")
-        TableColumn("Last Played", value: \Track.lastPlayedSort) { (t: Track) in Text(Track.dateText(t.lastPlayed)).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Last Played", value: \Track.lastPlayedSort) { (t: Track) in Text(Track.dateText(t.lastPlayed)).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(74.z).customizationID("lastplayed").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols7: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("Import", value: \Track.importSort) { (t: Track) in Text(t.importText).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Import", value: \Track.importSort) { (t: Track) in Text(t.importText).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(74.z).customizationID("import")
-        TableColumn("Release Date", value: \Track.releaseSort) { (t: Track) in text(t, .releaseDate).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Release Date", value: \Track.releaseSort) { (t: Track) in text(t, .releaseDate).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(74.z).customizationID("releasedate").defaultVisibility(.hidden)
-        TableColumn("Bitrate", value: \Track.bitrate) { (t: Track) in Text(t.bitrate > 0 ? "\(t.bitrate)" : "").modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Bitrate", value: \Track.bitrate) { (t: Track) in Text(t.bitrate > 0 ? "\(t.bitrate)" : "").modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(44.z).customizationID("bitrate").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols8: some TableColumnContent<Track, KeyPathComparator<Track>> {
-        TableColumn("File Name", value: \Track.fileName) { (t: Track) in Text(t.fileName).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("File Name", value: \Track.fileName) { (t: Track) in Text(t.fileName).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 80.z, ideal: 220.z).customizationID("file").defaultVisibility(.hidden)
-        TableColumn("Mix", value: \Track.mix) { (t: Track) in text(t, .mix).modifier(PreviewRowCell(on: twoLine)) }
+        TableColumn("Mix", value: \Track.mix) { (t: Track) in text(t, .mix).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
             .width(min: 60.z, ideal: 110.z).customizationID("mix").defaultVisibility(.hidden)
     }
 
@@ -629,7 +707,7 @@ struct TrackTable: View {
             // Spaltenbreiten wachsen mit dem Zoom; die Tabelle meldet sie zurück in die gespeicherte Anordnung
             for c in inlineCtl.table?.tableColumns ?? [] { c.width = (c.width * new / old * 2).rounded() / 2 }
         }
-        .font(Theme.mono(11.z))
+        .font(TagChipsText.Metrics.of(decks.prefs.ui).font)
         .scrollContentBackground(.hidden)
         .background(Theme.void)
         .background(TableViewFinder(controller: inlineCtl))
@@ -641,6 +719,12 @@ struct TrackTable: View {
                 model.rows(from: store, history: history, separators: decks.prefs.ui.tagSeparators)
             }
             inlineCtl.writeBack = { [decks] in decks.prefs.ui.writeCollection }
+            // Tag-Chip unter dem Klick, nur ganz sichtbare (abgeschnittene enden in „…“)
+            inlineCtl.chipAt = { [decks] t, x, width in
+                let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: decks.prefs.ui.tagSeparators).tags
+                return TagChipsText.spans(tags: tags, .of(decks.prefs.ui)).firstIndex { $0.contains(x) && $0.upperBound <= width }.map { tags[$0] }
+            }
+            inlineCtl.twoLine = { [decks] in decks.prefs.ui.previewMode == .fullRow }
             inlineCtl.install()
             rowBand.inline = inlineCtl
         }
@@ -656,11 +740,17 @@ struct TrackTable: View {
                 Button("Eigene Änderungen verwerfen") { store.revertEdits(Array(ids)) }
             }
             Divider()
+            AnalysisMenuButtons { ids.compactMap { store.track($0) } }
+            if store.hasAnalysis(ids) {
+                Button("Analyse verwerfen") { store.discardAnalysis(Array(ids)) }
+            }
+            Divider()
             Button("An Preparation anhängen") { store.preparation.append(contentsOf: ids.filter { !store.preparation.contains($0) }) }
             if case .preparation = model.source {
                 Button("Aus Preparation entfernen") { store.preparation.removeAll { ids.contains($0) } }
             }
             Divider()
+            CloudMenuButton(label: String(localized: "Auswahl")) { ids.compactMap { store.track($0) } }
             Button("Vorhören") { if let id = ids.first, let t = store.track(id) { decks.preview(t) } }
             Button("Im Finder zeigen") {
                 let urls = ids.compactMap { store.track($0) }.map { URL(fileURLWithPath: $0.path) }

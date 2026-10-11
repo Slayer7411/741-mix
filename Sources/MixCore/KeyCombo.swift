@@ -89,20 +89,23 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case hotcue5 = "deck.hotcue.5", hotcue6 = "deck.hotcue.6", hotcue7 = "deck.hotcue.7", hotcue8 = "deck.hotcue.8"
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", previewSelected = "browser.preview"
     case reloadCollection = "browser.reload"
+    case favorite1 = "browser.favorite.1", favorite2 = "browser.favorite.2", favorite3 = "browser.favorite.3"
+    case favorite4 = "browser.favorite.4", favorite5 = "browser.favorite.5", favorite6 = "browser.favorite.6"
     case toggleMixer = "view.mixer", toggleFourDecks = "view.fourdecks", bigBrowser = "view.bigbrowser", bigBrowserKey = "view.bigbrowser.key"
     case zoomIn = "view.zoom.in", zoomOut = "view.zoom.out", zoomReset = "view.zoom.reset"
     case openCollection = "app.open", settings = "app.settings", closeWindow = "app.close", reconnectAudio = "app.reconnect"
 
     public var group: ShortcutGroup {
         switch self {
-        case .resetPlayed, .loadSelected, .previewSelected, .reloadCollection: .browser
+        case .resetPlayed, .loadSelected, .previewSelected, .reloadCollection,
+             .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6: .browser
         case .toggleMixer, .toggleFourDecks, .bigBrowser, .bigBrowserKey, .zoomIn, .zoomOut, .zoomReset: .view
         case .openCollection, .settings, .closeWindow, .reconnectAudio: .general
         default: .decks
         }
     }
 
-    /// Deck-Index (Fokus) bzw. Hotcue-Index (0–7)
+    /// Deck-Index (Fokus), Hotcue-Index (0–7) bzw. Favoriten-Platz (0–5)
     public var index: Int? {
         switch self {
         case .focusDeckA: 0
@@ -117,6 +120,12 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .hotcue6: 5
         case .hotcue7: 6
         case .hotcue8: 7
+        case .favorite1: 0
+        case .favorite2: 1
+        case .favorite3: 2
+        case .favorite4: 3
+        case .favorite5: 4
+        case .favorite6: 5
         default: nil
         }
     }
@@ -137,6 +146,8 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .beatjumpForward: KeyCombo("right", [.option, .command])
         case .hotcue1, .hotcue2, .hotcue3, .hotcue4, .hotcue5, .hotcue6, .hotcue7, .hotcue8:
             KeyCombo("\((index ?? 0) + 1)", [.control, .command])
+        case .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6:
+            KeyCombo("\((index ?? 0) + 1)", [.control, .option])
         case .resetPlayed: KeyCombo("p", [.option, .command])
         case .toggleMixer: KeyCombo("m", [.option, .command])
         case .toggleFourDecks: KeyCombo("4", [.option, .command])

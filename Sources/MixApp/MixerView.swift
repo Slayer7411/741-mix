@@ -15,7 +15,7 @@ struct MixerView: View {
             if mix.mixerMode == .internalMixer {
                 HStack(spacing: 4.z) {
                     Text("A").font(Theme.label(9.z, .bold)).foregroundStyle(.secondary)
-                    Slider(value: Binding(get: { mix.state.crossfader }, set: { mix.setCrossfader($0) }), in: -1...1)
+                    Slider(value: Binding(get: { mix.crossfader }, set: { mix.setCrossfader($0) }), in: -1...1)
                         .controlSize(zoomed: .mini)
                     Text("B").font(Theme.label(9.z, .bold)).foregroundStyle(.secondary)
                 }
@@ -104,14 +104,16 @@ struct LevelFader: View {
     }
 }
 
-/// FX-Unit im Gruppenmodus: Dry/Wet + 3 Slots (Filter · Delay · Reverb), je Knopf + Taste.
-/// Am Controller: D/W-Regler, Regler 1–3 = Stärke, Tasten 1–3 = an/aus.
+/// FX-Unit: Gruppe (Filter · Delay · Reverb) oder Single (ein Effekt). D/W, Regler 1–3 und Tasten 1–3 liegen auf
+/// zuweisbaren Parametern (Rechtsklick, ⌘, -> MIXER & FX); der Controller geht denselben Weg.
 struct FXUnitView: View {
     @Environment(MixModel.self) private var mix
     let u: Int
 
+    private var unit: FXMirror { mix.fxUnits[u] }
+
     var body: some View {
-        let fx = mix.state.fx[u]
+        let fx = unit.state
         HStack(spacing: 8.z) {
             VStack(spacing: 2.z) {
                 Text("FX \(u + 1)").font(Theme.label(11.z, .heavy)).foregroundStyle(fx.anyOn ? Theme.state : Theme.muted)
@@ -120,8 +122,7 @@ struct FXUnitView: View {
                 }
                 .help("Gruppe (3 Effekte) oder Single (1 Effekt, 3 Parameter)")
             }
-            Knob(value: Binding(get: { mix.state.fx[u].dryWet }, set: { v in mix.updateFX(u) { $0.dryWet = v } }),
-                 range: 0...1, defaultValue: 1, label: "D/W", color: Theme.state, size: 24)
+            FXKnob(u: u, c: .dryWet)
             if fx.single { single(fx) } else { group(fx) }
         }
         .padding(.horizontal, 8.z)
@@ -130,18 +131,18 @@ struct FXUnitView: View {
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
     }
 
-    @ViewBuilder private func group(_ fx: FXUnitState) -> some View {
+    /// Regler 1–3 mit Taste darunter
+    private var controls: some View {
         ForEach(0..<3, id: \.self) { i in
             VStack(spacing: 2.z) {
-                Knob(value: Binding(get: { mix.state.fx[u].slots[i].amount },
-                                    set: { v in mix.updateFX(u) { $0.slots[i].amount = v } }),
-                     range: 0...1, defaultValue: 0.5, bipolar: i == 0, label: FXUnitState.slotNames[i],
-                     color: Theme.state, size: 24)
-                DeckButton(title: "ON", active: fx.slots[i].on, color: Theme.state, width: 22) {
-                    mix.updateFX(u) { $0.slots[i].on.toggle() }
-                }
+                FXKnob(u: u, c: .knob(i))
+                FXButton(u: u, i: i)
             }
         }
+    }
+
+    @ViewBuilder private func group(_ fx: FXUnitState) -> some View {
+        controls
         Menu(BeatSizes.label(MixEngine.delayBeats[fx.delayIndex])) {
             ForEach(MixEngine.delayBeats.indices, id: \.self) { i in
                 Button("Delay \(BeatSizes.label(MixEngine.delayBeats[i])) Beat") { mix.updateFX(u) { $0.delayIndex = i } }
@@ -151,7 +152,7 @@ struct FXUnitView: View {
         .font(Theme.label(10.z, .bold))
         .fixedSize()
         .help("Delay-Zeit in Beats")
-        Knob(value: Binding(get: { mix.state.fx[u].reverbSize }, set: { v in mix.updateFX(u) { $0.reverbSize = v } }),
+        Knob(value: Binding(get: { unit.state.reverbSize }, set: { v in mix.updateFX(u) { $0.reverbSize = v } }),
              range: 0...1, defaultValue: 0.6, label: "ROOM", color: Theme.state, size: 20)
     }
 
@@ -169,20 +170,14 @@ struct FXUnitView: View {
             DeckButton(title: "ON", active: fx.singleOn, color: Theme.state, width: 30) { mix.updateFX(u) { $0.singleOn.toggle() } }
         }
         if effect == .plugin { pluginControls(fx) }
-        let names = effect == .plugin ? mix.state.pluginParams[u] : effect.params
-        ForEach(0..<3, id: \.self) { i in
-            let label = i < names.count ? names[i] : "—"
-            Knob(value: Binding(get: { mix.state.fx[u].params[i] }, set: { v in mix.updateFX(u) { $0.params[i] = v } }),
-                 range: 0...1, defaultValue: 0.5, bipolar: effect != .plugin && (label == "FILTER" || label == "CUTOFF"),
-                 label: label, color: Theme.state, size: 24)
-        }
+        controls
     }
 
     /// Plugin wählen (Name · Hersteller) und sein Fenster öffnen
     @ViewBuilder private func pluginControls(_ fx: FXUnitState) -> some View {
         let list = mix.core.pluginList()
         let current = list.first { $0.id == fx.pluginID } ?? fx.pluginID.flatMap(mix.core.pluginCatalog.info)   // auch abgeschaltet
-        let error = mix.state.pluginErrors[u]
+        let error = unit.pluginError
         VStack(spacing: 2.z) {
             Menu {
                 ForEach(list) { p in
@@ -200,6 +195,172 @@ struct FXUnitView: View {
             DeckButton(title: "EDIT", active: false, color: Theme.state, width: 30) { PluginWindow.show(unit: u, core: mix.core) }
                 .help("Plugin-Fenster öffnen")
         }
+    }
+}
+
+/// Regler eines FX-Bedienelements: Beschriftung = zugewiesener Parameter (hell = eigene Zuweisung),
+/// beim Drehen und Zeigen der Wert mit Einheit. Rechtsklick = zuweisen
+struct FXKnob: View {
+    @Environment(MixModel.self) private var mix
+    let u: Int
+    let c: FXControl
+    @State private var hover = false
+    @State private var flash = false
+    @State private var flashTask: Task<Void, Never>?
+
+    var body: some View {
+        let info = mix.fxUnits[u].controls[c.slot]
+        let showValue = info.param != nil && (hover || flash)
+        VStack(spacing: 1.z) {
+            Knob(value: Binding(get: { mix.fxUnits[u].controls[c.slot].value }, set: { mix.setFXControl(u, c, $0) }),
+                 range: 0...1, defaultValue: info.param?.defaultValue ?? 0, bipolar: info.param?.bipolar ?? false,
+                 color: Theme.state, size: 24)
+                .opacity(info.param == nil ? 0.35 : 1)
+            Text(verbatim: showValue ? mix.fxText(u, info) : info.label)
+                .font(showValue ? Theme.mono(8.z) : Theme.label(8.z, .semibold))
+                .foregroundStyle(showValue || !info.isDefault ? Theme.bone : Theme.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .frame(width: 34.z)
+        }
+        .onHover { hover = $0 }
+        .onChange(of: info.value) {
+            // Wert kurz zeigen (Controller, Plugin-Fenster, Ziehen)
+            flash = true
+            flashTask?.cancel()
+            flashTask = Task { try? await Task.sleep(for: .seconds(1.2)); if !Task.isCancelled { flash = false } }
+        }
+        .contextMenu { FXAssignMenu(u: u, c: c) }
+        .help(fxHelp(info))
+    }
+
+    private func fxHelp(_ info: FXControlInfo) -> Text {
+        guard let p = info.param else { return Text("Nicht zugewiesen · Rechtsklick = Parameter wählen") }
+        return fxParamName(p) + Text(verbatim: " · " + mix.fxText(u, info) + " · ") + Text("Rechtsklick = Parameter wählen")
+    }
+}
+
+/// Taste eines FX-Bedienelements: Schalter, Liste (nächste Stufe) oder min/max. Rechtsklick = zuweisen
+struct FXButton: View {
+    @Environment(MixModel.self) private var mix
+    let u: Int
+    let i: Int
+
+    var body: some View {
+        let c = FXControl.button(i)
+        let info = mix.fxUnits[u].controls[c.slot]
+        DeckButton(title: info.label, active: info.active, color: Theme.state, width: 22, verbatim: true) { mix.pressFXButton(u, i) }
+            .opacity(info.param == nil ? 0.5 : 1)
+            .contextMenu { FXAssignMenu(u: u, c: c) }
+            .help(info.param.map { fxParamName($0) + Text(verbatim: " · " + mix.fxText(u, info) + " · ") + Text("Rechtsklick = Parameter wählen") }
+                  ?? Text("Nicht zugewiesen · Rechtsklick = Parameter wählen"))
+    }
+}
+
+/// Name eines Parameters (eigene Effekte übersetzt, Plugins wie geliefert)
+func fxParamName(_ p: FXParam) -> Text {
+    p.pluginParam == nil ? Text(LocalizedStringKey(p.name)) : Text(verbatim: p.name)
+}
+
+extension FXControl {
+    /// Beschriftung in Menüs und Einstellungen (Lokalisierungsschlüssel)
+    var title: LocalizedStringKey {
+        switch self {
+        case .dryWet: "D/W"
+        case .knob1: "Regler 1"
+        case .knob2: "Regler 2"
+        case .knob3: "Regler 3"
+        case .button1: "Taste 1"
+        case .button2: "Taste 2"
+        case .button3: "Taste 3"
+        }
+    }
+}
+
+/// FX-Belegung eines Bedienelements: Standard, nicht zugewiesen, alle Parameter des geladenen Effekts.
+/// Gruppen als Abschnitte, bei vielen Parametern als Untermenüs (je 20). Tasten: Schalter/Listen oben, stufenlose als min/max.
+/// `filter` = Suche (Einstellungen)
+struct FXAssignMenu: View {
+    @Environment(MixModel.self) private var mix
+    let u: Int
+    let c: FXControl
+    var filter = ""
+
+    private static let flatLimit = 24, chunk = 20
+
+    var body: some View {
+        let unit = mix.fxUnits[u]
+        let mapped = unit.state.mapping[c]
+        let params = unit.params
+        let def = FXCatalog.defaultTarget(c, effect: unit.state.effectKey, params: params).flatMap { k in params.first { $0.id == k } }
+        let list = filter.isEmpty ? params : params.filter {
+            $0.name.localizedCaseInsensitiveContains(filter) || $0.group.localizedCaseInsensitiveContains(filter)
+        }
+        Toggle(isOn: Binding(get: { mapped == nil }, set: { _ in mix.setFXMapping(u, c, nil) })) {
+            Text("Standard") + Text(verbatim: " · ") + (def.map(fxParamName) ?? Text(verbatim: "—"))
+        }
+        Toggle(isOn: Binding(get: { mapped == "" }, set: { _ in mix.setFXMapping(u, c, "") })) { Text("Nicht zugewiesen") }
+        Divider()
+        if list.isEmpty {
+            params.isEmpty ? Text("Effekt lädt …") : Text("Kein Parameter gefunden")
+        }
+        if c == .dryWet {
+            let wet = list.filter { p in p.pluginParam != nil && ["mix", "wet", "dry"].contains { p.name.lowercased().contains($0) } }
+            if !wet.isEmpty { Section("Mix des Plugins") { items(wet, mapped) } }
+        }
+        if c.isButton {
+            let switches = list.filter(\.isSwitch), rest = list.filter { !$0.isSwitch }
+            if !switches.isEmpty { Section("Schalter und Listen") { tree(switches, mapped) } }
+            if !rest.isEmpty { Menu("Stufenlos (min/max)") { tree(rest, mapped) } }
+        } else {
+            tree(list, mapped)
+        }
+    }
+
+    /// nach Gruppen: wenige = Abschnitte, viele = Untermenüs
+    @ViewBuilder private func tree(_ list: [FXParam], _ mapped: String?) -> some View {
+        let groups = Self.groups(list)
+        if list.count <= Self.flatLimit || groups.count == 1 {
+            ForEach(groups, id: \.0) { g in
+                if g.0.isEmpty || groups.count == 1 { chunked(g.1, mapped) } else { Section(g.0) { chunked(g.1, mapped) } }
+            }
+        } else {
+            ForEach(groups, id: \.0) { g in
+                if g.0.isEmpty { chunked(g.1, mapped) } else { Menu { chunked(g.1, mapped) } label: { Text(verbatim: g.0) } }
+            }
+        }
+    }
+
+    @ViewBuilder private func chunked(_ list: [FXParam], _ mapped: String?) -> some View {
+        if list.count <= Self.flatLimit {
+            items(list, mapped)
+        } else {
+            ForEach(Array(stride(from: 0, to: list.count, by: Self.chunk)), id: \.self) { i in
+                let part = Array(list[i..<min(i + Self.chunk, list.count)])
+                Menu { items(part, mapped) } label: { Text(verbatim: "\(part[0].name) … \(part[part.count - 1].name)") }
+            }
+        }
+    }
+
+    private func items(_ list: [FXParam], _ mapped: String?) -> some View {
+        ForEach(list) { p in
+            Toggle(isOn: Binding(get: { mapped == p.id }, set: { _ in mix.setFXMapping(u, c, p.id) })) {
+                // Art bzw. Bereich hinter dem Namen (Plugins: Einheit, AU mit Bereich)
+                let detail: Text? = p.steps == 1 ? Text("Schalter") : p.steps > 1 ? Text("\(p.steps + 1) Stufen")
+                    : p.pluginParam == nil || p.rangeText.isEmpty ? nil : Text(verbatim: p.rangeText)
+                detail.map { fxParamName(p) + Text(verbatim: " · ") + $0 } ?? fxParamName(p)
+            }
+        }
+    }
+
+    /// Gruppen in der Reihenfolge des ersten Auftretens
+    private static func groups(_ list: [FXParam]) -> [(String, [FXParam])] {
+        var order: [String] = [], by: [String: [FXParam]] = [:]
+        for p in list {
+            if by[p.group] == nil { order.append(p.group) }
+            by[p.group, default: []].append(p)
+        }
+        return order.map { ($0, by[$0] ?? []) }
     }
 }
 
@@ -234,10 +395,31 @@ struct TopBar: View {
 /// Master-Clock: LINK, AUTO/MASTER, Tempo mit −/+ und Tap, Metronom, Snap/Quant, Hauptlautstärke
 struct MasterClockPanel: View {
     @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        HStack(spacing: 6.z) {
+            // Tempo und Master-Anzeige ändern sich laufend (Tempo-Fader am Master-Deck): eigene Hosting-View, sonst rechnet
+            // jede Änderung das Layout des ganzen Fensters neu. Das Zahnrad bleibt draußen (SettingsLink braucht die Szene)
+            // Größe hängt nur an der LINK-Beschriftung (Teilnehmerzahl) und an MAIN (extern ausgeblendet)
+            Isolated("clock", sizeKey: [mix.linkPeersShown, mix.masterVolumeActive ? 1 : 0]) {
+                Controls().environment(mix).foregroundStyle(Theme.bone).tint(Theme.state)
+            }
+            SettingsLink { Text("⚙︎").font(Theme.mono(14.z)).foregroundStyle(Theme.bone) }
+                .buttonStyle(.borderless)
+                .help("Einstellungen (⌘,)")
+        }
+        .padding(.horizontal, 8.z)
+        .padding(.vertical, 4.z)
+        .background(Rectangle().fill(Theme.deck))
+        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    struct Controls: View {
+    @Environment(MixModel.self) private var mix
     @State private var dragStart: Double?
 
     var body: some View {
-        let s = mix.state
+        let s = mix.clock
         HStack(spacing: 6.z) {
             DeckButton(title: s.linkEnabled && s.linkPeers > 0 ? "LINK \(s.linkPeers)" : "LINK", active: s.linkEnabled,
                        color: Theme.secondary, width: 38) { mix.toggleLink() }
@@ -249,7 +431,7 @@ struct MasterClockPanel: View {
                     .help("Clock ist Master: MINOS gibt das Tempo vor, gesyncte Decks folgen")
             }
             VStack(spacing: 0) {
-                Text(String(format: "%.2f", mix.masterBPM))
+                Text(String(format: "%.2f", s.masterTempo))
                     .font(Theme.mono(17.z, .semibold))
                     .foregroundStyle(s.clockMaster ? Theme.secondary : Theme.bone)
                     .gesture(DragGesture(minimumDistance: 1)
@@ -278,7 +460,7 @@ struct MasterClockPanel: View {
                 DeckButton(title: "TICK", active: s.metronome, width: 30) { mix.setMetronome(!s.metronome) }
                     .help("Metronom auf dem Beat der Clock")
             }
-            Knob(value: Binding(get: { mix.state.metronomeVolume }, set: { mix.setMetronome(mix.state.metronome, volume: $0) }),
+            Knob(value: Binding(get: { mix.clock.metronomeVolume }, set: { mix.setMetronome(mix.clock.metronome, volume: $0) }),
                  range: 0...1, defaultValue: 0.5, label: "TICK", size: 20)
             Text("│").foregroundStyle(Theme.hairline)
             VStack(spacing: 2.z) {
@@ -287,16 +469,13 @@ struct MasterClockPanel: View {
                 DeckButton(title: "Q", active: mix.prefs.engine.quantize, width: 14) { mix.toggleQuantize() }
                     .help("Quant: Sprünge halten die Beat-Phase")
             }
-            Knob(value: Binding(get: { mix.state.masterVolume }, set: { mix.setMasterVolume($0) }), range: 0...1,
-                 defaultValue: 0.85, label: "MAIN", size: 24)
-            SettingsLink { Text("⚙︎").font(Theme.mono(14.z)).foregroundStyle(Theme.bone) }
-                .buttonStyle(.borderless)
-                .help("Einstellungen (⌘,)")
+            // externer Mixer: Lautstärke regelt das Pult, MAIN wirkt nicht -> ausgeblendet
+            if mix.masterVolumeActive {
+                Knob(value: Binding(get: { mix.clock.masterVolume }, set: { mix.setMasterVolume($0) }), range: 0...1,
+                     defaultValue: 0.85, label: "MAIN", size: 24)
+            }
         }
-        .padding(.horizontal, 8.z)
-        .padding(.vertical, 4.z)
-        .background(Rectangle().fill(Theme.deck))
-        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+    }
     }
 }
 
@@ -304,21 +483,24 @@ struct MasterClockPanel: View {
 /// Doppelklick = neu auf Takt 1.
 struct BarCounter: View {
     @Environment(MixModel.self) private var mix
+    /// Farben einmal statt in jedem Frame umrechnen
+    private static let played = CG.bone.copy(alpha: 0.55) ?? CG.bone
+    private static let shade = CGColor(gray: 0, alpha: 0.5)
 
     var body: some View {
         LiveCanvas(fps: 30) { [mix] ctx, size in
             ctx.setFillColor(CG.void); ctx.fill(CGRect(origin: .zero, size: size))
             guard let sb = mix.core.sessionBeat else {
-                CG.text(String(localized: "BARS · ab erstem Play"), size: 10, weight: "Regular", color: NSColor(Theme.muted), rightAt: size.width - 6, y: 15)
+                CG.text(String(localized: "BARS · ab erstem Play"), size: 10, weight: "Regular", color: CG.mutedNS, rightAt: size.width - 6, y: 15)
                 return
             }
             let beat = max(0, sb)
             let bar = Int(beat / 4), inBar = Int(beat) % 4
             let frac = beat - beat.rounded(.down)
             let pulse = CGFloat(max(0, 1 - frac * 2.5))
-            CG.text("\(bar + 1).\(inBar + 1)", size: 15, weight: "SemiBold", color: NSColor(Theme.bone), rightAt: 46, y: 4)
+            CG.text("\(bar + 1).\(inBar + 1)", size: 15, weight: "SemiBold", color: CG.boneNS, rightAt: 46, y: 4)
             let toNext16 = 16 - bar % 16
-            CG.text("16 ▸ \(toNext16)", size: 9, weight: "Regular", color: NSColor(toNext16 == 1 ? Theme.state : Theme.muted), rightAt: 46, y: 26)
+            CG.text("16 ▸ \(toNext16)", size: 9, weight: "Regular", color: toNext16 == 1 ? CG.stateNS : CG.mutedNS, rightAt: 46, y: 26)
             let x0: CGFloat = 66, w = size.width - x0 - 4
             for (row, n) in [4, 8, 16].enumerated() {
                 let y = 3 + CGFloat(row) * 13, h: CGFloat = 10
@@ -328,10 +510,9 @@ struct BarCounter: View {
                     let r = CGRect(x: x0 + CGFloat(i) * cw + 1, y: y, width: cw - 2, height: h)
                     let last = cur == n - 1
                     if i < cur {
-                        ctx.setFillColor(NSColor(Theme.bone).withAlphaComponent(0.55).cgColor)
+                        ctx.setFillColor(Self.played)
                     } else if i == cur {
-                        let c = last ? Theme.state : Theme.bone
-                        ctx.setFillColor(NSColor(c).withAlphaComponent(0.6 + 0.4 * pulse).cgColor)
+                        ctx.setFillColor((last ? CG.state : CG.bone).copy(alpha: 0.6 + 0.4 * pulse) ?? CG.bone)
                     } else {
                         ctx.setFillColor(CG.hairline)
                     }
@@ -339,11 +520,11 @@ struct BarCounter: View {
                     if i == cur {   // Beats im aktuellen Takt
                         ctx.setFillColor(CG.void)
                         for b in 1..<4 { ctx.fill(CGRect(x: r.minX + r.width * CGFloat(b) / 4, y: r.minY, width: 1, height: r.height)) }
-                        ctx.setFillColor(NSColor.black.withAlphaComponent(0.5).cgColor)
+                        ctx.setFillColor(Self.shade)
                         ctx.fill(CGRect(x: r.minX + r.width * CGFloat(inBar + 1) / 4, y: r.minY, width: r.width * CGFloat(3 - inBar) / 4, height: r.height))
                     }
                 }
-                CG.text("\(n)", size: 8, weight: "Regular", color: NSColor(Theme.muted), rightAt: x0 - 2 + 0, y: y - 1)
+                CG.text("\(n)", size: 8, weight: "Regular", color: CG.mutedNS, rightAt: x0 - 2 + 0, y: y - 1)
             }
         }
         .frame(width: 300.z, height: 42.z)
