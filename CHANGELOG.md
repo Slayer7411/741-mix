@@ -9,6 +9,10 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * zoom like a web browser: ⌘+ / ⌘− / ⌘0 and view menu, 50-200 % in browser steps, saved, step in the status bar, also under ⌘, -> DISPLAY. fonts, controls, waveform marks, canvases and table columns scale, drawn at full resolution, minimum window size × zoom (capped to the screen). toolbar, settings and dialogs stay at 100 %. no extra cost per update at 100 % or 150 % (15 ms both), one step ~0.9 s relayout. offscreen check: `MIX741_SELFTEST=1 MIX741_SHOT=zoom:<folder>`
 
 ### fixed
+* load: the file check runs on the decoder queue instead of the main thread (in a cloud folder even this check can wait for the provider). a missing file still fails within milliseconds
+* browser `Vorhören`: the file opens in the background (an online-only file was downloaded while the main thread waited)
+* session restore: a music folder source is checked without materializing the cloud folder
+* selftest and benches no longer write audio routing, master volume, column layout, preparation and own smartlists
 * core: a stopped deck checked the fx tail through the pointer of a plugin that was swapped out and closed while the unit was not assigned to the deck (read from freed memory on the audio thread, AddressSanitizer). the pointer is now synced before the check
 * core: NaN / Inf control values (rate, seek, loop, fx, master, clock) are dropped at the c api instead of sticking in the core (position NaN = silent deck, clock stops). a loop with end <= start is not activated
 * plugins: the reset of an audio unit after a NaN block runs on the plugin queue, not under the control lock inside the 200 hz tick (an isolated plugin's reset is an xpc call: 0.06 ms median, 0.23 ms max measured, unbounded when the service hangs)
@@ -82,6 +86,13 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * reverb settings (⌘, -> MIXER & FX): level (−18 … +6 dB), brightness, pre-delay (0 … 120 ms, default 15 ms)
 
 ### changed
+* browser with 4 decks playing (two panes, 14,160 tracks, time until the main thread is free, median): sort column 2.1 s -> 0.31 s, playlist ⇄ collection 2.4 s -> 0.26 s, role / tag filter 0.43 s -> 0.26 s, add to preparation 1.4 s -> 7 ms, search update 0.27 s -> 0.24 s. `MIX741_BENCH=browser`
+* browser: lists are sorted with the text keys bridged once per track instead of per comparison, same order (14k tracks by title 850 -> 80 ms, by key 815 -> 45 ms)
+* browser: a big list change (source, sort, filter, search) builds the table anew instead of diffing every row (myers diff over 14k rows: up to 2.5 s); small changes (new values, a few tracks added / removed) keep table and scroll position. keyboard focus moves to the new table
+* browser: preparation and own smartlists count their changes separately -> adding to the preparation no longer re-sorts every pane
+* browser search: the list follows 0.15 s after the last keystroke, empty and ⏎ at once -> typing a word at 10 keys/s = 1 list update instead of 4-6, done after 1.0 s instead of 1.7-5 s
+* browser preview full row: the bands are layers composited by core animation instead of drawn on the cpu on every scroll step and list change (scrolling with 4 decks: gaps > 16 ms 45 -> 17, longest 90 -> 31 ms)
+* analysis: while a deck plays, results go into the lists at the end of the batch, when no deck plays or after 30 s (was every 0.3 s at up to 1.8 s main thread each with two collection panes)
 * ui: a state change costs a fraction -> views read only the part of the state they show, every deck, deck row and the master clock controls lay out in their own hosting view, the window min size no longer measures the content. button press to main thread free (4 decks, two browsers, no mixer, bench): median 87.6 -> 5-7 ms, p95 182 -> 12-18 ms, play 181 -> 12-18 ms. `MIX741_BENCH=state` measures it offscreen on a built-in output
 * waveform scrolls evenly: the playhead runs on between audio blocks (the core reports once per block) -> at 120 hz no standing frames (28 % before), steps of 1-2 px instead of 0-3 px. `MIX741_BENCH=play` measures main thread load and steps per frame
 * master clock: MAIN only shows where it acts -> internal mode or `main volume also in external mode`
