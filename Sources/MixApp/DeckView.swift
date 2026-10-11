@@ -206,6 +206,8 @@ struct DeckHeader: View {
                         }
                     }
                     CodeReadout(d: d, m: m.code).equatable()
+                    DeckButton(title: "KEY SYNC") { mix.keySync(d) }.stable()
+                        .help("Key Sync: Key-Shift auf den Key des Master-Decks (gleich oder Nachbar auf dem Open-Key-Rad, kleinster Schritt, höchstens ±6), Keylock an")
                     VStack(alignment: .trailing, spacing: 0) {
                         KeyReadout(m: m.key).equatable()
                         PhaseMeter(d: d, active: m.phaseActive).equatable().frame(width: 44.z, height: 6.z)

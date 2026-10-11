@@ -26,6 +26,7 @@ extension ShortcutID: Identifiable {
         case .cutIn: String(localized: "Schnitt-Anfang hier (Fokus-Deck)")
         case .cutOut: String(localized: "Schnitt-Ende hier (Fokus-Deck)")
         case .gridSet: String(localized: "Grid: Beat 1 hier (Fokus-Deck)")
+        case .keySync: String(localized: "Key Sync (Fokus-Deck)")
         case .resetPlayed: String(localized: "Reset Played State")
         case .loadSelected: String(localized: "Auswahl ins Fokus-Deck laden")
         case .loadSelectedForce: String(localized: "Auswahl ins Fokus-Deck laden (auch wenn es spielt)")
@@ -152,6 +153,7 @@ struct AppActions {
         case .cutIn: mix.trimHere(d, end: false)
         case .cutOut: mix.trimHere(d, end: true)
         case .gridSet: mix.setGridAnchorHere(d)
+        case .keySync: mix.keySync(d)
         case .resetPlayed: history.resetPlayed()
         case .loadSelected: if let t = browser.selectedTrack() { mix.load(t, deck: d, force: false) }
         case .loadSelectedForce: if let t = browser.selectedTrack() { mix.load(t, deck: d, force: true) }

@@ -1064,6 +1064,34 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
+    /// Key Sync: Key-Shift so, dass der hörbare Key zum hörbaren Key des Master-Decks passt (gleich oder Nachbar auf dem
+    /// Open-Key-Rad, kleinster Betrag, höchstens ±6). Keylock aus -> an. Ergebnis als Hinweis in der Statusleiste
+    public func keySync(_ d: Int) {
+        let notice: EngineNotice = locked {
+            let deck = Self.deckLetter(d), key = "keysync.\(d)"
+            guard let t = state.decks[d].track, t.musicalKey >= 0 else {
+                return EngineNotice(.warning, key: key, String(localized: "Deck \(deck): Key Sync ohne Key des Tracks"))
+            }
+            guard let m = state.effectiveMaster, m != d, let mt = state.decks[m].track, mt.musicalKey >= 0 else {
+                return EngineNotice(.warning, key: key, String(localized: "Deck \(deck): Key Sync braucht ein anderes Master-Deck mit Key"))
+            }
+            let ms = state.decks[m]
+            // hörbare Abweichung des Masters: Key-Shift, ohne Keylock zusätzlich das Tempo (wie die Key-Anzeige)
+            let dev = Double(ms.keyShift) + (ms.keylock ? 0 : 12 * log2(max(1 + ms.tempoPct / 100, 1e-6)))
+            let mShift = Int(dev.rounded())
+            let s = KeySync.shift(code: t.musicalKey, masterCode: mt.musicalKey, masterShift: mShift, current: state.decks[d].keyShift)
+            let keylockOn = !state.decks[d].keylock
+            state.decks[d].keylock = true
+            state.decks[d].keyShift = s
+            applyRate(d)
+            let own = t.openKey(shiftedBy: s), master = mt.openKey(shiftedBy: mShift), shift = String(format: "%+d", s)
+            return keylockOn
+                ? EngineNotice(.info, key: key, String(localized: "Deck \(deck): Keylock an, Key-Shift \(shift) -> \(own) (Master \(master))"))
+                : EngineNotice(.info, key: key, String(localized: "Deck \(deck): Key-Shift \(shift) -> \(own) (Master \(master))"))
+        }
+        onNotice?(notice)
+    }
+
     /// Pitch-Bend: −1…1 × eingestellte Stärke
     public func bend(_ d: Int, _ v: Double) {
         locked {

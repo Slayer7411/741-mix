@@ -674,3 +674,9 @@
 "Lade-Schutz bei laufendem Deck" = "Load lock while a deck is playing";
 "spielt das deck, wird nicht geladen (doppelklick, taste, controller-load) -> hinweis in der statusleiste. trotzdem laden: ⌥-doppelklick, shift + load, taste „auswahl ins fokus-deck laden (auch wenn es spielt)“." = "a playing deck takes no track (double click, key, controller load) -> notice in the status bar. load anyway: ⌥-double click, shift + load, key „load selection into focused deck (even if playing)“.";
 "Auswahl ins Fokus-Deck laden (auch wenn es spielt)" = "Load selection into focused deck (even if playing)";
+"Deck %@: Key Sync ohne Key des Tracks" = "Deck %@: key sync needs the track's key";
+"Deck %@: Key Sync braucht ein anderes Master-Deck mit Key" = "Deck %@: key sync needs another master deck with a key";
+"Deck %@: Keylock an, Key-Shift %@ -> %@ (Master %@)" = "Deck %@: keylock on, key shift %@ -> %@ (master %@)";
+"Deck %@: Key-Shift %@ -> %@ (Master %@)" = "Deck %@: key shift %@ -> %@ (master %@)";
+"Key Sync (Fokus-Deck)" = "Key sync (focused deck)";
+"Key Sync: Key-Shift auf den Key des Master-Decks (gleich oder Nachbar auf dem Open-Key-Rad, kleinster Schritt, höchstens ±6), Keylock an" = "Key sync: key shift to the master deck's key (same or neighbour on the open key wheel, smallest step, at most ±6), keylock on";

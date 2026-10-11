@@ -336,6 +336,7 @@ final class MixModel {
     func toggleMaster(_ d: Int) { run { core.toggleMaster(d) } }
     func toggleKeylock(_ d: Int) { run { core.toggleKeylock(d) } }
     func shiftKey(_ d: Int, _ s: Int) { run { core.shiftKey(d, s) } }
+    func keySync(_ d: Int) { run { core.keySync(d) } }
     func bend(_ d: Int, _ v: Double) { run { core.bend(d, v) } }
     func updateDeck(_ d: Int, _ f: (inout DeckState) -> Void) { run { core.updateDeck(d, f) } }
     func setCrossfader(_ v: Double) { run { core.setCrossfader(v) } }

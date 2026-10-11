@@ -287,7 +287,7 @@ struct MixApp: App {
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
                 Divider()
-                ForEach([ShortcutID.play, .cue, .cup, .sync, .master, .keylock, .loop, .reloop, .beatjumpBack, .beatjumpForward]) { a in
+                ForEach([ShortcutID.play, .cue, .cup, .sync, .master, .keylock, .keySync, .loop, .reloop, .beatjumpBack, .beatjumpForward]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
                 Divider()
