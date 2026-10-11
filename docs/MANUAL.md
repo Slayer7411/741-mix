@@ -334,7 +334,7 @@ the status bar shows device, mode and routing.
 
 2 or 4 units (⌘, -> MIXER & FX). each unit:
 
-* GRP -> group mode: FILTER · DELAY · REVERB at once, D/W + one knob + ON each
+* GRP -> group mode: 3 slots at once, D/W + one knob + ON each. default FILTER · DELAY · REVERB, slot menu (`FLT·DLY·REV`) -> any built-in effect per slot, each once (picking one already in another slot swaps them)
 * SNGL -> single mode: one effect, 3 parameters
 * delay time in beats (`1 ▾`), beat synced to the deck tempo
 * reverb type -> ⌘, -> MIXER & FX: `Reverb` (default, allpass ring: dense, darker tail, 0.4-7 s) or `Reverb (FDN)` (long, airy)
@@ -346,7 +346,23 @@ the status bar shows device, mode and routing.
 * deck assign: FX1 … FX4 in the deck header or the mixer
 * default: FX1 -> A / C, FX2 -> B / D
 
-effects so far: filter, delay, reverb, PLUGIN. more -> [roadmap](roadmap.md).
+effects so far: filter, delay, reverb, gater, roll, flanger, phaser, PLUGIN. more -> [roadmap](roadmap.md).
+
+### BEAT FX
+
+grid = master clock (follows the master deck's tempo and phase). switching on waits for the next divider, rate / length in beats.
+
+| effect | knob 1 · 2 · 3 | button 2 · 3 | group knob |
+|---|---|---|---|
+| GATER | RATE 1/16-1/2 · SHAPE (square -> decay) · WIDTH (open part) | MUTE · TRIP (×2/3) | depth |
+| ROLL | LEN 1/32-1 · FILTER · DECAY (0 to -24 dB per beat) | REV | length |
+| FLANGER | RATE 1/2-32 beats (SYNC off: 0.02-4 Hz) · DEPTH · FEEDB | FRZ (lfo stands) · SYNC | amount |
+| PHASER | RATE 1/2-32 beats (SYNC off: 0.02-4 Hz) · DEPTH · FEEDB | FRZ · STAGE 4 / 8 | amount |
+
+* button 1 = on / off, D/W = share of the effect, D/W 0 = dry signal untouched
+* ROLL repeats the last length from the divider on, the deck keeps running underneath (like flux): off -> back where the track is now. shorter length while rolling -> start of the take on the same grid, longer -> new take at the next divider
+* flanger 0.3-8 ms, stereo phase assignable (default 90°). phaser 130 Hz-6.2 kHz, l/r 90°
+* group: rate, mute, trip, rev, freeze, sync, stages assignable per slot, same values as in single mode. on / off ramps 5 ms
 
 ### MAPPING
 
@@ -358,7 +374,7 @@ D/W, knobs 1-3 and buttons 1-3 of every unit sit on any parameter of the loaded 
 * buttons: switch -> toggles, list -> next entry (wraps), continuous -> min / max
 * label under a knob = short parameter name, bright = own mapping. hover, drag or turn -> value with unit (VST3: text from the plugin)
 * the unit's D/W only acts while a control sits on it. D/W on the plugin's mix -> the unit runs fully wet
-* remembered per effect (`GROUP`, `FILTER`, `DELAY`, `REVERB`) or plugin id -> the same effect loads with its mapping again, on any unit
+* remembered per effect (`GROUP` or `GROUP:FILTER/GATER/REVERB` per slot set, `FILTER`, `DELAY`, `REVERB`, `GATER`, `ROLL`, `FLANGER`, `PHASER`) or plugin id -> the same effect loads with its mapping again, on any unit
 * the session keeps each unit's mapping and the values of mapped plugin parameters
 * table per unit with search, remembered mappings with forget -> ⌘, -> MIXER & FX
 * default = the layout below: group = amount + on / off per slot, single = 3 parameters + button 1 on / off, plugin = first three parameters
