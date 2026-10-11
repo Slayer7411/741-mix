@@ -28,6 +28,7 @@ extension ShortcutID: Identifiable {
         case .gridSet: String(localized: "Grid: Beat 1 hier (Fokus-Deck)")
         case .resetPlayed: String(localized: "Reset Played State")
         case .loadSelected: String(localized: "Auswahl ins Fokus-Deck laden")
+        case .loadSelectedForce: String(localized: "Auswahl ins Fokus-Deck laden (auch wenn es spielt)")
         case .previewSelected: String(localized: "Auswahl vorhören")
         case .reloadCollection: String(localized: "Collection neu laden")
         case .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6:
@@ -152,7 +153,8 @@ struct AppActions {
         case .cutOut: mix.trimHere(d, end: true)
         case .gridSet: mix.setGridAnchorHere(d)
         case .resetPlayed: history.resetPlayed()
-        case .loadSelected: if let t = browser.selectedTrack() { mix.load(t, deck: d) }
+        case .loadSelected: if let t = browser.selectedTrack() { mix.load(t, deck: d, force: false) }
+        case .loadSelectedForce: if let t = browser.selectedTrack() { mix.load(t, deck: d, force: true) }
         case .previewSelected: if let t = browser.selectedTrack() { mix.togglePreview(t) }
         case .reloadCollection: store.load(store.sourceURL ?? LibraryStore.defaultNML)
         case .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6:

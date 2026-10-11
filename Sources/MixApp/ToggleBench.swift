@@ -109,14 +109,14 @@ enum ToggleBench {
             p.loadTimeout = 15   // nur im Kern, nicht gespeichert
             p.loadAbortTimeout = 15   // Datei-Dienst: nach 15 s ohne Daten abbrechen (sonst 60 s)
             core.setPrefs(p)
-            for d in 0..<4 { mix.load(c[d], deck: d) }
+            for d in 0..<4 { mix.load(c[d], deck: d, force: true) }
             // nicht ladbar (Cloud-Datei hängt, Zeitlimit): nächster Kandidat statt endlos zu warten
             var next = 4
             while true {
                 let s = core.snapshot()
                 var waiting = false
                 for d in 0..<4 where core.trackAudio(d) == nil {
-                    if s.decks[d].loading { waiting = true } else if next < c.count { mix.load(c[next], deck: d); next += 1; waiting = true }
+                    if s.decks[d].loading { waiting = true } else if next < c.count { mix.load(c[next], deck: d, force: true); next += 1; waiting = true }
                 }
                 if !waiting { break }
                 try? await Task.sleep(for: .milliseconds(100)); pump()
@@ -565,7 +565,7 @@ extension StateBench {
                 var v: [Double] = []
                 for i in 0..<max(2, n / 2) {
                     let t = c[c.startIndex + i % 2]
-                    v.append(await natural { mix.load(t, deck: 3) })
+                    v.append(await natural { mix.load(t, deck: 3, force: true) })
                     for _ in 0..<200 where mix.deck(3).loading { try? await Task.sleep(for: .milliseconds(50)) }
                     mix.togglePlay(3)
                     try? await Task.sleep(for: .milliseconds(500))

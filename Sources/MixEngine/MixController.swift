@@ -79,6 +79,8 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var loadAbortTimeout = 60.0
     /// Größe des Caches dekodierter Tracks (GB), älteste werden gelöscht
     public var cacheLimitGB = 8.0
+    /// Lade-Schutz: in ein spielendes Deck wird nicht geladen (⌥-Klick, Shift + LOAD laden trotzdem)
+    public var loadProtection = true
     public init() {}
 }
 
@@ -377,6 +379,15 @@ public final class MixController: @unchecked Sendable {
     }
 
     // MARK: Laden
+
+    /// Lade-Schutz: spielt das Deck (oder CUE gehalten), wird nicht geladen – Hinweis in der Statusleiste
+    public func loadBlocked(_ d: Int) -> Bool {
+        let blocked = locked { state.prefs.loadProtection && (engine.player(d).playing || state.decks[d].cueHeld) }
+        if blocked {
+            onNotice?(EngineNotice(.warning, key: "loadlock.\(d)", String(localized: "Deck \(Self.deckLetter(d)) spielt · Laden gesperrt")))
+        }
+        return blocked
+    }
 
     /// `trim` / `gridEdited`: eigene Änderungen des Tracks (Schnitt, von Hand gesetztes Grid im Track)
     public func load(_ t: Track, deck d: Int, trim: TrackTrim = TrackTrim(), gridEdited: Bool = false) {

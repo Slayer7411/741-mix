@@ -311,7 +311,7 @@ struct MixApp: App {
                     .shortcut(keys.combo(.compactDecks))
             }
             CommandMenu("Browser") {
-                ForEach([ShortcutID.resetPlayed, .loadSelected, .previewSelected, .reloadCollection]) { a in
+                ForEach([ShortcutID.resetPlayed, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
                 Button(String(localized: "Collection prüfen …")) { ConsistencyWindow.show(store: store) }
@@ -362,7 +362,7 @@ extension MixApp {
         m.prefs = mix.prefs.controller
         m.fxUnits = mix.prefs.ui.fxUnitCount
         m.onBrowse = { [browser] pane, step in browser.moveSelection(by: step, pane: pane) }
-        m.onLoad = { [browser, mix] pane, d in if let t = browser.selectedTrack(pane: pane) { mix.load(t, deck: d) } }
+        m.onLoad = { [browser, mix] pane, d, force in if let t = browser.selectedTrack(pane: pane) { mix.load(t, deck: d, force: force) } }
         m.onPreview = { [browser, mix] pane in if let t = browser.selectedTrack(pane: pane) { mix.togglePreview(t) } }
         m.onToggleBrowser = { [browser] in browser.maximized.toggle() }
         // alle Tastenkürzel (Belegung unter ⌘, -> Tastatur); Leertaste = Browser groß/klein, nicht beim Tippen in Suchfeldern

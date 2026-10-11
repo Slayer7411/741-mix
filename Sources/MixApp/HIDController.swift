@@ -67,7 +67,8 @@ final class ControllerManager: @unchecked Sendable {
     /// Browser-Aktionen (laufen auf dem Hauptthread)
     /// Browser-Aktionen je Bereich (pane), laufen auf dem Hauptthread
     var onBrowse: (@MainActor (_ pane: Int, _ step: Int) -> Void)?
-    var onLoad: (@MainActor (_ pane: Int, _ deck: Int) -> Void)?
+    /// force: Shift + LOAD übergeht den Lade-Schutz
+    var onLoad: (@MainActor (_ pane: Int, _ deck: Int, _ force: Bool) -> Void)?
     var onPreview: (@MainActor (_ pane: Int) -> Void)?
     var onToggleBrowser: (@MainActor () -> Void)?
 
@@ -243,7 +244,11 @@ final class ControllerManager: @unchecked Sendable {
         case let .loopPush(s, down):
             if down { unit.shift ? core.reloop(deck(s)) : core.autoLoop(deck(s)) }
         case let .load(s, down):
-            if down { let d = deck(s), pane = unit.info.pane; DispatchQueue.main.async { self.onLoad?(pane, d) } }
+            // Lade-Schutz hier prüfen (Steuer-Queue): ein spielendes Deck bekommt keinen Track, Shift + LOAD erzwingt
+            guard down else { return }
+            let d = deck(s), pane = unit.info.pane, force = unit.shift
+            if !force, core.loadBlocked(d) { return }
+            DispatchQueue.main.async { self.onLoad?(pane, d, force) }
         case let .browseTurn(delta):
             // Schritte sammeln und gebündelt an die Oberfläche geben (kein Stau bei schnellem Drehen)
             let pane = unit.info.pane

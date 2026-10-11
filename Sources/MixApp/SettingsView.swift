@@ -275,6 +275,9 @@ struct DeckSettings: View {
                     ForEach(LoadPosition.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 sliderRow("Track-Ende-Warnung (s, 0 = aus)", $mix.prefs.engine.trackEndWarning, 0...90, step: 5, format: "%.0f", unit: "s")
+                Toggle("Lade-Schutz bei laufendem Deck", isOn: $mix.prefs.engine.loadProtection)
+                Text("spielt das deck, wird nicht geladen (doppelklick, taste, controller-load) -> hinweis in der statusleiste. trotzdem laden: ⌥-doppelklick, shift + load, taste „auswahl ins fokus-deck laden (auch wenn es spielt)“.")
+                    .settingsHint()
             }
             Section("Master-Clock & Metronom") {
                 Picker("Metronom auf Kanalpaar", selection: $mix.prefs.engine.metronomeChannel) {
@@ -745,7 +748,7 @@ struct ControllerSettings: View {
             Section("Feste Belegung (Standard)") {
                 Text("""
                 Play (Shift: CUP) · Sync (Shift: Master) · Hotcues 1–4 (Shift: löschen) · Loop-Encoder drehen = Loopgröße, \
-                drücken = Loop (Shift: drehen = Beatjump, drücken = Reloop) · Load · Browse (drücken = Vorhören) · \
+                drücken = Loop (Shift: drehen = Beatjump, drücken = Reloop) · Load (Shift: trotz Lade-Schutz) · Browse (drücken = Vorhören) · \
                 FX: D/W, Regler 1–3, Tasten 1–3 nach FX-Belegung (Standard: Filter/Delay/Reverb + an/aus), Mode = alle aus bzw. Delay-Zeit · FX-Zuweisung.
                 """)
                 .settingsHint()

@@ -238,7 +238,11 @@ final class MixModel {
 
     // MARK: - Befehle (weitergeleitet an den Kern)
 
-    func load(_ t: Track, deck d: Int) {
+    /// Lade-Schutz (⌘, → DECKS): spielt das Deck, bleibt es, wie es ist (Hinweis in der Statusleiste).
+    /// `force` nil = ⌥ beim Klick/Doppelklick lädt trotzdem; Controller (Shift + LOAD) und Tastatur geben ihn an
+    @discardableResult
+    func load(_ t: Track, deck d: Int, force: Bool? = nil) -> Bool {
+        if !(force ?? NSEvent.modifierFlags.contains(.option)), core.loadBlocked(d) { return false }
         CloudLibrary.shared.deckWillLoad(t, deck: d)   // nur online -> sofort anfordern, Hinweis
         originals[d] = t
         let e = edits.edit(for: t.key)
@@ -246,6 +250,7 @@ final class MixModel {
         core.load(e?.apply(to: t) ?? t, deck: d, trim: e?.trim ?? TrackTrim(), gridEdited: e?.hasGrid ?? false)
         focusedDeck = d
         pull()
+        return true
     }
 
     /// eigene Änderungen eines Decks speichern (nur wenn sich etwas geändert hat): von Hand gesetztes Grid ganz (BPM +
