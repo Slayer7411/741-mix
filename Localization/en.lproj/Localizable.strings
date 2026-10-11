@@ -638,3 +638,6 @@
 "Schnitt-Anfang an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier)" = "Cut start at the play position (quantize: nearest beat, ⌥-click: exact)";
 "Schnitt-Ende an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier)" = "Cut end at the play position (quantize: nearest beat, ⌥-click: exact)";
 "Schnitt entfernen: ganze Datei" = "Remove the cut: whole file";
+"(Schnitt)" = "(cut)";
+"Vorhören: Restzeit bis zum Schnitt-Ende / Länge des Schnitts" = "Preview: time left to the cut end / length of the cut";
+"Vorhören beenden" = "Stop preview";

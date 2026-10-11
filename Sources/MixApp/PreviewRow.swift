@@ -39,6 +39,9 @@ final class PreviewRowController {
     var on = false { didSet { if on != oldValue { sync() } } }
     /// Deckkraft des Bandes (Prefs)
     var alpha: CGFloat = 1 { didSet { if alpha != oldValue { view?.needsDisplay = true } } }
+    /// Vorhören: Track mit Strich im Band, Klick ins Band springt
+    var previewKey: String? { didSet { if previewKey != oldValue { followPreview() } } }
+    private var playheadTimer: Timer?
     private var view: BandView?
     private var observers: [NSObjectProtocol] = []
 
@@ -79,7 +82,30 @@ final class PreviewRowController {
         if v.frame != scroll.contentView.frame { v.frame = scroll.contentView.frame }
     }
 
+    /// Strich 10 × je Sekunde nachführen, solange vorgehört wird (eine Ebene, nur ihr Rahmen)
+    private func followPreview() {
+        playheadTimer?.invalidate()
+        playheadTimer = nil
+        view?.movePlayhead()
+        guard previewKey != nil else { return }
+        let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.view?.movePlayhead() } }
+        RunLoop.main.add(t, forMode: .common)
+        playheadTimer = t
+    }
+
+    /// Band des vorgehörten Tracks in `v`, falls sichtbar (nur sichtbare Zeilen durchsucht)
+    fileprivate func activeBand(in v: NSView) -> NSRect? {
+        guard on, let key = previewKey, let tv = inline?.table else { return nil }
+        let range = tv.rows(in: tv.visibleRect)
+        for r in range.location..<min(rows.count, range.location + range.length) where rows[r].key == key {
+            return v.convert(PreviewRow.band(in: tv.rect(ofRow: r)), from: tv)
+        }
+        return nil
+    }
+
     func remove() {
+        playheadTimer?.invalidate()
+        playheadTimer = nil
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers = []
         view?.removeFromSuperview()
@@ -110,17 +136,46 @@ final class PreviewRowController {
         weak var table: NSTableView?
         weak var controller: PreviewRowController?
         private var bands: [CALayer] = []
+        private let playhead = CALayer()
 
         override init(frame: NSRect) {
             super.init(frame: frame)
             wantsLayer = true
             layerContentsRedrawPolicy = .onSetNeedsDisplay
+            playhead.backgroundColor = NSColor(Theme.state).cgColor
+            playhead.zPosition = 1
+            playhead.isHidden = true
+            playhead.actions = ["position": NSNull(), "bounds": NSNull(), "hidden": NSNull()]
         }
 
         required init?(coder: NSCoder) { fatalError() }
 
         override var wantsUpdateLayer: Bool { true }
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        /// Klicks gehen durch an die Tabelle – außer ins Band des vorgehörten Tracks (Sprung)
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let r = controller?.activeBand(in: self), r.contains(convert(point, from: superview)) else { return nil }
+            return self
+        }
+
+        override func mouseDown(with e: NSEvent) {
+            guard let c = controller, let key = c.previewKey, let r = c.activeBand(in: self), r.width > 0 else { return }
+            c.mix?.seekPreview(key, fraction: (convert(e.locationInWindow, from: nil).x - r.minX) / r.width)
+            movePlayhead()
+        }
+
+        func movePlayhead() {
+            guard let root = layer else { return }
+            if playhead.superlayer == nil { root.addSublayer(playhead) }
+            guard let r = controller?.activeBand(in: self), let f = controller?.mix?.previewFraction, f.isFinite else {
+                playhead.isHidden = true
+                return
+            }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            playhead.frame = CGRect(x: r.minX + CGFloat(f) * r.width - 1, y: r.minY, width: 2, height: r.height)
+            playhead.isHidden = false
+            CATransaction.commit()
+        }
 
         override func updateLayer() {
             guard let root = layer else { return }
@@ -151,6 +206,7 @@ final class PreviewRowController {
                 }
             }
             for l in bands[used...] where !l.isHidden { l.isHidden = true; l.contents = nil }
+            movePlayhead()
         }
     }
 }
@@ -162,7 +218,8 @@ struct PreviewRowLayer: View {
     let mix: MixModel
     let on: Bool
     var body: some View {
-        PreviewRowHost(controller: controller, rows: rows, mix: mix, on: on, tick: on ? Overviews.shared.tick : 0)
+        PreviewRowHost(controller: controller, rows: rows, mix: mix, on: on, tick: on ? Overviews.shared.tick : 0,
+                       previewKey: on ? mix.previewing?.key : nil)
     }
 }
 
@@ -174,6 +231,8 @@ struct PreviewRowHost: NSViewRepresentable {
     let on: Bool
     /// Übersichten/Grid geändert (Overviews.tick)
     let tick: Int
+    /// vorgehörter Track (Strich, Klick)
+    let previewKey: String?
 
     func makeNSView(context: Context) -> NSView {
         let v = NSView()
@@ -185,6 +244,7 @@ struct PreviewRowHost: NSViewRepresentable {
         controller.rows = rows
         controller.on = on
         controller.alpha = CGFloat(mix.prefs.ui.previewBandAlpha)
+        controller.previewKey = previewKey
         // Tabelle entsteht erst nach diesem Durchlauf
         DispatchQueue.main.async { controller.refresh() }
     }

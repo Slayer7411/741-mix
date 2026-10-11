@@ -163,6 +163,9 @@ struct PreviewSpec: Hashable, Sendable {
     var phraseBeats: Int
     var cues: [Mark]
     var start: Mark?
+    /// Schnitt (s): davor / dahinter gedimmt, Ränder markiert
+    var cutStart: Double?
+    var cutEnd: Double?
     var palette: WaveformPalette
     var style: WaveformStyle
     var colors: PreviewColors
@@ -171,20 +174,26 @@ struct PreviewSpec: Hashable, Sendable {
 
     /// Track mit den eigenen Grid-/Cue-Änderungen (wie beim Laden ins Deck)
     @MainActor init(_ track: Track, mix: MixModel) {
-        let t = mix.edits.edit(for: track.key)?.apply(to: track) ?? track
-        self.init(t, ui: mix.prefs.ui, controller: mix.prefs.controller, info: Overviews.shared.store.info(t.key))
+        let e = mix.edits.edit(for: track.key)
+        let t = e?.apply(to: track) ?? track
+        self.init(t, ui: mix.prefs.ui, controller: mix.prefs.controller, info: Overviews.shared.store.info(t.key), trim: e?.trim)
     }
 
     /// ohne Modell (Selbsttest-Bilder): Übersicht direkt übergeben
-    init(_ t: Track, ui: UIPrefs, controller: ControllerPrefs, overview: TrackOverview) {
-        self.init(t, ui: ui, controller: controller, info: (gen: 1, duration: overview.duration))
+    init(_ t: Track, ui: UIPrefs, controller: ControllerPrefs, overview: TrackOverview, trim: TrackTrim? = nil) {
+        self.init(t, ui: ui, controller: controller, info: (gen: 1, duration: overview.duration), trim: trim)
     }
 
-    private init(_ t: Track, ui: UIPrefs, controller c: ControllerPrefs, info: (gen: Int, duration: Double)?) {
+    private init(_ t: Track, ui: UIPrefs, controller c: ControllerPrefs, info: (gen: Int, duration: Double)?, trim: TrackTrim?) {
         key = t.key
         path = t.path
         gen = info?.gen ?? 0
         duration = info?.duration ?? t.duration
+        if let trim, !trim.isEmpty {
+            let cut = PreviewCut(trim: trim, duration: duration)
+            cutStart = cut.cutStart ? cut.lo : nil
+            cutEnd = cut.cutEnd ? cut.hi : nil
+        }
         let grid = BeatGrid(track: t)
         let tempo = grid?.bpm ?? 0
         bpm = tempo
@@ -212,6 +221,8 @@ enum PreviewRenderer {
     static let lila = rgb(150 / 255, 70 / 255, 210 / 255, 1)
     static let magenta = rgb(0.88, 0.22, 0.78, 1)
     static let void = rgb(10 / 255, 9 / 255, 8 / 255, 0.9)
+    /// außerhalb des Schnitts: Schwarz mit dieser Deckkraft darüber (wie Deck-Wellenform und -Übersicht)
+    static let cutDim: CGFloat = 0.62
     private static let space = CGColorSpace(name: CGColorSpace.sRGB)!
 
     /// Spektrum-Farben: immer die klassische Palette (rot = Bass, grün = Mitten, blau = Höhen), unabhängig vom Deck
@@ -236,6 +247,27 @@ enum PreviewRenderer {
         }
         ctx.setFillColor(bone.copy(alpha: 0.85)!)
         ctx.fill(OverviewPaint.drops(o).map { CGRect(x: CGFloat($0) * span - 0.75, y: 0, width: 1.5, height: CGFloat(h)) })
+    }
+
+    /// Schnitt: davor / dahinter gedimmt (nur Gezeichnetes, die Zeile darunter bleibt), Ränder als Linie mit
+    /// Laschen oben und unten nach außen – wie die Griffe der Deck-Übersicht, hier nur Markierung
+    private static func drawCut(_ ctx: CGContext, _ s: PreviewSpec, pps: CGFloat, width W: CGFloat, height H: CGFloat) {
+        guard s.cutStart != nil || s.cutEnd != nil else { return }
+        let x0 = CGFloat(s.cutStart ?? 0) * pps, x1 = CGFloat(s.cutEnd ?? 0) * pps
+        ctx.saveGState()
+        ctx.setBlendMode(.sourceAtop)
+        ctx.setFillColor(rgb(0, 0, 0, cutDim))
+        if s.cutStart != nil { ctx.fill(CGRect(x: 0, y: 0, width: x0, height: H)) }
+        if s.cutEnd != nil { ctx.fill(CGRect(x: x1, y: 0, width: W - x1, height: H)) }
+        ctx.restoreGState()
+        let lw: CGFloat = 2, tab = 4 * H / 18
+        ctx.setFillColor(bone)
+        for (x, set, out) in [(x0, s.cutStart != nil, true), (x1, s.cutEnd != nil, false)] where set {
+            let lx = min(max(0, x - lw / 2), W - lw)
+            ctx.fill(CGRect(x: lx, y: 0, width: lw, height: H))
+            ctx.fill(CGRect(x: out ? lx - tab : lx, y: 0, width: tab + lw, height: tab))
+            ctx.fill(CGRect(x: out ? lx - tab : lx, y: H - tab, width: tab + lw, height: tab))
+        }
     }
 
     /// Mini-Übersicht: Phrasen-Bänder, 3-Band-Wellenform (gedämpft), Marker alle 16/32 Takte, Hotcues, Start-Cue
@@ -328,6 +360,7 @@ enum PreviewRenderer {
             ctx.move(to: CGPoint(x: x - 5, y: H)); ctx.addLine(to: CGPoint(x: x + 5, y: H)); ctx.addLine(to: CGPoint(x: x, y: H - 8))
             ctx.closePath(); ctx.fillPath()
         }
+        drawCut(ctx, s, pps: pps, width: W, height: H)
         return ctx.makeImage()
     }
 }
@@ -373,6 +406,8 @@ struct TrackPreviewCell: View {
         let img = PreviewImages.cached(h) ?? (imageHash == h ? image : nil)
         ZStack {
             if let img { Image(decorative: img, scale: 2).resizable().interpolation(.medium) }
+            // hinter dem Titel: nur der Strich, der Klick bleibt beim Titel
+            if mix.previewing?.key == track.key { PreviewPlayhead(mix: mix, key: track.key, seeks: !fill) }
         }
         .frame(maxWidth: .infinity)
         .frame(height: fill ? nil : PreviewRenderer.heightPt.z)
@@ -386,6 +421,48 @@ struct TrackPreviewCell: View {
             imageHash = h
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// Vorhören dieses Tracks: Position als Strich (10 Hz, nur diese eine Zelle), Klick springt – außerhalb des
+/// Schnitts an den nächsten Rand innen
+struct PreviewPlayhead: View {
+    let mix: MixModel
+    let key: String
+    var seeks = true
+
+    var body: some View {
+        GeometryReader { geo in
+            TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                Canvas { ctx, size in
+                    guard let f = mix.previewFraction, f.isFinite else { return }
+                    ctx.fill(Path(CGRect(x: CGFloat(f) * size.width - 1, y: 0, width: 2, height: size.height)), with: .color(Theme.state))
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(coordinateSpace: .local) { p in mix.seekPreview(key, fraction: p.x / max(1, geo.size.width)) }
+            .allowsHitTesting(seeks)
+        }
+    }
+}
+
+/// Statuszeile: Vorhören läuft – Restzeit bis zum Schnitt-Ende / Länge des Schnitts, ✕ hält an
+struct PreviewPlayStatus: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        if let v = mix.previewing {
+            HStack(spacing: 4.z) {
+                TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                    let rest = v.cut.remaining(at: mix.previewPosition ?? v.cut.lo)
+                    Text(verbatim: "· " + String(localized: "Vorhören") + " −" + Theme.time(rest) + " / " + Theme.time(v.cut.length)
+                         + (v.cut.isCut ? " " + String(localized: "(Schnitt)") : ""))
+                        .monospacedDigit()
+                }
+                .help("Vorhören: Restzeit bis zum Schnitt-Ende / Länge des Schnitts")
+                Button("✕") { mix.stopPreview() }.buttonStyle(.plain).help("Vorhören beenden")
+            }
+        }
     }
 }
 
@@ -428,7 +505,7 @@ struct OverviewMenuButton: View {
     }
 }
 
-/// unsichtbar im Hauptfenster: Deck-Tracks übernehmen, Deck-Zustand für die Regel, Hintergrund-Liste, Grid-Änderungen
+/// unsichtbar im Hauptfenster: Deck-Tracks übernehmen, Deck-Zustand für die Regel, Hintergrund-Liste, Grid-/Schnitt-Änderungen
 struct OverviewHook: View {
     @Environment(MixModel.self) private var mix
     @Environment(LibraryStore.self) private var store
@@ -441,7 +518,7 @@ struct OverviewHook: View {
         let activity = Activity(playing: decks.contains { $0.playing }, loading: decks.contains { $0.loading })
         let sig = Sig(keys: decks.map { $0.loading ? "" : $0.track?.key ?? "" },
                       grids: decks.map { d in
-                          "\(d.grid?.bpm ?? 0)|\(d.grid?.anchor ?? 0)|" + d.hotcues.values.map { "\($0.hotcue):\($0.startMs)" }.sorted().joined(separator: ",")
+                          "\(d.grid?.bpm ?? 0)|\(d.grid?.anchor ?? 0)|\(d.trim.start ?? -1)|\(d.trim.end ?? -1)|" + d.hotcues.values.map { "\($0.hotcue):\($0.startMs)" }.sorted().joined(separator: ",")
                       })
         // Selbsttest: Hintergrund nur mit MIX741_OVERVIEW_IDLE=1
         let fill = !Session.isSelfTest || ProcessInfo.processInfo.environment["MIX741_OVERVIEW_IDLE"] == "1" ? mix.prefs.ui.previewFill : .off
