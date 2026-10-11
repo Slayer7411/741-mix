@@ -6,6 +6,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* browser: favorites bar per pane, 6 slots above tree and list. slot = source (collection, preparation, running tracks, history, playlist, smartlist, playlist folder, smartlists 741, music folder) or filter (tags, roles, search). click switches the pane, active filter again clears it, red = active. right click -> put current source / filter here, rename, clear. drag a tree entry onto a slot. ⌃⌥1-6 on the last used pane
+* favorites saved per pane in the session: playlists + smartlists by collection uuid, then path, music folders by path. missing target after a reload -> grey, struck through. selftest image `MIX741_SHOT=browser:<png>` also renders the bar filled, narrow and empty
 * cloud libraries (file provider folders, e.g. google drive): column ☁ per track (● local · ☁ online only · ↓ downloading · ✕ missing), checked by file status without downloading (14k tracks ~0.1 s), again on changes in the folder (fsevents) and every 10 min
 * cloud: right click tracks or a source -> `Bereitmachen (herunterladen)` with progress and cancel in the status bar. 2 at a time, new downloads wait while a deck loads, 3 tries, timeout by size, 10 gb stay free, each file confirmed local
 * cloud: SET-CHECK in the browser header -> preparation + the pane's list, everything not local listed, one click fetches it. ● LOKAL filter

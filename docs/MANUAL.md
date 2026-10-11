@@ -353,6 +353,7 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
 
 * one or two panes, side by side or stacked
 * each pane: own tree, search, sort, role chips, tags
+* favorites bar on top of each pane: 6 slots, source or filter. click = switch, right click = assign / rename / clear, drag a tree entry onto a slot, ⌃⌥1-6. details: [library · favorites](library.md#-favorites)
 * tree: TRACK COLLECTION, PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, MUSIC FOLDERS, then all playlists + smartlists of the collection
 * MUSIC FOLDERS = the music library on disk, folder by folder. click a folder -> its audio files (mp3, m4a, aac, aiff, wav, flac, ogg, opus)
   * files in the collection show bpm, key, tags, comments like everywhere else
@@ -522,6 +523,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | space | big browser (not while typing in a search field) |
 | ⌘O | open collection |
 | ⌘E | edit the selected tracks (browser) |
+| ⌃⌥1-6 | browser favorite 1-6 (last used pane) |
 | ⌘, | settings |
 | ⌘W | close window -> main window: quit (asks first) |
 
