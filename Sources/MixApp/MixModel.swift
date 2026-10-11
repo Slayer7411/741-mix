@@ -134,6 +134,10 @@ final class MixModel {
         }
         if let c = core.pluginCatalog.crashedLastRun { print("[plugin] beim letzten Lauf abgestürzt beim Öffnen: \(c.name) -> blockiert") }
         FileServiceSetup.attach(core)
+        BrowserPaneModel.harmonySource = { [weak self] in
+            BrowserPaneModel.HarmonyInput(ref: self.flatMap { m in m.harmonyKey != nil || m.harmonyBPM > 0 ? HarmonyRef(key: m.harmonyKey, bpm: m.harmonyBPM) : nil },
+                                          rule: self?.prefs.ui.match ?? MatchRule())
+        }
         loadSetup()
         for d in decks.indices { decks[d].editing = prefs.ui.editing(d) }
         core.setPrefs(prefs.engine)

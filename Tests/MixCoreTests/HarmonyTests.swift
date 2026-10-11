@@ -55,3 +55,27 @@ private func track(_ key: String, code: Int = -1, text: String = "", bpm: Double
     #expect(rel(8, true).distance < rel(9, true).distance && rel(9, true).distance < rel(10, true).distance
             && rel(10, true).distance < rel(2, true).distance)
 }
+
+@Test func matchRuleFiltersKeyAndTempo() {
+    var rule = MatchRule()
+    let ref = HarmonyRef(key: Harmony.code(wheel: 8, minor: true), bpm: 128)
+    let same = track("a", code: Harmony.code(wheel: 8, minor: true), bpm: 125)
+    let adj = track("b", code: Harmony.code(wheel: 9, minor: true), bpm: 132)
+    let rel = track("c", code: Harmony.code(wheel: 8, minor: false), bpm: 128)
+    let energy = track("d", code: Harmony.code(wheel: 10, minor: true), bpm: 128)
+    let far = track("e", code: Harmony.code(wheel: 8, minor: true), bpm: 140)
+    let half = track("f", code: Harmony.code(wheel: 8, minor: true), bpm: 64.5)
+    let none = track("g", bpm: 128)
+    #expect(rule.matches(same, ref) && rule.matches(adj, ref) && rule.matches(rel, ref))
+    #expect(!rule.matches(energy, ref) && !rule.matches(far, ref) && !rule.matches(half, ref) && !rule.matches(none, ref))
+    rule.energy = true
+    rule.halfDouble = true
+    rule.relative = false
+    #expect(rule.matches(energy, ref) && rule.matches(half, ref) && !rule.matches(rel, ref))
+    rule.bpmWindow = 10
+    #expect(rule.matches(far, ref))
+    // Bezug ohne Key: nur Tempo, ohne Tempo: nur Key
+    #expect(rule.matches(none, HarmonyRef(key: nil, bpm: 128)))
+    #expect(rule.matches(far, HarmonyRef(key: ref.key, bpm: 0)))
+    #expect(abs(MatchRule().tempoOffset(125, to: 128)! - 2.4) < 1e-9)
+}

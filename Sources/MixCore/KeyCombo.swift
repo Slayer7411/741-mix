@@ -89,7 +89,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case hotcue5 = "deck.hotcue.5", hotcue6 = "deck.hotcue.6", hotcue7 = "deck.hotcue.7", hotcue8 = "deck.hotcue.8"
     case editMode = "deck.edit", cutIn = "deck.cut.in", cutOut = "deck.cut.out", gridSet = "deck.grid.set"
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", previewSelected = "browser.preview"
-    case reloadCollection = "browser.reload"
+    case reloadCollection = "browser.reload", matching = "browser.matching"
     case favorite1 = "browser.favorite.1", favorite2 = "browser.favorite.2", favorite3 = "browser.favorite.3"
     case favorite4 = "browser.favorite.4", favorite5 = "browser.favorite.5", favorite6 = "browser.favorite.6"
     case toggleMixer = "view.mixer", toggleFourDecks = "view.fourdecks", bigBrowser = "view.bigbrowser", bigBrowserKey = "view.bigbrowser.key"
@@ -99,7 +99,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
 
     public var group: ShortcutGroup {
         switch self {
-        case .resetPlayed, .loadSelected, .previewSelected, .reloadCollection,
+        case .resetPlayed, .loadSelected, .previewSelected, .reloadCollection, .matching,
              .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6: .browser
         case .toggleMixer, .toggleFourDecks, .bigBrowser, .bigBrowserKey, .compactDecks, .zoomIn, .zoomOut, .zoomReset: .view
         case .openCollection, .settings, .closeWindow, .reconnectAudio: .general
@@ -154,6 +154,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .toggleMixer: KeyCombo("m", [.option, .command])
         case .toggleFourDecks: KeyCombo("4", [.option, .command])
         case .bigBrowser: KeyCombo("b", [.option, .command])
+        case .matching: KeyCombo("j", [.option, .command])
         case .bigBrowserKey: KeyCombo("space", [])
         case .compactDecks: KeyCombo("k", [.option, .command])
         case .zoomIn: KeyCombo("+")

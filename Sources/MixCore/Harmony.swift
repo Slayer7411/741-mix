@@ -110,6 +110,44 @@ public struct HarmonyRef: Hashable, Sendable {
     public init(key: Int?, bpm: Double) { self.key = key; self.bpm = bpm }
 }
 
+/// Filter „passt zum Master“: welche Stufen zählen (gleich immer), BPM-Fenster in Prozent, halbes/doppeltes Tempo
+public struct MatchRule: Hashable, Sendable, Codable {
+    public var adjacent = true
+    public var relative = true
+    public var energy = false
+    public var bpmWindow = 4.0
+    public var halfDouble = false
+    public init() {}
+
+    public func accepts(_ s: Harmony.Step) -> Bool {
+        switch s {
+        case .same: true
+        case .adjacent: adjacent
+        case .relative: relative
+        case .energy: energy
+        case .clash: false
+        }
+    }
+
+    /// Tempo-Abweichung in Prozent (Pitch, den der Track bis zum Bezug braucht), mit halbem/doppeltem Tempo die kleinste;
+    /// nil ohne Tempo
+    public func tempoOffset(_ bpm: Double, to ref: Double) -> Double? {
+        guard bpm > 0, ref > 0 else { return nil }
+        let factors: [Double] = halfDouble ? [1, 2, 0.5] : [1]
+        return factors.map { (ref / (bpm * $0) - 1) * 100 }.min { abs($0) < abs($1) }
+    }
+
+    /// passt: Key (ohne Key des Bezugs: egal; Track ohne Key: nein) und Tempo (ohne Bezugs-Tempo: egal)
+    public func matches(_ t: Track, _ ref: HarmonyRef) -> Bool {
+        if let rk = ref.key {
+            guard let k = t.harmonyCode, accepts(Harmony.relation(k, to: rk).step) else { return false }
+        }
+        guard ref.bpm > 0 else { return true }
+        guard let off = tempoOffset(t.bpm, to: ref.bpm) else { return false }
+        return abs(off) <= bpmWindow + 1e-9
+    }
+}
+
 extension Track {
     /// Key als Code (0–23): MUSICAL_KEY, sonst aus dem Key-Text; nil = unbekannt
     public var harmonyCode: Int? { (0...23).contains(musicalKey) ? musicalKey : Harmony.code(text: keyText) }
