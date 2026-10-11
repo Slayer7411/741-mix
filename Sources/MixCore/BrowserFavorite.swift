@@ -2,7 +2,7 @@ import Foundation
 
 /// Favorit eines Browser-Bereichs (6 Plätze): eine Quelle über eine stabile Kennung oder ein Filter.
 /// Quellen: Collection, Preparation, Running Tracks, History, eigene Smartlist (ID, Name), Knoten der Collection
-/// (UUID, Namenspfad; Ordner nur Pfad), Musik-Ordner (Pfad). Filter: Tags, Rollen, Suchtext.
+/// (UUID, Namenspfad; Ordner nur Pfad), Musik-Ordner (Pfad). Filter: Tags, ausgeschlossene Tags, Rollen, Suchtext.
 public struct BrowserFavorite: Codable, Hashable, Sendable {
     public static let slots = 6
 
@@ -21,6 +21,8 @@ public struct BrowserFavorite: Codable, Hashable, Sendable {
     /// Art des Knotens: folder · playlist · smartlist
     public var node: String?
     public var tags: [String]?
+    /// ausgeschlossene Tags (⌥-Klick)
+    public var excludedTags: [String]?
     public var roles: [String]?
     public var search: String?
 
@@ -66,20 +68,21 @@ public struct BrowserFavorite: Codable, Hashable, Sendable {
     }
 
     /// Filter-Favorit; nil, wenn nichts gefiltert ist
-    public static func filter(tags: Set<String>, roles: Set<String>, search: String) -> BrowserFavorite? {
+    public static func filter(tags: Set<String>, excluded: Set<String> = [], roles: Set<String>, search: String) -> BrowserFavorite? {
         let s = search.trimmingCharacters(in: .whitespaces)
-        guard !tags.isEmpty || !roles.isEmpty || !s.isEmpty else { return nil }
-        let r = roles.sorted(), t = tags.sorted()
-        var f = BrowserFavorite(.filter, name: (r + t + (s.isEmpty ? [] : ["\"\(s)\""])).joined(separator: " + "))
+        guard !tags.isEmpty || !excluded.isEmpty || !roles.isEmpty || !s.isEmpty else { return nil }
+        let r = roles.sorted(), t = tags.sorted(), x = excluded.sorted()
+        var f = BrowserFavorite(.filter, name: (r + t + x.map { "!" + $0 } + (s.isEmpty ? [] : ["\"\(s)\""])).joined(separator: " + "))
         f.tags = t.isEmpty ? nil : t
+        f.excludedTags = x.isEmpty ? nil : x
         f.roles = r.isEmpty ? nil : r
         f.search = s.isEmpty ? nil : s
         return f
     }
 
     /// derselbe Filter wie im Bereich?
-    public func matchesFilter(tags: Set<String>, roles: Set<String>, search: String) -> Bool {
-        isFilter && Set(self.tags ?? []) == tags && Set(self.roles ?? []) == roles
+    public func matchesFilter(tags: Set<String>, excluded: Set<String> = [], roles: Set<String>, search: String) -> Bool {
+        isFilter && Set(self.tags ?? []) == tags && Set(excludedTags ?? []) == excluded && Set(self.roles ?? []) == roles
             && (self.search ?? "") == search.trimmingCharacters(in: .whitespaces)
     }
 

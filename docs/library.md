@@ -11,7 +11,7 @@
 ## ◆ FAVORITES
 
 * 6 slots per pane, above the tree and the list header
-* slot = source (track collection, preparation, running tracks, history, playlist, smartlist, playlist folder, smartlists 741, music folder) or filter (tags, roles, search)
+* slot = source (track collection, preparation, running tracks, history, playlist, smartlist, playlist folder, smartlists 741, music folder) or filter (tags, excluded tags, roles, search)
 * click -> source of the pane / filter applied, active filter again -> cleared. red = active
 * right click -> `Aktuelle Quelle hier ablegen` · `Aktuellen Filter hier ablegen` · `Umbenennen …` · `Leeren`
 * drag a tree entry onto a slot

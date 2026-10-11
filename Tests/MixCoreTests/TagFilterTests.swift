@@ -75,3 +75,18 @@ import Testing
     #expect(idx.entry("Kühl · Dunkel", separators: " ").tags == ["Kühl", "·", "Dunkel"])
     #expect(idx.count == 1)
 }
+
+@Test func favoriteFilterKeepsExcludedTags() throws {
+    #expect(BrowserFavorite.filter(tags: [], excluded: ["hell"], roles: [], search: "") != nil)
+    let f = try #require(BrowserFavorite.filter(tags: ["dunkel"], excluded: ["hell", "BASIS"], roles: [], search: ""))
+    #expect(f.name == "dunkel + !BASIS + !hell")
+    #expect(f.excludedTags == ["BASIS", "hell"])
+    #expect(f.matchesFilter(tags: ["dunkel"], excluded: ["hell", "BASIS"], roles: [], search: ""))
+    #expect(!f.matchesFilter(tags: ["dunkel"], roles: [], search: ""))
+    // ohne ausgeschlossene Tags: Schlüssel fehlt, ältere Sitzungen laden weiter
+    let g = try #require(BrowserFavorite.filter(tags: ["dunkel"], roles: [], search: ""))
+    #expect(g.excludedTags == nil)
+    let data = try JSONEncoder().encode([f, g])
+    #expect(try JSONDecoder().decode([BrowserFavorite].self, from: data) == [f, g])
+    #expect(!String(decoding: try JSONEncoder().encode(g), as: UTF8.self).contains("excludedTags"))
+}
