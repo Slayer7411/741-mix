@@ -509,6 +509,7 @@ struct SourceTreeFixed: View, SourceMenus {
                 Button("Reset Played State") { history.resetPlayed() }
                 OverviewMenuButton { store.tracks }
                 AnalysisMenuButtons { store.tracks }
+                KeyProfileMenuButtons { store.tracks }
                 CloudMenuButton(label: "Track Collection") { store.tracks }
             }
         row("▶", "RUNNING TRACKS").tag(BrowserSource.running)

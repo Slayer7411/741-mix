@@ -210,6 +210,20 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
     let picked = stride(from: 0, to: eligible.count, by: step).prefix(want).map { eligible[$0] }
     print("[analyze] \(all.count) tracks, \(eligible.count) local with analysis, \(picked.count) picked")
     let low = Double(ProcessInfo.processInfo.environment["MIX741_ANALYZE_BPMLOW"] ?? "") ?? TrackAnalyzer.defaultOctave.lowerBound
+    // MIX741_ANALYZE_LEARN=<n>: Key-Profile aus n anderen lokalen Tracks lernen (wie in der App) und damit messen
+    var profiles: TrackAnalyzer.KeyProfiles?
+    if let nl = Int(ProcessInfo.processInfo.environment["MIX741_ANALYZE_LEARN"] ?? "") {
+        let used = Set(picked.map(\.key))
+        let rest = eligible.filter { !used.contains($0.key) }
+        let ls = max(1, rest.count / nl)
+        var samples: [([Double], Int)] = []
+        for t in stride(from: ls / 2, to: rest.count, by: ls).prefix(nl).map({ rest[$0] }) {
+            if let c = try? TrackAnalyzer.chroma(url: URL(fileURLWithPath: t.path)) { samples.append((c, t.musicalKey)) }
+        }
+        profiles = TrackAnalyzer.learnProfiles(samples)
+        print(String(format: "[analyze] profiles: %d tracks, hold-out %d exact %.0f%% (krumhansl/temperley %.0f%%)",
+                     profiles?.tracks ?? 0, profiles?.holdout ?? 0, 100 * (profiles?.exact ?? 0), 100 * (profiles?.before ?? 0)))
+    }
     var bpmHits = 0, bpmOctave = 0, keyHits = 0, keyRelative = 0, gridHits = 0, n = 0, autoBpm = 0, autoHits = 0
     var loudDiff: [Double] = [], times: [Double] = [], gridSigned: [Double] = []
     var gridByType: [String: [Double]] = [:]
@@ -222,7 +236,7 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
     }
     for t in picked {
         let t0 = Date()
-        guard let r = try? TrackAnalyzer.analyze(url: URL(fileURLWithPath: t.path), octave: low...(2 * low)) else { print("[analyze] unreadable \(t.path)"); continue }
+        guard let r = try? TrackAnalyzer.analyze(url: URL(fileURLWithPath: t.path), octave: low...(2 * low), profiles: profiles) else { print("[analyze] unreadable \(t.path)"); continue }
         let dt = Date().timeIntervalSince(t0)
         times.append(dt)
         n += 1
@@ -296,5 +310,41 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
         print("[dbg] chroma C..B: " + c.map { String(format: "%.2f", $0 / m) }.joined(separator: " "))
         let k = TrackAnalyzer.key(chroma: c)
         print("[dbg] key \(k.map { Track.openKey(code: $0.code) } ?? "-") clarity \(k?.clarity ?? 0)")
+    }
+}
+
+/// Key-Profile lernen aus synthetischen Chroma (Tonika + Quinte stark, Terz je Modus, Rauschen): Profile tragen die
+/// Form, Hold-out trifft, Datei hin und zurück, zu wenige Tracks -> nil, ungültige Profile -> Krumhansl / Temperley
+@Test func keyProfilesLearn() throws {
+    var rng = SystemRandomNumberGenerator.Seeded(seed: 7)
+    func sample(_ code: Int) -> [Double] {
+        let t = code % 12, third = code < 12 ? 4 : 3
+        var c = (0..<12).map { _ in Double.random(in: 0...0.5, using: &rng) }
+        c[t] += 2; c[(t + 7) % 12] += 1.6; c[(t + third) % 12] += 0.9; c[(t + (code < 12 ? 11 : 10)) % 12] += 0.4
+        return c
+    }
+    let samples = (0..<150).map { i -> ([Double], Int) in let k = (i * 7 + i / 3) % 24; return (sample(k), k) }
+    let p = try #require(TrackAnalyzer.learnProfiles(samples))
+    #expect(p.tracks == 150 && p.holdout == 30)
+    #expect(p.exact >= 0.9 && p.exact >= p.before, "exact \(p.exact) before \(p.before)")
+    #expect(p.major.firstIndex(of: p.major.max()!) == 0 && p.minor[3] > p.minor[4] && p.major[4] > p.major[3])
+    for k in [0, 9, 14, 21] { #expect(TrackAnalyzer.key(chroma: sample(k), profiles: p)?.code == k) }
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("minos-kp-\(UUID().uuidString)/key-profiles.json")
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    try p.save(url: url)
+    let back = try #require(TrackAnalyzer.KeyProfiles.load(url: url))
+    #expect(back.major == p.major && back.minor == p.minor && back.tracks == 150)
+    #expect(TrackAnalyzer.learnProfiles(Array(samples.prefix(20))) == nil)
+    #expect(TrackAnalyzer.learnProfiles(samples.filter { $0.1 < 12 }) == nil)   // nur Dur
+    let broken = TrackAnalyzer.KeyProfiles(major: [1, 2], minor: [])
+    #expect(TrackAnalyzer.key(chroma: sample(9), profiles: broken)?.code == TrackAnalyzer.key(chroma: sample(9))?.code)
+}
+
+extension SystemRandomNumberGenerator {
+    /// deterministischer Zufall für Tests (xorshift)
+    struct Seeded: RandomNumberGenerator {
+        var s: UInt64
+        init(seed: UInt64) { s = seed &* 0x9E37_79B9_7F4A_7C15 | 1 }
+        mutating func next() -> UInt64 { s ^= s << 13; s ^= s >> 7; s ^= s << 17; return s }
     }
 }
