@@ -7,19 +7,20 @@ import MixCore
 /// Läuft nie im Render-Pfad (Hintergrund-Arbeiter der Warteschlange, siehe `OverviewJobs`).
 ///
 /// Verfahren:
-/// * Datei blockweise lesen; Spitze und Lautheit am vollen Stereosignal, alles andere an einer Mono-Spur, die um
-///   einen ganzzahligen Faktor auf ~11 kHz dezimiert ist (FIR-Tiefpass, `vDSP_desamp`) – ~20 MB je 8 Minuten
+/// * Datei einmal blockweise lesen; Spitze am vollen Stereosignal, Mono (L+R)/2 um ganzzahlige Faktoren auf ~22 kHz
+///   (Tonart, Lautheit, im Durchlauf) und ~11 kHz (Tempo, Anker; ~20 MB je 8 Minuten) dezimiert (FIR, `vDSP_desamp`)
 /// * Tempo: Spektralfluss (512er FFT, ~100 Bilder/s) -> Fourier-Tempogramm (FFT des Flusses) mit Kamm über die
 ///   Beat-Frequenz und ihre Harmonischen (1, ½, ¼) über 60–200 BPM -> Feinsuche als Fourier-Betrag genau bei der
 ///   Beat-Frequenz (0,001 BPM) -> ganze Beats zwischen Anfang und Ende des Tracks -> BPM aus der Beat-Zahl
-///   (Tempo-Konstanz vorausgesetzt). Autokorrelation taugt hier nicht: Lag 1,5·Beat korreliert mit 3 und 6 Beats
-/// * Anker: Anschlagsstärke (Anstieg der Hüllkurve, Bass < 150 Hz und ganzes Band) mit 1 ms Auflösung auf die
-///   Beat-Periode gefaltet -> Lage des Anschlags im Beat auf 1 ms; welcher Beat der Phrasenanfang ist, entscheidet
-///   die Phrasen-Logik (`PhraseAnchor`: Strukturwechsel auf 8-Takt-Grenzen), sonst der erste Beat des Tracks
-/// * Tonart: Chroma (4096er FFT, 55 Hz–3,5 kHz, Energie je Halbton logarithmisch verdichtet, Oktaven summiert)
-///   gegen Krumhansl- und Temperley-Profile (24 Tonarten), Ausgabe wie MUSICAL_KEY (0–11 Dur, 12–23 Moll)
-/// * Lautheit: mittlere Leistung in 100-ms-Blöcken mit Tor (−10 dB unter dem Mittel); PERCEIVED_DB der Collection ist
-///   die Verstärkung auf eine Referenz (`loudnessReference` − Pegel, an 20 Tracks der Collection bestimmt)
+///   (Tempo-Konstanz vorausgesetzt); Gegenprobe mit der Mehrheit lokaler Tempi (8-s-Fenster); Ergebnis in die
+///   eingestellte Oktave gefaltet. Autokorrelation taugt hier nicht: Lag 1,5·Beat korreliert mit 3 und 6 Beats
+/// * Anker: Anschlagsstärke (Anstieg der Hüllkurve, Bass < 150 Hz und ganzes Band) mit 1 ms Auflösung über den ganzen
+///   Track auf die Beat-Periode gefaltet -> Lage des Anschlags im Beat auf 1 ms; welcher Beat der Phrasenanfang ist,
+///   entscheidet die Phrasen-Logik (`PhraseAnchor`: Strukturwechsel auf 8-Takt-Grenzen), sonst der erste Beat des Tracks
+/// * Tonart: Halbton-Pegel in dB je 250-ms-Bild, Schwelle (Tiefen höher), lokale Maskierung, 55 Hz–6,6 kHz gefaltet,
+///   gegen Krumhansl- und Temperley-Profile (24 Tonarten, Moll +5 %), Ausgabe wie MUSICAL_KEY (0–11 Dur, 12–23 Moll)
+/// * Lautheit: ReplayGain-Verfahren (Kurve gleicher Lautstärke, ~70 ms, 95. Perzentil); PERCEIVED_DB der Collection ist
+///   die Verstärkung auf eine Referenz (`loudnessReference` − Pegel)
 public enum TrackAnalyzer {
     public struct Result: Equatable, Sendable {
         public var duration: Double
@@ -44,92 +45,87 @@ public enum TrackAnalyzer {
         }
     }
 
-    /// Zielrate der Analyse (Hz); die Datei wird um einen ganzzahligen Faktor dezimiert
+    /// Rate für Tonart und Lautheit (Hz); Tempo und Anker auf der Hälfte. Je ein ganzzahliger Dezimierungsfaktor
+    static let keyRate = 22050.0
     static let targetRate = 11025.0
-    /// Tempo-Bereich
+    /// Suchbereich des Kamms (mit leichter Bevorzugung von 90–170 BPM gegen 3:2-Verwechslungen); das Ergebnis wird danach
+    /// in die eingestellte Oktave gefaltet
     public static let bpmRange = 60.0...200.0
-    /// Lautheit: Referenz minus Blockleistung (dBFS, Tor −10 dB) = PERCEIVED_DB der Collection (Verstärkung, positiv = leiser Track)
-    public static let loudnessReference = -9.4
+    /// Standard-Oktave des Ergebnisses
+    public static let defaultOctave = 100.0...200.0
+    /// Lautheit: Referenz minus Pegel (dB, 95. Perzentil der gewichteten 46-ms-Leistung) = PERCEIVED_DB der Collection
+    /// (Verstärkung, positiv = leiser Track); Median der Abweichung über 116 lokale Tracks der Collection
+    public static let loudnessReference = -14.3
 
     // MARK: Datei
 
-    public static func analyze(url: URL, checkpoint: () throws -> Void = {}) throws -> Result {
-        let d = try decode(url: url, checkpoint: checkpoint)
-        return try analyze(decimated: d.x, rate: d.rate, stream: d.stream, checkpoint: checkpoint)
+    /// `octave`: BPM-Bereich des Ergebnisses, genau eine Oktave (Untergrenze zählt, Obergrenze = 2 × Untergrenze)
+    public static func analyze(url: URL, octave: ClosedRange<Double> = defaultOctave, checkpoint: () throws -> Void = {}) throws -> Result {
+        let s = try decode(url: url, checkpoint: checkpoint)
+        return try analyze(stream: s, octave: octave, checkpoint: checkpoint)
     }
 
-    /// Datei lesen: Spitze/Lautheit am vollen Signal, Mono dezimiert
-    static func decode(url: URL, checkpoint: () throws -> Void = {}) throws -> (x: [Float], rate: Double, stream: Stream) {
+    /// Datei blockweise lesen: Spitze am vollen Signal, Mono dezimiert, Tonart und Lautheit im Durchlauf
+    static func decode(url: URL, checkpoint: () throws -> Void = {}) throws -> Stream {
         let file = try AVAudioFile(forReading: url)
         let fmt = file.processingFormat
         guard fmt.sampleRate > 0, fmt.channelCount > 0, fmt.commonFormat == .pcmFormatFloat32, !fmt.isInterleaved,
               let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 1 << 15) else { throw TrackAudio.DecodeError.format }
-        let rate = fmt.sampleRate
-        var stream = Stream(rate: rate)
-        var mono = [Float](repeating: 0, count: 1 << 15)
-        let d = max(1, Int((rate / targetRate).rounded()))
-        var dec = Decimator(factor: d)
-        var x: [Float] = []
-        x.reserveCapacity(Int(file.length) / d + 64)
+        var stream = Stream(rate: fmt.sampleRate, frames: Int(file.length))
         while file.framePosition < file.length {
             try checkpoint()
             try file.read(into: buf, frameCount: buf.frameCapacity)
             let n = Int(buf.frameLength)
             guard n > 0, let ch = buf.floatChannelData else { break }
-            stream.feed(ch[0], ch[fmt.channelCount > 1 ? 1 : 0], n, mono: &mono)
-            dec.feed(mono, n, into: &x)
+            stream.feed(ch[0], ch[fmt.channelCount > 1 ? 1 : 0], n)
         }
         guard stream.frames > 0 else { throw TrackAudio.DecodeError.format }
-        return (x, rate / Double(d), stream)
+        return stream
     }
 
     /// Analyse eines fertig dekodierten Signals (Tests, Deck)
     public static func analyze(left: UnsafePointer<Float>, right: UnsafePointer<Float>, frames: Int, sampleRate rate: Double,
-                               checkpoint: () throws -> Void = {}) throws -> Result {
-        var stream = Stream(rate: rate)
-        let d = max(1, Int((rate / targetRate).rounded()))
-        var dec = Decimator(factor: d)
-        var x: [Float] = []
-        x.reserveCapacity(frames / d + 64)
-        var mono = [Float](repeating: 0, count: 1 << 15)
+                               octave: ClosedRange<Double> = defaultOctave, checkpoint: () throws -> Void = {}) throws -> Result {
+        var stream = Stream(rate: rate, frames: frames)
         var i = 0
         while i < frames {
             let n = min(1 << 15, frames - i)
-            stream.feed(left + i, right + i, n, mono: &mono)
-            dec.feed(mono, n, into: &x)
+            stream.feed(left + i, right + i, n)
             i += n
         }
         guard stream.frames > 0 else { throw TrackAudio.DecodeError.format }
-        return try analyze(decimated: x, rate: rate / Double(d), stream: stream, checkpoint: checkpoint)
+        return try analyze(stream: stream, octave: octave, checkpoint: checkpoint)
     }
 
-    static func analyze(decimated x: [Float], rate: Double, stream: Stream, checkpoint: () throws -> Void) throws -> Result {
+    static func analyze(stream: Stream, octave: ClosedRange<Double>, checkpoint: () throws -> Void) throws -> Result {
+        let x = stream.x, rate = stream.lowRate
         let duration = Double(stream.frames) / stream.rate
         var r = Result(duration: duration, bpm: 0, anchor: 0, tempoConfidence: 0, phraseConfidence: 0, musicalKey: -1,
                        keyClarity: 0, perceivedDb: 0, peakDb: 200)
-        let loud = stream.loudness()
-        r.perceivedDb = loudnessReference - loud.level
+        let music = stream.musicRange()
+        r.perceivedDb = loudnessReference - stream.loud.level()
         // PEAK_DB der Collection = Abstand der Spitze zu 0 dBFS (positiv = darunter)
         r.peakDb = -20 * log10(max(Double(stream.peak), 1e-10))
         try checkpoint()
         // Tempo + Anker: ab 8 s Musik
         if let n = novelty(x, rate: rate), n.frames.count > Int(8 * n.fps),
-           let tempo = tempo(n, x: x, rate: rate, music: loud.range) {
+           let tempo = tempo(n, x: x, rate: rate, music: music, octave: octave) {
             r.bpm = tempo.bpm
             r.tempoConfidence = tempo.confidence
             try checkpoint()
-            let a = anchor(x, rate: rate, bpm: tempo.bpm, novelty: n, musicStart: loud.range.lowerBound, duration: duration)
+            let a = anchor(x, rate: rate, bpm: tempo.bpm, novelty: n, music: music, duration: duration)
             r.anchor = a.anchor
             r.phraseConfidence = a.phraseConfidence
         }
         try checkpoint()
-        if let k = key(x, rate: rate) { r.musicalKey = k.code; r.keyClarity = k.clarity }
+        if let k = key(stream.chroma) { r.musicalKey = k.code; r.keyClarity = k.clarity }
         return r
     }
 
     // MARK: Lesen: Spitze, Lautheit, Mono
 
-    /// volles Signal: Spitze, Leistung je 100-ms-Block, Mono (L+R)/2 für die Dezimierung
+    /// volles Signal: Spitze, Leistung je 100-ms-Block (Musikbereich); Mono (L+R)/2 -> ~22 kHz (Tonart, Lautheit)
+    /// -> ~11 kHz (Tempo, Anker)
     struct Stream {
         let rate: Double
         let block: Int
@@ -138,13 +134,33 @@ public enum TrackAnalyzer {
         /// mittlere Leistung je Block (Mittel beider Kanäle)
         var blocks: [Float] = []
         var acc: Double = 0, inBlock = 0
+        var mono: [Float], mid: [Float] = []
+        var toMid: Decimator, toLow: Decimator
+        let midRate: Double, lowRate: Double
+        var loud: Loudness
+        var chroma: ChromaFrames
+        /// Mono, ~11 kHz
+        var x: [Float] = []
 
-        init(rate: Double) { self.rate = rate; block = max(1, Int(rate / 10)) }
+        init(rate: Double, frames: Int = 0) {
+            self.rate = rate
+            block = max(1, Int(rate / 10))
+            let d1 = max(1, Int((rate / keyRate).rounded()))
+            midRate = rate / Double(d1)
+            let d2 = max(1, Int((midRate / targetRate).rounded()))
+            lowRate = midRate / Double(d2)
+            toMid = Decimator(factor: d1); toLow = Decimator(factor: d2)
+            loud = Loudness(rate: midRate)
+            chroma = ChromaFrames(rate: midRate)
+            mono = [Float](repeating: 0, count: 1 << 15)
+            x.reserveCapacity(frames / (d1 * d2) + 64)
+        }
 
-        mutating func feed(_ l: UnsafePointer<Float>, _ r: UnsafePointer<Float>, _ n: Int, mono: inout [Float]) {
+        mutating func feed(_ l: UnsafePointer<Float>, _ r: UnsafePointer<Float>, _ n: Int) {
             var pk: Float = 0
             vDSP_maxmgv(l, 1, &pk, vDSP_Length(n)); peak = max(peak, pk)
             vDSP_maxmgv(r, 1, &pk, vDSP_Length(n)); peak = max(peak, pk)
+            if mono.count < n { mono = [Float](repeating: 0, count: n) }
             var half: Float = 0.5
             vDSP_vasm(l, 1, r, 1, &half, &mono, 1, vDSP_Length(n))
             var off = 0
@@ -159,24 +175,93 @@ public enum TrackAnalyzer {
                 if inBlock == block { blocks.append(Float(acc / Double(block))); acc = 0; inBlock = 0 }
             }
             frames += n
+            mid.removeAll(keepingCapacity: true)
+            toMid.feed(mono, n, into: &mid)
+            guard !mid.isEmpty else { return }
+            loud.feed(mid)
+            chroma.feed(mid)
+            toLow.feed(mid, mid.count, into: &x)
         }
 
-        /// Pegel (dBFS, mittlere Leistung der Blöcke über dem Tor) und Musikbereich in Sekunden (Blöcke bis 35 dB
-        /// unter dem lautesten)
-        func loudness() -> (level: Double, range: ClosedRange<Double>) {
+        /// Musikbereich in Sekunden: Blöcke bis 35 dB unter dem lautesten
+        func musicRange() -> ClosedRange<Double> {
             var all = blocks
             if inBlock > block / 2 { all.append(Float(acc / Double(inBlock))) }
             let db = all.map { 10 * log10(max(Double($0), 1e-12)) }
-            let heard = db.filter { $0 > -70 }
-            guard !heard.isEmpty else { return (-100, 0...max(0, Double(frames) / rate)) }
-            let mean = 10 * log10(heard.map { pow(10, $0 / 10) }.reduce(0, +) / Double(heard.count))
-            let gated = heard.filter { $0 > mean - 10 }
-            let level = 10 * log10(gated.map { pow(10, $0 / 10) }.reduce(0, +) / Double(max(1, gated.count)))
-            let top = db.max() ?? -100
+            guard let top = db.max(), top > -70 else { return 0...max(0, Double(frames) / rate) }
             let first = db.firstIndex { $0 > top - 35 } ?? 0
             let last = db.lastIndex { $0 > top - 35 } ?? max(0, db.count - 1)
             let sec = Double(block) / rate
-            return (level, (Double(first) * sec)...max(Double(first) * sec, Double(last + 1) * sec))
+            return (Double(first) * sec)...max(Double(first) * sec, Double(last + 1) * sec)
+        }
+    }
+
+    /// Lautheit nach dem ReplayGain-Verfahren: Leistung je 46-ms-Bild (1024er FFT, Hop 23 ms), je Frequenz mit der
+    /// umgekehrten Kurve gleicher Lautstärke (80 phon, ISO 226) gewichtet, je zwei Bilder gemittelt (~70 ms);
+    /// Pegel = 95. Perzentil in dB (mittlere Leistung eines 1-kHz-Sinus = dBFS RMS). Ohne den 150-Hz-Hochpass des
+    /// Originals: an 194 Tracks der Collection 0,29 statt 0,42 dB mittlere Abweichung
+    struct Loudness {
+        static let n = 1024
+        /// Kurve gleicher Lautstärke 80 phon relativ zu 1 kHz, umgekehrt (Hz, dB)
+        static let contour: [(Double, Double)] = [
+            (20, -39.0), (25, -34.2), (31.5, -29.6), (40, -25.3), (50, -21.7), (63, -18.3), (80, -15.2), (100, -12.5),
+            (125, -10.1), (160, -7.8), (200, -5.9), (250, -4.3), (315, -2.9), (400, -1.7), (500, -0.9), (630, -0.2),
+            (800, 0.3), (1000, 0), (1250, -2.5), (1600, -3.7), (2000, -0.6), (2500, 2.1), (3150, 2.9), (4000, 1.7),
+            (5000, -1.6), (6300, -6.8), (8000, -11.4), (10000, -11.7), (12500, -5.4)]
+
+        static func weightDb(_ f: Double) -> Double {
+            let c = contour
+            let curve: Double
+            if f <= c[0].0 { curve = c[0].1 - 40 * log10(c[0].0 / max(f, 1)) }
+            else if f >= c[c.count - 1].0 { curve = c[c.count - 1].1 }
+            else {
+                let i = c.lastIndex { $0.0 <= f }!
+                let t = log(f / c[i].0) / log(c[i + 1].0 / c[i].0)
+                curve = c[i].1 + t * (c[i + 1].1 - c[i].1)
+            }
+            return curve
+        }
+
+        let fft = FFT(n: n)
+        var weights: [Float]
+        var carry: [Float] = []
+        var power: [Float] = []
+        var mag = [Float](repeating: 0, count: n / 2)
+
+        init(rate: Double) {
+            let n = Self.n
+            var w2: Float = 0
+            vDSP_svesq(fft.window, 1, &w2, vDSP_Length(n))
+            // Betrag von vDSP_fft_zrip = 2 × DFT; Σ|X|² / (2 n Σw²) = mittlere Leistung
+            let scale = Double(1 / (2 * Float(n) * w2))
+            weights = (0..<(n / 2)).map { k in
+                k == 0 ? 0 : Float(scale * pow(10, Self.weightDb(Double(k) * rate / Double(n)) / 10))
+            }
+        }
+
+        mutating func feed(_ x: [Float]) {
+            carry.append(contentsOf: x)
+            let n = Self.n, hop = n / 2
+            var off = 0
+            carry.withUnsafeBufferPointer { cp in
+                while off + n <= cp.count {
+                    fft.magnitudes(cp.baseAddress! + off, into: &mag)
+                    var p: Float = 0
+                    vDSP_vsq(mag, 1, &mag, 1, vDSP_Length(n / 2))
+                    vDSP_dotpr(mag, 1, weights, 1, &p, vDSP_Length(n / 2))
+                    power.append(p)
+                    off += hop
+                }
+            }
+            carry.removeFirst(off)
+        }
+
+        /// dB (95. Perzentil); Stille −100
+        func level() -> Double {
+            guard power.count >= 2 else { return -100 }
+            let s = (1..<power.count).map { (power[$0 - 1] + power[$0]) / 2 }.sorted()
+            let p = s[min(s.count - 1, Int(0.95 * Double(s.count)))]
+            return p > 0 ? max(-100, 10 * log10(Double(p))) : -100
         }
     }
 
@@ -353,46 +438,68 @@ public enum TrackAnalyzer {
         return total
     }
 
-    struct TempoDebug { var candidates: [(Double, Double)]; var fine: Double; var refined: Double }
+    struct TempoDebug {
+        var candidates: [(Double, Double)] = []
+        var fine = 0.0, refined = 0.0
+        /// lokale Tempi (8-s-Fenster), Mehrheit und ihr Anteil
+        var local: [Double] = [], majority = 0.0, share = 0.0
+    }
 
-    static func tempoDebug(_ nov: Novelty, x: [Float], rate: Double, music: ClosedRange<Double>) -> TempoDebug {
-        var dbg = TempoDebug(candidates: [], fine: 0, refined: 0)
-        _ = tempo(nov, x: x, rate: rate, music: music, debug: &dbg)
+    static func tempoDebug(_ nov: Novelty, x: [Float], rate: Double, music: ClosedRange<Double>, octave: ClosedRange<Double> = defaultOctave) -> TempoDebug {
+        var dbg = TempoDebug()
+        _ = tempo(nov, x: x, rate: rate, music: music, octave: octave, debug: &dbg)
         return dbg
     }
 
-    static func tempo(_ nov: Novelty, x: [Float], rate: Double, music: ClosedRange<Double>) -> Tempo? {
-        var dbg = TempoDebug(candidates: [], fine: 0, refined: 0)
-        return tempo(nov, x: x, rate: rate, music: music, debug: &dbg)
+    static func tempo(_ nov: Novelty, x: [Float], rate: Double, music: ClosedRange<Double>, octave: ClosedRange<Double> = defaultOctave) -> Tempo? {
+        var dbg = TempoDebug()
+        return tempo(nov, x: x, rate: rate, music: music, octave: octave, debug: &dbg)
     }
 
-    static func tempo(_ nov: Novelty, x: [Float], rate: Double, music: ClosedRange<Double>, debug: inout TempoDebug) -> Tempo? {
-        let v = nov.frames, fps = nov.fps
-        let n = v.count
-        guard n > Int(fps * 8) else { return nil }
-        // Tempogramm: Betrag der FFT des Flusses (auf 2^k aufgefüllt, mindestens 0,1 BPM Auflösung)
-        var size = 1 << 16
-        while size < n * 2 { size <<= 1 }
-        let spec = spectrum(v, size: size)
-        let binHz = fps / Double(size)
+    /// Ergebnis-Oktave [lo, 2·lo): Obergrenze folgt der Untergrenze
+    public static func octaveRange(_ o: ClosedRange<Double>) -> ClosedRange<Double> {
+        let lo = max(40, min(150, o.lowerBound))
+        return lo...(2 * lo)
+    }
+
+    static func fold(_ bpm: Double, into o: ClosedRange<Double>) -> Double {
+        guard bpm > 0, bpm.isFinite else { return bpm }
+        var b = bpm
+        while b < o.lowerBound { b *= 2 }
+        while b >= o.upperBound { b /= 2 }
+        return b
+    }
+
+    /// Tempogramm-Kamm (Beat-Frequenz + 2. und 4. Harmonische) über ein Betragsspektrum mit `binHz` je Bin
+    static func comb(_ spec: [Double], binHz: Double, bpm: Double) -> Double {
         func at(_ hz: Double) -> Double {
             let pos = hz / binHz
             let i = Int(pos), f = pos - Double(i)
             guard i + 1 < spec.count else { return 0 }
             return spec[i] * (1 - f) + spec[i + 1] * f
         }
-        // Kamm über Beat-Frequenz und Harmonische; leichte Bevorzugung von 90–170 BPM
-        func comb(_ bpm: Double) -> Double {
-            let f = bpm / 60
-            let s = at(f) + at(2 * f) / 2 + at(4 * f) / 4
-            let prior = bpm < 90 ? 1 - 0.25 * (90 - bpm) / 30 : bpm > 170 ? 1 - 0.25 * (bpm - 170) / 30 : 1
-            return s * prior
-        }
+        let f = bpm / 60
+        return at(f) + at(2 * f) / 2 + at(4 * f) / 4
+    }
+
+    static func tempo(_ nov: Novelty, x: [Float], rate: Double, music: ClosedRange<Double>, octave: ClosedRange<Double>,
+                      debug: inout TempoDebug) -> Tempo? {
+        let v = nov.frames, fps = nov.fps
+        let n = v.count
+        let oct = octaveRange(octave)
+        guard n > Int(fps * 8) else { return nil }
+        // Tempogramm: Betrag der FFT des Flusses (auf 2^k aufgefüllt, mindestens 0,1 BPM Auflösung)
+        var size = 1 << 16
+        while size < n * 2 { size <<= 1 }
+        let spec = spectrum(v, size: size)
+        let binHz = fps / Double(size)
+        // leichte Bevorzugung von 90–170 BPM: sonst gewinnt bei Triolen-Anteilen 3/2 des Tempos
+        func prior(_ bpm: Double) -> Double { bpm < 90 ? 1 - 0.25 * (90 - bpm) / 30 : bpm > 170 ? 1 - 0.25 * (bpm - 170) / 30 : 1 }
         var best = bpmRange.lowerBound, bestScore = -1.0, sum = 0.0, cnt = 0
         var b = bpmRange.lowerBound
         var all: [(Double, Double)] = []
         while b <= bpmRange.upperBound {
-            let s = comb(b)
+            let s = comb(spec, binHz: binHz, bpm: b) * prior(b)
             all.append((b, s))
             sum += s; cnt += 1
             if s > bestScore { bestScore = s; best = b }
@@ -403,29 +510,101 @@ public enum TrackAnalyzer {
             .map { all[$0] }.sorted { $0.1 > $1.1 }.prefix(6).map { $0 }
         guard bestScore > 0 else { return nil }
         let confidence = max(0, min(1, (bestScore - sum / Double(cnt)) / bestScore))
-        // Feinsuche: Fourier-Betrag genau bei der Beat-Frequenz, 0,02 BPM dann 0,001 BPM
-        var fine = best, fineScore = -1.0
-        for (span, step) in [(0.6, 0.02), (0.03, 0.001)] {
+        var bpm = fineSearch(v, fps: fps, around: best, span: 0.6)
+        debug.fine = bpm
+        // ganze Beats zwischen Anfang und Ende: Anschlag-Lage je Fenster, Beat-Zahl runden, Tempo daraus
+        let o = onsets1k(x, rate: rate)
+        for _ in 0..<2 {
+            guard let refined = integerBeats(o, coarse: nov, bpm: bpm, music: music) else { break }
+            bpm = refined
+        }
+        // Gegenprobe: Mehrheit der lokalen Tempi (8-s-Fenster, Hop 2 s). Weicht sie mehr als 0,3 BPM ab (Drift,
+        // Vinyl), gilt das häufigste lokale Tempo, verfeinert über die Fenster der Mehrheit
+        let local = localTempi(v, fps: fps, octave: (bpm / 2.squareRoot())...(bpm * 2.squareRoot()))
+        debug.local = local
+        if let m = majority(local) {
+            debug.majority = m.bpm; debug.share = m.share
+            if m.share >= 0.5, abs(m.bpm - bpm) > 0.3, abs(m.bpm - bpm) < 0.03 * bpm {
+                var masked = [Float](repeating: 0, count: n)
+                let w = Int(8 * fps), hop = Int(2 * fps)
+                for i in m.members {
+                    let a = i * hop, e = min(n, a + w)
+                    for j in a..<e { masked[j] = v[j] }
+                }
+                bpm = fineSearch(masked, fps: fps, around: m.bpm, span: 0.5)
+            }
+        }
+        debug.refined = bpm
+        return Tempo(bpm: fold(bpm, into: oct), confidence: confidence)
+    }
+
+    /// Fourier-Betrag genau bei der Beat-Frequenz um `around`: 0,02 BPM, dann 0,001 BPM
+    static func fineSearch(_ v: [Float], fps: Double, around: Double, span: Double) -> Double {
+        var fine = around, fineScore = -1.0
+        for (sp, step) in [(span, 0.02), (0.03, 0.001)] {
             let center = fine
-            var c = center - span
-            while c <= center + span + 1e-9 {
-                if bpmRange.contains(c) {
+            var c = center - sp
+            while c <= center + sp + 1e-9 {
+                if c > 20 {
                     let s = beatSpectrum(v, cyclesPerFrame: c / 60 / fps)
                     if s > fineScore { fineScore = s; fine = c }
                 }
                 c += step
             }
         }
-        // ganze Beats zwischen Anfang und Ende: Anschlag-Lage je Fenster, Beat-Zahl runden, Tempo daraus
-        let o = onsets1k(x, rate: rate)
-        var bpm = fine
-        for _ in 0..<2 {
-            guard let refined = integerBeats(o, coarse: nov, bpm: bpm, music: music) else { break }
-            bpm = refined
+        return fine
+    }
+
+    /// Tempo je 8-s-Fenster (Hop 2 s) aus dem Kamm über das Fenster-Spektrum, in der Oktave; 0 = Fenster ohne Anschläge
+    static func localTempi(_ v: [Float], fps: Double, octave oct: ClosedRange<Double>) -> [Double] {
+        let w = Int(8 * fps), hop = Int(2 * fps), size = 8192
+        guard v.count >= w, size >= w else { return [] }
+        let fft = FFT(n: size)
+        for i in 0..<size { fft.window[i] = 1 }
+        var hann = [Float](repeating: 0, count: w)
+        vDSP_hann_window(&hann, vDSP_Length(w), Int32(vDSP_HANN_NORM))
+        var seg = [Float](repeating: 0, count: size), mag = [Float](repeating: 0, count: size / 2)
+        let binHz = fps / Double(size)
+        var out: [Double] = []
+        var a = 0
+        while a + w <= v.count {
+            var mean: Float = 0
+            v.withUnsafeBufferPointer { p in vDSP_meanv(p.baseAddress! + a, 1, &mean, vDSP_Length(w)) }
+            guard mean > 0 else { out.append(0); a += hop; continue }
+            var neg = -mean
+            v.withUnsafeBufferPointer { p in
+                seg.withUnsafeMutableBufferPointer { sp in
+                    vDSP_vsadd(p.baseAddress! + a, 1, &neg, sp.baseAddress!, 1, vDSP_Length(w))
+                    vDSP_vmul(sp.baseAddress!, 1, hann, 1, sp.baseAddress!, 1, vDSP_Length(w))
+                }
+            }
+            seg.withUnsafeBufferPointer { fft.magnitudes($0.baseAddress!, into: &mag) }
+            let spec = mag.map(Double.init)
+            var best = 0.0, bestS = 0.0
+            var b = oct.lowerBound
+            while b < oct.upperBound {
+                let s = comb(spec, binHz: binHz, bpm: b)
+                if s > bestS { bestS = s; best = b }
+                b += 0.05
+            }
+            out.append(best)
+            a += hop
         }
-        debug.fine = fine
-        debug.refined = bpm
-        return Tempo(bpm: bpm, confidence: confidence)
+        return out
+    }
+
+    /// größte Gruppe lokaler Tempi (±2 % um ein Fenster-Tempo): Median, Anteil an allen Fenstern mit Tempo, Fenster
+    static func majority(_ local: [Double]) -> (bpm: Double, share: Double, members: [Int])? {
+        let valid = local.indices.filter { local[$0] > 0 }
+        guard valid.count >= 8 else { return nil }
+        var bestMembers: [Int] = []
+        for i in valid {
+            let c = local[i]
+            let m = valid.filter { abs(local[$0] - c) <= 0.02 * c }
+            if m.count > bestMembers.count { bestMembers = m }
+        }
+        let sorted = bestMembers.map { local[$0] }.sorted()
+        return (sorted[sorted.count / 2], Double(bestMembers.count) / Double(valid.count), bestMembers)
     }
 
     /// Betragsspektrum eines reellen Signals, auf `size` (2^k) mit Nullen aufgefüllt, Mittelwert abgezogen
@@ -578,11 +757,13 @@ public enum TrackAnalyzer {
 
     struct Anchor { var anchor: Double; var phraseConfidence: Double }
 
-    static func anchor(_ x: [Float], rate: Double, bpm: Double, novelty nov: Novelty, musicStart: Double, duration: Double) -> Anchor {
+    /// Phase über den ganzen Musikbereich (konstantes Tempo vorausgesetzt)
+    static func anchor(_ x: [Float], rate: Double, bpm: Double, novelty nov: Novelty, music: ClosedRange<Double>, duration: Double) -> Anchor {
         let o = onsets1k(x, rate: rate)
         let beat = 60 / bpm
         let end = Double(o.v.count) / o.fs
-        let p = beatPhase(fine: o, coarse: nov, bpm: bpm, from: musicStart, to: min(end, musicStart + 120))
+        let musicStart = music.lowerBound
+        let p = beatPhase(fine: o, coarse: nov, bpm: bpm, from: musicStart, to: min(end, music.upperBound))
             ?? beatPhase(fine: o, coarse: nov, bpm: bpm, from: 0, to: end)
         guard let p else { return Anchor(anchor: max(0, musicStart), phraseConfidence: 0) }
         // erster Beat des Rasters ab Musikbeginn (ein Beat darf knapp davor liegen)
@@ -643,48 +824,111 @@ public enum TrackAnalyzer {
     static let temperleyMajor: [Double] = [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0]
     static let temperleyMinor: [Double] = [5.0, 2.0, 3.5, 4.5, 2.0, 3.5, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0]
 
-    /// Chroma: Energie je Halbton (MIDI 33–105, A1–A7) je Bild, logarithmisch verdichtet, über die Oktaven summiert
-    /// (C2–C6 voll, darunter und darüber halb)
-    static func chroma(_ x: [Float], rate: Double) -> [Double]? {
-        let n = 4096, hop = n / 2
-        guard x.count > n * 2 else { return nil }
-        let fft = FFT(n: n)
-        let half = n / 2
-        let lowPitch = 33, highPitch = 105
-        var pitchOf = [Int](repeating: -1, count: half)
-        for k in 1..<half {
-            let f = Double(k) * rate / Double(n)
-            let p = Int((12 * log2(f / 440) + 69).rounded())
-            if p >= lowPitch, p <= highPitch { pitchOf[k] = p }
-        }
-        // Bass-Oktaven tragen die Tonart elektronischer Musik: C2–B3 voll, C4–B5 0,8, Rest halb bzw. 0,4
-        let weight = (0...highPitch).map { p -> Double in p < 36 ? 0.5 : p < 60 ? 1 : p < 84 ? 0.8 : 0.4 }
-        var mag = [Float](repeating: 0, count: half)
-        var energy = [Double](repeating: 0, count: highPitch + 1)
-        var chroma = [Double](repeating: 0, count: 12)
-        let norm = 1 / Double(n / 2)
-        let count = (x.count - n) / hop + 1
-        x.withUnsafeBufferPointer { xp in
-            for f in 0..<count {
-                fft.magnitudes(xp.baseAddress! + f * hop, into: &mag)
-                for i in energy.indices { energy[i] = 0 }
-                for k in 1..<half where pitchOf[k] >= 0 {
-                    let m = Double(mag[k]) * norm
-                    // Spitze je Halbton statt Summe: tiefe Halbtöne haben 1–2 Bins, hohe 70 – eine Summe wäre davon geprägt
-                    energy[pitchOf[k]] = max(energy[pitchOf[k]], m * m)
-                }
-                // nur, was über dem Median der Halbtöne liegt (Spitzen = Töne, der Rest ist Rauschen / Drums)
-                var sal = [Double](repeating: 0, count: highPitch + 1)
-                for p in lowPitch...highPitch { sal[p] = log1p(1000 * energy[p]) }
-                let sorted = sal[lowPitch...highPitch].sorted()
-                let median = sorted[sorted.count / 2]
-                guard median < sorted[sorted.count - 1] else { continue }
-                for p in lowPitch...highPitch where sal[p] > median {
-                    chroma[p % 12] += weight[p] * (sal[p] - median)
+    /// Halbton-Pegel je Bild: 250-ms-Hann-Fenster, 8192er FFT, Hop 125 ms (~22 kHz). Je Halbton (MIDI `low`…`high`)
+    /// die größte Bin-Leistung, mit einer Gauß-Kurve (σ = 0,3 Halbtöne) um die Halbtonmitte gewichtet (A = 440 Hz), in dB
+    struct ChromaFrames {
+        static let low = 28, high = 120
+        static var count: Int { high - low + 1 }
+        let fft: FFT
+        let win: Int, hop: Int
+        /// je Halbton (Bin, Gewicht)
+        let taps: [[(Int, Float)]]
+        var carry: [Float] = []
+        var frame: [Float]
+        var mag: [Float]
+        /// Bilder × `count` Pegel (dB)
+        var db: [Float] = []
+
+        init(rate: Double) {
+            win = Int(0.25 * rate); hop = win / 2
+            var n = 1
+            while n < win { n <<= 1 }
+            fft = FFT(n: n)
+            var w = [Float](repeating: 0, count: win)
+            vDSP_hann_window(&w, vDSP_Length(win), Int32(vDSP_HANN_NORM))
+            for i in 0..<n { fft.window[i] = i < win ? w[i] : 0 }
+            frame = [Float](repeating: 0, count: n)
+            mag = [Float](repeating: 0, count: n / 2)
+            let binHz = rate / Double(n)
+            taps = (Self.low...Self.high).map { p in
+                let fc = 440 * pow(2, Double(p - 69) / 12)
+                let k0 = max(1, Int(fc * pow(2, -1.0 / 12) / binHz)), k1 = min(n / 2 - 1, Int(fc * pow(2, 1.0 / 12) / binHz) + 1)
+                guard k1 >= k0 else { return [] }
+                return (k0...k1).compactMap { k in
+                    let d = 12 * log2(Double(k) * binHz / fc)
+                    return abs(d) <= 1 ? (k, Float(exp(-0.5 * (d / 0.3) * (d / 0.3)))) : nil
                 }
             }
         }
-        return chroma
+
+        mutating func feed(_ x: [Float]) {
+            carry.append(contentsOf: x)
+            var off = 0
+            let scale = 1 / Float(fft.n)
+            while off + win <= carry.count {
+                carry.withUnsafeBufferPointer { cp in
+                    frame.withUnsafeMutableBufferPointer { fp in
+                        _ = memcpy(fp.baseAddress!, cp.baseAddress! + off, win * MemoryLayout<Float>.size)
+                    }
+                }
+                frame.withUnsafeBufferPointer { fft.magnitudes($0.baseAddress!, into: &mag) }
+                for t in taps {
+                    var e: Float = 0
+                    for (k, w) in t { let m = mag[k] * scale; e = max(e, w * m * m) }
+                    db.append(10 * log10(e + 1e-12))
+                }
+                off += hop
+            }
+            carry.removeFirst(off)
+        }
+    }
+
+    /// Stellgrößen der Tonart (Tests vergleichen Varianten)
+    struct KeyParams {
+        /// gezählter Bereich (MIDI): A1 (55 Hz) bis ~6,6 kHz
+        var foldLow = 33, foldHigh = 116
+        /// Pegel unter (Bezug − `range`) zählen nicht; Bezug = 95. Perzentil der Bild-Maxima
+        var range: Float = 50
+        /// Schwelle für tiefe Halbtöne: bei `foldLow` um `tilt` dB höher, bis `tiltEnd` linear auf 0
+        var tilt: Float = 20, tiltEnd = 84
+        /// lokale Maskierung: Halbton minus Mittel der Nachbarn ±`maskWidth`
+        var maskWidth = 5
+        /// Moll-Korrelation × (1 + `minorBonus`)
+        var minorBonus = 0.05
+    }
+
+    /// Mittel-Chroma (12, C…B): je Bild Pegel über der Schwelle, lokal maskiert, Oktaven summiert; Bilder gleich gewichtet
+    static func chroma(_ f: ChromaFrames, _ k: KeyParams = KeyParams()) -> [Double]? {
+        let p = ChromaFrames.count, n = f.db.count / p
+        guard n >= 8 else { return nil }
+        var maxima = [Float](repeating: 0, count: n)
+        f.db.withUnsafeBufferPointer { d in
+            for i in 0..<n { vDSP_maxv(d.baseAddress! + i * p, 1, &maxima[i], vDSP_Length(p)) }
+        }
+        let ref = PhraseAnchor.percentile(maxima, 0.95)
+        guard ref > -100 else { return nil }
+        let thr = (0..<p).map { i -> Float in
+            let m = ChromaFrames.low + i
+            let lift = m < k.tiltEnd ? k.tilt * Float(k.tiltEnd - max(m, k.foldLow)) / Float(max(1, k.tiltEnd - k.foldLow)) : 0
+            return ref - k.range + lift
+        }
+        var v = [Float](repeating: 0, count: p)
+        var c = [Double](repeating: 0, count: 12)
+        for i in 0..<n {
+            for j in 0..<p { v[j] = max(0, f.db[i * p + j] - thr[j]) }
+            for j in 0..<p {
+                let m = ChromaFrames.low + j
+                guard m >= k.foldLow, m <= k.foldHigh, v[j] > 0 else { continue }
+                var s: Float = 0, cnt = 0
+                for d in stride(from: 1, through: k.maskWidth, by: 1) {
+                    if j - d >= 0 { s += v[j - d]; cnt += 1 }
+                    if j + d < p { s += v[j + d]; cnt += 1 }
+                }
+                let e = v[j] - s / Float(max(1, cnt))
+                if e > 0 { c[m % 12] += Double(e) }
+            }
+        }
+        return c.reduce(0, +) > 0 ? c : nil
     }
 
     static func correlation(_ a: [Double], _ b: [Double]) -> Double {
@@ -695,21 +939,22 @@ public enum TrackAnalyzer {
         return da > 0 && db > 0 ? num / (da * db).squareRoot() : 0
     }
 
-    /// Tonart aus dem Chroma: Summe der Korrelationen mit beiden Profilsätzen, 24 Tonarten
-    static func key(chroma c: [Double]) -> Key? {
+    /// Tonart aus dem Chroma: Korrelation (z-normiert) mit beiden Profilsätzen, je Modus die bessere, Moll mit Bonus
+    static func key(chroma c: [Double], _ k: KeyParams = KeyParams()) -> Key? {
         guard c.count == 12, c.reduce(0, +) > 0 else { return nil }
         var scores = [Double](repeating: 0, count: 24)
         for tonic in 0..<12 {
             let rotated = (0..<12).map { c[(tonic + $0) % 12] }
-            scores[tonic] = correlation(rotated, krumhanslMajor) + correlation(rotated, temperleyMajor)
-            scores[12 + tonic] = correlation(rotated, krumhanslMinor) + correlation(rotated, temperleyMinor)
+            scores[tonic] = max(correlation(rotated, krumhanslMajor), correlation(rotated, temperleyMajor))
+            let minor = max(correlation(rotated, krumhanslMinor), correlation(rotated, temperleyMinor))
+            scores[12 + tonic] = minor > 0 ? minor * (1 + k.minorBonus) : minor
         }
         let order = scores.indices.sorted { scores[$0] > scores[$1] }
         return Key(code: order[0], clarity: scores[order[0]] - scores[order[1]])
     }
 
-    static func key(_ x: [Float], rate: Double) -> Key? {
-        guard let c = chroma(x, rate: rate) else { return nil }
-        return key(chroma: c)
+    static func key(_ f: ChromaFrames, _ k: KeyParams = KeyParams()) -> Key? {
+        guard let c = chroma(f, k) else { return nil }
+        return key(chroma: c, k)
     }
 }
