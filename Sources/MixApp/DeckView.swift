@@ -17,6 +17,7 @@ struct DeckView: View {
                 // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen), am Cover und an den Zusatzinfos
                 row("header", DeckHeader(d: d),
                     key: [mix.prefs.ui.showMixer ? 0 : mix.prefs.ui.fxUnitCount, mix.prefs.ui.showDeckCover ? 1 : 0, rows.info ? 1 : 0])
+                if rows.comment || rows.tags { row("meta", DeckMetaRow(d: d)).padding(.top, -2.z) }
                 WaveformView(d: d)
                     .overlay { DeckIdleView(d: d) }   // leer: Lobster, nach Ladefehler 5 s Totenkopf
                     .frame(minHeight: mix.prefs.ui.waveformHeight.z, maxHeight: .infinity)
@@ -181,6 +182,63 @@ struct DeckHeader: View {
                     .frame(minWidth: 46.z)
                 }
             }
+        }
+    }
+}
+
+/// Zeile unter dem Kopf, bündig mit dem Titel: Tags (Kommentar 2) wie im Browser (Textmarker in der Tag-Farbe), dahinter
+/// Kommentar gedämpft. Eigene Zeile: Play, Tempo, Key im Kopf messen sie nicht mit. Ein einziger Text, eine Zeile,
+/// zu lang -> „…“; feste Höhe, auch ohne Track
+struct DeckMetaRow: View {
+    @Environment(MixModel.self) private var mix
+    let d: Int
+
+    struct Model: Equatable { var cover = true, comment = "", tags: [String] = [], tagHighlight = true, tagColors: [String: String] = [:] }
+
+    var body: some View {
+        let s = mix.deck(d), ui = mix.prefs.ui
+        var m = Model(cover: ui.showDeckCover)
+        if let t = s.track, !s.loading {
+            if ui.deckRows.comment { m.comment = t.comment }
+            if ui.deckRows.tags {
+                // Zerlegung aus dem Speicher des Browsers (je Text einmal)
+                m.tags = BrowserPaneModel.tags(of: t, separators: ui.tagSeparators)
+                m.tagHighlight = ui.tagHighlight
+                m.tagColors = ui.tagColors
+            }
+        }
+        return Content(d: d, m: m).equatable()
+    }
+
+    struct Content: View, Equatable {
+        let d: Int
+        let m: Model
+        static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.m == b.m }
+
+        var body: some View {
+            HStack(spacing: 6.z) {
+                // so breit wie Buchstabe und Cover im Kopf
+                Text(deckLetters[d]).font(Theme.label(22.z, .bold)).hidden().frame(height: 0)
+                if m.cover { Color.clear.frame(width: 32.z, height: 0) }
+                Text(text).font(Theme.mono(10.z)).lineLimit(1).truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(height: 14.z)
+        }
+
+        private var text: AttributedString {
+            var ui = UIPrefs()
+            ui.tagHighlight = m.tagHighlight
+            ui.tagColors = m.tagColors
+            // ohne Filter liest TagChipsText die Vergleichsformen nicht
+            var text = TagChipsText.text(tags: m.tags, keys: [], ui: ui, filter: TagFilter())
+            let comment = m.comment.split(whereSeparator: \.isNewline).joined(separator: " ")
+            if !comment.isEmpty {
+                var c = AttributedString((m.tags.isEmpty ? "" : "  ") + comment)
+                c.foregroundColor = Theme.muted
+                text += c
+            }
+            return text
         }
     }
 }
@@ -600,8 +658,9 @@ struct TempoColumn: View {
     }
 }
 
-/// Nur Selbsttest: MIX741_SHOT=deck:<pfad.png> rendert Deck A (Track geladen, Loop 8, Beatjump 4) ohne Fenster auf dem
-/// Bildschirm als PNG in zwei Größen (<pfad>-640x300.png Loop aus, <pfad>-480x260.png Loop an) und beendet sich.
+/// Nur Selbsttest: MIX741_SHOT=deck:<pfad.png> rendert Deck A (Track mit Kommentar und Tags, Loop 8, Beatjump 4) ohne
+/// Fenster auf dem Bildschirm als PNG: <pfad>-640x300.png Loop aus, <pfad>-480x260.png Loop an,
+/// <pfad>-640x300-compact.png kompakt (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge), und beendet sich.
 @MainActor
 enum DeckShot {
     static func runIfRequested() {
@@ -609,22 +668,35 @@ enum DeckShot {
         var base = String(spec.dropFirst(5))
         if base.hasSuffix(".png") { base.removeLast(4) }
         NSApplication.shared.setActivationPolicy(.prohibited)   // kein Dock-Symbol, kein Fokuswechsel
+        // nie das Interface einer laufenden Live-Session: Routing nur für diesen Prozess auf ein eingebautes 2-Kanal-Gerät
+        let devs = MixEngine.outputDevices()
+        let dev = devs.first { $0.channels == 2 && $0.name.localizedCaseInsensitiveContains("speaker") } ?? devs.first { $0.channels < 8 }
+        UserDefaults.standard.setVolatileDomain(["deviceUID": dev?.uid ?? "-", "mixerMode": MixerMode.internalMixer.rawValue,
+                                                 "sampleRate": 0.0, "bufferSize": 0, "masterVolume": 0.0],
+                                                forName: UserDefaults.argumentDomain)
         let mix = MixModel()
         mix.engine.stop()   // kein Ton, Gerät sofort wieder frei
+        // feste Ansicht, unabhängig von gespeicherten Einstellungen (Selbsttest speichert nichts)
+        mix.prefs.ui.showAllDeckRows()
+        mix.prefs.ui.tagSeparators = "·"
+        mix.prefs.ui.tagHighlight = true
         var t = Track(key: "shot", path: "/dev/null")
         t.title = "Deck Size Shot"; t.artist = "MINOS-741"; t.bpm = 128; t.musicalKey = 9; t.duration = 300
+        t.comment = "long build, vocal at 2:10 – mix out before the break, works after slow acid"
+        t.comment2 = "peak·dark·hypnotic·vocal·acid"
         let cues = [Cue(name: "", kind: .cue, startMs: 1000, lengthMs: 0, hotcue: 0),
                     Cue(name: "", kind: .cue, startMs: 30000, lengthMs: 0, hotcue: 1),
                     Cue(name: "", kind: .loop, startMs: 60000, lengthMs: 3750, hotcue: 3)]
         var paths: [String] = []
-        for (w, h, loop) in [(640.0, 300.0, false), (480.0, 260.0, true)] {
+        for (w, h, loop, compact) in [(640.0, 300.0, false, false), (480.0, 260.0, true, false), (640.0, 300.0, false, true)] {
+            mix.prefs.ui.compactDecks = compact
             mix.updateDeck(0) {
                 $0.track = t; $0.duration = 300; $0.grid = BeatGrid(anchor: 1, bpm: 128)
                 $0.phraseTarget = 1 - 60.0 / 128   // Phrasen-Vorschlag −1 (roter PHRASE-Knopf in der Grid-Zeile)
                 $0.hotcues = Dictionary(uniqueKeysWithValues: cues.map { ($0.hotcue, $0) })
                 $0.loopSize = 8; $0.jumpSize = 4; $0.loopActive = loop
             }
-            let path = "\(base)-\(Int(w))x\(Int(h)).png"
+            let path = "\(base)-\(Int(w))x\(Int(h))\(compact ? "-compact" : "").png"
             render(mix: mix, size: CGSize(width: w, height: h), to: path)
             paths.append(path)
         }
