@@ -9,19 +9,20 @@ import MixEngine
 final class AnalysisJobHandler: OverviewJobHandler, @unchecked Sendable {
     let store: AnalysisStore
     private let lock = NSLock()
-    private var wanted: [String: (fields: TrackAnalysis.Fields, replace: Bool)] = [:]
+    private var wanted: [String: Wanted] = [:]
+    struct Wanted { var fields: TrackAnalysis.Fields; var replace: Bool; var octave: ClosedRange<Double> }
 
     init(store: AnalysisStore) { self.store = store }
 
-    func set(_ key: String, fields: TrackAnalysis.Fields, replace: Bool) { lock.lock(); wanted[key] = (fields, replace); lock.unlock() }
-    private func take(_ key: String) -> (fields: TrackAnalysis.Fields, replace: Bool)? { lock.lock(); defer { lock.unlock() }; return wanted[key] }
+    func set(_ key: String, _ w: Wanted) { lock.lock(); wanted[key] = w; lock.unlock() }
+    private func take(_ key: String) -> Wanted? { lock.lock(); defer { lock.unlock() }; return wanted[key] }
 
     func isDone(_ job: OverviewJobs.Job) -> Bool { take(job.key) == nil }
 
     func run(_ job: OverviewJobs.Job, checkpoint: () throws -> Void) throws {
         guard let w = take(job.key) else { return }
         let t0 = Date()
-        let r = try TrackAnalyzer.analyze(url: URL(fileURLWithPath: job.path), checkpoint: checkpoint)
+        let r = try TrackAnalyzer.analyze(url: URL(fileURLWithPath: job.path), octave: w.octave, checkpoint: checkpoint)
         if MixController.debug {
             print(String(format: "[analyze] %.1f s · bpm %.3f (%.2f) · anchor %.3f (phrase %.2f) · key %@ (%.2f) · loud %+.2f dB · %@",
                          Date().timeIntervalSince(t0), r.bpm, r.tempoConfidence, r.anchor, r.phraseConfidence,
@@ -47,6 +48,8 @@ final class Analyses {
     @ObservationIgnored weak var library: LibraryStore?
     /// Einstellung: Ergebnisse auch in die Collection-Datei schreiben
     @ObservationIgnored var writeBack: () -> Bool = { false }
+    /// Einstellung: Untergrenze der BPM-Oktave
+    @ObservationIgnored var bpmLow: () -> Double = { TrackAnalyzer.defaultOctave.lowerBound }
     @ObservationIgnored private var changed: Set<String> = []
     @ObservationIgnored private var flushPending = false
     @ObservationIgnored private var decksPlaying = false
@@ -71,11 +74,13 @@ final class Analyses {
     func enqueue(_ tracks: [Track], refresh: Bool) {
         var list: [OverviewJobs.Job] = []
         var seen: Set<String> = []
+        let lo = bpmLow()
+        let octave = TrackAnalyzer.octaveRange(lo...(2 * lo))
         for t in tracks where !t.path.isEmpty && t.fileExists && seen.insert(t.key).inserted {
             let full = refresh && !t.locked
             let fields: TrackAnalysis.Fields = full ? .all : TrackAnalysis.missing(in: t)
             guard !fields.isEmpty else { continue }
-            handler.set(t.key, fields: fields, replace: full)
+            handler.set(t.key, .init(fields: fields, replace: full, octave: octave))
             list.append(.init(key: t.key, path: t.path, explicit: true, refresh: refresh))
         }
         guard !list.isEmpty else {

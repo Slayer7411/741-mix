@@ -619,6 +619,10 @@
 "Analyse abbrechen" = "Cancel analysis";
 "Analysiert: %lld Tracks" = "Analyzed: %lld tracks";
 "Analyse abgebrochen" = "Analysis cancelled";
+"Analyse" = "Analysis";
+"BPM-Bereich ab %lld" = "BPM range from %lld";
+"BPM-Bereich bis %lld" = "BPM range to %lld";
+"genau eine oktave: das tempo wird in den bereich gefaltet (z. b. 100–200: 96 -> 192). gilt für analysieren / neu analysieren." = "exactly one octave: the tempo is folded into the range (e.g. 100–200: 96 -> 192). applies to analyze / re-analyze.";
 "%lld nicht lesbar" = "%lld unreadable";
 "Nichts zu analysieren: Tempo, Grid, Tonart und Lautheit sind vorhanden" = "Nothing to analyze: tempo, grid, key and loudness are present";
 "analysiert von MINOS-741 (Tempo, Grid, Tonart, Lautheit ganz oder teilweise)" = "analyzed by MINOS-741 (tempo, grid, key, loudness in whole or in part)";

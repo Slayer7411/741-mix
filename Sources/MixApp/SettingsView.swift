@@ -529,6 +529,19 @@ struct WaveformSettings: View {
                 Text("vorschau unter dem baum (gewählter track). spalte „Cover“ in der liste: rechtsklick auf die spaltenköpfe. bild aus der datei, sonst cover / folder / front.jpg im ordner, zwischengespeichert in ~/Library/Caches/MINOS-741/artwork.")
                     .settingsHint()
             }
+            Section("Analyse") {
+                // genau eine Oktave: jede Grenze stellt die andere mit
+                Stepper(value: Binding(get: { mix.prefs.ui.analysisBpmLow }, set: { mix.prefs.ui.analysisBpmLow = max(40, min(150, $0)) }),
+                        in: 40...150, step: 1) {
+                    Text("BPM-Bereich ab \(Int(mix.prefs.ui.analysisBpmLow))")
+                }
+                Stepper(value: Binding(get: { 2 * mix.prefs.ui.analysisBpmLow }, set: { mix.prefs.ui.analysisBpmLow = max(40, min(150, $0 / 2)) }),
+                        in: 80...300, step: 2) {
+                    Text("BPM-Bereich bis \(Int(2 * mix.prefs.ui.analysisBpmLow))")
+                }
+                Text("genau eine oktave: das tempo wird in den bereich gefaltet (z. b. 100–200: 96 -> 192). gilt für analysieren / neu analysieren.")
+                    .settingsHint()
+            }
             Section("Collection prüfen") {
                 Toggle("Beim Start prüfen", isOn: $mix.prefs.ui.checkOnStart)
                 Toggle("Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen", isOn: $mix.prefs.ui.checkMusicFolders)
