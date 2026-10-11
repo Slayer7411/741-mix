@@ -265,7 +265,7 @@ enum SelfTest {
 
 /// Nur Bild (MIX741_SHOT=wave:<png>, Selbsttest): die Wellenform-Ebene eines Decks offscreen rendern – kein Fenster,
 /// kein Audio, keine Controller. Oben der Zoom aus den Einstellungen, unten 4× weiter heraus; Grid-Anker links im Bild,
-/// Spielkopf in einem 4-Beat-Loop, zwei Hotcues. Erster Track der Collection mit 120–140 BPM und Grid, wie im Selbsttest.
+/// Spielkopf in einem 4-Beat-Loop, zwei Hotcues, darunter die Übersicht. Erster Track der Collection mit 120–140 BPM und Grid, wie im Selbsttest.
 /// Optional: MIX741_SHOT_TRACK (Teil von Interpret/Titel/Pfad), MIX741_SHOT_AT (Sekunden, Spielkopf, ohne Loop),
 /// MIX741_SHOT_SPAN (Sekunden je Seite), MIX741_SHOT_STYLE (Komma-Liste: 3band, spectrum, fine, fine-mix, mono →
 /// je Stil zwei Streifen untereinander, beschriftet), MIX741_SHOT_PALETTE (bone, orange, blue, classic), MIX741_SHOT_BOOST.
@@ -323,8 +323,8 @@ enum WaveShot {
         let loop = at == nil && grid != nil
             ? (active: true, start: grid!.time(ofBeat: 4), end: grid!.time(ofBeat: 8)) : (active: false, start: 0.0, end: 0.0)
         let looks = (env["MIX741_SHOT_STYLE"] ?? "settings").split(separator: ",").map { look(String($0), ui) }
-        let w: CGFloat = 1200, h: CGFloat = 180, gap: CGFloat = 8, label: CGFloat = 18, scale: CGFloat = 2
-        let rowH = (label + h * 2 + gap * 2)
+        let w: CGFloat = 1200, h: CGFloat = 180, gap: CGFloat = 8, label: CGFloat = 18, scale: CGFloat = 2, oh: CGFloat = 48
+        let rowH = (label + h * 2 + oh + gap * 3)
         let totalH = rowH * CGFloat(looks.count)
         guard let ctx = CGContext(data: nil, width: Int(w * scale), height: Int(totalH * scale), bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw ShotError.context }
@@ -363,6 +363,13 @@ enum WaveShot {
                 ctx.translateBy(x: 0, y: top - label - h - CGFloat(i) * (h + gap))
                 view.layer?.render(in: ctx)
                 ctx.restoreGState()
+            }
+            // Übersicht (ganzer Track) darunter
+            if let img = wf.overview {
+                let r = CGRect(x: 0, y: top - label - h * 2 - gap * 2 - oh, width: w, height: oh)
+                ctx.setFillColor(NSColor(Theme.wave).cgColor)
+                ctx.fill(r)
+                ctx.draw(img, in: r)
             }
         }
         guard let img = ctx.makeImage(),

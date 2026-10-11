@@ -473,8 +473,14 @@ struct WaveformSettings: View {
                     ForEach(WaveformPalette.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 .disabled(fine)
-                if fine {
+                if mix.prefs.ui.waveformStyle != .mono {
                     sliderRow("Höhen-Betonung", $mix.prefs.ui.waveformHighBoost, 0...2, step: 0.25, format: "%.2f")
+                }
+                if !fine, mix.prefs.ui.waveformStyle == .threeBand {
+                    Text("Bass < 250 Hz hinten · Mitten 250 Hz – 4 kHz · Höhen > 4 kHz vorn, je Band eigene Amplitude. Das stärkste Band reicht bis zum echten Pegel.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if fine {
                     Text("Sub orange · Bass/Kick rot · Mitten grün, obere Mitten gelbgrün · kurze Höhen (geschlossene Hats) blau · gehaltene Höhen (offene Hats, Ride) hellblau. Jedes Band gegen den eigenen Track normiert, Höhe = echter Pegel.")
                         .font(.caption).foregroundStyle(.secondary)
                 }

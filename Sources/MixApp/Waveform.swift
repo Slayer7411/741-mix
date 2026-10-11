@@ -27,10 +27,10 @@ final class RenderedWaveform: @unchecked Sendable {
         var low: RGB, mid: RGB, high: RGB
         static func of(_ p: WaveformPalette) -> Colors {
             switch p {
-            case .bone: Colors(low: RGB(r: 0.30, g: 0.27, b: 0.25), mid: RGB(r: 0.58, g: 0.54, b: 0.50), high: RGB(r: 0.90, g: 0.88, b: 0.85))
-            case .orange: Colors(low: RGB(r: 0.78, g: 0.22, b: 0.06), mid: RGB(r: 1.0, g: 0.58, b: 0.14), high: RGB(r: 1.0, g: 0.92, b: 0.78))
-            case .blue: Colors(low: RGB(r: 0.10, g: 0.32, b: 0.95), mid: RGB(r: 0.98, g: 0.62, b: 0.20), high: RGB(r: 1, g: 1, b: 1))
-            case .classic: Colors(low: RGB(r: 1.0, g: 0.22, b: 0.10), mid: RGB(r: 0.25, g: 0.90, b: 0.40), high: RGB(r: 0.35, g: 0.45, b: 1.0))
+            case .bone: Colors(low: RGB(r: 0.36, g: 0.33, b: 0.30), mid: RGB(r: 0.64, g: 0.60, b: 0.55), high: RGB(r: 0.95, g: 0.93, b: 0.88))
+            case .orange: Colors(low: RGB(r: 0.66, g: 0.15, b: 0.04), mid: RGB(r: 1.0, g: 0.60, b: 0.12), high: RGB(r: 1.0, g: 0.96, b: 0.88))
+            case .blue: Colors(low: RGB(r: 0.09, g: 0.28, b: 0.90), mid: RGB(r: 1.0, g: 0.60, b: 0.18), high: RGB(r: 1, g: 1, b: 1))
+            case .classic: Colors(low: RGB(r: 0.95, g: 0.18, b: 0.08), mid: RGB(r: 0.22, g: 0.88, b: 0.36), high: RGB(r: 0.55, g: 0.68, b: 1.0))
             }
         }
     }
@@ -72,6 +72,25 @@ final class RenderedWaveform: @unchecked Sendable {
         let b = c.low.b * lo + c.mid.b * mi + c.high.b * hi
         let m = max(r, g, b, 0.0001)
         return RGB(r: r / m, g: g / m, b: b / m)
+    }
+
+    /// Spektrum-Farbe aus den Band-Höhen (gleiche Gewichtung wie die Schichten)
+    private static func spectrum(_ h: WaveBands.Heights, _ c: Colors) -> RGB {
+        spectrum(CGFloat(h.low * h.low), CGFloat(h.mid * h.mid), CGFloat(h.high * h.high), c)
+    }
+
+    /// Übersichts-Spalte aus den Band-Höhen: Spitze = Maximum, Bänder nach Pegel gewichtet gemittelt (das Maximum
+    /// über ~80 Blöcke träfe jede Hat und färbte alles hell)
+    private static func bandColumn(env: [Float], bands: [WaveBands.Heights], from: Int, to: Int) -> (pk: CGFloat, h: WaveBands.Heights) {
+        let n = env.count
+        let s = max(0, min(n - 1, from)), e = max(s + 1, min(n, to))
+        var pk: Float = 0, sum: Float = 0, h = WaveBands.Heights.zero
+        for i in s..<e {
+            let p = env[i], b = bands[i]
+            pk = max(pk, p); sum += p; h.low += p * b.low; h.mid += p * b.mid; h.high += p * b.high
+        }
+        guard sum > 0 else { return (0, .zero) }
+        return (CGFloat(pk), WaveBands.Heights(low: h.low / sum, mid: h.mid / sum, high: h.high / sum))
     }
 
     /// Spalte → (Spitze, Bass-, Mitten-, Höhenanteil) über mehrere Blöcke (für die Übersicht)
@@ -131,7 +150,8 @@ final class RenderedWaveform: @unchecked Sendable {
         return order.map { (cg(body[$0]!.0), body[$0]!.1 as CGPath) } + highs.values.map { (cg($0.0), $0.1 as CGPath) }
     }
 
-    private static func chunk(_ a: TrackAudio, env: [Float], range: Range<Int>, style: WaveformStyle, colors: Colors, fine: Fine?) -> [(CGColor, CGPath)] {
+    private static func chunk(_ a: TrackAudio, env: [Float], range: Range<Int>, style: WaveformStyle, colors: Colors, fine: Fine?,
+                              bands: [WaveBands.Heights]?) -> [(CGColor, CGPath)] {
         if let fine { return fineChunk(a, env: env, range: range, fine: fine) }
         let dt = 1 / TrackAudio.blocksPerSecond
         let pk = range.map { CGFloat(env[$0]) }
@@ -139,6 +159,13 @@ final class RenderedWaveform: @unchecked Sendable {
         case .mono:
             return [(cg(colors.mid), outline(pk, dt: dt))]
         case .threeBand:
+            // drei eigene Amplituden übereinander: Bass hinten, Mitten, Höhen vorn
+            if let bands {
+                let b = bands[range]
+                let lo = zip(pk, b).map { $0 * CGFloat($1.low) }, mi = zip(pk, b).map { $0 * CGFloat($1.mid) }
+                let hi = zip(pk, b).map { $0 * CGFloat($1.high) }
+                return [(cg(colors.low), outline(lo, dt: dt)), (cg(colors.mid), outline(mi, dt: dt)), (cg(colors.high), outline(hi, dt: dt))]
+            }
             let mid = (0..<range.count).map { pk[$0] * CGFloat(a.mid[range.lowerBound + $0] + a.high[range.lowerBound + $0]).squareRoot() }
             let high = (0..<range.count).map { pk[$0] * Self.highLevel(a.high[range.lowerBound + $0]) }
             return [(cg(colors.low), outline(pk, dt: dt)), (cg(colors.mid), outline(mid, dt: dt)), (cg(colors.high), outline(high, dt: dt))]
@@ -147,7 +174,7 @@ final class RenderedWaveform: @unchecked Sendable {
             var paths: [Int: (RGB, CGMutablePath)] = [:]
             for k in 0..<range.count {
                 let i = range.lowerBound + k
-                var c = spectrum(CGFloat(a.low[i]), CGFloat(a.mid[i]), CGFloat(a.high[i]), colors)
+                var c = bands.map { spectrum($0[i], colors) } ?? spectrum(CGFloat(a.low[i]), CGFloat(a.mid[i]), CGFloat(a.high[i]), colors)
                 let q = { (v: CGFloat) in (v * 4).rounded() / 4 }
                 c = RGB(r: q(c.r), g: q(c.g), b: q(c.b))
                 let key = Int(c.r * 4) * 25 + Int(c.g * 4) * 5 + Int(c.b * 4)
@@ -210,12 +237,15 @@ final class RenderedWaveform: @unchecked Sendable {
         let env = envelope(a)
         let fine = style == .spectrum && detail != .simple && a.spectrum.count >= a.peak.count && !a.peak.isEmpty
             ? Fine(a.spectrum, highBoost: highBoost, layers: detail == .fine) : nil
+        // Band-Höhen aus dem feinen Spektrum (3-Band, Spektrum 3 Bänder); fehlt es, die alten Anteile
+        let bands = fine == nil && style != .mono && a.spectrum.count >= a.peak.count && !a.peak.isEmpty
+            ? WaveBands.heights(a.spectrum, highBoost: highBoost) : nil
         let dt = 1 / TrackAudio.blocksPerSecond
         var chunks: [Chunk] = []
         var b0 = 0
         while b0 < env.count {
             let r = b0..<min(env.count, b0 + chunkBlocks)
-            chunks.append(Chunk(t0: Double(b0) * dt, layers: chunk(a, env: env, range: r, style: style, colors: colors, fine: fine)))
+            chunks.append(Chunk(t0: Double(b0) * dt, layers: chunk(a, env: env, range: r, style: style, colors: colors, fine: fine, bands: bands)))
             b0 = r.upperBound
         }
         // Übersicht
@@ -233,6 +263,19 @@ final class RenderedWaveform: @unchecked Sendable {
                     if fine.layers, c.high > 0.02 {
                         ctx.setFillColor(cg(c.highColor))
                         ctx.fill(CGRect(x: CGFloat(x), y: mid - pk * c.high * mid, width: 1, height: pk * c.high * mid * 2))
+                    }
+                    continue
+                }
+                if let bands {
+                    let (pk, h) = bandColumn(env: env, bands: bands, from: from, to: to)
+                    let mid = CGFloat(oh) / 2
+                    let bars: [(CGFloat, RGB)] = style == .threeBand
+                        ? [(CGFloat(h.low), colors.low), (CGFloat(h.mid), colors.mid), (CGFloat(h.high), colors.high)]
+                        : [(1, spectrum(h, colors))]
+                    for (v, c) in bars {
+                        let hh = max(0.5, pk * v * mid)
+                        ctx.setFillColor(cg(c))
+                        ctx.fill(CGRect(x: CGFloat(x), y: mid - hh, width: 1, height: hh * 2))
                     }
                     continue
                 }
