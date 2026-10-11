@@ -234,7 +234,8 @@ struct Reverb {
     /// hpP/lpP 0…1: Hochpass 20 Hz…8 kHz (24 dB), Tiefpass 500 Hz…20 kHz – so entsteht z. B. ein heller Swipe aus den Höhen.
     /// `gain` = Hall-Pegel linear (Einstellung), `bright` 0…1 = Helligkeit, `preS` = Vorverzögerung in Sekunden.
     void run(float *L, float *R, int n, float size, float level, float wet, float hpP, float lpP,
-             float gain, float bright, float preS, bool on, bool loud) {
+             float gain, float bright, float preS, bool on, bool loud, bool freeze = false) {
+        if (on && freeze) { size = 1; level = 0; }   // Freeze: Eingang zu, Nachhall fast unendlich
         if (hpP != lastHP) {
             lastHP = hpP;
             hpOn = hpP >= 0.01f;
@@ -340,6 +341,208 @@ struct Reverb {
     }
 };
 
+// ---------- Reverb (Allpass-Ring, Standardtyp) ----------
+// Eingang stereo -> Filter (HP/LP-Regler, Tiefen-Schnitt nach Helligkeit) -> Vorverzögerung -> Diffusor (4 Allpässe je Kanal)
+// -> Ring aus zwei Hälften (L, R) in Achter-Form: je Hälfte Allpass -> Leitung -> Dämpfung (Tiefen-/Höhenregal, 1-Pol)
+// -> Allpass -> Leitung, deren Ausgang speist die andere Hälfte. Alle 8 Leitungen langsam moduliert (ein LFO, 8 Phasen),
+// Bruchteil per Allpass gelesen. Größe: Basislänge 9 … 44 ms (gleitet), Nachhall 0,35 … 7 s, Diffusion und Modulation steigen mit.
+// Dämpfung als Regal: Höhen klingen schneller ab, verschwinden nicht. Freeze: Eingang zu, Ring verlustfrei – Fahne steht.
+constexpr int kRcLines = 8;                                   // je Hälfte: Allpass, Leitung, Allpass, Leitung
+constexpr float kRcRatio[4] = {0.43f, 1.0f, 0.71f, 1.37f};    // Länge ÷ Basislänge
+constexpr float kRcRatioSum = 0.43f + 1.0f + 0.71f + 1.37f;
+constexpr float kRcSpread = 1.13f;                            // rechte Hälfte länger: L/R unkorreliert
+constexpr double kRcBaseMs[2] = {9.0, 44.0};                  // Basislänge bei Größe 0 / 1
+constexpr int kRcDiffN = 4;
+constexpr float kRcDiffMs[2][kRcDiffN] = {{2.3f, 3.7f, 5.9f, 8.9f}, {2.6f, 4.1f, 6.4f, 9.6f}};
+constexpr float kRcDiffG[kRcDiffN] = {0.65f, 0.65f, 0.55f, 0.55f};
+constexpr double kRcLfoHz = 0.7;
+constexpr double kRcGlideS = 0.12;                            // Leitungslängen folgen der Größe (Zeitkonstante)
+constexpr float kRcTrim = 0.53f;                              // Pegelabgleich zum FDN (rosa Rauschen, Gruppe, volles D/W)
+
+inline double reverbClassicT60(double size) { return 0.35 * std::pow(20.0, std::clamp(size, 0.0, 1.0)); }
+
+struct ReverbClassic {
+    static constexpr int kPad = 160;                          // Abstand der Leitungen im Puffer (Cache-Sätze)
+    std::vector<float> buf; int off[kRcLines] = {}; unsigned mask[kRcLines] = {};
+    std::vector<float> dbuf; int doff[2][kRcDiffN] = {}, dlen[2][kRcDiffN] = {}; unsigned dmask[2][kRcDiffN] = {};
+    unsigned w = 0;                                           // Schreibzähler (läuft über, Masken schneiden zu)
+    float base[2] = {}, baseT[2] = {};                        // Basislänge je Hälfte in Samples (aktuell, Ziel)
+    float glide = 0, depth = 0, ph = 0, phStep = 0;
+    float g1 = 0, g2 = 0;                                     // Allpässe im Ring
+    float loopG[2] = {}, hiA[2] = {}, loA[2] = {};            // je Hälfte: Ring-Gain, Regal-Verstärkung Höhen/Tiefen
+    float hiK = 0, loK = 0;                                   // 1-Pol (TPT): g/(1+g)
+    float hiS[2] = {}, loS[2] = {}, fb[2] = {}, apY[kRcLines] = {};
+    float inGain = 0, frz = 0;
+    Biquad hp, lp, lowCut;
+    std::vector<float> preL, preR; int preW = 0; float preSm = -1;
+    float lastHP = -1, lastLP = -1, lastBright = -1, shelfKey[3] = {-1, -1, -1};
+    bool hpOn = false, lpOn = false;
+    float send = 0, tail = 0;
+    double fs = 44100;
+    bool active() const { return send > 0.0005f || tail > 1e-5f; }
+
+    void init(double rate) {
+        fs = rate;
+        preL.assign(size_t(fs * 0.2) + 1, 0); preR.assign(preL.size(), 0); preW = 0;
+        auto pow2 = [](int n) { unsigned p = 1; while (p < unsigned(n)) p *= 2; return p; };
+        float maxDepth = float(1.2e-3 * fs), maxBase = float(kRcBaseMs[1] * 1e-3 * fs) * kRcSpread;
+        int total = 0;
+        for (int j = 0; j < kRcLines; j++) {
+            unsigned len = pow2(int(kRcRatio[j & 3] * maxBase + maxDepth) + 8);
+            off[j] = total; mask[j] = len - 1; total += int(len) + kPad;
+        }
+        buf.assign(size_t(total), 0);
+        total = 0;
+        for (int c = 0; c < 2; c++)
+            for (int s = 0; s < kRcDiffN; s++) {
+                dlen[c][s] = std::max(1, int(std::lround(kRcDiffMs[c][s] * 1e-3 * fs)));
+                unsigned len = pow2(dlen[c][s] + 1);
+                doff[c][s] = total; dmask[c][s] = len - 1; total += int(len) + kPad;
+            }
+        dbuf.assign(size_t(total), 0);
+        glide = float(1 - std::exp(-1 / (kRcGlideS * fs)));
+        phStep = float(kRcLfoHz / fs);
+        base[0] = baseT[0] = -1;   // erste Größe setzt direkt (kein Gleiten beim Start)
+        w = 0; lastBright = shelfKey[0] = -1;
+    }
+    void clear() {
+        std::fill(preL.begin(), preL.end(), 0); std::fill(preR.begin(), preR.end(), 0);
+        std::fill(buf.begin(), buf.end(), 0); std::fill(dbuf.begin(), dbuf.end(), 0);
+        for (int h = 0; h < 2; h++) hiS[h] = loS[h] = fb[h] = 0;
+        for (float &v : apY) v = 0;
+        send = tail = frz = 0;
+    }
+    /// D Samples zurück, Bruchteil per Allpass (Betrag 1 bei allen Frequenzen: Freeze verliert nichts, Höhen bleiben)
+    inline float rd(int j, float D) {
+        const float *b = buf.data() + off[j];
+        int M = int(D - 0.5f); float fr = D - float(M), eta = (1 - fr) / (1 + fr);
+        unsigned r = w - unsigned(M);
+        float y = eta * (b[r & mask[j]] - apY[j]) + b[(r - 1) & mask[j]];
+        apY[j] = y;
+        return y;
+    }
+    /// Abgriff (linear), D Samples zurück
+    inline float tap(int j, float D) const {
+        const float *b = buf.data() + off[j];
+        int di = int(D); float f = D - float(di);
+        unsigned r = w - unsigned(di);
+        float a = b[r & mask[j]], c = b[(r - 1) & mask[j]];
+        return a + (c - a) * f;
+    }
+    inline void put(int j, float v) { buf[size_t(off[j]) + (w & mask[j])] = v; }
+    static inline float lfo(float p) { p -= float(int(p)); float t = 2 * p - 1; return 4 * t * (1 - std::fabs(t)); }
+
+    /// Gains je Block: Nachhall aus der Größe, Regale aus Helligkeit und HP/LP, Freeze blendet auf verlustfrei
+    void tune(float size, float bright, float hpP, float lpP) {
+        double t60 = reverbClassicT60(size);
+        // Nachhall der Höhen: Anteil am Nachhall (Helligkeit, LP; Standard 0,4) und Luftdämpfung (große Räume dunkler)
+        double hfT60 = 1 / (1 / (t60 * (0.16 + 0.4 * bright) * (0.2 + 0.8 * lpP)) + 0.2);
+        double lfT60 = t60 * (1 - 0.85 * hpP);                          // Tiefen: HP-Regler
+        for (int h = 0; h < 2; h++) {
+            double sec = 3 * kRcRatioSum * base[h] / fs;               // Durchlauf einer Hälfte, × 3 (dB/20 je s Nachhall)
+            double lg = std::pow(10.0, -sec / t60), ha = std::pow(10.0, -sec * (1 / hfT60 - 1 / t60)), la = std::pow(10.0, -sec * (1 / lfT60 - 1 / t60));
+            loopG[h] = float(lg + (1 - lg) * frz);
+            hiA[h] = float(ha + (1 - ha) * frz); loA[h] = float(la + (1 - la) * frz);
+        }
+        double tau = t60 / 13.8, eff = tau * (1 - std::exp(-kRvBuildS / tau));   // gleiche Lautheit über die Größe (wie FDN)
+        inGain = float(1 / std::sqrt(eff));
+        g1 = 0.55f + 0.15f * size; g2 = 0.45f + 0.1f * size;
+        depth = float((0.12 + 0.45 * size) * (1 - 0.8 * frz) * 1e-3 * fs);   // Freeze: weniger Modulation, weniger Verlust beim Lesen
+    }
+
+    /// Schnittstelle wie Reverb::run (Send: trocken bleibt, Hall kommt dazu), dazu `freeze`
+    void run(float *L, float *R, int n, float size, float level, float wet, float hpP, float lpP,
+             float gain, float bright, float preS, bool on, bool loud, bool freeze) {
+        if (hpP != lastHP) {
+            lastHP = hpP;
+            hpOn = hpP >= 0.01f;
+            if (!hpOn) { hp.setIdentity(); hp.clearState(); } else hp.highpass(20 * std::pow(400.0, double(hpP)), 0.707, fs);
+        }
+        if (lpP != lastLP) {
+            lastLP = lpP;
+            lpOn = lpP <= 0.99f;
+            if (!lpOn) { lp.setIdentity(); lp.clearState(); } else lp.lowpass(500 * std::pow(40.0, double(lpP)), 0.707, fs);
+        }
+        bright = std::clamp(bright, 0.f, 1.f); size = std::clamp(size, 0.f, 1.f);
+        hpP = std::clamp(hpP, 0.f, 1.f); lpP = std::clamp(lpP, 0.f, 1.f);
+        if (bright != lastBright) { lastBright = bright; lowCut.highpass(120 * std::pow(300.0 / 120, double(bright)), 0.707, fs); }
+        if (bright != shelfKey[0] || hpP != shelfKey[1] || lpP != shelfKey[2]) {
+            shelfKey[0] = bright; shelfKey[1] = hpP; shelfKey[2] = lpP;
+            double fh = Biquad::safeF(600 * (0.75 + 0.5 * bright) * std::pow(5.0, double(lpP)), fs), fl = Biquad::safeF(150 + 850 * double(hpP), fs);
+            double gh = std::tan(kPi * fh / fs), gl = std::tan(kPi * fl / fs);
+            hiK = float(gh / (1 + gh)); loK = float(gl / (1 + gl));
+        }
+        float bt = float((kRcBaseMs[0] * std::pow(kRcBaseMs[1] / kRcBaseMs[0], double(size))) * 1e-3 * fs);
+        baseT[0] = bt; baseT[1] = bt * kRcSpread;
+        if (base[0] < 0) { base[0] = baseT[0]; base[1] = baseT[1]; }
+        float frzT = on && freeze ? 1.f : 0.f;
+        frz += std::clamp(frzT - frz, -float(n / (0.05 * fs)), float(n / (0.05 * fs)));
+        tune(size, bright, hpP, lpP);
+        // × (1 + 0,6 · Größe): großer Raum nicht leiser als der FDN (gemessen: Hall allein 0,80 / 0,62 / 0,51 bei 0,2 / 0,6 / 0,9)
+        float g = kReverbRef * kRcTrim * inGain * (1 + 0.6f * size) * gain;
+        if (loud) g *= std::pow(10.f, std::min(30.f, 16 * hpP + std::max(0.f, hpP - 0.5f) * 6) / 20);
+        int preLen = int(preL.size());
+        float preT = std::clamp(std::round(float(preS * fs)), 0.f, float(preLen - 2));
+        if (preSm < 0) preSm = preT;
+        float target = on && !freeze ? level : 0.f, peak = 0;
+        const float dl = 0.6f;   // Modulation der Leitungen ÷ Allpässe
+        for (int i = 0; i < n; i++) {
+            send += (target - send) * 0.002f;
+            float xl = L[i], xr = R[i];
+            if (hpOn) { xl = hp.tick(0, xl); xr = hp.tick(1, xr); }
+            if (lpOn) { xl = lp.tick(0, xl); xr = lp.tick(1, xr); }
+            xl = lowCut.tick(0, xl); xr = lowCut.tick(1, xr);
+            preL[preW] = xl; preR[preW] = xr;
+            preSm += (preT - preSm) * 0.0005f;
+            int d0 = int(preSm); float f = preSm - float(d0);
+            int r0 = preW - d0; if (r0 < 0) r0 += preLen;
+            int r1 = r0 - 1; if (r1 < 0) r1 += preLen;
+            float in[2] = {(preL[r0] + (preL[r1] - preL[r0]) * f) * g * send, (preR[r0] + (preR[r1] - preR[r0]) * f) * g * send};
+            if (++preW >= preLen) preW = 0;
+            // Diffusor (Allpässe, ganze Samples)
+            for (int c = 0; c < 2; c++) {
+                float x = in[c];
+                for (int s = 0; s < kRcDiffN; s++) {
+                    float *b = dbuf.data() + doff[c][s];
+                    float vM = b[(w - unsigned(dlen[c][s])) & dmask[c][s]], v = x + kRcDiffG[s] * vM;
+                    b[w & dmask[c][s]] = v; x = vM - kRcDiffG[s] * v;
+                }
+                in[c] = x;
+            }
+            base[0] += (baseT[0] - base[0]) * glide; base[1] += (baseT[1] - base[1]) * glide;
+            ph += phStep; if (ph >= 1) ph -= 1;
+            float nfb[2], len[kRcLines];
+            for (int h = 0; h < 2; h++) {
+                int j = h * 4;
+                float po = ph + 0.125f * float(h);
+                for (int k = 0; k < 4; k++) len[j + k] = base[h] * kRcRatio[k] + depth * (k & 1 ? dl : 1.f) * (1 + lfo(po + 0.25f * float(k)));
+                float u = in[h] + fb[1 - h];
+                float vM = rd(j, len[j]), v = u - g1 * vM;   // Allpass 1
+                put(j, v); u = vM + g1 * v;
+                float y = rd(j + 1, len[j + 1]);              // Leitung 1
+                put(j + 1, u); u = y;
+                float s = loS[h], t = (u - s) * loK, lo = t + s; loS[h] = lo + t; u += (loA[h] - 1) * lo;   // Tiefenregal
+                s = hiS[h]; t = (u - s) * hiK; lo = t + s; hiS[h] = lo + t; u = lo + hiA[h] * (u - lo);      // Höhenregal
+                vM = rd(j + 2, len[j + 2]); v = u + g2 * vM;  // Allpass 2
+                put(j + 2, v); u = vM - g2 * v;
+                y = rd(j + 3, len[j + 3]);                    // Leitung 2
+                put(j + 3, u);
+                nfb[h] = y * loopG[h];
+            }
+            fb[0] = nfb[0]; fb[1] = nfb[1];
+            // Ausgang: Abgriffe beider Hälften (Leitungen 1/2), Vorzeichen gemischt -> L/R unkorreliert
+            float ol = tap(1, len[1] * 0.31f) + tap(1, len[1] * 0.83f) - tap(3, len[3] * 0.47f) - tap(5, len[5] * 0.57f) + tap(7, len[7] * 0.19f);
+            float orr = tap(5, len[5] * 0.29f) + tap(5, len[5] * 0.79f) - tap(7, len[7] * 0.52f) - tap(1, len[1] * 0.61f) + tap(3, len[3] * 0.23f);
+            ol = (ol + in[0] * 0.5f) * 0.4f; orr = (orr + in[1] * 0.5f) * 0.4f;
+            w++;
+            L[i] += ol * wet; R[i] += orr * wet;
+            peak = std::max(peak, std::max(std::fabs(ol), std::fabs(orr)));
+        }
+        tail = peak;
+        if (!on && !active()) clear();
+    }
+};
+
 // ---------- Plugin (Audio Unit, VST3 – MixDSPPlugin.h) ----------
 // wie Delay/Reverb: aus = Eingang zu, Ausgang klingt aus; gerechnet wird, bis es 1 s (oder die vom Plugin gemeldete
 // Nachklingzeit, höchstens 30 s) unter -100 dB war
@@ -387,7 +590,7 @@ struct PluginSlot {
 };
 
 struct FXChain {   // eine FX-Unit für ein Deck
-    SweepFilter filter; Delay delay; Reverb reverb; PluginSlot plug;
+    SweepFilter filter; Delay delay; Reverb reverb; ReverbClassic classic; PluginSlot plug;
 };
 
 struct TrackSlot { const float *L = nullptr, *R = nullptr; int64_t frames = 0; double rate = 44100; double start = 0; };
@@ -566,8 +769,9 @@ static void readResampled(Deck &d, float *L, float *R, int n, double step) {
 static void healDeck(Deck &d) {
     for (Biquad *b : {&d.eqL, &d.eqM, &d.eqH, &d.chanFilter.bq}) b->clearState();
     for (auto &c : d.fx) {
-        c.filter.bq.clearState(); c.delay.clear(); c.reverb.clear();
-        for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp, &c.reverb.lowCut, &c.reverb.tilt}) b->clearState();   // Reverb::clear() lässt die Filter stehen
+        c.filter.bq.clearState(); c.delay.clear(); c.reverb.clear(); c.classic.clear();
+        for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp, &c.reverb.lowCut, &c.reverb.tilt,
+                          &c.classic.hp, &c.classic.lp, &c.classic.lowCut}) b->clearState();   // clear() lässt die Filter stehen
         if (c.plug.last) c.plug.resetPending.store(true);   // Plugin zurücksetzen lassen (Steuer-Thread), bis dahin trocken
     }
     d.stretch.reset();
@@ -624,7 +828,7 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     for (int u = 0; u < MDSP_FX_UNITS; u++) {
         d.fx[u].plug.sync();
         if (d.p[MD_FX1_ASSIGN + u].load() > 0.5f &&
-            (d.fx[u].delay.tail > 1e-5f || d.fx[u].reverb.tail > 1e-5f || d.fx[u].plug.active(e->fs))) fxTail = true;
+            (d.fx[u].delay.tail > 1e-5f || d.fx[u].reverb.tail > 1e-5f || d.fx[u].classic.tail > 1e-5f || d.fx[u].plug.active(e->fs))) fxTail = true;
     }
     if (!playing && !fxTail) {   // Deck steht, kein Hall/Echo-Rest → nichts rechnen
         d.rms.store(d.rms.load() * 0.8f); d.peak.store(d.peak.load() * 0.8f);
@@ -712,13 +916,16 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
             float a = fp[MDFX_DELAY_AMOUNT].load();
             c.delay.run(L, R, n, fp[MDFX_DELAY_SECONDS].load(), fp[MDFX_DELAY_FEEDBACK].load() * (0.4f + 0.6f * a), a * dw, e->fs, delayOn);
         }
-        if (reverbOn || c.reverb.active()) {
-            bool dwSend = fp[MDFX_REVERB_DWSEND].load() > 0.5f;
-            float amt = fp[MDFX_REVERB_AMOUNT].load();
-            c.reverb.run(L, R, n, fp[MDFX_REVERB_SIZE].load(), dwSend ? dw : 1.f, dwSend ? amt : amt * dw,
-                         fp[MDFX_REVERB_HP].load(), fp[MDFX_REVERB_LP].load(),
-                         fp[MDFX_REVERB_LEVEL].load(), fp[MDFX_REVERB_BRIGHT].load(), fp[MDFX_REVERB_PREDELAY].load(),
-                         reverbOn, dwSend);
+        // zwei Typen: der gewählte läuft, der andere klingt nach einem Wechsel aus
+        bool fdn = fp[MDFX_REVERB_TYPE].load() > 0.5f, onC = reverbOn && !fdn, onF = reverbOn && fdn;
+        if (onC || onF || c.classic.active() || c.reverb.active()) {
+            bool dwSend = fp[MDFX_REVERB_DWSEND].load() > 0.5f, frz = fp[MDFX_REVERB_FREEZE].load() > 0.5f;
+            float amt = fp[MDFX_REVERB_AMOUNT].load(), size = fp[MDFX_REVERB_SIZE].load(), hpP = fp[MDFX_REVERB_HP].load(),
+                  lpP = fp[MDFX_REVERB_LP].load(), lvl = fp[MDFX_REVERB_LEVEL].load(), br = fp[MDFX_REVERB_BRIGHT].load(),
+                  pre = fp[MDFX_REVERB_PREDELAY].load();
+            float level = dwSend ? dw : 1.f, wet = dwSend ? amt : amt * dw;
+            if (onC || c.classic.active()) c.classic.run(L, R, n, size, level, wet, hpP, lpP, lvl, br, pre, onC, dwSend, frz);
+            if (onF || c.reverb.active()) c.reverb.run(L, R, n, size, level, wet, hpP, lpP, lvl, br, pre, onF, dwSend, frz);
         }
         MDPlugin *pl = c.plug.sync();
         bool plugOn = pl && fp[MDFX_PLUGIN_ON].load() > 0.5f;
@@ -773,7 +980,7 @@ MDEngine *mdsp_create(double sampleRate) {
         d.stretch.presetDefault(2, float(sampleRate));
         primeStretch(d, 1, 1.0);   // interne Puffer einmal anlegen (nicht erst im Audio-Thread)
         for (auto &c : d.fx) {
-            c.delay.init(sampleRate); c.reverb.init(sampleRate);
+            c.delay.init(sampleRate); c.reverb.init(sampleRate); c.classic.init(sampleRate);
             c.plug.dryL.assign(kMaxFrames, 0); c.plug.dryR.assign(kMaxFrames, 0);
         }
     }

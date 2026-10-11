@@ -3,7 +3,7 @@ import Testing
 import MixDSP
 
 /// Echtzeit-Regeln des Kerns offline geprüft: keine NaN/Inf am Ausgang, keine Denormals, stabile Filter bei
-/// niedrigen Raten, Randfälle der Render-Schnittstelle. MIX741_BENCH=1: zusätzlich CPU-Messung je Block.
+/// niedrigen Raten, Randfälle der Render-Schnittstelle. MIX741_BENCH=1: zusätzlich CPU-Messung je Block (MIX741_BENCH_FDN=1: Hall-Typ FDN).
 private final class Engine {
     let e: OpaquePointer
     let fs: Double
@@ -173,6 +173,7 @@ private func allFinite(_ blocks: [[Float]]) -> Bool { blocks.allSatisfy { $0.all
 @Test(.enabled(if: ProcessInfo.processInfo.environment["MIX741_BENCH"] == "1"))
 func benchRenderCPU() {
     let seconds = Double(ProcessInfo.processInfo.environment["MIX741_BENCH_SECS"] ?? "") ?? 60
+    let fdn = ProcessInfo.processInfo.environment["MIX741_BENCH_FDN"] == "1"   // Hall-Typ FDN statt Allpass-Ring
     for (decks, fx, block) in [(2, false, 512), (2, false, 128), (4, true, 512), (4, true, 256), (4, true, 128), (4, true, 64)] {
         let c = Engine()
         var plug: OpaquePointer?
@@ -187,6 +188,7 @@ func benchRenderCPU() {
         if fx {
             for u in 0..<4 {
                 mdsp_set_fx(c.e, Int32(u), u % 2 == 0 ? MDFX_REVERB_ON : MDFX_DELAY_ON, 1)
+                mdsp_set_fx(c.e, Int32(u), MDFX_REVERB_TYPE, fdn ? 1 : 0)
             }
             var err = [CChar](repeating: 0, count: 256)
             let fcc = { (s: String) in s.utf8.reduce(UInt32(0)) { $0 << 8 | UInt32($1) } }

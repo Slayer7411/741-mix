@@ -3,7 +3,7 @@ import Testing
 import MixDSP
 import MixEngine
 
-/// Hall-Messbericht (nur mit MIX741_REVERB_REPORT=1): Nachhallzeit je Größe, Fahne (Höhen, Flachheit, Spitzen),
+/// Hall-Messbericht FDN (nur mit MIX741_REVERB_REPORT=1): Nachhallzeit je Größe, Fahne (Höhen, Flachheit, Spitzen),
 /// Stereo-Korrelation, Pegel beim Einschalten, Rechenzeit. MIX741_REVERB_TRACK=<datei> + MIX741_REVERB_WAV=<präfix>:
 /// echten Track mit Hall rendern (Einsatz, Drop, Fahne) und als WAV schreiben.
 private let report = ProcessInfo.processInfo.environment["MIX741_REVERB_REPORT"] == "1"
@@ -24,6 +24,7 @@ private final class Rig {
         mdsp_set_track(e, 0, left, right, Int64(frames), fs, 0)
         render()
         mdsp_set_param(e, 0, MD_FX1_ASSIGN, 1)
+        mdsp_set_fx(e, 0, MDFX_REVERB_TYPE, 1)   // dieser Bericht misst den FDN
     }
     deinit { mdsp_destroy(e); left.deallocate(); right.deallocate() }
 
