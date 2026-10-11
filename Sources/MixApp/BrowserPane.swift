@@ -656,7 +656,7 @@ struct TrackTable: View {
         .onChange(of: columns) {
             if let d = try? JSONEncoder().encode(columns) { UserDefaults.standard.set(d, forKey: "columns.\(model.name)") }
         }
-        .font(Theme.mono(11))
+        .font(twoLine ? Theme.mono(decks.prefs.ui.previewTextSize, decks.prefs.ui.previewTextBold ? .semibold : .regular) : Theme.mono(11))
         .scrollContentBackground(.hidden)
         .background(Theme.void)
         .background(TableViewFinder(controller: inlineCtl))

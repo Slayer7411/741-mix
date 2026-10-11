@@ -345,6 +345,12 @@
 "Spektrum (rot/grün/blau)" = "Spectrum (red/green/blue)";
 "wie Wellenform" = "like the waveform";
 "Vorschauen im Hintergrund berechnen" = "Compute previews in the background";
+"Schrift über dem Band" = "Text above the band";
+"Schrift halbfett" = "Semibold text";
+"Band" = "Band";
+"Voll" = "Full";
+"Gedämpft" = "Dimmed";
+"Leicht" = "Light";
 "immer (gedrosselt)" = "always (throttled)";
 "nur wenn kein Deck spielt" = "only while no deck plays";
 "aus" = "off";
@@ -530,3 +536,17 @@
 "Filter: %@ · Klick = anwenden, nochmal = lösen" = "Filter: %@ · click = apply, again = clear";
 "Favorit %lld: %@" = "Favorite %1$lld: %2$@";
 "Favorit %lld (Fokus-Bereich)" = "Favorite %lld (focused pane)";
+
+"Zeilen" = "Rows";
+"Zeilen je Deck" = "Rows per deck";
+"Zusatzinfos (Zeit, BPM, Code, Key)" = "Readouts (time, BPM, code, key)";
+"Phasenbalken" = "Phase bar";
+"Übersicht" = "Overview";
+"Transport (CUE, PLAY, SYNC …)" = "Transport (CUE, PLAY, SYNC …)";
+"Hotcues" = "Hotcues";
+"Loop-Größen" = "Loop sizes";
+"Beatjump" = "Beatjump";
+"Pitch-Fader" = "Pitch fader";
+"Grid-Werkzeuge" = "Grid tools";
+"Alle Zeilen" = "All rows";
+"auch im menü decks -> zeilen. wellenform und kopfzeile bleiben immer." = "also in the decks menu -> rows. waveform and header always stay.";
