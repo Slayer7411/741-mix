@@ -32,6 +32,7 @@ extension ShortcutID: Identifiable {
         case .toggleFourDecks: String(localized: "2 / 4 Decks")
         case .bigBrowser: String(localized: "Browser groß")
         case .bigBrowserKey: String(localized: "Browser groß (zweite Taste, nicht im Suchfeld)")
+        case .compactDecks: String(localized: "Kompakte Decks (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge)")
         case .zoomIn: String(localized: "Vergrößern")
         case .zoomOut: String(localized: "Verkleinern")
         case .zoomReset: String(localized: "Originalgröße")
@@ -151,6 +152,7 @@ struct AppActions {
         case .toggleMixer: mix.prefs.ui.showMixer.toggle()
         case .toggleFourDecks: mix.prefs.ui.showFourDecks.toggle()
         case .bigBrowser, .bigBrowserKey: browser.maximized.toggle()
+        case .compactDecks: mix.prefs.ui.compactDecks.toggle()
         case .zoomIn, .zoomOut, .zoomReset: ZoomControl.step(a, mix: mix)
         case .openCollection:
             let panel = NSOpenPanel()

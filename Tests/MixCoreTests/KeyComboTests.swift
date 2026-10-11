@@ -40,6 +40,7 @@ import Testing
     #expect(m.combo(.bigBrowserKey)?.symbols == "SPACE")
     #expect([m.combo(.zoomIn), m.combo(.zoomOut), m.combo(.zoomReset)].map { $0?.symbols } == ["⌘+", "⌘-", "⌘0"])
     #expect(ShortcutID.zoomIn.group == .view)
+    #expect(m.combo(.compactDecks)?.symbols == "⌥⌘K" && ShortcutID.compactDecks.group == .view)
     #expect(m.action(for: KeyCombo("y")) == .sync)
     #expect(m.combo(.favorite1)?.symbols == "⌃⌥1" && m.combo(.favorite6)?.symbols == "⌃⌥6")
     #expect(ShortcutID.favorite4.group == .browser && ShortcutID.favorite4.index == 3)

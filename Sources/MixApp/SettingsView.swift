@@ -334,11 +334,11 @@ struct DeckSettings: View {
             }
             Section("Zeilen je Deck") {
                 ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
-                    Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui.deckRows[keyPath: row.0] },
-                                                                  set: { mix.prefs.ui.deckRows[keyPath: row.0] = $0 }))
+                    Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui[keyPath: row.0] },
+                                                                  set: { mix.prefs.ui[keyPath: row.0] = $0 }))
                 }
-                Toggle("Grid-Werkzeuge", isOn: $mix.prefs.ui.showGridTools)
-                Text("auch im menü decks -> zeilen. wellenform und kopfzeile bleiben immer.").settingsHint()
+                Toggle("Kompakte Decks (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge)", isOn: $mix.prefs.ui.compactDecks)
+                Text("auch im menü decks -> zeilen / kompakte decks. ohne pitch-fader nimmt die wellenform die breite. wellenform und kopfzeile bleiben immer.").settingsHint()
             }
         }
     }

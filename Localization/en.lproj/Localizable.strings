@@ -599,12 +599,16 @@
 "Übersicht" = "Overview";
 "Transport (CUE, PLAY, SYNC …)" = "Transport (CUE, PLAY, SYNC …)";
 "Hotcues" = "Hotcues";
+"Hotcues (mit IN / OUT / RE)" = "Hotcues (with IN / OUT / RE)";
+"Kommentar" = "Comment";
 "Loop-Größen" = "Loop sizes";
 "Beatjump" = "Beatjump";
 "Pitch-Fader" = "Pitch fader";
 "Grid-Werkzeuge" = "Grid tools";
 "Alle Zeilen" = "All rows";
-"auch im menü decks -> zeilen. wellenform und kopfzeile bleiben immer." = "also in the decks menu -> rows. waveform and header always stay.";
+"Kompakte Decks" = "Compact decks";
+"Kompakte Decks (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge)" = "Compact decks (no pitch fader, hotcues, grid tools)";
+"auch im menü decks -> zeilen / kompakte decks. ohne pitch-fader nimmt die wellenform die breite. wellenform und kopfzeile bleiben immer." = "also in the decks menu -> rows / compact decks. without the pitch fader the waveform takes the width. waveform and header always stay.";
 
 /* eigene Analyse */
 "Analysieren" = "Analyze";
