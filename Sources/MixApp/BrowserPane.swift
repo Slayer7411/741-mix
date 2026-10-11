@@ -71,6 +71,11 @@ final class BrowserPaneModel: Identifiable {
     @ObservationIgnored private var sortedBase: [Track] = []
     @ObservationIgnored private var cacheKey: [AnyHashable] = []
     @ObservationIgnored private var cachedRows: [Track] = []
+    /// Identität der Tabelle: neu, wenn sich die Zeilen stark ändern (Quelle, Sortierung, Filter, Suche). SwiftUI
+    /// vergleicht sonst alte und neue Zeilen (Aufwand ~ Zeilen × Änderungen): Collection ⇄ Playlist bei 14k Tracks
+    /// ~2,5 s Hauptthread, neu aufbauen ~0,3 s. Kleine Änderungen (neue Werte, ein paar Tracks dazu/weg) behalten
+    /// Tabelle und Scrollposition. Gelesen nach `rows`, nicht beobachtet
+    @ObservationIgnored private(set) var tableGeneration = 0
 
     /// Gefilterte + sortierte Liste. Die Quelle wird einmal sortiert (14k Tracks ≈ 60 ms, TrackSort) und bei
     /// Suche, Tags und Rollen nur noch gefiltert – ein Tastendruck im Suchfeld kostet so ~5 ms statt der Sortierung.
@@ -83,7 +88,9 @@ final class BrowserPaneModel: Identifiable {
         }
         let key = baseKey + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0] as [AnyHashable]
         if key == cacheKey { return cachedRows }
-        cachedRows = filtered(sortedBase, separators: separators)
+        let rows = filtered(sortedBase, separators: separators)
+        if !ListChange.isSmall(from: cachedRows, to: rows, limit: 64) { tableGeneration += 1 }
+        cachedRows = rows
         cacheKey = key
         return cachedRows
     }
@@ -144,7 +151,7 @@ struct BrowserPane: View {
                 if model.source.isHistory {
                     HistoryTable(entries: historyEntries, model: model)
                 } else {
-                    TrackTable(rows: rows, model: model)
+                    TrackTable(rows: rows, generation: model.tableGeneration, model: model)
                 }
             }
             .frame(minWidth: 380.z)
@@ -520,6 +527,8 @@ struct TrackTable: View {
     @Environment(MixModel.self) private var decks
     @Environment(HistoryStore.self) private var history
     let rows: [Track]
+    /// BrowserPaneModel.tableGeneration zu genau diesen Zeilen (neu = Tabelle neu aufbauen statt vergleichen)
+    let generation: Int
     @Bindable var model: BrowserPaneModel
     @State private var columns = TableColumnCustomization<Track>()
     @State private var inlineCtl = InlineEditController()
@@ -694,6 +703,7 @@ struct TrackTable: View {
             cols7
             cols8
         }
+        .id(generation)
         .onAppear {
             if let d = UserDefaults.standard.data(forKey: "columns.\(model.name)"),
                let c = try? JSONDecoder().decode(TableColumnCustomization<Track>.self, from: Self.withNewColumnsFirst(PreviewColumn.placed(d))) { columns = c }
@@ -762,6 +772,13 @@ struct TrackTable: View {
         } primaryAction: { ids in
             // Return = Inline-Bearbeitung der gewählten Zeile, Doppelklick = ins Fokus-Deck laden
             if NSApp.currentEvent?.type == .keyDown { inlineCtl.beginFromKeyboard(ids) } else { load(ids, decks.focusedDeck) }
+        }
+        .onChange(of: generation) {
+            // neu aufgebaut: hatte die alte Tabelle den Fokus (Pfeiltasten), bekommt ihn die neue
+            DispatchQueue.main.async {
+                guard let tv = inlineCtl.table, let w = tv.window, w.firstResponder === w else { return }
+                w.makeFirstResponder(tv)
+            }
         }
         .onChange(of: model.selection) { browser.activePaneID = model.id }
         .onChange(of: browser.scrollRequest?.track) {

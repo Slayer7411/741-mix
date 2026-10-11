@@ -374,7 +374,7 @@ enum TagShot {
                 // Markierung ohne Filter: alle Zeilen, nur die Chips zeigen die gewählten Tags
                 let m = BrowserPaneModel(name: "Shot")
                 m.tags = mark.include
-                let (h, win) = host(TrackTable(rows: all, model: m), size: NSSize(width: 1400, height: 1000))
+                let (h, win) = host(TrackTable(rows: all, generation: 0, model: m), size: NSSize(width: 1400, height: 1000))
                 for _ in 0..<6 { h.layoutSubtreeIfNeeded(); spin(0.2) }
                 guard let tv = table(h) else { log("keine tabelle"); break }
                 if let c = tv.tableColumns.indices.first(where: { InlineEditController().field(ofColumn: $0, in: tv) == .comment2 }) {
