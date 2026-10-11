@@ -132,7 +132,7 @@ browser preview column. per track 320 points × 4 bytes (peak, bass / mid / high
 ## ◆ TAGS
 
 * `MixCore/Tags.swift` -> `Tags.split` (every separator character splits), `Tags.key` (case, accents, width folded), `TagFilter` (include all, exclude any, on keys), `TagIndex` (split once per comment 2 text, cleared when the separators change)
-* `MixApp/TagChips.swift` -> list cell = one `AttributedString` (one run per tag with background), no view per chip. clicks: `InlineEditController` hit-tests the x ranges of the chips (`TagChipsText.spans`, same font), only fully visible chips, upper half in two-line rows
+* `MixApp/TagChips.swift` -> list cell = one `AttributedString` (one run per tag with background), no view per chip. clicks: `InlineEditController` hit-tests the x ranges of the chips (`TagChipsText.spans`, same font and size as the table, two-line rows: size + weight from the settings), only fully visible chips, upper half in two-line rows
 * measured (14,160 tracks, 378 different comment 2 texts): split all 14.5 ms, filter 2 tags + 1 excluded ~3 ms, paging offscreen ~91 ms per page with chips, same as plain text
 
 ## ◆ CLOUD LIBRARY

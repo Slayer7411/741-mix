@@ -680,7 +680,7 @@ struct TrackTable: View {
         .onChange(of: columns) {
             if let d = try? JSONEncoder().encode(columns) { UserDefaults.standard.set(d, forKey: "columns.\(model.name)") }
         }
-        .font(twoLine ? Theme.mono(decks.prefs.ui.previewTextSize, decks.prefs.ui.previewTextBold ? .semibold : .regular) : Theme.mono(11))
+        .font(TagChipsText.Metrics.of(decks.prefs.ui).font)
         .scrollContentBackground(.hidden)
         .background(Theme.void)
         .background(TableViewFinder(controller: inlineCtl))
@@ -695,7 +695,7 @@ struct TrackTable: View {
             // Tag-Chip unter dem Klick, nur ganz sichtbare (abgeschnittene enden in „…“)
             inlineCtl.chipAt = { [decks] t, x, width in
                 let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: decks.prefs.ui.tagSeparators).tags
-                return TagChipsText.spans(tags: tags).firstIndex { $0.contains(x) && $0.upperBound <= width }.map { tags[$0] }
+                return TagChipsText.spans(tags: tags, .of(decks.prefs.ui)).firstIndex { $0.contains(x) && $0.upperBound <= width }.map { tags[$0] }
             }
             inlineCtl.twoLine = { [decks] in decks.prefs.ui.previewMode == .fullRow }
             inlineCtl.install()

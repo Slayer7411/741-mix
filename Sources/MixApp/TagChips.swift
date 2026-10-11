@@ -83,12 +83,28 @@ struct TagChipsText: View {
 
     /// Innenabstand je Seite: ein schmales Leerzeichen
     static let inset = "\u{2009}"
-    private static let font = NSFont(name: "IBMPlexMono-Regular", size: 11) ?? .monospacedSystemFont(ofSize: 11, weight: .regular)
-    @MainActor private static var widths: [String: CGFloat] = [:]
-    @MainActor private static func width(_ s: String) -> CGFloat {
-        if let w = widths[s] { return w }
+
+    /// Schrift der Tabelle: 11 pt, zweizeilig Größe und Gewicht aus den Einstellungen (Vorschau „ganze Zeile“)
+    struct Metrics: Hashable {
+        var size: CGFloat = 11
+        var bold = false
+        static func of(_ ui: UIPrefs) -> Metrics {
+            ui.previewMode == .fullRow ? Metrics(size: CGFloat(ui.previewTextSize), bold: ui.previewTextBold) : Metrics()
+        }
+        var font: Font { Theme.mono(size, bold ? .semibold : .regular) }
+        var nsFont: NSFont {
+            NSFont(name: bold ? "IBMPlexMono-SemiBold" : "IBMPlexMono-Regular", size: size)
+                ?? .monospacedSystemFont(ofSize: size, weight: bold ? .semibold : .regular)
+        }
+    }
+
+    @MainActor private static var widths: [Metrics: (NSFont, [String: CGFloat])] = [:]
+    @MainActor private static func width(_ s: String, _ m: Metrics) -> CGFloat {
+        var (font, cache) = widths[m] ?? (m.nsFont, [:])
+        if let w = cache[s] { return w }
         let w = (s as NSString).size(withAttributes: [.font: font]).width
-        widths[s] = w
+        cache[s] = w
+        widths[m] = (font, cache)
         return w
     }
 
@@ -115,12 +131,12 @@ struct TagChipsText: View {
         return out
     }
 
-    /// x-Bereiche der Chips ab dem linken Rand der Zelle (gleiche Schrift wie die Tabelle)
-    @MainActor static func spans(tags: [String]) -> [ClosedRange<CGFloat>] {
+    /// x-Bereiche der Chips ab dem linken Rand der Zelle (`m`: Schrift der Tabelle)
+    @MainActor static func spans(tags: [String], _ m: Metrics = Metrics()) -> [ClosedRange<CGFloat>] {
         var x: CGFloat = 0
-        let gap = width(" ")
+        let gap = width(" ", m)
         return tags.map { t in
-            let w = width(inset + t + inset)
+            let w = width(inset + t + inset, m)
             defer { x += w + gap }
             return x...(x + w)
         }

@@ -8,7 +8,8 @@ import MixEngine
 /// Browser-Bereich mit zwei gewählten und einem ausgeschlossenen Tag als PNG, Klicks auf Chip / neben den Chip
 /// (Filter, Auswahl, Inline-Bearbeitung), Filterzeit, Blättern durch die Collection (ms je Seite) ohne Spalte,
 /// mit schlichtem Text und mit Chips. Trennzeichen MIX741_SHOT_SEPS (Standard „·“), Tags MIX741_SHOT_TAGS („a|b“),
-/// MIX741_SHOT_FULLROW=1: Zeilen zweizeilig (Vorschau „ganze Zeile“), Klick ins Band darf nicht filtern.
+/// MIX741_SHOT_FULLROW=1: Zeilen zweizeilig (Vorschau „ganze Zeile“), Klick ins Band darf nicht filtern,
+/// Schriftgröße dort MIX741_SHOT_TEXT (Standard aus den Einstellungen).
 /// Collection nur gelesen, ohne Audio.
 @MainActor
 enum TagShot {
@@ -58,6 +59,8 @@ enum TagShot {
         restore()
         let fullRow = env["MIX741_SHOT_FULLROW"] == "1"
         mix.prefs.ui.previewMode = fullRow ? .fullRow : .off
+        if let s = env["MIX741_SHOT_TEXT"].flatMap(Double.init) { mix.prefs.ui.previewTextSize = s }
+        let metrics = TagChipsText.Metrics.of(mix.prefs.ui)
         mix.prefs.ui.previewBackground = false
         mix.prefs.ui.tagHighlight = true
         let seps = env["MIX741_SHOT_SEPS"] ?? "·"
@@ -69,7 +72,7 @@ enum TagShot {
         browser.separators = { seps }
         store.load()
         spin(120) { !store.tracks.isEmpty }
-        log("collection \(store.tracks.count) tracks · trennzeichen '\(seps)'")
+        log("collection \(store.tracks.count) tracks · trennzeichen '\(seps)' · schrift \(metrics.size) pt\(metrics.bold ? " halbfett" : "")")
 
         // Tags einmal zerlegen (kalt) und Filter über die ganze Collection
         let idx = BrowserPaneModel.tagIndex
@@ -189,7 +192,7 @@ enum TagShot {
                 }
                 func bright(_ c: NSColor?) -> Bool { (c?.brightnessComponent ?? 0) > 0.6 }
                 var aligned = true
-                for (i, sp) in TagChipsText.spans(tags: tags0).enumerated() where model.tagFilter.mark(tags0[i]) == .include && sp.upperBound + 3 < cvf.width {
+                for (i, sp) in TagChipsText.spans(tags: tags0, metrics).enumerated() where model.tagFilter.mark(tags0[i]) == .include && sp.upperBound + 3 < cvf.width {
                     // Ränder innen hell, Lücke rechts daneben dunkel
                     let inside = bright(px(sp.lowerBound + 1.5)) && bright(px(sp.upperBound - 1.5))
                     let gap = i == tags0.count - 1 || !bright(px(sp.upperBound + 2.5))
@@ -198,7 +201,7 @@ enum TagShot {
                 }
                 ok = ok && aligned
                 // Klick mitten auf den letzten Chip -> genau dieser Tag
-                let spans0 = TagChipsText.spans(tags: tags0)
+                let spans0 = TagChipsText.spans(tags: tags0, metrics)
                 if let n = spans0.lastIndex(where: { $0.upperBound <= cvf.width }) {
                     let sp = spans0[n], last = tags0[n]
                     let f0 = model.tagFilter
@@ -256,15 +259,17 @@ enum TagShot {
                 for _ in 0..<4 { h.layoutSubtreeIfNeeded(); spin(0.1) }
             }
             // neben die Chips (Zeile mit Platz hinter dem letzten Chip): Auswahl, dann zweiter Klick -> Inline-Bearbeitung
-            tv.tableColumns[col].width = 480   // Platz hinter den Chips, Spalte Comment dafür aus
+            tv.tableColumns[col].width = 480 * metrics.size / 11   // Platz hinter den Chips, Spalte Comment dafür aus
             if let c = tv.tableColumns.indices.first(where: { InlineEditController().field(ofColumn: $0, in: tv) == .comment }) { tv.tableColumns[c].isHidden = true }
             for _ in 0..<4 { h.layoutSubtreeIfNeeded(); spin(0.1) }
+            tv.scrollColumnToVisible(col)
+            for _ in 0..<2 { h.layoutSubtreeIfNeeded(); spin(0.1) }
             let rowsNow = model.rows(from: store, history: history, separators: seps)
             var emptyRow = 1, empty = NSPoint.zero
             for r in 1..<min(rowsNow.count, 20) {
                 guard let cell = tv.view(atColumn: col, row: r, makeIfNecessary: false) else { continue }
                 let cvf = tv.convert(cell.bounds, from: cell)
-                let end = TagChipsText.spans(tags: Self.tags(rowsNow[r], seps)).last?.upperBound ?? 0
+                let end = TagChipsText.spans(tags: Self.tags(rowsNow[r], seps), metrics).last?.upperBound ?? 0
                 if end + 12 < cvf.width, cvf.minX + (end + cvf.width) / 2 < tv.visibleRect.maxX - 4 { emptyRow = r; empty = NSPoint(x: cvf.minX + (end + cvf.width) / 2, y: lineY(cvf)); break }
             }
             let key1 = rowsNow[emptyRow].key
