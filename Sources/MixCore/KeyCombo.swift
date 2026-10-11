@@ -87,6 +87,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case loop = "deck.loop", reloop = "deck.reloop", beatjumpBack = "deck.beatjump.back", beatjumpForward = "deck.beatjump.forward"
     case hotcue1 = "deck.hotcue.1", hotcue2 = "deck.hotcue.2", hotcue3 = "deck.hotcue.3", hotcue4 = "deck.hotcue.4"
     case hotcue5 = "deck.hotcue.5", hotcue6 = "deck.hotcue.6", hotcue7 = "deck.hotcue.7", hotcue8 = "deck.hotcue.8"
+    case editMode = "deck.edit", cutIn = "deck.cut.in", cutOut = "deck.cut.out", gridSet = "deck.grid.set"
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", previewSelected = "browser.preview"
     case reloadCollection = "browser.reload"
     case favorite1 = "browser.favorite.1", favorite2 = "browser.favorite.2", favorite3 = "browser.favorite.3"
@@ -156,10 +157,12 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .zoomIn: KeyCombo("+")
         case .zoomOut: KeyCombo("-")
         case .zoomReset: KeyCombo("0")
+        case .editMode: KeyCombo("e", [.option, .command])
         case .openCollection: KeyCombo("o")
         case .settings: KeyCombo(",")
         case .closeWindow: KeyCombo("w")
-        case .master, .keylock, .reloop, .loadSelected, .previewSelected, .reloadCollection, .reconnectAudio: nil
+        case .master, .keylock, .reloop, .loadSelected, .previewSelected, .reloadCollection, .reconnectAudio,
+             .cutIn, .cutOut, .gridSet: nil
         }
     }
 }

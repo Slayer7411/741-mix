@@ -47,8 +47,6 @@ final class Analyses {
     @ObservationIgnored weak var library: LibraryStore?
     /// Einstellung: Ergebnisse auch in die Collection-Datei schreiben
     @ObservationIgnored var writeBack: () -> Bool = { false }
-    /// Neu analysieren: eigene Grid-Änderung des Tracks verwerfen
-    @ObservationIgnored var clearGridEdit: (String) -> Void = { _ in }
     @ObservationIgnored private var changed: Set<String> = []
     @ObservationIgnored private var flushPending = false
     @ObservationIgnored private var batchFailed = 0
@@ -77,7 +75,6 @@ final class Analyses {
             let fields: TrackAnalysis.Fields = full ? .all : TrackAnalysis.missing(in: t)
             guard !fields.isEmpty else { continue }
             handler.set(t.key, fields: fields, replace: full)
-            if full { clearGridEdit(t.key) }
             list.append(.init(key: t.key, path: t.path, explicit: true, refresh: refresh))
         }
         guard !list.isEmpty else {

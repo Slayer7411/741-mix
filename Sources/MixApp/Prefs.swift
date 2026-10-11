@@ -186,6 +186,15 @@ struct UIPrefs: Codable, Equatable {
     var checkMusicFolders = true
     /// Zoom des Hauptfensters (1 = 100 %, ZoomSteps)
     var zoom = 1.0
+    /// EDIT-Modus je Deck A–D (Schnitt + Grid statt Loop / Beatjump), Standard aus
+    var editDecks = [false, false, false, false]
+
+    func editing(_ d: Int) -> Bool { editDecks.indices.contains(d) && editDecks[d] }
+    mutating func setEditing(_ d: Int, _ on: Bool) {
+        guard d >= 0, d < 4 else { return }
+        while editDecks.count < 4 { editDecks.append(false) }
+        editDecks[d] = on
+    }
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.
