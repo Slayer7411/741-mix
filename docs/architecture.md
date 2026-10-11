@@ -21,6 +21,7 @@ self test: main thread blocked for 3s -> deck a plays on (3.08 s), deck b follow
 * `MixFiles` -> `minos-files`, the file service helper (one job per process)
 * `LibraryCloud` -> swift, no dependencies: cloud file state, scanner, download scheduler, folder watcher, pin state. later part of the file service
 * `MixApp` -> swiftui: decks, mixer, fx, master clock, browser, settings, controller driver, history store
+  * browser track list -> appkit table (`TrackTableView.swift`): rows by index from the pane's list, new list = `reloadData`, rows draw their cells (coretext). sort + filter run off the main thread (`BrowserPaneModel.list`), the table takes the result directly, not through a swiftui pass
 
 ## ◆ AUDIO CORE
 
