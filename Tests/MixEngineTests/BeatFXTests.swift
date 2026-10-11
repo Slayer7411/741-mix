@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import MixDSP
 
-/// Beat-FX offline (Gater, Roll, Flanger): Raster der Clock, Wiederholung, wandernde Kerben, Ein/Aus ohne Knacken,
+/// Beat-FX offline (Gater, Roll, Flanger, Phaser): Raster der Clock, Wiederholung, wandernde Kerben, Ein/Aus ohne Knacken,
 /// D/W 0 = trocken, NaN/Denormal bei 44,1/48/96 kHz
 private final class Rig {
     let e: OpaquePointer
@@ -42,7 +42,7 @@ private func white(_ s: UInt32) -> () -> Float {
     return { seed = seed &* 1664525 &+ 1013904223; return (Float(seed >> 8) / Float(1 << 24) - 0.5) * 0.6 }
 }
 
-private enum Effect: CaseIterable { case gater, roll, flanger }
+private enum Effect: CaseIterable { case gater, roll, flanger, phaser }
 
 private extension Rig {
     func set(_ fx: Effect, on: Bool) {
@@ -50,6 +50,7 @@ private extension Rig {
         case .gater: self.fx(MDFX_GATER_ON, on ? 1 : 0)
         case .roll: self.fx(MDFX_ROLL_ON, on ? 1 : 0)
         case .flanger: self.fx(MDFX_FLANGER_ON, on ? 1 : 0)
+        case .phaser: self.fx(MDFX_PHASER_ON, on ? 1 : 0)
         }
     }
 }
@@ -154,6 +155,42 @@ private func wetDry(_ setup: (Rig) -> Void) -> ([Float], [Float]) {
     }
 }
 
+/// Phaser (4 Stufen): tiefste Stelle von |nass ÷ trocken| zwischen 200 Hz und 8 kHz, Kerbe bei 0,414 × Eckfrequenz (130 Hz … 6,2 kHz)
+@Test func phaserNotchesFollowRate() {
+    func notchAt(_ wet: [Float], _ dry: [Float], _ t: Double) -> Double {
+        let n = 4096, c = Int(t * 44100) - n / 2
+        func spec(_ x: [Float]) -> [Double] {
+            var re = (0..<n).map { Double(x[c + $0]) * (0.5 - 0.5 * cos(2 * .pi * Double($0) / Double(n))) }, im = [Double](repeating: 0, count: n)
+            fft(&re, &im)
+            return (0..<n / 2).map { re[$0] * re[$0] + im[$0] * im[$0] }
+        }
+        let sw = spec(wet), sd = spec(dry)
+        let lo = Int(200.0 * Double(n) / 44100), hi = Int(8000.0 * Double(n) / 44100)
+        var best = lo, bv = Double.infinity
+        for k in lo...hi {
+            var a = 0.0, b = 0.0
+            for j in (k - 3)...(k + 3) { a += sw[j]; b += sd[j] }
+            if a / b < bv { bv = a / b; best = k }
+        }
+        return Double(best) * 44100 / Double(n)
+    }
+    for period: Float in [2, 4] {
+        let (wet, dry) = wetDry { r in
+            r.fx(MDFX_PHASER_BEATS, period); r.fx(MDFX_PHASER_DEPTH, 1); r.fx(MDFX_PHASER_FEEDBACK, 0); r.fx(MDFX_PHASER_STAGES, 4)
+            r.fx(MDFX_PHASER_ON, 1)
+        }
+        let notch = [1.0, 1.5, 2.0, 2.5].map { notchAt(wet, dry, $0) }
+        print(String(format: "[beatfx] phaser Periode %.0f Beats: Kerbe bei 1,0 / 1,5 / 2,0 / 2,5 s = %.0f / %.0f / %.0f / %.0f Hz",
+                     period, notch[0], notch[1], notch[2], notch[3]))
+        if period == 2 {
+            #expect(abs(notch[0] / 314 - 1) < 0.2 && abs(notch[2] / 314 - 1) < 0.2)
+            #expect(abs(notch[1] / 2567 - 1) < 0.2 && abs(notch[3] / 2567 - 1) < 0.2)
+        } else {
+            #expect(abs(notch[0] / 2567 - 1) < 0.2 && abs(notch[2] / 314 - 1) < 0.2)
+        }
+    }
+}
+
 /// Ein/Aus mit Sinus 220 Hz: kein Sprung (zweite Differenz < −40 dBFS) in den 20 ms nach dem Schalten
 @Test func beatFXToggleWithoutClick() {
     for fx in Effect.allCases {
@@ -238,6 +275,7 @@ func beatFXCPU() {
         let us = measure { r in r.set(fx, on: true); r.fx(MDFX_PHASER_STAGES, 8) } - base
         line += String(format: " · %@ %.1f", "\(fx)", us)
     }
+    line += String(format: " · phaser 4 stufen %.1f", measure { r in r.set(.phaser, on: true) } - base)
     print(line + " µs")
 }
 
