@@ -515,6 +515,17 @@ struct PreviewSettings: View {
             Picker("Vorschauen im Hintergrund berechnen", selection: $mix.prefs.ui.previewFill) {
                 ForEach(PreviewFill.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
             }
+            if mix.prefs.ui.previewMode == .fullRow {
+                Picker("Schrift über dem Band", selection: $mix.prefs.ui.previewTextSize) {
+                    ForEach([11.0, 12, 13, 14], id: \.self) { Text(verbatim: "\(Int($0)) pt").tag($0) }
+                }
+                Toggle("Schrift halbfett", isOn: $mix.prefs.ui.previewTextBold)
+                Picker("Band", selection: $mix.prefs.ui.previewBandAlpha) {
+                    Text("Voll").tag(1.0)
+                    Text("Gedämpft").tag(0.75)
+                    Text("Leicht").tag(0.5)
+                }
+            }
             Text("mini-übersicht je track: wellenform (spektrum: rot = bass, grün = mitten/synths, blau = höhen/drums, helle linie = großer energiesprung), phrasen, marker alle 16 / 32 takte, hotcues, start-cue. entsteht beim laden ins deck, per rechtsklick auf eine quelle -> vorschauen berechnen, oder im hintergrund: sichtbare zeilen zuerst, dann die neuesten tracks. immer: läuft auch beim spielen, gedrosselt (eine datei nach der anderen, halbe rechenzeit, niedrige priorität). nur wenn kein deck spielt: wartet, solange ein deck spielt. pausiert immer, solange ein deck lädt, und 4 s danach. dateien nur in der cloud lädt der hintergrund nicht herunter. gespeichert in ~/Library/Application Support/MINOS-741/overviews.")
                 .font(Theme.mono(10)).foregroundStyle(Theme.muted)
         }
