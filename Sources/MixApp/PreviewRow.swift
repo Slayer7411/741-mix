@@ -103,31 +103,54 @@ final class PreviewRowController {
         return nil
     }
 
+    /// je sichtbare Zeile eine Ebene mit dem Bild als Inhalt: Core Animation setzt sie zusammen (GPU). Vorher zeichnete
+    /// `draw(_:)` alle Bänder bei jedem Scrollschritt und jeder Listenänderung auf der CPU in den Puffer der Ansicht
+    /// (~20–30 ms Hauptthread je Bild). Nicht gespiegelt: Zeilenrechtecke und Bildinhalt stehen beide mit y nach oben
     final class BandView: NSView {
         weak var table: NSTableView?
         weak var controller: PreviewRowController?
+        private var bands: [CALayer] = []
 
-        override var isFlipped: Bool { true }
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            layerContentsRedrawPolicy = .onSetNeedsDisplay
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        override var wantsUpdateLayer: Bool { true }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-        override func draw(_ dirtyRect: NSRect) {
-            guard let tv = table, let c = controller, let ctx = NSGraphicsContext.current?.cgContext else { return }
-            let visible = tv.visibleRect
-            let range = tv.rows(in: visible)
-            guard range.length > 0 else { return }
-            for r in range.location..<min(c.rows.count, range.location + range.length) {
-                let band = PreviewRow.band(in: tv.rect(ofRow: r))
-                let rect = convert(band, from: tv)
-                guard rect.intersects(dirtyRect), let img = c.image(c.rows[r]) else { continue }
-                ctx.saveGState()
-                ctx.setAlpha(c.alpha)
-                // Bild steht in CG-Koordinaten (y nach oben): in der gespiegelten Ansicht umdrehen
-                ctx.translateBy(x: rect.minX, y: rect.maxY)
-                ctx.scaleBy(x: 1, y: -1)
-                ctx.interpolationQuality = .medium
-                ctx.draw(img, in: CGRect(origin: .zero, size: rect.size))
-                ctx.restoreGState()
+        override func updateLayer() {
+            guard let root = layer else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            defer { CATransaction.commit() }
+            var used = 0
+            if let tv = table, let c = controller {
+                let range = tv.rows(in: tv.visibleRect)
+                let opacity = Float(c.alpha)
+                for r in range.location..<min(c.rows.count, range.location + range.length) {
+                    let rect = convert(PreviewRow.band(in: tv.rect(ofRow: r)), from: tv)
+                    guard rect.intersects(bounds), let img = c.image(c.rows[r]) else { continue }
+                    if used == bands.count {
+                        let l = CALayer()
+                        l.contentsGravity = .resize
+                        l.minificationFilter = .linear
+                        l.magnificationFilter = .linear
+                        root.addSublayer(l)
+                        bands.append(l)
+                    }
+                    let l = bands[used]
+                    l.frame = rect
+                    if (l.contents as AnyObject?) !== img { l.contents = img }
+                    l.opacity = opacity
+                    l.isHidden = false
+                    used += 1
+                }
             }
+            for l in bands[used...] where !l.isHidden { l.isHidden = true; l.contents = nil }
         }
     }
 }
