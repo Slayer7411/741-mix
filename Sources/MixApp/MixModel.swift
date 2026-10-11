@@ -75,6 +75,7 @@ final class MixModel {
             guard prefs != oldValue else { return }
             savePrefs()
             if prefs.engine != oldValue.engine { core.setPrefs(prefs.engine) }
+            if prefs.ui.previewVolume != oldValue.ui.previewVolume { previewer.setVolume(prefs.ui.previewVolume) }
         }
     }
 
@@ -91,6 +92,16 @@ final class MixModel {
     var deviceUID: String?
     var internalPair = 0
     var deckPairs = [0, 4, 2, 6]   // A 1/2 · B 5/6 · C 3/4 · D 7/8
+    /// Vorhören: erster Kanal des Paars, `previewAuto` = Extern erstes freies Paar nach den Decks / Intern Hauptausgang,
+    /// `previewOff` = aus
+    var previewPair = MixModel.previewAuto
+    static let previewAuto = -1, previewOff = -2
+    /// Vorhör-Player im Kern (eigenes Kanalpaar, Laden über den Datei-Dienst)
+    @ObservationIgnored private(set) lazy var previewer: PreviewPlayer = {
+        let p = PreviewPlayer(engine: engine)
+        p.service = FileServiceSetup.shared
+        return p
+    }()
     /// Samplerate fürs Gerät (0 = so lassen); der Kern übernimmt sie beim nächsten Start
     var sampleRate = 0.0
     /// Puffergröße in Frames (0 = Gerätestandard)
@@ -130,6 +141,7 @@ final class MixModel {
         loadSetup()
         for d in decks.indices { decks[d].editing = prefs.ui.editing(d) }
         core.setPrefs(prefs.engine)
+        previewer.setVolume(prefs.ui.previewVolume)
         outputDevices = MixEngine.outputDevices()
         applyRouting()
         engine.onConfigurationChange = { [weak self] in
@@ -408,6 +420,7 @@ final class MixModel {
         let dev = currentDevice
         let firsts = mixerMode == .external ? deckPairs : Array(repeating: internalPair, count: MixEngine.deckCount)
         engine.apply(MixEngine.Routing(device: dev?.id, firstChannel: firsts), restart: restart)
+        previewer.setOutput(firstChannel: previewRoute, mute: Session.isSelfTest)   // Selbsttest: nur Pegel messen
         core.setMasterVolume(core.snapshot().masterVolume)
         core.setExternalMixer(mixerMode == .external)
         engineStatus = engine.running
@@ -425,9 +438,21 @@ final class MixModel {
 
     /// Modus und Kanäle für die Statusleiste
     var routeText: String {
-        mixerMode == .external
-            ? String(localized: "Extern") + " · " + zip(deckLetters, deckPairs).map { "\($0)→\($1 + 1)/\($1 + 2)" }.joined(separator: " ")
-            : String(localized: "Intern") + " · " + String(localized: "alle→\(internalPair + 1)/\(internalPair + 2)")
+        let pre = previewRoute.map { "PRE→\($0 + 1)/\($0 + 2)" } ?? "PRE→–"
+        return mixerMode == .external
+            ? String(localized: "Extern") + " · " + zip(deckLetters, deckPairs).map { "\($0)→\($1 + 1)/\($1 + 2)" }.joined(separator: " ") + " " + pre
+            : String(localized: "Intern") + " · " + String(localized: "alle→\(internalPair + 1)/\(internalPair + 2)") + " " + pre
+    }
+
+    /// Vorhör-Paar am aktuellen Gerät (erster Kanal), nil = aus, keins frei oder nicht am Gerät
+    var previewRoute: Int? {
+        let ch = deviceChannels
+        switch previewPair {
+        case Self.previewOff: return nil
+        case Self.previewAuto:
+            return PreviewPlayer.autoPair(external: mixerMode == .external, deckPairs: deckPairs, mainPair: internalPair, channels: ch)
+        default: return previewPair + 1 < ch ? previewPair : nil
+        }
     }
 
     private func loadSetup() {
@@ -436,6 +461,7 @@ final class MixModel {
         deviceUID = d.string(forKey: "deviceUID")
         internalPair = d.integer(forKey: "internalPair")
         if let p = d.array(forKey: "deckPairs") as? [Int], p.count == MixEngine.deckCount { deckPairs = p }
+        if d.object(forKey: "previewPair") != nil { previewPair = d.integer(forKey: "previewPair") }
         if d.object(forKey: "masterVolume") != nil { core.setMasterVolume(d.double(forKey: "masterVolume")) }
         sampleRate = d.double(forKey: "sampleRate")
         bufferSize = d.integer(forKey: "bufferSize")
@@ -463,6 +489,7 @@ final class MixModel {
         d.set(deviceUID, forKey: "deviceUID")
         d.set(internalPair, forKey: "internalPair")
         d.set(deckPairs, forKey: "deckPairs")
+        d.set(previewPair, forKey: "previewPair")
         d.set(sampleRate, forKey: "sampleRate")
         d.set(bufferSize, forKey: "bufferSize")
     }
