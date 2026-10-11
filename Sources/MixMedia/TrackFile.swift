@@ -252,7 +252,12 @@ public enum TrackFile {
             self.header = header; self.base = base; self.length = length
         }
 
-        deinit { munmap(UnsafeMutableRawPointer(mutating: base), length) }
+        /// Ausblenden auf einer Hintergrund-Queue: das letzte Loslassen kann auf dem Haupt- oder Steuer-Thread passieren,
+        /// munmap + Entsperren von 100+ MB dauert dort zu lange
+        deinit {
+            let (p, n) = (UnsafeMutableRawPointer(mutating: base), length)
+            DispatchQueue.global(qos: .utility).async { munmap(p, n) }
+        }
 
         public var locked: Bool { lockState.withLock { isLocked } }
 

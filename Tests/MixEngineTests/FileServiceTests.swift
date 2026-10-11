@@ -72,7 +72,7 @@ private func error(_ f: () throws -> Any) -> FileServiceClient.ServiceError? {
     }
     #expect(code == .read || code == .format)
     // Helfer bleibt nach einem Fehler benutzbar (nicht abgeschossen)
-    #expect(c.stats.kills == 0 && c.stats.crashes == 0)
+    #expect(c.stats.kills == 0 && c.stats.crashes == 0 && c.stats.spawns == 1)
 }
 
 /// Öffnen hängt (Cloud-Anbieter antwortet nicht): Herzschlag läuft weiter, keine Daten -> nach der harten Grenze
@@ -179,4 +179,29 @@ private func error(_ f: () throws -> Any) -> FileServiceClient.ServiceError? {
     // Treffer frischt den Zeitstempel auf: danach nicht mehr der älteste
     let hit = try c.decode(path: files[3].path, sampleRate: 48000, hardTimeout: 5)
     #expect(hit.mapping != nil && c.stats.cacheHits == 1)
+}
+
+/// Pfade prüfen im Helfer: vorhanden / fehlt, in Blöcken; hängt der Anbieter, bleibt der Rest unbekannt
+@Test func helperChecksPaths() throws {
+    guard let (c, dir) = client(["MIX741_FAULT": "hang-open:*minos-hang*"]) else { return }
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let url = try writeWAV(rate: 48000, channels: 2, seconds: 0.1)
+    defer { try? FileManager.default.removeItem(at: url) }
+    var paths: [String] = []
+    for i in 0..<5000 { paths.append(i % 2 == 0 ? url.path : "/nonexistent/minos-\(i).flac") }
+    let t0 = Date()
+    let r = c.check(paths: paths)
+    let took = Date().timeIntervalSince(t0)
+    #expect(r.count == 5000)
+    #expect(r.enumerated().allSatisfy { $0.element == ($0.offset % 2 == 0 ? .local : .missing) })
+    print(String(format: "[files] 5000 Pfade im Helfer geprüft: %.0f ms", took * 1000))
+    // zweiter Block hängt -> erster bekannt, Rest unbekannt, Helfer abgeschossen
+    var mixed = Array(repeating: url.path, count: FileProtocol.statChunk)
+    mixed += ["/tmp/minos-hang.flac"] + Array(repeating: url.path, count: 10)
+    let t1 = Date()
+    let m = c.check(paths: mixed, timeout: 1)
+    #expect(Date().timeIntervalSince(t1) < 3)
+    #expect(m.prefix(FileProtocol.statChunk).allSatisfy { $0 == .local })
+    #expect(m.dropFirst(FileProtocol.statChunk).allSatisfy { $0 == nil })
+    #expect(c.stats.kills == 1)
 }

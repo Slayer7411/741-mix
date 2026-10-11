@@ -21,8 +21,8 @@ public final class FileServiceClient: @unchecked Sendable {
         public var beatTimeout = 3.0
         /// Start bis Handshake
         public var spawnTimeout = 5.0
-        /// bereitgehaltene Helfer (Start kostet ~50 ms)
-        public var idleWorkers = 1
+        /// bereitgehaltene Helfer (Start 5-20 ms, erster Start nach einem Build bis 0,5 s)
+        public var idleWorkers = 2
 
         public init(helper: URL, cacheDir: URL, cacheLimit: Int64 = FileServiceClient.defaultCacheLimit) {
             self.helper = helper; self.cacheDir = cacheDir; self.cacheLimit = cacheLimit
@@ -116,7 +116,7 @@ public final class FileServiceClient: @unchecked Sendable {
     /// Helfer startet nicht (mehrmals hintereinander): bis zum Ablauf der Sperre im Prozess dekodieren
     public var unavailable: Bool { lock.withLock { blockedUntil.map { $0 > Date() } ?? false } }
 
-    /// Helfer im Voraus starten, damit das erste Laden nicht auf den Start wartet
+    /// einen Helfer im Voraus starten, damit das erste Laden nicht auf den Start wartet
     public func warmUp() {
         spawnQueue.async { [self] in
             guard lock.withLock({ idle.count < config.idleWorkers }), !unavailable, let w = try? spawn() else { return }
@@ -204,13 +204,73 @@ public final class FileServiceClient: @unchecked Sendable {
         }
     }
 
+    // MARK: Pfade prüfen
+
+    /// Zustand vieler Pfade (ohne herunterzuladen), in Blöcken je Helfer. nil = unbekannt (Helfer hängt oder fehlt):
+    /// nach dem ersten Block ohne Fortschritt für `timeout` bleibt der Rest unbekannt
+    public func check(paths: [String], timeout: Double = 5) -> [PathState?] {
+        var out = [PathState?](repeating: nil, count: paths.count)
+        var start = 0
+        while start < paths.count {
+            let end = min(paths.count, start + FileProtocol.statChunk)
+            guard let states = statChunk(Array(paths[start..<end]), timeout: timeout) else { break }
+            for (k, s) in states.enumerated() where start + k < end { out[start + k] = s }
+            start = end
+        }
+        return out
+    }
+
+    private func statChunk(_ paths: [String], timeout: Double) -> [PathState]? {
+        guard let w = try? acquire() else { return nil }
+        let id: UInt64 = lock.withLock { defer { nextID += 1 }; return nextID }
+        guard (try? w.helper.channel.send(FileProtocol.Kind.stat.rawValue, StatRequest(id: id, paths: paths))) != nil else {
+            discard(w); return nil
+        }
+        var lastChange = Date(), lastBeat = Date(), last = -1
+        while true {
+            let event = w.next(timeout: 0.1)
+            let now = Date()
+            switch event {
+            case nil: break
+            case .gone?:
+                discard(w)
+                lock.withLock { counters.crashes += 1 }
+                return nil
+            case let .frame(f)?:
+                switch FileProtocol.Kind(rawValue: f.type) {
+                case .progress?:
+                    guard let p = try? f.decode(DecodeProgress.self), p.id == id else { break }
+                    lastBeat = now
+                    if p.frames != last { last = p.frames; lastChange = now }
+                case .statResult?:
+                    guard let r = try? f.decode(StatResult.self), r.id == id else { break }
+                    release(w)
+                    return r.states
+                case .failed?:
+                    release(w)
+                    return nil
+                default:
+                    if let fd = f.fd { close(fd) }
+                }
+            }
+            if now.timeIntervalSince(lastBeat) > config.beatTimeout || now.timeIntervalSince(lastChange) > timeout {
+                discard(w)
+                log("stat: helper \(w.helper.pid) stalled (\(max(0, last)) / \(paths.count) paths)")
+                return nil
+            }
+        }
+    }
+
     /// fd der fertigen Datei einblenden, prüfen, festhalten (mlock) – vor der Übergabe an den Kern
     private func adopt(fd: Int32, path: String, sampleRate: Double, done: DecodeDone) throws -> TrackAudio {
         let m: TrackFile.Mapping
         do { m = try TrackFile.map(fd: fd) } catch { throw ServiceError.invalid("\(error)") }
         guard m.header.key.sampleRate == sampleRate, m.header.frames == done.frames,
               m.header.key.path == path || path.utf8.count > 3800 else { throw ServiceError.invalid("header does not match request") }
-        m.lock()
+        if !m.lock() {
+            // Grenze für festen Speicher: Seiten nur einmal gelesen, können unter Speicherdruck wieder ausgelagert werden
+            print("[files] mlock fehlgeschlagen (\(String(cString: strerror(errno)))): \(m.length / 1_000_000) MB nur vorgelesen")
+        }
         lock.withLock {
             if done.cached { counters.cacheHits += 1 } else { counters.decodes += 1 }
             live = live.filter { $0.value.mapping != nil }
@@ -227,7 +287,7 @@ public final class FileServiceClient: @unchecked Sendable {
             while let w = idle.popLast() { if w.usable { return w } else { w.helper.kill() } }
             return nil
         }
-        if let w { warmUp(); return w }
+        if let w { return w }
         if let until = lock.withLock({ blockedUntil }), until > Date() { throw ServiceError.unavailable("blocked") }
         return try spawn()
     }

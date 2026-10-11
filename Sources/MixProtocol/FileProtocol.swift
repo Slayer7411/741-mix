@@ -5,19 +5,22 @@ import Foundation
 public enum FileProtocol {
     public static let service = "minos-files"
     public static let major = 1
-    public static let minor = 0
+    public static let minor = 1
     /// Name des Helfers (neben dem eigenen Programm, im Bundle unter Contents/MacOS)
     public static let helperName = "minos-files"
 
     public enum Kind: UInt16, Sendable {
         case handshake = 1
         case decode = 10
+        /// Zustand vieler Pfade (existiert, lokal / nur online), ohne herunterzuladen
+        case stat = 11
         case quit = 19
         /// Herzschlag während eines Auftrags (Stufe + Frames), alle `beatInterval`
         case progress = 20
         /// fertig, fd der `.mtrk`-Datei hängt an der Nachricht
         case done = 21
         case failed = 22
+        case statResult = 23
     }
 
     public static let beatInterval = 0.25
@@ -43,6 +46,8 @@ public enum DecodeStage: String, Codable, Sendable {
     case fetching
     case decoding
     case writing
+    /// Pfade prüfen (`frames` = geprüfte Pfade)
+    case checking
 }
 
 public struct DecodeProgress: Codable, Sendable, Equatable {
@@ -82,4 +87,30 @@ public struct DecodeFailed: Codable, Sendable, Equatable {
     public var detail: String
 
     public init(id: UInt64, code: FileErrorCode, detail: String) { self.id = id; self.code = code; self.detail = detail }
+}
+
+/// Pfade prüfen (stat ohne Materialisieren), höchstens `FileProtocol.statChunk` je Auftrag
+public struct StatRequest: Codable, Sendable, Equatable {
+    public var id: UInt64
+    public var paths: [String]
+    public init(id: UInt64, paths: [String]) { self.id = id; self.paths = paths }
+}
+
+public enum PathState: UInt8, Codable, Sendable {
+    case missing = 0
+    case local = 1
+    /// nur online (SF_DATALESS)
+    case online = 2
+    /// anderer Fehler (Rechte, E/A)
+    case error = 3
+}
+
+public struct StatResult: Codable, Sendable, Equatable {
+    public var id: UInt64
+    public var states: [PathState]
+    public init(id: UInt64, states: [PathState]) { self.id = id; self.states = states }
+}
+
+extension FileProtocol {
+    public static let statChunk = 2000
 }

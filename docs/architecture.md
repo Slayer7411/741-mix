@@ -137,7 +137,8 @@ MixController.load -> FileServiceClient.decode (blocking, background queue)
 ```
 
 * helper: `stat` -> cache key (path, size, mtime ns, rate, decoder version) -> cache hit: header checked, mtime touched, fd back. miss: `SF_DATALESS` -> stage `fetching`, decode + analysis (same code as in-process), write `.mtrk`, fd back
-* one job per helper, one helper per load in flight (4 decks load in parallel), 1 kept idle, started ahead
+* one job per helper, one helper per load in flight (4 decks load in parallel), up to 2 kept idle, one started ahead
+* `check(paths:)`: `stat` without materializing, 2000 paths per job -> local · online only · missing · error. used by the collection load (14,160 paths 73 ms, release). no progress for 5 s -> helper killed, the rest stays unknown (counts as present)
 * abort by lack of progress, never by total time: no beat for 3 s -> helper frozen, killed. no new frames for `loadAbortTimeout` (60 s, ⌘, -> AUDIO) -> killed, `keine Audiodaten (Drive antwortet nicht)`. another track for the deck -> old helper killed at once (checked every 0.1 s)
 * helper crash (channel eof / exit) -> one retry with a new helper, then error. killed and still alive after 2 s -> counted as zombie
 * helper does not start 3 times in a row -> blocked 60 s, loads decode in-process meanwhile (warning). helper missing next to the binary or `MIX741_INPROC_FILES=1` -> in-process, log line `[files]`
@@ -156,7 +157,7 @@ MixController.load -> FileServiceClient.decode (blocking, background queue)
 
 * written to `<key>.mtrk.tmp-<pid>-<rand>`, `F_BARRIERFSYNC`, `rename`. never modified afterwards
 * read: magic, version, checksum, file size == header, layout == expected, key -> otherwise rejected (decoded again)
-* `TrackAudio` = read-only view: heap (in-process decode) or mapping. unmapped in deinit, the control thread holds it until `mdsp_track_consumed`
+* `TrackAudio` = read-only view: heap (in-process decode) or mapping. the control thread holds it until `mdsp_track_consumed`, unmapped on a utility queue once the last holder lets go (ui, overview, phrase anchor)
 * cache `~/Library/Application Support/MINOS-741/cache/`, excluded from backups. limit ⌘, -> AUDIO (default 8 gb). lru by mtime (touched on every hit), mapped files skipped. eviction only `unlink`s, never truncates -> a mapped file stays readable (no SIGBUS). `*.tmp-*` older than 1 h removed. selftest: own cache in `$TMPDIR`
 
 measured (release, m1 pro, local m4a, 47 / 108 mb decoded): in-process 0.29 / 0.73 s · helper, first load 0.41 / 0.95 s (open 16-33 ms, decode 292 / 742 ms, write 75 / 157 ms) · cache hit 7 / 19 ms incl. mlock · helper start 9-21 ms, first start after a build ~0.5 s · hanging open killed 1.04-1.39 s after a 1 s limit

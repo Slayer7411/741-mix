@@ -29,6 +29,9 @@ while true {
     case .decode?:
         guard let r = try? f.decode(DecodeRequest.self) else { continue }
         worker.start(r)
+    case .stat?:
+        guard let r = try? f.decode(StatRequest.self) else { continue }
+        worker.startStat(r)
     case .quit?:
         _exit(0)
     default:
@@ -112,6 +115,43 @@ final class Worker: @unchecked Sendable {
 
     enum Reply { case done(DecodeDone, Int32), failed(DecodeFailed) }
 
+    /// Pfade parallel prüfen (stat mit abgeschalteter Materialisierung); Fortschritt = geprüfte Pfade
+    func startStat(_ r: StatRequest) {
+        guard lock.withLock({ current == nil }) else {
+            try? channel.send(FileProtocol.Kind.failed.rawValue, DecodeFailed(id: r.id, code: .invalid, detail: "busy"))
+            return
+        }
+        set(r.id, .checking)
+        let t = Thread { [self] in
+            if let g = faults.hangOpen, r.paths.contains(where: { Faults.matches(g, $0) }) { while true { sleep(60) } }
+            let n = r.paths.count
+            let out = UnsafeMutableBufferPointer<PathState>.allocate(capacity: max(1, n))
+            defer { out.deallocate() }
+            let done = UnsafeMutablePointer<Int>.allocate(capacity: 1)
+            done.initialize(to: 0)
+            defer { done.deallocate() }
+            let counter = NSLock()
+            DispatchQueue.concurrentPerform(iterations: n) { i in
+                out[i] = Self.state(r.paths[i])
+                let c = counter.withLock { done.pointee += 1; return done.pointee }
+                if c % 64 == 0 { set(r.id, .checking, c) }
+            }
+            lock.withLock { current = nil }
+            try? channel.send(FileProtocol.Kind.statResult.rawValue, StatResult(id: r.id, states: Array(out.prefix(n))))
+        }
+        t.qualityOfService = .userInitiated
+        t.start()
+    }
+
+    static func state(_ path: String) -> PathState {
+        let old = getiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD)
+        _ = setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, IOPOL_MATERIALIZE_DATALESS_FILES_OFF)
+        defer { if old >= 0 { _ = setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, old) } }
+        var st = stat()
+        if stat(path, &st) != 0 { return errno == ENOENT || errno == ENOTDIR ? .missing : .error }
+        return st.st_flags & UInt32(SF_DATALESS) != 0 ? .online : .local
+    }
+
     private func run(_ r: DecodeRequest) -> Reply {
         let fail = { (code: FileErrorCode, detail: String) in Reply.failed(DecodeFailed(id: r.id, code: code, detail: detail)) }
         if Faults.matches(faults.hangOpen, r.path) { while true { sleep(60) } }
@@ -135,7 +175,7 @@ final class Worker: @unchecked Sendable {
             unlink(dst.path)   // kaputt oder alt: neu dekodieren
         }
 
-        if Self.dataless(r.path) { set(r.id, .fetching) }
+        if Self.state(r.path) == .online { set(r.id, .fetching) }
         var firstData: Date?
         var bytes = 0
         let a: TrackAudio
@@ -173,14 +213,5 @@ final class Worker: @unchecked Sendable {
                                 openMs: (firstData ?? t1).timeIntervalSince(t0) * 1000,
                                 decodeMs: t1.timeIntervalSince(firstData ?? t0) * 1000,
                                 writeMs: t2.timeIntervalSince(t1) * 1000), fd)
-    }
-
-    /// nur online (SF_DATALESS), ohne die Datei herunterzuladen
-    static func dataless(_ path: String) -> Bool {
-        let old = getiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD)
-        _ = setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, IOPOL_MATERIALIZE_DATALESS_FILES_OFF)
-        defer { if old >= 0 { _ = setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, old) } }
-        var st = stat()
-        return stat(path, &st) == 0 && st.st_flags & UInt32(SF_DATALESS) != 0
     }
 }
