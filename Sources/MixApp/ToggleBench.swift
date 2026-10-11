@@ -100,7 +100,17 @@ enum ToggleBench {
             let c = store.tracks.filter { $0.bpm > 120 && $0.bpm < 140 && $0.gridAnchorMs != nil && $0.fileExists }
             guard c.count >= 4 else { log("zu wenige Tracks"); exit(1) }
             for d in 0..<4 { mix.load(c[d], deck: d) }
-            while (0..<4).contains(where: { core.trackAudio($0) == nil }) { try? await Task.sleep(for: .milliseconds(100)); pump() }
+            // nicht ladbar (Cloud-Datei hängt, Zeitlimit): nächster Kandidat statt endlos zu warten
+            var next = 4
+            while true {
+                let s = core.snapshot()
+                var waiting = false
+                for d in 0..<4 where core.trackAudio(d) == nil {
+                    if s.decks[d].loading { waiting = true } else if next < c.count { mix.load(c[next], deck: d); next += 1; waiting = true }
+                }
+                if !waiting { break }
+                try? await Task.sleep(for: .milliseconds(100)); pump()
+            }
             for d in 0..<4 { core.seek(d, seconds: 60) }
             for _ in 0..<30 { try? await Task.sleep(for: .milliseconds(100)); mix.pull(); pump() }
             if mode == "state" { await StateBench.run(mix: mix, host: host, log: log); exit(0) }
