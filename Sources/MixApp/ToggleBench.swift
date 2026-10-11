@@ -412,7 +412,10 @@ extension StateBench {
             let g = gaps.sorted()
             log("\(name.padding(toLength: 9, withPad: " ", startingAt: 0)) natural \(stats(v)) · lücken >16 ms: \(g.count)"
                 + (g.isEmpty ? "" : String(format: ", max %.0f ms", g.last!)))
-            if env["MIX741_BENCH_ALL"] != nil { log("   " + v.map { String(format: "%.0f", $0) }.joined(separator: " ")) }
+            if env["MIX741_BENCH_ALL"] != nil {
+                log("   " + v.map { String(format: "%.0f", $0) }.joined(separator: " "))
+                if !g.isEmpty { log("   lücken: " + gaps.map { String(format: "%.0f", $0) }.joined(separator: " ")) }
+            }
             gaps = []
         }
         let profiler = env["MIX741_BENCH_PROFILE"].map { _ in MainSampler() }
@@ -525,7 +528,7 @@ extension StateBench {
         if phase("source") {
             func lists(_ n: PlaylistNode) -> [PlaylistNode] { (n.kind == .playlist ? [n] : []) + n.children.flatMap(lists) }
             if let big = lists(store.root).max(by: { $0.trackKeys.count < $1.trackKeys.count }) {
-                // Fokus in der Tabelle (Pfeiltasten): bleibt er nach dem Neuaufbau in der neuen Tabelle?
+                // Fokus in der Tabelle (Pfeiltasten): bleibt er nach dem Listenwechsel in der Tabelle?
                 let old = tableA()
                 if let old { old.window?.makeFirstResponder(old) }
                 var v: [Double] = []
@@ -533,7 +536,7 @@ extension StateBench {
                 a.source = .collection
                 try? await Task.sleep(for: .milliseconds(300))
                 let now = tableA()
-                log("source    fokus: " + (now != nil && now !== old && host.window?.firstResponder === now ? "neue tabelle" : "FEHLER: verloren"))
+                log("source    fokus: " + (now != nil && host.window?.firstResponder === now ? (now === old ? "tabelle" : "neue tabelle") : "FEHLER: verloren"))
                 report("source", v)
             }
         }
