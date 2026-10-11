@@ -51,6 +51,7 @@ final class Analyses {
     @ObservationIgnored var clearGridEdit: (String) -> Void = { _ in }
     @ObservationIgnored private var changed: Set<String> = []
     @ObservationIgnored private var flushPending = false
+    @ObservationIgnored private var decksPlaying = false
     @ObservationIgnored private var batchFailed = 0
     @ObservationIgnored private var batchTotal = 0
     @ObservationIgnored private var cancelled = false
@@ -94,7 +95,11 @@ final class Analyses {
         jobs.cancel()
     }
 
-    func setDecks(playing: Bool, loading: Bool) { jobs.setDecks(playing: playing, loading: loading) }
+    func setDecks(playing: Bool, loading: Bool) {
+        decksPlaying = playing
+        jobs.setDecks(playing: playing, loading: loading)
+        if !playing, flushPending { flush() }
+    }
 
     private func report(_ p: OverviewJobs.Progress) {
         let finished = progress.total > 0 && p.total == 0
@@ -106,23 +111,29 @@ final class Analyses {
         if failed > 0 { msg += " · " + String(localized: "\(failed) nicht lesbar") }
         StatusCenter.post(cancelled ? .info : failed > 0 ? .warning : .ok, msg, key: "analysis")
         batchTotal = 0
+        flush()
         if !cancelled, writeBack() { library?.scheduleWriteBack() }
     }
 
-    /// neue Werte gesammelt in die Library (alle 0,3 s)
+    /// neue Werte gesammelt in die Library: alle 0,3 s. Solange ein Deck spielt, erst am Ende des Stapels, wenn kein
+    /// Deck mehr spielt oder nach 30 s – jede Übernahme baut die Browser-Listen neu (Collection mit 14k Tracks:
+    /// ~0,25 s Hauptthread je Bereich, die Wellenformen stehen so lange)
     private func changed(_ key: String) {
         changed.insert(key)
         guard !flushPending else { return }
         flushPending = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            MainActor.assumeIsolated {
-                let a = Analyses.shared
-                a.flushPending = false
-                let keys = a.changed
-                a.changed = []
-                a.library?.applyAnalyses(keys)
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (decksPlaying ? 30 : 0.3)) {
+            MainActor.assumeIsolated { Analyses.shared.flush() }
         }
+    }
+
+    /// gesammelte Werte jetzt übernehmen (Messung: MIX741_BENCH=browser)
+    func flush() {
+        flushPending = false
+        guard !changed.isEmpty else { return }
+        let keys = changed
+        changed = []
+        library?.applyAnalyses(keys)
     }
 }
 
