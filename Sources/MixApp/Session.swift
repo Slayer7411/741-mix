@@ -177,6 +177,7 @@ struct Session: Codable {
             ("artist", \Track.artist), ("title", \Track.title), ("bpm", \Track.bpm), ("key", \Track.openKey),
             ("time", \Track.duration), ("comment", \Track.comment), ("comment2", \Track.comment2),
             ("label", \Track.label), ("import", \Track.importSort), ("plays", \Track.playCount), ("color", \Track.color),
+            ("harmony", \Track.harmonySort),
         ]
         return all.first { $0.1 == c.keyPath }?.0
     }
@@ -195,6 +196,7 @@ struct Session: Codable {
         case "import": return KeyPathComparator(\Track.importSort, order: o)
         case "plays": return KeyPathComparator(\Track.playCount, order: o)
         case "color": return KeyPathComparator(\Track.color, order: o)
+        case "harmony": return KeyPathComparator(\Track.harmonySort, order: o)
         default: return nil
         }
     }

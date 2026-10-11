@@ -68,7 +68,14 @@ final class MixModel {
     private(set) var linkPeersShown = 0
     private(set) var effectiveMaster: Int?
     private(set) var clockMaster = false
-    var focusedDeck = 0
+    var focusedDeck = 0 { didSet { if focusedDeck != oldValue { updateHarmony() } } }
+    /// Bezug für den Browser (Key-Farben, Matching, Sortierung „Harmonie“): hörbarer Key (Code 0–23) und Tempo (0,1 BPM,
+    /// 0 = keins) des Master-Decks, ohne spielenden Master des Fokus-Decks. Getrennt beobachtet: die Key-Farben hängen
+    /// nur am Key, Filter und Sortierung (nur wenn eingeschaltet) am Tempo
+    private(set) var harmonyKey: Int?
+    private(set) var harmonyBPM = 0.0
+    /// Selbsttest-Bilder: fester Bezug statt der Decks
+    @ObservationIgnored var harmonyFixed: HarmonyRef? { didSet { updateHarmony() } }
     var prefs = AppPrefs.load() {
         didSet {
             guard prefs != oldValue else { return }
@@ -144,6 +151,10 @@ final class MixModel {
         }
         if let c = core.pluginCatalog.crashedLastRun { print("[plugin] beim letzten Lauf abgestürzt beim Öffnen: \(c.name) -> blockiert") }
         FileServiceSetup.attach(core)
+        BrowserPaneModel.harmonySource = { [weak self] in
+            BrowserPaneModel.HarmonyInput(ref: self.flatMap { m in m.harmonyKey != nil || m.harmonyBPM > 0 ? HarmonyRef(key: m.harmonyKey, bpm: m.harmonyBPM) : nil },
+                                          rule: self?.prefs.ui.match ?? MatchRule())
+        }
         loadSetup()
         for d in decks.indices { decks[d].editing = prefs.ui.editing(d) }
         core.setPrefs(prefs.engine)
@@ -238,6 +249,7 @@ final class MixModel {
             }
             if s.effectiveMaster != effectiveMaster { effectiveMaster = s.effectiveMaster }
             if s.clockMaster != clockMaster { clockMaster = s.clockMaster }
+            updateHarmony()
             for (u, m) in fxUnits.enumerated() {
                 if m.state != s.fx[u] { m.state = s.fx[u] }
                 if m.controls != s.fxControls[u] { m.controls = s.fxControls[u] }
@@ -274,6 +286,24 @@ final class MixModel {
     func keyDeviation(_ d: Int) -> Double {
         let s = decks[d].state
         return Double(s.keyShift) + (s.keylock ? 0 : 12 * log2(max(s.rate, 1e-6)))
+    }
+
+    /// Bezugs-Deck: spielender Master, sonst Fokus-Deck; Key = Track-Key um die hörbare Abweichung (gerundet) verschoben
+    private func updateHarmony() {
+        var key: Int?, bpm = 0.0
+        if let f = harmonyFixed {
+            key = f.key; bpm = f.bpm
+        } else {
+            let m = effectiveMaster.flatMap { decks[$0].state.playing ? $0 : nil }
+            let d = m ?? focusedDeck
+            if decks.indices.contains(d), let t = decks[d].state.track {
+                key = t.harmonyCode.map { Harmony.shifted($0, by: Int(keyDeviation(d).rounded())) }
+                bpm = m != nil || state.clockMaster ? state.masterTempo : decks[d].state.bpm
+            }
+        }
+        bpm = (bpm * 10).rounded() / 10
+        if key != harmonyKey { harmonyKey = key }
+        if bpm != harmonyBPM { harmonyBPM = bpm }
     }
 
     /// Lage des Decks im „Code“ (Bar-Zähler); Phrase wie in der Wellenform (⌘, → Anzeige), nil ohne Grid

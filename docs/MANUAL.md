@@ -477,6 +477,16 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
 * ● LOKAL in the header -> local tracks only. SET-CHECK -> preparation + this list: what is not local, `ALLE HOLEN`
 * details: [library · cloud libraries](library.md#-cloud-libraries)
 
+### harmony + matching
+
+reference = audible key of the master deck (track key + key shift, without keylock + tempo, rounded to semitones). no master playing -> focused deck.
+
+* key column, colored on the open key wheel: `◆` purple = same · `▲` / `▼` light = ±1 · `◇` light = relative major / minor · grey = ±2 (energy) · dimmed = clash. off: ⌘, -> BROWSER
+* column `Match`: pitch in % the track needs to reach the master tempo (dimmed outside the bpm window). click the header -> sort by harmony: distance to the master key, then tempo difference
+* master or key shift changes -> only key and match cells of the visible rows redraw, the list stays
+* `◆ PASST` (`◆ MATCH`) in the header -> only tracks with a fitting key (same, ±1, relative; ⌘, -> BROWSER) and tempo within ±4 % (half / double optional). shows the reference, follows master changes. a track without key never fits, a master without key filters by tempo only
+* on / off: chip, ⌥⌘J (last used pane), browse push on the controller (⌘, -> CONTROLLER -> browse push)
+
 ### preview
 
 a mini overview of the whole track per row. modes (⌘, -> DISPLAY -> browser preview):
@@ -651,6 +661,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | ⌘O | open collection |
 | ⌘E | edit the selected tracks (browser) |
 | ⌃⌥1-6 | browser favorite 1-6 (last used pane) |
+| ⌥⌘J | browser: matching on / off (last used pane) |
 | ⌘, | settings |
 | ⌘W | close window -> main window: quit (asks first) |
 

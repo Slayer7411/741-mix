@@ -72,6 +72,7 @@ final class ControllerManager: @unchecked Sendable {
     var onLoad: (@MainActor (_ pane: Int, _ deck: Int, _ force: Bool) -> Void)?
     var onPreview: (@MainActor (_ pane: Int) -> Void)?
     var onToggleBrowser: (@MainActor () -> Void)?
+    var onMatching: (@MainActor (_ pane: Int) -> Void)?
 
     /// Standard: erster Controller (nach USB-Position) steuert A/C, der zweite B/D – pro Gerät in den Einstellungen änderbar.
     static let defaultAssignments: [(Int, Int)] = [(0, 2), (1, 3), (0, 1), (2, 3)]
@@ -295,10 +296,11 @@ final class ControllerManager: @unchecked Sendable {
                 }
             }
         case let .browsePush(down):
-            // Drücken = Browser groß/klein, Shift + Drücken = Vorhören
+            // Drücken = Browser groß/klein bzw. Matching an/aus (⌘, -> CONTROLLER), Shift + Drücken = Vorhören
             guard down else { return }
             let pane = unit.info.pane
             if unit.shift { DispatchQueue.main.async { self.onPreview?(pane) } }
+            else if p.browsePush == .matching { DispatchQueue.main.async { self.onMatching?(pane) } }
             else { DispatchQueue.main.async { self.onToggleBrowser?() } }
         case let .fxKnob(u, k, v):
             // D/W + Regler 1–3 -> zugewiesene Parameter (FX-Belegung, Standard: Gruppe = Stärke, Single = Parameter)

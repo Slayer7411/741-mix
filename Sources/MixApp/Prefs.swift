@@ -37,6 +37,12 @@ enum ControllerFluxPads: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Browse-Encoder drücken (Shift + Drücken = Vorhören)
+enum ControllerBrowsePush: String, CaseIterable, Codable, Identifiable {
+    case bigBrowser = "Browser groß/klein", matching = "Matching an/aus"
+    var id: String { rawValue }
+}
+
 enum ControllerStripMode: String, CaseIterable, Codable, Identifiable {
     case bend = "Pitch-Bend (Shift: Suchen)", seek = "Suchen (Shift: Pitch-Bend)"
     var id: String { rawValue }
@@ -73,6 +79,7 @@ struct ControllerPrefs: Codable, Equatable {
     var stripSensitivity = 1.0
     var browseFastStep = 10
     var shiftLoad = ControllerShiftLoad.force
+    var browsePush = ControllerBrowsePush.bigBrowser
     var ledOn = 127
     var ledOff = 5
     // alte Felder (nicht mehr benutzt, bleiben für gespeicherte Einstellungen)
@@ -205,6 +212,10 @@ struct UIPrefs: Codable, Equatable {
     var zoom = 1.0
     /// eigene Analyse: BPM-Bereich genau eine Oktave, Untergrenze (Obergrenze = 2 ×)
     var analysisBpmLow = 100.0
+    /// Browser: Key-Spalte nach Harmonie zum Master färben (◆ gleich, ▲▼ ±1, ◇ Relativ)
+    var harmonyColors = true
+    /// Browser-Filter „passt zum Master“ (◆ PASST, ⌘, -> BROWSER)
+    var match = MatchRule()
 
     /// kompakte Decks: ohne Pitch-Fader, Hotcues und Grid-Werkzeuge (mehr Platz für Wellenform und Beatgrid)
     var compactDecks: Bool {

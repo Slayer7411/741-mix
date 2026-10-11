@@ -459,6 +459,10 @@ extension StateBench {
             a.sortOrder = [KeyPathComparator(\Track.artist)]
             cost("prep") { store.preparation = store.preparation.isEmpty ? [store.tracks[0].key] : [] }
             store.preparation = []
+            cost("match") { a.matching.toggle() }
+            a.matching = false
+            cost("harmony") { i += 1; a.sortOrder = [i % 2 == 0 ? KeyPathComparator(\Track.harmonySort) : KeyPathComparator(\Track.artist)] }
+            a.sortOrder = [KeyPathComparator(\Track.artist)]
             gaps = []
         }
         if phase("search") {
@@ -518,6 +522,32 @@ extension StateBench {
             for i in 0..<n { v.append(await natural { a.sortOrder = [orders[i % orders.count]] }) }
             a.sortOrder = [KeyPathComparator(\Track.artist)]
             report("sort", v)
+        }
+        if phase("master") {
+            // Master-Wechsel zwischen den spielenden Decks: ohne Key-Farben (Vergleich), mit (nur Key-/Match-Zellen der
+            // sichtbaren Zeilen), mit Matching an (Liste neu im Hintergrund), nochmal mit Farben
+            for (name, colors, match) in [("master-0", false, false), ("master", true, false), ("master+m", true, true), ("master", true, false)] {
+                mix.prefs.ui.harmonyColors = colors
+                a.matching = match
+                try? await Task.sleep(for: .milliseconds(500))
+                gaps = []
+                var v: [Double] = []
+                for i in 0..<n { v.append(await natural { mix.toggleMaster(i % 4) }) }
+                log("\(name): bezug \(mix.harmonyKey.map(Track.openKey(code:)) ?? "-") \(mix.harmonyBPM), zeilen \(a.shown.count)")
+                report(name, v)
+            }
+            mix.prefs.ui.harmonyColors = true
+            a.matching = false
+        }
+        if phase("match") {
+            var v: [Double] = []
+            for _ in 0..<n { v.append(await natural { a.matching.toggle() }) }
+            a.matching = false
+            report("match", v)
+            v = []
+            for i in 0..<n { v.append(await natural { a.sortOrder = [i % 2 == 0 ? KeyPathComparator(\Track.harmonySort) : KeyPathComparator(\Track.artist)] }) }
+            a.sortOrder = [KeyPathComparator(\Track.artist)]
+            report("harmony", v)
         }
         // Track-Tabelle von Bereich A (links)
         func tableA() -> NSTableView? {

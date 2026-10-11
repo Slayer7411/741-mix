@@ -9,7 +9,7 @@ import MixEngine
 
 /// Spalte der Track-Tabelle. `id` = Schlüssel in der gespeicherten Anordnung (`columns.<bereich>`), Breiten bei 100 %
 struct TrackColumn {
-    enum Kind { case played, cloud, analyzed, color, cover, artist, title, preview, field(TrackField), bpm, key, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file }
+    enum Kind { case played, cloud, analyzed, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file }
     let id: String
     let title: String
     let kind: Kind
@@ -45,6 +45,7 @@ struct TrackColumn {
         .fixed("trackno", "Track #", .field(.trackNumber), 40, hidden: true, sort: KeyPathComparator(\Track.trackNumber)),
         .fixed("bpm", "BPM", .bpm, 56, sort: KeyPathComparator(\Track.bpm)),
         .fixed("key", "Key", .key, 36, sort: KeyPathComparator(\Track.openKey)),
+        .fixed("harmony", "Match", .harmony, 44, sort: KeyPathComparator(\Track.harmonySort), menu: String(localized: "Match (Harmonie, Tempo zum Master)")),
         .fixed("keytext", "Key Text", .field(.keyText), 40, hidden: true, sort: KeyPathComparator(\Track.keyText)),
         .fixed("time", "Time", .time, 44, sort: KeyPathComparator(\Track.duration)),
         .fixed("gain", "Gain", .gain, 42, hidden: true, sort: KeyPathComparator(\Track.gainSort)),
@@ -117,6 +118,7 @@ enum ColumnLayout {
         if !order.contains("cloud") { order.insert("cloud", at: order.firstIndex(of: "played").map { $0 + 1 } ?? 0) }
         if !order.contains("cover") { order.insert("cover", at: order.firstIndex(of: "color").map { $0 + 1 } ?? min(3, order.count)) }
         if !order.contains("preview") { order.insert("preview", at: order.firstIndex(of: "title").map { $0 + 1 } ?? order.count) }
+        if !order.contains("harmony") { order.insert("harmony", at: order.firstIndex(of: "key").map { $0 + 1 } ?? order.count) }
         for c in TrackColumn.all where !order.contains(c.id) { order.append(c.id) }
         return order
     }
@@ -128,6 +130,16 @@ enum TableStyle {
     static let void = NSColor(Theme.void), chitin = NSColor(Theme.chitin), raised = NSColor(Theme.chitinRaised)
     static let bone = NSColor(Theme.bone), muted = NSColor(Theme.muted), hairline = NSColor(Theme.hairline)
     static let state = NSColor(Theme.state), secondary = NSColor(Theme.secondary), gold = NSColor(Theme.gold)
+    /// Harmonie zum Master: gleich Lila, ±1 / Relativ hell, ±2 grau, unpassend gedimmt
+    static let energy = bone.withAlphaComponent(0.62), clash = muted.withAlphaComponent(0.5)
+    static func harmony(_ s: Harmony.Step) -> NSColor {
+        switch s {
+        case .same: secondary
+        case .adjacent, .relative: bone
+        case .energy: energy
+        case .clash: clash
+        }
+    }
     static let selected = bone.withAlphaComponent(0.16), selectedDim = bone.withAlphaComponent(0.09)
     static let trackColors: [NSColor] = (0...7).map { NSColor(Theme.trackColor($0)) }
 
@@ -362,7 +374,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     weak var model: BrowserPaneModel?
     weak var store: LibraryStore?
     weak var history: HistoryStore?
-    weak var mix: MixModel?
+    weak var mix: MixModel? { didSet { observeHarmony() } }
     weak var inline: InlineEditController?
     /// nur Selbsttest-Bilder: feste Zeilen
     var fixedRows: [Track]?
@@ -547,6 +559,38 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         if model.selection != shownSelection { applySelection(model.selection) }
         syncSort(model.sortOrder)
         followPreview()
+    }
+
+    // MARK: Harmonie
+
+    /// Bezug, mit dem die Zellen gezeichnet sind (Key-Code, Tempo)
+    private var refKey: Int?
+    private var refBPM = 0.0
+
+    /// eigene Beobachtung von Key und Tempo des Bezugs (ohne SwiftUI): ein Wechsel zeichnet nur Key- und Match-Zellen
+    /// der sichtbaren Zeilen neu, die Liste bleibt
+    private func observeHarmony() {
+        guard let mix else { return }
+        withObservationTracking { refKey = mix.harmonyKey; refBPM = mix.harmonyBPM } onChange: { [weak self] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.harmonyChanged() } }
+        }
+    }
+
+    private func harmonyChanged() {
+        let k = refKey, b = refBPM
+        observeHarmony()
+        if k != refKey { redrawColumns(["key", "harmony"]) } else if b != refBPM { redrawColumns(["harmony"]) }
+    }
+
+    /// nur diese Spalten der sichtbaren Zeilen neu zeichnen
+    private func redrawColumns(_ ids: [String]) {
+        guard let tv = table else { return }
+        let rects = ids.map { tv.column(withIdentifier: NSUserInterfaceItemIdentifier($0)) }
+            .filter { $0 >= 0 && !tv.tableColumns[$0].isHidden }.map { tv.rect(ofColumn: $0) }
+        guard !rects.isEmpty else { return }
+        tv.enumerateAvailableRowViews { v, _ in
+            for r in rects { v.setNeedsDisplay(NSRect(x: r.minX - v.frame.minX, y: 0, width: r.width, height: v.bounds.height)) }
+        }
     }
 
     // MARK: Vorhören
@@ -817,7 +861,11 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         case .bpm:
             draw(t.bpm > 0 ? String(format: "%.2f", t.bpm) : "", TableStyle.bone, l, ctx)
         case .key:
-            draw(t.openKey, TableStyle.bone, l, ctx)
+            drawKey(t, l, ctx)
+        case .harmony:
+            guard refBPM > 0, let off = look?.ui.match.tempoOffset(t.bpm, to: refBPM), let rule = look?.ui.match else { return }
+            let v = (off * 10).rounded() / 10
+            draw(v == 0 ? "0.0" : String(format: "%+.1f", v), abs(off) <= rule.bpmWindow ? TableStyle.bone : TableStyle.clash, l, ctx)
         case .time:
             draw(Theme.time(t.duration), TableStyle.bone, l, ctx)
         case .gain:
@@ -837,6 +885,17 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         case .file:
             draw(t.fileName, TableStyle.bone, l, ctx)
         }
+    }
+
+    /// Key, mit Bezug (Master) nach Harmonie gefärbt und mit Zeichen davor (◆ ▲ ▼ ◇) in einem festen Platz
+    private func drawKey(_ t: Track, _ l: CGRect, _ ctx: CGContext) {
+        guard look?.ui.harmonyColors == true, let ref = refKey else { draw(t.openKey, TableStyle.bone, l, ctx); return }
+        let slot = (font.pointSize * 0.95).rounded()
+        let text = CGRect(x: l.minX + slot, y: l.minY, width: l.width - slot, height: l.height)
+        guard let code = t.harmonyCode else { draw(t.openKey, TableStyle.clash, text, ctx); return }
+        let r = Harmony.relation(code, to: ref), color = TableStyle.harmony(r.step)
+        if !r.symbol.isEmpty { draw(r.symbol, color, l, ctx, font: TableStyle.mono(font.pointSize * 0.7)) }
+        draw(t.openKey, color, text, ctx)
     }
 
     private func ctAttrs(_ font: NSFont, _ color: NSColor) -> [NSAttributedString.Key: Any] {

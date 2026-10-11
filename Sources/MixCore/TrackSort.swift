@@ -5,10 +5,11 @@ import Foundation
 /// Strings nach NSString und rechnet berechnete Werte (Open Key) je Vergleich neu – 14k Tracks nach Titel ~850 ms
 /// auf dem Hauptthread. Hier: Textschlüssel einmal je Track als NSString, sortiert werden nur die Indizes (~60 ms).
 /// Text-Spalten müssen den Standard-Vergleich haben (`KeyPathComparator(\.title)`, so in Table und Sitzung).
+/// `\.harmonySort` sortiert nach `rank` (Abstand zum Bezug, MatchRule.rank), ohne `rank` bleibt die Reihenfolge.
 public enum TrackSort {
-    public static func sorted(_ tracks: [Track], using order: [KeyPathComparator<Track>]) -> [Track] {
+    public static func sorted(_ tracks: [Track], using order: [KeyPathComparator<Track>], rank: ((Track) -> Double)? = nil) -> [Track] {
         guard !order.isEmpty, tracks.count > 1 else { return tracks }
-        let keys = order.map { Key($0, tracks) }
+        let keys = order.map { Key($0, tracks, rank) }
         let idx = Array(tracks.indices).sorted { i, j in
             for k in keys {
                 let r = k.compare(i, j, tracks)
@@ -22,9 +23,12 @@ public enum TrackSort {
     private enum Key {
         case text([NSString], SortOrder)
         case value(KeyPathComparator<Track>)
+        case rank([Double], SortOrder)
 
-        init(_ c: KeyPathComparator<Track>, _ tracks: [Track]) {
-            if let kp = c.keyPath as? KeyPath<Track, String> {
+        init(_ c: KeyPathComparator<Track>, _ tracks: [Track], _ rank: ((Track) -> Double)?) {
+            if c.keyPath == \Track.harmonySort {
+                self = .rank(rank.map { tracks.map($0) } ?? [], c.order)
+            } else if let kp = c.keyPath as? KeyPath<Track, String> {
                 self = .text(tracks.map { NSString(string: $0[keyPath: kp]) }, c.order)
             } else {
                 self = .value(c)
@@ -40,6 +44,9 @@ public enum TrackSort {
                 return order == .forward || r == .orderedSame ? r : r == .orderedAscending ? .orderedDescending : .orderedAscending
             case let .value(c):
                 return c.compare(tracks[i], tracks[j])
+            case let .rank(r, order):
+                guard !r.isEmpty, r[i] != r[j] else { return .orderedSame }
+                return (r[i] < r[j]) == (order == .forward) ? .orderedAscending : .orderedDescending
             }
         }
     }

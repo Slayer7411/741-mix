@@ -33,6 +33,7 @@ extension ShortcutID: Identifiable {
         case .loadSelectedForce: String(localized: "Auswahl ins Fokus-Deck laden (auch wenn es spielt)")
         case .previewSelected: String(localized: "Auswahl vorhören")
         case .reloadCollection: String(localized: "Collection neu laden")
+        case .matching: String(localized: "Browser: Matching an/aus (passt zum Master)")
         case .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6:
             String(localized: "Favorit \((index ?? 0) + 1) (Fokus-Bereich)")
         case .toggleMixer: String(localized: "Mixer ein/aus")
@@ -161,6 +162,7 @@ struct AppActions {
         case .loadSelectedForce: if let t = browser.selectedTrack() { mix.load(t, deck: d, force: true) }
         case .previewSelected: if let t = browser.selectedTrack() { mix.togglePreview(t) }
         case .reloadCollection: store.load(store.sourceURL ?? LibraryStore.defaultNML)
+        case .matching: (mix.prefs.ui.browserLayout == .single ? browser.paneA : browser.activePane).matching.toggle()
         case .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6:
             (mix.prefs.ui.browserLayout == .single ? browser.paneA : browser.activePane).applyFavorite(a.index ?? 0, store: store)
         case .toggleMixer: mix.prefs.ui.showMixer.toggle()

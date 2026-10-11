@@ -11,6 +11,7 @@ struct SettingsView: View {
         SettingsTab("MIXER & FX") { MixerFXSettings() },
         SettingsTab("PLUGINS") { PluginSettingsView() },
         SettingsTab("ANZEIGE") { WaveformSettings() },
+        SettingsTab("BROWSER") { BrowserSettings() },
         SettingsTab("AUDIO") { AudioSettings() },
         SettingsTab("CONTROLLER") { ControllerSettings() },
         SettingsTab("TAGS") { TagColorSettings() },
@@ -248,7 +249,7 @@ private struct ResizableWindow: NSViewRepresentable {
 /// kleine Helfer für Zeilen; `unit` steht hinter dem Zahlenwert (s, ms, pt, %, dB)
 private func sliderRow(_ title: String, _ value: Binding<Double>, _ range: ClosedRange<Double>, step: Double? = nil,
                        format: String = "%.2f", unit: String = "") -> some View {
-    LabeledContent(title) {
+    LabeledContent(LocalizedStringKey(title)) {
         HStack(spacing: 10) {
             // Schritt über die Bindung statt Slider(step:) – sonst zeichnet macOS je Schritt einen Teilstrich
             Slider(value: Binding(get: { value.wrappedValue },
@@ -721,6 +722,31 @@ private struct LoadCacheSettings: View {
     }
 }
 
+/// Browser: Harmonie zum Master (Key-Farben) und Filter „passt zum Master“ (◆ PASST)
+struct BrowserSettings: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        @Bindable var mix = mix
+        Form {
+            Section("Harmonie zum Master") {
+                Toggle("Key-Spalte färben", isOn: $mix.prefs.ui.harmonyColors)
+                Text("""
+                bezug: hörbarer key des master-decks (mit key-shift, ohne keylock mit dem tempo), spielt kein master:                 fokus-deck. ◆ lila = gleich · ▲▼ hell = ±1 auf dem rad · ◇ hell = relativ dur/moll · grau = ±2 (energie) ·                 gedimmt = unpassend. spalte match: pitch in prozent, den der track bis zum master-tempo braucht
+                """).settingsHint()
+            }
+            Section("◆ PASST (Matching)") {
+                Toggle("±1 auf dem Rad (▲▼)", isOn: $mix.prefs.ui.match.adjacent)
+                Toggle("Relativ Dur/Moll (◇)", isOn: $mix.prefs.ui.match.relative)
+                Toggle("Energie-Wechsel ±2", isOn: $mix.prefs.ui.match.energy)
+                sliderRow("BPM-Fenster", $mix.prefs.ui.match.bpmWindow, 1...10, step: 0.5, format: "±%.1f", unit: "%")
+                Toggle("Halbes / doppeltes Tempo mitzählen", isOn: $mix.prefs.ui.match.halfDouble)
+                Text("gleicher key zählt immer. track ohne key passt nicht, master ohne key: nur das tempo. an/aus: chip ◆ PASST im kopf des bereichs, tastatur (⌘, → tastatur) oder browse-taste am controller").settingsHint()
+            }
+        }
+    }
+}
+
 struct ControllerSettings: View {
     @Environment(MixModel.self) private var mix
     @Environment(ControllerStatus.self) private var status
@@ -793,6 +819,8 @@ struct ControllerSettings: View {
                 sliderRow("Touchstrip-Empfindlichkeit", $mix.prefs.controller.stripSensitivity, 0.2...3, format: "%.1f")
                 Stepper("Browse mit Shift: \(mix.prefs.controller.browseFastStep) Zeilen", value: $mix.prefs.controller.browseFastStep, in: 2...50)
                 Picker("Shift + LOAD", selection: $mix.prefs.controller.shiftLoad) { ForEach(ControllerShiftLoad.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Picker("Browse drücken", selection: $mix.prefs.controller.browsePush) { ForEach(ControllerBrowsePush.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Text("shift + drücken = vorhören. matching: filter „passt zum master“ im browser-bereich des controllers").settingsHint()
             }
             Section("LEDs") {
                 sliderRow("Helligkeit an", Binding(get: { Double(mix.prefs.controller.ledOn) }, set: { mix.prefs.controller.ledOn = Int($0) }),
