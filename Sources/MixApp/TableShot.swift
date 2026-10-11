@@ -5,7 +5,8 @@ import MixCore
 
 /// Selbsttest-Bilder der Track-Tabelle (MIX741_SELFTEST=1 MIX741_SHOT=table:<ordner>), offscreen, ohne Audio:
 /// Browser-Bereich je Vorschau-Modus als PNG (mit Auswahl und Inline-Bearbeitung), Kennzahlen der Tabelle (Zeilenhöhe,
-/// Abstände, Kopf, Spalten) ins Protokoll. MIX741_SHOT_COLUMNS=<json>: Spalten-Anordnung (Format von `columns.*`),
+/// Abstände, Kopf, Spalten) ins Protokoll, Harmonie-Bilder mit festem Bezug (MIX741_SHOT_KEY=<key>@<bpm>).
+/// MIX741_SHOT_COLUMNS=<json>: Spalten-Anordnung (Format von `columns.*`),
 /// nur flüchtig für diesen Prozess. Collection nur gelesen, keine Einstellungen geschrieben.
 @MainActor
 enum TableShot {
@@ -176,6 +177,21 @@ enum TableShot {
             settle(); spin(0.3); settle()
             check("rolle", tv.numberOfRows == pane.shown.count && pane.shown.allSatisfy { $0.comment2.localizedCaseInsensitiveContains("» BASIS") })
             pane.roles = []
+            // Matching (◆ PASST) und Sortierung „Harmonie“ (Kopf der Match-Spalte) mit festem Bezug 1m @ 128
+            let ref = HarmonyRef(key: 21, bpm: 128)
+            mix.harmonyFixed = ref
+            pane.matching = true
+            settle(); spin(0.3); settle()
+            check("matching", tv.numberOfRows == pane.shown.count && pane.shown.count < store.tracks.count && !pane.shown.isEmpty
+                  && pane.shown.allSatisfy { mix.prefs.ui.match.matches($0, ref) })
+            pane.matching = false
+            tv.sortDescriptors = [NSSortDescriptor(key: "harmony", ascending: true)]
+            settle(); spin(0.3); settle()
+            let ranks = pane.shown.map { mix.prefs.ui.match.rank($0, ref) }
+            check("sortieren harmonie", pane.harmonySorted && tv.numberOfRows == store.tracks.count && zip(ranks, ranks.dropFirst()).allSatisfy { $0 <= $1 })
+            tv.sortDescriptors = [NSSortDescriptor(key: "artist", ascending: true)]
+            mix.harmonyFixed = nil
+            settle(); spin(0.3); settle()
             func lists(_ n: PlaylistNode) -> [PlaylistNode] { (n.kind == .playlist ? [n] : []) + n.children.flatMap(lists) }
             if let big = lists(store.root).max(by: { $0.trackKeys.count < $1.trackKeys.count }) {
                 pane.source = .node(big)
@@ -261,6 +277,49 @@ enum TableShot {
             }
             win.contentView = nil
             win.close()
+        }
+        // Harmonie: Bezug fest gesetzt (MIX741_SHOT_KEY=<open key>@<bpm>, sonst Key und Tempo einer Zeile der Liste),
+        // Key-Farben nach Artist, nach Master-Wechsel, nach „Harmonie“ sortiert, Matching an
+        if only?.contains("harmony") ?? true, rows.count > first + 5 {
+            let spec = env["MIX741_SHOT_KEY"]?.split(separator: "@")
+            let pick = rows[(first + 3)...].first { $0.harmonyCode != nil && $0.bpm > 0 } ?? rows[first]
+            let ref = HarmonyRef(key: spec.flatMap { Harmony.code(text: String($0[0])) } ?? pick.harmonyCode,
+                                 bpm: spec.flatMap { $0.count > 1 ? Double($0[1]) : nil } ?? (pick.bpm * 10).rounded() / 10)
+            mix.prefs.ui.previewMode = .off
+            mix.harmonyFixed = ref
+            log("bezug \(ref.key.map(Track.openKey(code:)) ?? "-") \(ref.bpm) bpm · regel \(mix.prefs.ui.match)")
+            let (h, win) = host(size: NSSize(width: Double(env["MIX741_SHOT_W"] ?? "") ?? 1400, height: 640))
+            func settle() { for _ in 0..<6 { h.layoutSubtreeIfNeeded(); spin(0.2) } }
+            settle()
+            guard let tv = table(h) else { log("keine tabelle"); exit(1) }
+            // Stelle mit Artist, Key und Tempo in 25 Zeilen am Stück (verschiedene Keys sichtbar)
+            let start = rows.indices.first { i in i + 25 < rows.count && rows[i..<(i + 25)].allSatisfy { !$0.artist.isEmpty && $0.harmonyCode != nil && $0.bpm > 0 } } ?? first
+            tv.scroll(NSPoint(x: 0, y: tv.rect(ofRow: start).minY))
+            settle()
+            png(h, "table-harmony-keys.png")
+            // Master-Wechsel (Key eine Quinte höher): nur Key-/Match-Zellen neu, kein Neuaufbau der Liste
+            let gen = pane.tableGeneration, count = tv.numberOfRows
+            mix.harmonyFixed = HarmonyRef(key: ref.key.map { Harmony.shifted($0, by: 7) }, bpm: ref.bpm)
+            settle()
+            png(h, "table-harmony-keys-shift.png")
+            log("master-wechsel: neuaufbau \(pane.tableGeneration - gen), zeilen \(count) -> \(tv.numberOfRows)")
+            mix.harmonyFixed = ref
+            pane.sortOrder = [KeyPathComparator(\Track.harmonySort)]
+            settle(); spin(0.5); settle()
+            tv.scroll(.zero)
+            settle()
+            log("harmonie sortiert: " + pane.shown.prefix(8).map { "\($0.openKey) \(String(format: "%.1f", $0.bpm))" }.joined(separator: " · "))
+            png(h, "table-harmony-sorted.png")
+            pane.sortOrder = [KeyPathComparator(\Track.artist)]
+            pane.matching = true
+            settle(); spin(0.5); settle()
+            let ok = pane.shown.allSatisfy { mix.prefs.ui.match.matches($0, ref) }
+            log("matching: \(pane.shown.count) von \(rows.count) tracks, alle passend: \(ok)")
+            png(h, "table-harmony-matching.png")
+            pane.matching = false
+            win.contentView = nil
+            win.close()
+            if !ok { exit(1) }
         }
         exit(0)
     }
