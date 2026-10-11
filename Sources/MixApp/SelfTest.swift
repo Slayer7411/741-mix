@@ -191,6 +191,7 @@ enum SelfTest {
                        "aufx:mrev:appl", pNames, pWet, pTail, pErr.map { " · Fehler: \($0)" } ?? ""))
             log(String(format: "Pegel A: trocken %.3f · Filter HP %.3f (%.0f %%) · Reverb %.3f (%.0f %%)",
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
+            await previewProbe(mix, tracks: c)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -252,6 +253,48 @@ enum SelfTest {
         core.updateFX(1) { $0.singleOn = false }
         core.setPlugin(1, id: nil)
         core.updateFX(0) { $0.singleOn = false }
+    }
+
+    /// Vorhören im Kern, stumm (nur Pegel): Paar wie im Extern-Modus automatisch nach den Deck-Paaren des Testgeräts
+    /// (2-Kanal-Gerät: keins frei -> 1/2), Ladezeit (zufälliger Track: meist dekodiert, dann aus dem Cache), Pegel, Sprung, Stopp.
+    /// Deck A läuft weiter: Pegel und DSP-Last mit und ohne Vorhören
+    static func previewProbe(_ mix: MixModel, tracks c: [Track]) async {
+        let pv = mix.previewer, engine = mix.engine
+        let r = engine.routing.firstChannel
+        let pair = PreviewPlayer.autoPair(external: true, deckPairs: r, mainPair: 0, channels: engine.deviceChannels)
+        pv.setOutput(firstChannel: pair ?? 0, mute: true)
+        log("Vorhören: 12 Kanäle extern, Decks A 1/2 · B 5/6 · C 3/4 · D 7/8 -> automatisch "
+            + (PreviewPlayer.autoPair(external: true, deckPairs: [0, 4, 2, 6], mainPair: 0, channels: 12).map { "\($0 + 1)/\($0 + 2)" } ?? "keins")
+            + " · Testgerät \(engine.deviceChannels) Kanäle, Decks \(r.map { "\($0 + 1)/\($0 + 2)" }.joined(separator: " ")) -> "
+            + (pair.map { "\($0 + 1)/\($0 + 2)" } ?? "keins frei, gemessen auf 1/2"))
+        func measure() async -> (deck: Float, dsp: Double) {
+            _ = engine.takeLoad()
+            var acc: Float = 0
+            for _ in 0..<20 { try? await Task.sleep(for: .milliseconds(50)); acc += engine.levels[0].rms }
+            return (acc / 20, engine.takeLoad().average)
+        }
+        let before = await measure()
+        let t = c.count > 4 ? c[Int.random(in: 4..<c.count)] : c[c.count - 1]   // zufällig: meist noch nicht im Cache
+        for round in 0..<2 {   // 1. dekodieren (oder Cache), 2. aus dem Cache
+            mix.preview(t)
+            for _ in 0..<3000 where mix.previewing == nil && mix.previewLoading != nil { try? await Task.sleep(for: .milliseconds(20)) }   // Cloud-Datei: bis 60 s
+            guard mix.previewing != nil, let secs = mix.previewLoadSeconds else { log("Vorhören: nicht geladen"); return }
+            log(String(format: "Vorhören Ladezeit %d: %.2f s (%@, %.0f s)", round + 1, secs, t.title, t.duration))
+        }
+        let p0 = pv.position
+        let during = await measure()
+        let lv = pv.level, routed = pv.routedPair
+        log(String(format: "Vorhören: Pegel RMS %.3f · Spitze %.3f (stumm) · Paar %@ · lief %.2f s · Deck A RMS ohne/mit %.3f / %.3f · DSP ohne/mit %.1f / %.1f %%",
+                   lv.rms, lv.peak, routed.map { "\($0 + 1)/\($0 + 2)" } ?? "keins", pv.position - p0, before.deck, during.deck,
+                   before.dsp * 100, during.dsp * 100))
+        if let v = mix.previewing {
+            mix.seekPreview(v.key, fraction: 0.5)
+            try? await Task.sleep(for: .milliseconds(200))
+            log(String(format: "Vorhören Sprung auf 50 %%: Position %.2f s (Schnitt %.2f–%.2f)", pv.position, v.cut.lo, v.cut.hi))
+        }
+        mix.stopPreview()
+        try? await Task.sleep(for: .milliseconds(300))
+        log(String(format: "Vorhören gestoppt: spielt %@ · Pegel %.4f", "\(pv.playing)", pv.level.peak))
     }
 
     /// wird vom HistoryStore gesetzt, damit der Test genau seine eigene Datei entfernen kann
