@@ -6,9 +6,22 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* edit mode per deck: `EDIT` in the transport row, ⌥⌘E (focused deck) or menu DECKS, off by default, saved in the settings. cut row in place of the loop sizes, grid row shown, waveform keeps its height. switching swaps the rows in place: 11.5 ms median (state bench), the other decks are not touched
+* cut, non-destructive: IN HERE / OUT HERE at the play position (nearest beat with QUANT, ⌥-click = exact), CLEAR CUT, start → end · length. handles `IN` / `OUT` in waveform and overview to drag, outside the cut dimmed. the audio file is never changed. saved per track in `edits.json`
+* cut in the audio core: nothing outside is audible (3 ms ramp at a cut edge), jumps, seeks, load position, cue, CUP and hotcues land inside, forward play stops at the cut end like at the track end, reverse stops at the cut start, a loop over the end wraps there, beatjump past the end lands on the last whole beat before it. bounds per block from a seqlock pair, no locks. render cpu unchanged (4 decks keylock + fx + plugin, 128 frames: 6.10 % -> 6.05 % of a core). offline tests: into the end, seek outside, loop over the end, reverse at the start, keylock, cut changed while playing
+* remaining time and track end warning count to the cut end
+* grid row: TAP -> bpm from 4 taps on the beats. a grid set by hand shows red: `GRID` label, anchor flag `G`, `◆` before the tempo in the header
+* keys: cut start here, cut end here, grid beat 1 here (assignable, no default)
 * zoom like a web browser: ⌘+ / ⌘− / ⌘0 and view menu, 50-200 % in browser steps, saved, step in the status bar, also under ⌘, -> DISPLAY. fonts, controls, waveform marks, canvases and table columns scale, drawn at full resolution, minimum window size × zoom (capped to the screen). toolbar, settings and dialogs stay at 100 %. no extra cost per update at 100 % or 150 % (15 ms both), one step ~0.9 s relayout. offscreen check: `MIX741_SELFTEST=1 MIX741_SHOT=zoom:<folder>`
 
+### changed
+* grid edits on the deck are stored as full grid (bpm + anchor) and win over collection and own analysis. `Neu analysieren` no longer drops them, only RESET does (RESET = grid from the library, collection or own analysis)
+* `edits.json` is written in the background, collected for 0.5 s (was: on the main thread on every change). selftest and benches only read it
+* state bench: edit / cut actions, `MIX741_BENCH_EDIT=1`; takes the next track when a deck does not load (cloud file stuck)
+
 ### fixed
+* keylock: a track stopped when the stretcher's read head reached the end, the last ~0.12 s (lookahead) was never heard. it now stops when the audible position reaches the end
+* deck shot (`MIX741_SHOT=deck:`) opened the saved output device; now only a built-in 2-channel device, silent
 * core: a stopped deck checked the fx tail through the pointer of a plugin that was swapped out and closed while the unit was not assigned to the deck (read from freed memory on the audio thread, AddressSanitizer). the pointer is now synced before the check
 * core: NaN / Inf control values (rate, seek, loop, fx, master, clock) are dropped at the c api instead of sticking in the core (position NaN = silent deck, clock stops). a loop with end <= start is not activated
 * plugins: the reset of an audio unit after a NaN block runs on the plugin queue, not under the control lock inside the 200 hz tick (an isolated plugin's reset is an xpc call: 0.06 ms median, 0.23 ms max measured, unbounded when the service hangs)
