@@ -342,20 +342,22 @@ struct Reverb {
 };
 
 // ---------- Reverb (Allpass-Ring, Standardtyp) ----------
-// Eingang stereo -> Filter (HP/LP-Regler, Tiefen-Schnitt nach Helligkeit) -> Vorverzögerung -> Diffusor (4 Allpässe je Kanal)
-// (+ 1-Pol-Tiefpass „Luft“) -> Ring aus zwei Hälften (L, R) in Achter-Form: je Hälfte Allpass -> Leitung -> Dämpfung (Tiefen-/Höhenregal, 1-Pol)
-// -> Allpass -> Leitung, deren Ausgang speist die andere Hälfte. Alle 8 Leitungen langsam moduliert (ein LFO, 8 Phasen),
-// Bruchteil per Allpass gelesen. Größe: Basislänge 9 … 44 ms (gleitet), Nachhall 0,35 … 7 s, Diffusion und Modulation steigen mit.
+// Eingang stereo -> Filter (HP/LP-Regler, Tiefen-Schnitt und 1-Pol-Tiefpass nach Helligkeit) -> Vorverzögerung -> Diffusor
+// (4 Allpässe je Kanal) -> Ring aus zwei Hälften (L, R) in Achter-Form: je Hälfte Allpass -> Leitung -> Dämpfung
+// (Tiefen-/Höhenregal, 1-Pol) -> Allpass -> Leitung, deren Ausgang speist die andere Hälfte.
+// Die 8 Leitungen schwanken langsam (je eigene Rate 0,5 … 1,1 Hz), Bruchteil per Allpass gelesen.
+// Größe: Basislänge 12 … 50 ms (gleitet), Nachhall 0,35 … 7 s, Diffusion und Modulation steigen mit.
 // Dämpfung als Regal: Höhen klingen schneller ab, verschwinden nicht. Freeze: Eingang zu, Ring verlustfrei – Fahne steht.
 constexpr int kRcLines = 8;                                   // je Hälfte: Allpass, Leitung, Allpass, Leitung
 constexpr float kRcRatio[4] = {0.43f, 1.0f, 0.71f, 1.37f};    // Länge ÷ Basislänge
 constexpr float kRcRatioSum = 0.43f + 1.0f + 0.71f + 1.37f;
 constexpr float kRcSpread = 1.13f;                            // rechte Hälfte länger: L/R unkorreliert
-constexpr double kRcBaseMs[2] = {9.0, 44.0};                  // Basislänge bei Größe 0 / 1
+constexpr double kRcBaseMs[2] = {12.0, 50.0};                 // Basislänge bei Größe 0 / 1
 constexpr int kRcDiffN = 4;
 constexpr float kRcDiffMs[2][kRcDiffN] = {{2.3f, 3.7f, 5.9f, 8.9f}, {2.6f, 4.1f, 6.4f, 9.6f}};
 constexpr float kRcDiffG[kRcDiffN] = {0.65f, 0.65f, 0.55f, 0.55f};
-constexpr double kRcLfoHz = 0.7;
+constexpr float kRcLfoHz[kRcLines] = {0.53f, 0.89f, 0.71f, 1.07f, 0.61f, 0.97f, 0.79f, 1.13f};   // je Leitung eigene Rate
+constexpr float kRcDepthMs[2] = {0.25f, 1.0f};                 // Modulation (Spitze ½) bei Größe 0 / 1
 constexpr double kRcGlideS = 0.12;                            // Leitungslängen folgen der Größe (Zeitkonstante)
 constexpr float kRcTrim = 0.53f;                              // Pegelabgleich zum FDN (rosa Rauschen, Gruppe, volles D/W)
 
@@ -367,7 +369,7 @@ struct ReverbClassic {
     std::vector<float> dbuf; int doff[2][kRcDiffN] = {}, dlen[2][kRcDiffN] = {}; unsigned dmask[2][kRcDiffN] = {};
     unsigned w = 0;                                           // Schreibzähler (läuft über, Masken schneiden zu)
     float base[2] = {}, baseT[2] = {};                        // Basislänge je Hälfte in Samples (aktuell, Ziel)
-    float glide = 0, depth = 0, ph = 0, phStep = 0;
+    float glide = 0, depth = 0, ph[kRcLines] = {}, phStep[kRcLines] = {};
     float g1 = 0, g2 = 0;                                     // Allpässe im Ring
     float loopG[2] = {}, hiA[2] = {}, loA[2] = {};            // je Hälfte: Ring-Gain, Regal-Verstärkung Höhen/Tiefen
     float hiK = 0, loK = 0;                                   // 1-Pol (TPT): g/(1+g)
@@ -386,7 +388,7 @@ struct ReverbClassic {
         fs = rate;
         preL.assign(size_t(fs * 0.2) + 1, 0); preR.assign(preL.size(), 0); preW = 0;
         auto pow2 = [](int n) { unsigned p = 1; while (p < unsigned(n)) p *= 2; return p; };
-        float maxDepth = float(1.2e-3 * fs), maxBase = float(kRcBaseMs[1] * 1e-3 * fs) * kRcSpread;
+        float maxDepth = 2 * kRcDepthMs[1] * float(1e-3 * fs), maxBase = float(kRcBaseMs[1] * 1e-3 * fs) * kRcSpread;
         int total = 0;
         for (int j = 0; j < kRcLines; j++) {
             unsigned len = pow2(int(kRcRatio[j & 3] * maxBase + maxDepth) + 8);
@@ -402,7 +404,7 @@ struct ReverbClassic {
             }
         dbuf.assign(size_t(total), 0);
         glide = float(1 - std::exp(-1 / (kRcGlideS * fs)));
-        phStep = float(kRcLfoHz / fs);
+        for (int j = 0; j < kRcLines; j++) { phStep[j] = float(kRcLfoHz[j] / fs); ph[j] = 0.125f * float(j); }
         base[0] = baseT[0] = -1;   // erste Größe setzt direkt (kein Gleiten beim Start)
         w = 0; lastBright = shelfKey[0] = -1;
     }
@@ -431,7 +433,7 @@ struct ReverbClassic {
         return a + (c - a) * f;
     }
     inline void put(int j, float v) { buf[size_t(off[j]) + (w & mask[j])] = v; }
-    static inline float lfo(float p) { p -= float(int(p)); float t = 2 * p - 1; return 4 * t * (1 - std::fabs(t)); }
+    static inline float lfo(float p) { float t = 2 * p - 1; return 4 * t * (1 - std::fabs(t)); }   // p 0…1, Parabel ≈ Sinus
 
     /// Gains je Block: Nachhall aus der Größe, Regale aus Helligkeit und HP/LP, Freeze blendet auf verlustfrei
     void tune(float size, float bright, float hpP, float lpP) {
@@ -448,7 +450,7 @@ struct ReverbClassic {
         double tau = t60 / 13.8, eff = tau * (1 - std::exp(-kRvBuildS / tau));   // gleiche Lautheit über die Größe (wie FDN)
         inGain = float(1 / std::sqrt(eff));
         g1 = 0.55f + 0.15f * size; g2 = 0.45f + 0.1f * size;
-        depth = float((0.12 + 0.45 * size) * (1 - 0.8 * frz) * 1e-3 * fs);   // Freeze: weniger Modulation, weniger Verlust beim Lesen
+        depth = float(kRcDepthMs[0] + (kRcDepthMs[1] - kRcDepthMs[0]) * size) * (1 - 0.8f * frz) * float(1e-3 * fs);   // Freeze: weniger Modulation, weniger Verlust beim Lesen
     }
 
     /// Schnittstelle wie Reverb::run (Send: trocken bleibt, Hall kommt dazu), dazu `freeze`
@@ -517,12 +519,11 @@ struct ReverbClassic {
                 in[c] = x;
             }
             base[0] += (baseT[0] - base[0]) * glide; base[1] += (baseT[1] - base[1]) * glide;
-            ph += phStep; if (ph >= 1) ph -= 1;
+            for (int j = 0; j < kRcLines; j++) { ph[j] += phStep[j]; if (ph[j] >= 1) ph[j] -= 1; }
             float nfb[2], len[kRcLines];
             for (int h = 0; h < 2; h++) {
                 int j = h * 4;
-                float po = ph + 0.125f * float(h);
-                for (int k = 0; k < 4; k++) len[j + k] = base[h] * kRcRatio[k] + depth * (k & 1 ? dl : 1.f) * (1 + lfo(po + 0.25f * float(k)));
+                for (int k = 0; k < 4; k++) len[j + k] = base[h] * kRcRatio[k] + depth * (k & 1 ? dl : 1.f) * (1 + lfo(ph[j + k]));
                 float u = in[h] + fb[1 - h];
                 float vM = rd(j, len[j]), v = u - g1 * vM;   // Allpass 1
                 put(j, v); u = vM + g1 * v;

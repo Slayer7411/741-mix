@@ -3,10 +3,12 @@ import Testing
 import MixDSP
 import MixEngine
 
-/// Hall-Messbericht FDN (nur mit MIX741_REVERB_REPORT=1): Nachhallzeit je Größe, Fahne (Höhen, Flachheit, Spitzen),
+/// Hall-Messbericht (nur mit MIX741_REVERB_REPORT=1, Typ FDN, MIX741_REVERB_TYPE=0: Allpass-Ring): Nachhallzeit je Größe, Fahne (Höhen, Flachheit, Spitzen),
 /// Stereo-Korrelation, Pegel beim Einschalten, Rechenzeit. MIX741_REVERB_TRACK=<datei> + MIX741_REVERB_WAV=<präfix>:
 /// echten Track mit Hall rendern (Einsatz, Drop, Fahne) und als WAV schreiben.
 private let report = ProcessInfo.processInfo.environment["MIX741_REVERB_REPORT"] == "1"
+/// MIX741_REVERB_TYPE=0: Bericht für den Allpass-Ring statt FDN
+private let reportType: Float = ProcessInfo.processInfo.environment["MIX741_REVERB_TYPE"] == "0" ? 0 : 1
 
 private final class Rig {
     let e: OpaquePointer
@@ -24,7 +26,7 @@ private final class Rig {
         mdsp_set_track(e, 0, left, right, Int64(frames), fs, 0)
         render()
         mdsp_set_param(e, 0, MD_FX1_ASSIGN, 1)
-        mdsp_set_fx(e, 0, MDFX_REVERB_TYPE, 1)   // dieser Bericht misst den FDN
+        mdsp_set_fx(e, 0, MDFX_REVERB_TYPE, reportType)   // Standard: FDN (reverbFreezeStaysBounded braucht ihn)
     }
     deinit { mdsp_destroy(e); left.deallocate(); right.deallocate() }
 
