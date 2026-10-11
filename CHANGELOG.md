@@ -6,6 +6,9 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* fx mapping: D/W, knobs 1-3 and buttons 1-3 of every unit on any parameter of the loaded effect -> built-in parameters or the full audio unit / VST3 list (unit, range, groups, list entries). right click a knob / button or ⌘, -> MIXER & FX (table per unit, search). buttons toggle switches, step lists, jump continuous ones min / max. remembered per effect / plugin id, the session keeps each unit's mapping. the controller's fx knobs and buttons use the same mapping. labels show the parameter, value with unit on hover / turn
+* browser: favorites bar per pane, 6 slots above tree and list. slot = source (collection, preparation, running tracks, history, playlist, smartlist, playlist folder, smartlists 741, music folder) or filter (tags, roles, search). click switches the pane, active filter again clears it, red = active. right click -> put current source / filter here, rename, clear. drag a tree entry onto a slot. ⌃⌥1-6 on the last used pane
+* favorites saved per pane in the session: playlists + smartlists by collection uuid, then path, music folders by path. missing target after a reload -> grey, struck through. selftest image `MIX741_SHOT=browser:<png>` also renders the bar filled, narrow and empty
 * deck rows on / off: readouts, phase bar, overview, transport, hotcues, loop sizes, beatjump, pitch fader, grid tools -> menu DECKS -> ROWS or ⌘, -> DECKS
 * browser preview, full row: text above the band 12 pt semibold, band dimmed; size, weight and band opacity in ⌘, -> DISPLAY -> preview
 * browser: tags in the comment 2 column as chips -> click = filter by that tag, again = off, ⌥-click = exclude. double click on a chip does nothing, click next to the chips selects / edits as before
@@ -67,6 +70,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * reverb settings (⌘, -> MIXER & FX): level (−18 … +6 dB), brightness, pre-delay (0 … 120 ms, default 15 ms)
 
 ### changed
+* fx: the unit's D/W acts only while a control sits on it (default: D/W knob) -> D/W on a plugin's mix runs the unit fully wet. single delay RATE takes the nearest of the 6 beat values
 * controller: sync held + pad 3 / 4 jumps one beat (one kick) instead of one bar; inside a loop the loop stays and the position wraps
 * plugin windows stay above the MINOS windows (also in full screen) and hide while another app is active
 * browser preview: strong 3-band colors (red = bass, green = mids / synths, blue = highs / drums), weighted against a typical track and saturated -> bass-heavy, synth-heavy and hat-heavy tracks tell apart at a glance. height from peak + bass, breaks clearly lower, thin bright line at big energy jumps (drops), grid fainter behind the waveform. setting preview colors: spectrum (default) / like the waveform (old look)

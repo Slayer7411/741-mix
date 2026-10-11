@@ -27,6 +27,7 @@ typedef struct {
     int32_t stepCount;         ///< 0 = stufenlos
     double defaultValue;
     int32_t flags;             ///< ParameterInfo::ParameterFlags
+    int32_t unitId;            ///< Unit (Gruppe), 0 = Wurzel
 } MDVST3Param;
 
 enum {
@@ -59,6 +60,8 @@ void mdvst3_param_set(MDPlugin *p, uint32_t id, double normalized);
 void mdvst3_param_send(MDPlugin *p, uint32_t id, double normalized);
 /// Anzeige-Text eines Werts ("-6.0 dB")
 bool mdvst3_param_text(MDPlugin *p, uint32_t id, double normalized, char *out, int len);
+/// Name einer Unit (IUnitInfo des Controllers); false ohne Units
+bool mdvst3_unit_name(MDPlugin *p, int32_t unitId, char *out, int len);
 
 /// Zustand von Komponente + Controller (eigener Container); *out mit free() freigeben. 0 bei Fehler.
 size_t mdvst3_get_state(MDPlugin *p, uint8_t **out);

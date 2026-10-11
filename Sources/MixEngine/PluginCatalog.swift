@@ -310,6 +310,9 @@ public final class PluginCatalog: @unchecked Sendable {
     /// PluginInfo zu einer ID (auch abgeschaltete)
     public func info(_ id: String) -> PluginInfo? { entries().first { $0.id == id }?.info }
 
+    /// wie `info`, aber ohne einzulesen (nil, solange die Liste noch nicht gelesen ist)
+    public func knownInfo(_ id: String) -> PluginInfo? { lock.withLock { _entries }?.first { $0.id == id }?.info }
+
     private func scan() -> [PluginEntry] {
         let s = settings
         var out: [PluginEntry] = []

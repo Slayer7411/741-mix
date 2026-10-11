@@ -304,13 +304,28 @@ the status bar shows device, mode and routing.
 
 effects so far: filter, delay, reverb, PLUGIN. more -> [roadmap](roadmap.md).
 
+### MAPPING
+
+D/W, knobs 1-3 and buttons 1-3 of every unit sit on any parameter of the loaded effect. the controller uses the same mapping.
+
+* right click a knob or button -> `Standard` (default) · `Nicht zugewiesen` (off) · every parameter of the effect
+* built-in effects -> their own parameters. group: amounts, on / off, delay time, room size · single: the 3 parameters, on / off, d/w
+* audio unit / VST3 -> the full parameter list with unit and range, in the plugin's groups, long lists in submenus of 20. D/W lists mix / wet / dry parameters first
+* buttons: switch -> toggles, list -> next entry (wraps), continuous -> min / max
+* label under a knob = short parameter name, bright = own mapping. hover, drag or turn -> value with unit (VST3: text from the plugin)
+* the unit's D/W only acts while a control sits on it. D/W on the plugin's mix -> the unit runs fully wet
+* remembered per effect (`GROUP`, `FILTER`, `DELAY`, `REVERB`) or plugin id -> the same effect loads with its mapping again, on any unit
+* the session keeps each unit's mapping and the values of mapped plugin parameters
+* table per unit with search, remembered mappings with forget -> ⌘, -> MIXER & FX
+* default = the layout below: group = amount + on / off per slot, single = 3 parameters + button 1 on / off, plugin = first three parameters
+
 ### PLUGIN
 
 any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect in the single mode, e.g. AUMatrixReverb or AUReverb2 instead of the built-in reverb.
 
 * SNGL -> effect menu -> PLUGIN -> the menu below lists every installed effect (`name · manufacturer`, VST3 with a small `VST3` behind)
-* knobs 1-3 -> the first three parameters of the plugin, labels from the plugin
-* D/W -> dry / wet of the unit (on top of the plugin's own mix)
+* knobs 1-3 -> the first three parameters of the plugin (default), labels from the plugin. any parameter -> [mapping](#mapping)
+* D/W -> dry / wet of the unit (on top of the plugin's own mix), or mapped to the plugin's mix
 * ON -> on / off. off = spillover: the plugin gets no new audio and rings out
 * EDIT -> window with the plugin's own view (or a generic one) · changes go to every deck on that unit
 * one instance per deck · loads in the background, the deck plays on dry meanwhile
@@ -334,7 +349,7 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
 * every effect class of a `.vst3` bundle (category audio effect, sub category Fx) is an own entry. the classes come from `Contents/Resources/moduleinfo.json` without loading code, otherwise the bundle is loaded once (with crash marker)
 * runs in-process, `läuft im prozess` in the list. isolation is audio unit only -> a crashing VST3 takes MINOS-741 down, the crash marker blocks it on the next start
 * stereo in / out (a mono plugin gets the mid signal), 32-bit float, blocks up to 4096 frames, the sample rate of the audio device
-* knobs 1-3 -> the first three plugin parameters, bypass, program change, read-only and hidden ones skipped
+* parameters for knobs / buttons: all except bypass, program change, read-only and hidden. groups = the plugin's units, lists with their entry names
 * the plugin gets the tempo of the master clock (tempo-synced delays follow)
 * latency reported by the plugin is not compensated (same as audio units)
 * tail: rendered until 1 s below -100 dB, or as long as the plugin's own tail time (max 30 s)
@@ -353,6 +368,7 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
 
 * one or two panes, side by side or stacked
 * each pane: own tree, search, sort, role chips, tags
+* favorites bar on top of each pane: 6 slots, source or filter. click = switch, right click = assign / rename / clear, drag a tree entry onto a slot, ⌃⌥1-6. details: [library · favorites](library.md#-favorites)
 * tree: TRACK COLLECTION, PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, MUSIC FOLDERS, then all playlists + smartlists of the collection
 * MUSIC FOLDERS = the music library on disk, folder by folder. click a folder -> its audio files (mp3, m4a, aac, aiff, wav, flac, ogg, opus)
   * files in the collection show bpm, key, tags, comments like everywhere else
@@ -525,6 +541,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | space | big browser (not while typing in a search field) |
 | ⌘O | open collection |
 | ⌘E | edit the selected tracks (browser) |
+| ⌃⌥1-6 | browser favorite 1-6 (last used pane) |
 | ⌘, | settings |
 | ⌘W | close window -> main window: quit (asks first) |
 
