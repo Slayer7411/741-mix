@@ -551,7 +551,7 @@ struct ReverbClassic {
     }
 };
 
-// ---------- Beat-FX: Gater, Roll ----------
+// ---------- Beat-FX: Gater, Roll, Flanger ----------
 // Raster aus der Master-Clock: Beat am Anfang des Teilblocks + Beats je Sample (MDEngine::fxBeat/fxBps).
 // Anteil (AMOUNT × D/W) mit Rampe 5 ms, auch Ein/Aus. Anteil 0 = Ausgang wird nicht angefasst (bitgleich trocken).
 constexpr double kFxRampS = 0.005;
@@ -668,6 +668,74 @@ struct Roll {
     }
 };
 
+/// LFO für Flanger/Phaser: beat-synchron (Phase = Beat ÷ Periode, 0 auf dem Teiler) oder frei (Hz); Freeze hält die Phase.
+/// Wert 0…1 (½ − ½·cos), je Kanal mit Versatz (Spread), am Ende jedes 64er-Abschnitts gerechnet, 10 ms geglättet
+/// (Freeze aus / Sync an springen nicht hörbar).
+struct BeatLFO {
+    double ph = 0; float sm[2] = {-1, -1}, k = 0;
+    void init(double fs) { k = onePole(0.01, fs / kLfoSeg); }
+    void reset() { sm[0] = sm[1] = -1; }
+    void step(float *v, double beatEnd, double periodBeats, double hz, int m, double fs, bool freeze, float spread) {
+        if (!freeze) ph = periodBeats > 0 ? frac(beatEnd / periodBeats) : frac(ph + hz * m / fs);
+        for (int c = 0; c < 2; c++) {
+            float x = float(0.5 - 0.5 * std::cos(2 * kPi * (ph + (c ? 0.5 * spread : 0.0))));
+            sm[c] = sm[c] < 0 ? x : sm[c] + (x - sm[c]) * k;
+            v[c] = sm[c];
+        }
+    }
+};
+
+/// Flanger: Verzögerung 0,3 … 8 ms (exponentiell um 1,55 ms, Tiefe = Anteil des Bereichs), linear gelesen, Rückkopplung
+/// bis 0,85; Ausgang ½·(x + verzögert), Rückkopplung im Pegel ausgeglichen. Eingang mit dem Anteil eingeblendet.
+struct Flanger {
+    std::vector<float> bufL, bufR; unsigned w = 0, mask = 0;
+    BeatLFO lfo; float d[2] = {0, 0}, depthSm = -1, fbSm = 0, mix = 0, kMix = 0; double fs = 44100;
+    void init(double rate) {
+        fs = rate; unsigned len = 1; while (len < unsigned(0.012 * fs) + 4) len *= 2;
+        bufL.assign(len, 0); bufR.assign(len, 0); mask = len - 1;
+        lfo.init(fs); kMix = onePole(kFxRampS, fs);
+    }
+    void clear() { std::fill(bufL.begin(), bufL.end(), 0); std::fill(bufR.begin(), bufR.end(), 0); mix = 0; d[0] = d[1] = 0; depthSm = -1; lfo.reset(); }
+    bool active() const { return mix > 0; }
+    void run(float *L, float *R, int n, double beat, double bps, double periodBeats, double hz, bool freeze, float spread,
+             float depth, float feedback, float amount, bool on) {
+        depth = std::clamp(depth, 0.f, 1.f); spread = std::clamp(spread, 0.f, 1.f);
+        float fb = std::clamp(feedback, 0.f, 1.f) * 0.85f, target = on ? amount : 0.f;
+        double dc = 0.00155 * fs, span = std::log(8.0 / 0.3) * 0.5;
+        float wf = float(w + mask + 1);   // Schreibstelle + Pufferlänge: Lesestelle bleibt positiv
+        for (int i0 = 0; i0 < n; i0 += kLfoSeg) {
+            int m = std::min(kLfoSeg, n - i0);
+            float v[2], de[2], inc[2];
+            lfo.step(v, beat + (i0 + m) * bps, periodBeats, hz, m, fs, freeze, spread);
+            depthSm = depthSm < 0 ? depth : depthSm + (depth - depthSm) * lfo.k;
+            for (int c = 0; c < 2; c++) {
+                de[c] = float(dc * std::exp(span * depthSm * (2 * v[c] - 1)));
+                if (d[c] <= 0) d[c] = de[c];
+                inc[c] = (de[c] - d[c]) / float(m);
+            }
+            bool ramp = settle(mix, target) | settle(fbSm, fb);
+            for (int i = i0; i < i0 + m; i++) {
+                if (ramp) { mix += (target - mix) * kMix; fbSm += (fb - fbSm) * kMix; }
+                float y[2];
+                const float *bs[2] = {bufL.data(), bufR.data()};
+                for (int c = 0; c < 2; c++) {
+                    d[c] += inc[c];
+                    float r = wf - d[c];
+                    unsigned r0 = unsigned(r); float f = r - float(r0);
+                    float a = bs[c][r0 & mask], bb = bs[c][(r0 + 1) & mask];
+                    y[c] = a + (bb - a) * f;
+                }
+                float xl = L[i], xr = R[i];
+                bufL[w] = xl * mix + y[0] * fbSm; bufR[w] = xr * mix + y[1] * fbSm;
+                w = (w + 1) & mask; wf = float(w + mask + 1);
+                float g = 0.5f * (1 - 0.5f * fbSm);
+                if (mix > 0) { L[i] = xl + mix * ((xl + y[0]) * g - xl); R[i] = xr + mix * ((xr + y[1]) * g - xr); }
+            }
+        }
+        if (!on && mix < 1e-5f) clear();
+    }
+};
+
 // ---------- Plugin (Audio Unit, VST3 – MixDSPPlugin.h) ----------
 // wie Delay/Reverb: aus = Eingang zu, Ausgang klingt aus; gerechnet wird, bis es 1 s (oder die vom Plugin gemeldete
 // Nachklingzeit, höchstens 30 s) unter -100 dB war
@@ -716,7 +784,7 @@ struct PluginSlot {
 
 struct FXChain {   // eine FX-Unit für ein Deck
     SweepFilter filter; Delay delay; Reverb reverb; ReverbClassic classic; PluginSlot plug;
-    Gater gater; Roll roll;
+    Gater gater; Roll roll; Flanger flanger;
 };
 
 struct TrackSlot { const float *L = nullptr, *R = nullptr; int64_t frames = 0; double rate = 44100; double start = 0; };
@@ -897,7 +965,7 @@ static void healDeck(Deck &d) {
     for (Biquad *b : {&d.eqL, &d.eqM, &d.eqH, &d.chanFilter.bq}) b->clearState();
     for (auto &c : d.fx) {
         c.filter.bq.clearState(); c.delay.clear(); c.reverb.clear(); c.classic.clear();
-        c.gater.clear(); c.roll.clear();
+        c.gater.clear(); c.roll.clear(); c.flanger.clear();
         for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp, &c.reverb.lowCut, &c.reverb.tilt,
                           &c.classic.hp, &c.classic.lp, &c.classic.lowCut}) b->clearState();   // clear() lässt die Filter stehen
         if (c.plug.last) c.plug.resetPending.store(true);   // Plugin zurücksetzen lassen (Steuer-Thread), bis dahin trocken
@@ -1045,10 +1113,14 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
             c.filter.update((fp[MDFX_FILTER_AMOUNT].load() * 2 - 1) * dw, fp[MDFX_FILTER_RES].load(), e->fs);
             c.filter.run(L, R, n);
         }
-        bool gaterOn = on(MDFX_GATER_ON);
+        bool gaterOn = on(MDFX_GATER_ON), flangerOn = on(MDFX_FLANGER_ON);
         if (gaterOn || c.gater.active())
             c.gater.run(L, R, n, e->fxBeat, e->fxBps, fp[MDFX_GATER_BEATS].load(), fp[MDFX_GATER_SHAPE].load(), fp[MDFX_GATER_WIDTH].load(),
                         on(MDFX_GATER_MUTE), fp[MDFX_GATER_AMOUNT].load() * dw, gaterOn);
+        if (flangerOn || c.flanger.active())
+            c.flanger.run(L, R, n, e->fxBeat, e->fxBps, fp[MDFX_FLANGER_BEATS].load(), fp[MDFX_FLANGER_HZ].load(), on(MDFX_FLANGER_FREEZE),
+                          fp[MDFX_FLANGER_SPREAD].load(), fp[MDFX_FLANGER_DEPTH].load(), fp[MDFX_FLANGER_FEEDBACK].load(),
+                          fp[MDFX_FLANGER_AMOUNT].load() * dw, flangerOn);
         bool delayOn = fp[MDFX_DELAY_ON].load() > 0.5f, reverbOn = fp[MDFX_REVERB_ON].load() > 0.5f;
         if (delayOn || c.delay.active()) {
             float a = fp[MDFX_DELAY_AMOUNT].load();
@@ -1119,7 +1191,7 @@ MDEngine *mdsp_create(double sampleRate) {
         primeStretch(d, 1, 1.0);   // interne Puffer einmal anlegen (nicht erst im Audio-Thread)
         for (auto &c : d.fx) {
             c.delay.init(sampleRate); c.reverb.init(sampleRate); c.classic.init(sampleRate);
-            c.gater.init(sampleRate); c.roll.init(sampleRate);
+            c.gater.init(sampleRate); c.roll.init(sampleRate); c.flanger.init(sampleRate);
             c.plug.dryL.assign(kMaxFrames, 0); c.plug.dryR.assign(kMaxFrames, 0);
         }
     }

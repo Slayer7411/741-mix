@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import MixDSP
 
-/// Beat-FX offline (Gater, Roll): Raster der Clock, Wiederholung, Ein/Aus ohne Knacken,
+/// Beat-FX offline (Gater, Roll, Flanger): Raster der Clock, Wiederholung, wandernde Kerben, Ein/Aus ohne Knacken,
 /// D/W 0 = trocken, NaN/Denormal bei 44,1/48/96 kHz
 private final class Rig {
     let e: OpaquePointer
@@ -42,13 +42,14 @@ private func white(_ s: UInt32) -> () -> Float {
     return { seed = seed &* 1664525 &+ 1013904223; return (Float(seed >> 8) / Float(1 << 24) - 0.5) * 0.6 }
 }
 
-private enum Effect: CaseIterable { case gater, roll }
+private enum Effect: CaseIterable { case gater, roll, flanger }
 
 private extension Rig {
     func set(_ fx: Effect, on: Bool) {
         switch fx {
         case .gater: self.fx(MDFX_GATER_ON, on ? 1 : 0)
         case .roll: self.fx(MDFX_ROLL_ON, on ? 1 : 0)
+        case .flanger: self.fx(MDFX_FLANGER_ON, on ? 1 : 0)
         }
     }
 }
@@ -110,6 +111,46 @@ func gaterFollowsBeatDivider(fs: Double) {
         _ = r.capture(0.2); _ = dry.capture(0.2)
         let (x, _) = r.capture(0.2), (y, _) = dry.capture(0.2)
         #expect(x == y)
+    }
+}
+
+/// nass (mit Effekt) und trocken, gleiches Rauschen, 120 BPM
+private func wetDry(_ setup: (Rig) -> Void) -> ([Float], [Float]) {
+    let w = white(9), w2 = white(9)
+    let r = Rig(seconds: 4, bpm: 120) { _ in let v = w(); return (v, v) }
+    let d = Rig(seconds: 4, bpm: 120) { _ in let v = w2(); return (v, v) }
+    setup(r)
+    r.play(true); d.play(true)
+    return (r.capture(3).0, d.capture(3).0)
+}
+
+/// Flanger: Verzögerung (erste Kerbe 1/(2d)) aus der Kreuzkorrelation nass − ½ trocken gegen trocken. Raster: Periode 2 bzw. 4 Beats
+@Test func flangerNotchesFollowRate() {
+    func delayAt(_ wet: [Float], _ dry: [Float], _ t: Double) -> Double {
+        let c = Int(t * 44100), n = 1024
+        var best = 0, bv = -Double.infinity
+        for lag in 8...420 {
+            var s = 0.0
+            for i in (c - n / 2)..<(c + n / 2) { s += Double(wet[i] - 0.5 * dry[i]) * Double(dry[i - lag]) }
+            if s > bv { bv = s; best = lag }
+        }
+        return Double(best)
+    }
+    for period: Float in [2, 4] {
+        let (wet, dry) = wetDry { r in
+            r.fx(MDFX_FLANGER_BEATS, period); r.fx(MDFX_FLANGER_DEPTH, 1); r.fx(MDFX_FLANGER_FEEDBACK, 0); r.fx(MDFX_FLANGER_SPREAD, 0)
+            r.fx(MDFX_FLANGER_ON, 1)
+        }
+        let notch = [1.0, 1.5, 2.0, 2.5].map { 44100 / (2 * delayAt(wet, dry, $0)) }
+        print(String(format: "[beatfx] flanger Periode %.0f Beats: erste Kerbe bei 1,0 / 1,5 / 2,0 / 2,5 s = %.0f / %.0f / %.0f / %.0f Hz",
+                     period, notch[0], notch[1], notch[2], notch[3]))
+        if period == 2 {   // Periode 1 s: auf dem Teiler oben (0,3 ms), dazwischen unten (8 ms)
+            #expect(abs(notch[0] / 1667 - 1) < 0.15 && abs(notch[2] / 1667 - 1) < 0.15)
+            #expect(abs(notch[1] / 62.5 - 1) < 0.15 && abs(notch[3] / 62.5 - 1) < 0.15)
+        } else {           // Periode 2 s: bei 1 s unten, bei 2 s oben, dazwischen in der Mitte
+            #expect(abs(notch[0] / 62.5 - 1) < 0.15 && abs(notch[2] / 1667 - 1) < 0.15)
+            #expect(notch[1] > 150 && notch[1] < 700 && notch[3] > 150 && notch[3] < 700)
+        }
     }
 }
 
