@@ -145,9 +145,10 @@ public final class SpectrumAnalyzer {
             let iEnd = min(k, max(i + 1, (nextAbs - absStart - first + decim - 1) / decim))
             let len = vDSP_Length(iEnd - i)
             var a: Float = 0, c: Float = 0, d: Float = 0
-            vDSP_svesq(&ySub + i, 1, &a, len)
-            vDSP_svesq(&yBass + i, 1, &c, len)
-            vDSP_svesq(&yLowMid + i, 1, &d, len)
+            // Zeiger aus dem Feld nur innerhalb von withUnsafeBufferPointer gültig (`&feld + i` lebt nur für das `+`)
+            ySub.withUnsafeBufferPointer { vDSP_svesq($0.baseAddress! + i, 1, &a, len) }
+            yBass.withUnsafeBufferPointer { vDSP_svesq($0.baseAddress! + i, 1, &c, len) }
+            yLowMid.withUnsafeBufferPointer { vDSP_svesq($0.baseAddress! + i, 1, &d, len) }
             eSub[b] += a; eBass[b] += c; eLowMid[b] += d; nLow[b] += Float(iEnd - i)
             i = iEnd
             b += 1

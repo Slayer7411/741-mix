@@ -276,6 +276,32 @@ private final class Core {
     mdplug_close(plug)
 }
 
+/// Plugin einer nicht zugewiesenen Unit wechseln und schließen, dann zuweisen: die Fahnen-Prüfung des stehenden
+/// Decks darf das geschlossene Plugin nicht mehr anfassen (vorher: Lesen aus freigegebenem Speicher)
+@Test func closedPluginIsNotTouchedByTailCheck() throws {
+    let c = Core()
+    var err = [CChar](repeating: 0, count: 256)
+    let fcc = { (s: String) in s.utf8.reduce(UInt32(0)) { $0 << 8 | UInt32($1) } }
+    let plug = try #require(mdplug_open(fcc("aufx"), fcc("mrev"), fcc("appl"), c.fs, UInt32(MDSP_MAX_FRAMES), &err, Int32(err.count)),
+                            "\(String(cString: err))")
+    c.load(); c.render()
+    c.set(MD_FX1_ASSIGN, 1)
+    #expect(mdsp_set_fx_plugin(c.e, 0, 0, plug) == nil)
+    c.fx(MDFX_DRYWET, 1); c.fx(MDFX_PLUGIN_ON, 1)
+    c.set(MD_PLAYING, 1); c.render(seconds: 0.2)
+    c.fx(MDFX_PLUGIN_ON, 0); c.render(seconds: 0.2)   // aus: Eingang zu, die Fahne klingt noch (quiet < 1 s)
+    // Unit weg vom Deck, Deck steht, Plugin heraus und zu
+    c.set(MD_FX1_ASSIGN, 0); c.set(MD_PLAYING, 0); c.render()
+    #expect(mdsp_set_fx_plugin(c.e, 0, 0, nil) == plug)
+    c.render()
+    #expect(mdsp_fx_plugin_released(c.e, 0, 0, plug))
+    mdplug_close(plug)
+    // Unit wieder zuweisen: stehendes Deck, keine Fahne, kein Zugriff auf das alte Plugin
+    c.set(MD_FX1_ASSIGN, 1)
+    #expect(c.render(seconds: 0.1) == 0)
+    #expect(mdsp_position(c.e, 0).isFinite)
+}
+
 @Test func audioUnitOpenFailsCleanly() {
     var err = [CChar](repeating: 0, count: 256)
     let p = mdplug_open(0x7a7a7a7a, 0x7a7a7a7a, 0x7a7a7a7a, 44100, 512, &err, Int32(err.count))

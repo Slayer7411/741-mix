@@ -50,7 +50,7 @@ track load (`MixController.load`):
 
 * file missing -> error right away
 * decode on a background queue, progress after every chunk (frames, false = cancel)
-* watchdog every 0.25 s: no new frames for `loadTimeout` (4 s) -> cancel flag, load sequence bumped, deck emptied, notice. a decoder stuck in a read returns later and its result is dropped by the sequence check
+* watchdog on the control tick (every 0.25 s, not a utility queue: that one is starved under cpu load): no new frames for `loadTimeout` (4 s) -> cancel flag, load sequence bumped, deck emptied, notice. a decoder stuck in a read returns later and its result is dropped by the sequence check
 * notices (`EngineNotice`: level, key, text, detail) -> `StatusCenter` (main thread, `StatusLog` in MixCore: expiry, dedupe by key, history of 50)
 
 plugins (audio units):

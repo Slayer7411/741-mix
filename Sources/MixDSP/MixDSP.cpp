@@ -358,6 +358,12 @@ struct PluginSlot {
     }
     bool tail(double fs) const { return last && quiet < quietLimit(fs); }
     bool active(double fs) const { return send > 0.0005f || tail(fs); }
+    /// Audio-Thread: Zeiger des Steuer-Threads übernehmen; ein neues (oder kein) Plugin beginnt ohne Fahne
+    MDPlugin *sync() {
+        MDPlugin *p = plugin.load(std::memory_order_acquire);
+        if (p != last) { last = p; send = 0; quiet = 0x7fffffff; }
+        return p;
+    }
     /// out = dry·(1 − dw·send) + wet·dw – an: klassisches Dry/Wet, aus: trocken + ausklingende Fahne
     void run(MDPlugin *p, float *L, float *R, int n, float dw, bool on, double fs) {
         float target = on ? 1.f : 0.f;
@@ -553,9 +559,12 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
         if (!jumped) { d.pos = std::max(0.0, d.pos - d.latSm * d.latDir); d.flux = std::max(0.0, d.flux - d.latSm * d.latDir); }
         d.latSm = 0; d.wasStretching = false;
     }
-    // Deck steht: weiterrechnen, solange Echo oder Hall noch klingen (gemessen, kein festes Zeitlimit)
+    // Deck steht: weiterrechnen, solange Echo oder Hall noch klingen (gemessen, kein festes Zeitlimit).
+    // Plugin-Zeiger zuerst abgleichen: eine nicht zugewiesene Unit kommt unten nicht vorbei, `last` zeigte sonst
+    // auf ein längst geschlossenes Plugin, und active() liest dessen Nachklingzeit
     bool fxTail = false;
     for (int u = 0; u < MDSP_FX_UNITS; u++) {
+        d.fx[u].plug.sync();
         if (d.p[MD_FX1_ASSIGN + u].load() > 0.5f &&
             (d.fx[u].delay.tail > 1e-5f || d.fx[u].reverb.tail > 1e-5f || d.fx[u].plug.active(e->fs))) fxTail = true;
     }
@@ -650,9 +659,8 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
                          fp[MDFX_REVERB_LEVEL].load(), fp[MDFX_REVERB_BRIGHT].load(), fp[MDFX_REVERB_PREDELAY].load(),
                          reverbOn, dwSend);
         }
-        MDPlugin *pl = c.plug.plugin.load(std::memory_order_acquire);
+        MDPlugin *pl = c.plug.sync();
         bool plugOn = pl && fp[MDFX_PLUGIN_ON].load() > 0.5f;
-        if (pl != c.plug.last) { c.plug.last = pl; c.plug.send = 0; c.plug.quiet = 0x7fffffff; }   // neues Plugin: ohne Fahne
         if (pl && !c.plug.resetPending.load(std::memory_order_acquire) && (plugOn || c.plug.active(e->fs))) {
             pl->tempo = e->clock.bpm.load(std::memory_order_relaxed);
             pl->beat = e->clock.beat;
@@ -739,9 +747,11 @@ uint32_t mdsp_set_track(MDEngine *e, int deck, const float *left, const float *r
 bool mdsp_track_consumed(MDEngine *e, int deck, uint32_t gen) {
     return int32_t(e->decks[deck].consumedGen.load() - gen) >= 0;
 }
-void mdsp_set_param(MDEngine *e, int deck, MDParam p, float v) { e->decks[deck].p[p].store(v); }
-void mdsp_set_fx(MDEngine *e, int unit, MDFXParam p, float v) { e->fxp[unit][p].store(v); }
-void mdsp_set_master(MDEngine *e, float v) { e->master.store(v); }
+// Steuerwerte: NaN/Inf (kaputte Rechnung, kaputte Datei) werden verworfen – der Kern käme sonst nicht mehr heraus
+// (Position NaN liest nichts, healDeck greift nur bei NaN am Ausgang; Clock-Beat NaN zählt nie weiter)
+void mdsp_set_param(MDEngine *e, int deck, MDParam p, float v) { if (std::isfinite(v)) e->decks[deck].p[p].store(v); }
+void mdsp_set_fx(MDEngine *e, int unit, MDFXParam p, float v) { if (std::isfinite(v)) e->fxp[unit][p].store(v); }
+void mdsp_set_master(MDEngine *e, float v) { if (std::isfinite(v)) e->master.store(v); }
 
 MDPlugin *mdsp_set_fx_plugin(MDEngine *e, int unit, int deck, MDPlugin *p) {
     PluginSlot &s = e->decks[deck].fx[unit].plug;
@@ -765,10 +775,12 @@ bool mdsp_fx_plugin_needs_reset(MDEngine *e, int unit, int deck) {
 void mdsp_fx_plugin_reset_done(MDEngine *e, int unit, int deck) {
     e->decks[deck].fx[unit].plug.resetPending.store(false, std::memory_order_release);
 }
-void mdsp_seek(MDEngine *e, int deck, double s) { e->decks[deck].pendingSeek.store(s); }
+void mdsp_seek(MDEngine *e, int deck, double s) { if (std::isfinite(s)) e->decks[deck].pendingSeek.store(std::max(0.0, s)); }
 
 void mdsp_set_loop(MDEngine *e, int deck, bool active, double s, double en) {
     Deck &d = e->decks[deck];
+    if (!std::isfinite(s) || !std::isfinite(en)) { active = false; s = en = 0; }
+    if (active && !(en > s)) active = false;   // leerer oder verkehrter Loop: nicht springen (sonst ein Sample in Schleife)
     d.loopActiveReq.store(active); d.loopStartReq.store(s); d.loopEndReq.store(en);
     d.loopVersion.fetch_add(1);
     // sofort nach außen sichtbar (Kern fragt direkt danach ab)
@@ -856,8 +868,8 @@ bool mdsp_clock_stamp(MDEngine *e, double *beat, uint64_t *hostTime) {
     return false;
 }
 
-void mdsp_clock_set_bpm(MDEngine *e, double bpm) { e->clock.bpm.store(std::clamp(bpm, 20.0, 300.0)); }
-void mdsp_clock_set_beat(MDEngine *e, double beat) { e->clock.setBeat.store(beat); e->clock.beatOut.store(beat); }
+void mdsp_clock_set_bpm(MDEngine *e, double bpm) { if (std::isfinite(bpm)) e->clock.bpm.store(std::clamp(bpm, 20.0, 300.0)); }
+void mdsp_clock_set_beat(MDEngine *e, double beat) { if (std::isfinite(beat)) { e->clock.setBeat.store(beat); e->clock.beatOut.store(beat); } }
 double mdsp_clock_beat(MDEngine *e) { return e->clock.beatOut.load(); }
 double mdsp_keylock_latency(MDEngine *e) { return e->decks[0].stretch.outputLatency() / e->fs; }
 void mdsp_metronome(MDEngine *e, bool on, float volume, int ch) {

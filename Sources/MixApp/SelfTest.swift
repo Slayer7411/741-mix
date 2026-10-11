@@ -191,6 +191,7 @@ enum SelfTest {
                        "aufx:mrev:appl", pNames, pWet, pTail, pErr.map { " · Fehler: \($0)" } ?? ""))
             log(String(format: "Pegel A: trocken %.3f · Filter HP %.3f (%.0f %%) · Reverb %.3f (%.0f %%)",
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
+            if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
                 try? FileManager.default.removeItem(at: url)
@@ -200,6 +201,57 @@ enum SelfTest {
             fflush(stdout)
             if ProcessInfo.processInfo.environment["MIX741_STAY"] == nil { exit(0) }
         }
+    }
+
+    /// MIX741_BENCH=load: Lastprobe am Gerät. 4 Decks mit Keylock (Tempo ±3 %), Hall auf FX 1 (A/C), Plugin
+    /// AUMatrixReverb auf FX 2 (B/D), Puffer 64 / 128 / 256 je MIX741_BENCH_SECS s (8): DSP-Last (Mittel, Spitze),
+    /// Blöcke über Budget (eigene Messung) und Überlastmeldungen des Geräts. Stumm, nur eingebautes Gerät
+    /// (MIX741_NOEXT=1); die Puffergröße wird danach zurückgestellt. Statusleiste holt dieselben Werte (4 Hz) ab:
+    /// die Blockzahl zeigt, wie viel die Probe davon gesehen hat
+    static func loadProbe(_ core: MixController, tracks c: [Track]) async {
+        let engine = core.engine
+        let secs = Double(ProcessInfo.processInfo.environment["MIX741_BENCH_SECS"] ?? "") ?? 8
+        core.load(c[min(2, c.count - 1)], deck: 2)
+        core.load(c[min(3, c.count - 1)], deck: 3)
+        for _ in 0..<300 where core.trackAudio(2) == nil || core.trackAudio(3) == nil {
+            let s = core.snapshot()
+            if let e = s.decks[2].error ?? s.decks[3].error { log("Lastprobe: \(e)"); return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        guard core.trackAudio(2) != nil, core.trackAudio(3) != nil else { log("Lastprobe: Decks C/D nicht geladen"); return }
+        for d in 0..<4 { core.updateDeck(d) { $0.keylock = true; $0.tempoPct = d % 2 == 0 ? 3 : -3 } }
+        core.updateFX(0) { $0.single = true; $0.singleType = FXUnitState.Effect.reverb.rawValue; $0.singleOn = true
+                           $0.params = [0.8, 0.3, 1.0]; $0.dryWet = 1 }
+        core.setPlugin(1, id: "aufx:mrev:appl")
+        for _ in 0..<60 where core.pluginParamNames(1).isEmpty { try? await Task.sleep(for: .milliseconds(50)) }
+        core.updateFX(1) { $0.singleOn = true; $0.dryWet = 0.5 }
+        for d in 0..<4 where !core.snapshot().decks[d].playing { core.togglePlay(d) }
+        let saved = engine.bufferFrames
+        for frames: UInt32 in [64, 128, 256] {
+            engine.bufferFrames = frames
+            engine.apply(engine.routing, restart: true)
+            try? await Task.sleep(for: .seconds(1))   // einschwingen, erste Blöcke nach dem Start nicht zählen
+            engine.resetOverloads()
+            _ = engine.takeLoad()
+            var busy = 0.0, blocks = 0, peak = 0.0
+            let t0 = Date()
+            while Date().timeIntervalSince(t0) < secs {
+                try? await Task.sleep(for: .milliseconds(50))
+                let l = engine.takeLoad()
+                busy += l.average * Double(l.blocks); blocks += l.blocks; peak = max(peak, l.peak)
+            }
+            let l = engine.takeLoad()
+            let playing = (0..<4).filter { core.snapshot().decks[$0].playing }.count
+            log(String(format: "Lastprobe Puffer %d (Gerät %d Frames, %.1f ms Latenz, %.0f Hz, %d Decks): DSP %.1f %% · Spitze %.0f %% · %d Blöcke in %.0f s · über Budget %d · Gerät überlastet %d",
+                       frames, l.bufferFrames, l.outputLatency * 1000, l.sampleRate, playing,
+                       busy / Double(max(1, blocks)) * 100, peak * 100, blocks, secs, l.overloads, l.deviceOverloads))
+        }
+        engine.bufferFrames = saved
+        engine.apply(engine.routing, restart: true)
+        for d in 0..<4 where core.snapshot().decks[d].playing { core.togglePlay(d) }
+        core.updateFX(1) { $0.singleOn = false }
+        core.setPlugin(1, id: nil)
+        core.updateFX(0) { $0.singleOn = false }
     }
 
     /// wird vom HistoryStore gesetzt, damit der Test genau seine eigene Datei entfernen kann

@@ -4,12 +4,14 @@ import MixDSP
 import MixCore
 import MixEngine
 
-/// gesammelte Meldungen des Kerns
+/// gesammelte Meldungen des Kerns, mit Zeitstempel: so lässt sich der Abbruch des Wächters messen, ohne dass das
+/// Abfragen aus dem Test (unter Last selbst Sekunden verzögert) die Messung verfälscht
 private final class Notices: @unchecked Sendable {
     private let lock = NSLock()
-    private var list: [EngineNotice] = []
-    func add(_ n: EngineNotice) { lock.withLock { list.append(n) } }
-    var all: [EngineNotice] { lock.withLock { list } }
+    private var list: [(EngineNotice, Date)] = []
+    func add(_ n: EngineNotice) { lock.withLock { list.append((n, Date())) } }
+    var all: [EngineNotice] { lock.withLock { list.map(\.0) } }
+    func time(of f: (EngineNotice) -> Bool) -> Date? { lock.withLock { list.first { f($0.0) }?.1 } }
 }
 
 private func controller(timeout: Double) -> (MixController, Notices) {
@@ -65,14 +67,19 @@ private func waitLoaded(_ c: MixController, _ d: Int, max seconds: Double) async
     _ = try await waitLoaded(c, 1, max: 5)
     #expect(c.snapshot().decks[1].track?.key == "other")
     var t = Track(key: "hung", path: hung.path); t.artist = "A"; t.title = "Hung"
+    let t0 = Date()
     c.load(t, deck: 0)
-    let took = try await waitLoaded(c, 0, max: 5)
-    #expect(took > 0.9 && took < 1.6)
+    let seen = try await waitLoaded(c, 0, max: 5)
+    let isError = { (e: EngineNotice) in e.key == "load.0" && e.level == .error }
+    let cancelled = n.time(of: isError).map { $0.timeIntervalSince(t0) } ?? .nan
+    print(String(format: "[load] hängender Dekoder: Abbruch nach %.2f s, im Test gesehen nach %.2f s (Grenze 1 s, Dekoder liefert nach 2 s)", cancelled, seen))
+    // Abbruch nach der Grenze (+ 0,25 s Wächter-Takt), sicher bevor der Dekoder nach 2 s doch liefert
+    #expect(cancelled > 0.9 && cancelled < 1.9)
     var s = c.snapshot().decks[0]
     #expect(s.track == nil)
     #expect(s.error != nil)
     #expect(c.trackAudio(0) == nil)
-    let e = n.all.first { $0.key == "load.0" && $0.level == .error }
+    let e = n.all.first(where: isError)
     #expect(e?.text.hasPrefix("Track nicht ladbar (1 s): A – Hung") == true)
     // Dekoder wird nach 2 s doch fertig: darf das Deck nicht mehr belegen
     try await Task.sleep(for: .milliseconds(1600))
@@ -102,15 +109,20 @@ private func waitLoaded(_ c: MixController, _ d: Int, max seconds: Double) async
     #expect(c.snapshot().decks[2].error == nil)
 }
 
-/// unlesbare Datei: sofort Fehler mit Grund, kein Warten auf die Zeitgrenze
+/// unlesbare Datei: sofort Fehler mit Grund, kein Warten auf die Zeitgrenze. Grenze bewusst weit (30 s): unter Last
+/// (parallele Tests, Builds) dauert allein das Einplanen des Dekoders Sekunden; gezählt wird, dass der Fehler vom
+/// Dekoder kommt (Text ohne Zeitangabe) und lange vor der Grenze
 @Test func unreadableFileFailsWithReason() async throws {
-    let (c, n) = controller(timeout: 4)
+    let (c, n) = controller(timeout: 30)
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("minos-bad-\(UUID().uuidString).mp3")
     try Data("kein audio".utf8).write(to: url)
     defer { try? FileManager.default.removeItem(at: url) }
     c.load(Track(key: "bad", path: url.path), deck: 3)
-    let took = try await waitLoaded(c, 3, max: 5)
-    #expect(took < 3.9)   // vor der Zeitgrenze (parallel laufende Tests machen das Öffnen langsamer)
+    let t0 = Date()
+    let seen = try await waitLoaded(c, 3, max: 25)
+    let failed = n.time { $0.key == "load.3" && $0.level == .error }.map { $0.timeIntervalSince(t0) } ?? .nan
+    print(String(format: "[load] unlesbare Datei: Fehler nach %.2f s, im Test gesehen nach %.2f s", failed, seen))
+    #expect(failed < 20)   // gemessen unter Last 150 (16 Rechenschleifen + ganze Suite): 16 s bis der Dekoder überhaupt dran ist
     #expect(c.snapshot().decks[3].error != nil)
     try await Task.sleep(for: .milliseconds(20))
     #expect(n.all.contains { $0.key == "load.3" && $0.level == .error && $0.text.hasPrefix("Track nicht ladbar: ") })
