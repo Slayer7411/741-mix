@@ -69,15 +69,17 @@ public final class Helper: @unchecked Sendable {
 
     private func watch() {
         let s = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global(qos: .userInitiated))
-        s.setEventHandler { [weak self] in self?.reap() }
+        s.setEventHandler { [weak self] in self?.reap(exited: true) }
         source = s
         s.resume()
         reap()   // schon vor dem Anmelden beendet
     }
 
-    private func reap() {
+    /// `exited`: NOTE_EXIT kommt, bevor das Kind abholbar ist (WNOHANG liefert dann 0, kein zweites Ereignis) -> blockierend
+    private func reap(exited: Bool = false) {
         var st: Int32 = 0
-        let r = waitpid(pid, &st, WNOHANG)
+        var r: pid_t
+        repeat { r = waitpid(pid, &st, exited ? 0 : WNOHANG) } while r == -1 && errno == EINTR
         guard r == pid else { return }
         let handlers: [(Int32) -> Void] = lock.withLock {
             guard status == nil else { return [] }

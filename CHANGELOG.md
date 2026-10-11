@@ -89,6 +89,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * state bench: edit / cut actions, `MIX741_BENCH_EDIT=1`; takes the next track when a deck does not load (cloud file stuck)
 
 ### fixed
+* file service: a killed helper was often never reaped (the exit event comes before the process can be collected, the non-blocking wait found nothing and no second event came) -> defunct processes and false zombie counts. after the exit event the wait blocks now: leak test red in 4 of 6 runs alone -> 6 / 6 green, 0 zombies
 * browser tag chips: clicks, ⌥-click, double click and the second click next to the chips (inline edit) work again in the tag shot (were failing)
 * bench `browser`: the focus check knows the table stays the same, `MIX741_BENCH_ALL=1` also lists the gaps
 * selftest: table shot `MIX741_SHOT=table:<folder>` (images per preview mode, table metrics, `MIX741_SHOT_CHECKS=1`: sort, multi select, encoder, return = inline edit, search, role, source, context menu, column menu, zoom)
