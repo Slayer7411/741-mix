@@ -195,7 +195,8 @@ DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, commen
 
 * rendered as bitmap tiles in screen resolution (background thread) -> sharp at any zoom, no load on the render server
 * height = real file level, full height = 0 dBFS, no normalizing -> loud masters look loud
-* styles: 3-band layers / spectrum fine (6 bands, default for spectrum) / spectrum fine, no high layer / spectrum (3 bands) / mono, palettes (not for spectrum fine): 741 bone / orange / blue / classic
+* styles: 3-band blend (default) / 3-band layers / spectrum fine (6 bands, default for spectrum) / spectrum fine, no high layer / spectrum (3 bands) / mono, palettes (not for spectrum fine): spectrum (rgb, default) / 741 bone / orange / blue / classic
+* 3-band blend: each pixel row colored by the bass (< 150 Hz), mids (around 670 Hz) and highs (> 3 kHz) of the samples that reach it, brightness = share of samples reaching the row ^(1/3.5) -> body bass red, transients and hats light / blue at the top, soft upper edge. spectrum (rgb): bass red, mids green, highs blue, mixes yellow / cyan / white. 741 palettes: bass / mid color by share, highs only where strong. overview in the same style. `high emphasis` 0-2 -> high share ×0.5-×2
 * 3-band layers: bass < 250 Hz at the back, mids 250 Hz-4 kHz, highs > 4 kHz in front, each band its own amplitude (rms, mids ×1.6, highs ×1.2, curve 0.9), the strongest band reaches the real peak -> kick = wide bass, hats = bright needles. same heights in the overview and in the colors of spectrum (3 bands). `high emphasis` 0-2 -> highs ×0.5-×2
 * drag the waveform = scrub, click the overview = jump
 * played part can be dimmed
