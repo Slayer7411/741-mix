@@ -59,10 +59,17 @@ public enum TrackAnalyzer {
 
     // MARK: Datei
 
-    /// `octave`: BPM-Bereich des Ergebnisses, genau eine Oktave (Untergrenze zählt, Obergrenze = 2 × Untergrenze)
-    public static func analyze(url: URL, octave: ClosedRange<Double> = defaultOctave, checkpoint: () throws -> Void = {}) throws -> Result {
+    /// `octave`: BPM-Bereich des Ergebnisses, genau eine Oktave (Untergrenze zählt, Obergrenze = 2 × Untergrenze);
+    /// `profiles`: gelernte Tonart-Profile, sonst Krumhansl / Temperley
+    public static func analyze(url: URL, octave: ClosedRange<Double> = defaultOctave, profiles: KeyProfiles? = nil,
+                               checkpoint: () throws -> Void = {}) throws -> Result {
         let s = try decode(url: url, checkpoint: checkpoint)
-        return try analyze(stream: s, octave: octave, checkpoint: checkpoint)
+        return try analyze(stream: s, octave: octave, profiles: profiles, checkpoint: checkpoint)
+    }
+
+    /// nur das Mittel-Chroma (C…B) einer Datei, zum Lernen der Profile
+    public static func chroma(url: URL, checkpoint: () throws -> Void = {}) throws -> [Double]? {
+        chroma(try decode(url: url, checkpoint: checkpoint).chroma)
     }
 
     /// Datei blockweise lesen: Spitze am vollen Signal, Mono dezimiert, Tonart und Lautheit im Durchlauf
@@ -97,7 +104,8 @@ public enum TrackAnalyzer {
         return try analyze(stream: stream, octave: octave, checkpoint: checkpoint)
     }
 
-    static func analyze(stream: Stream, octave: ClosedRange<Double>, checkpoint: () throws -> Void) throws -> Result {
+    static func analyze(stream: Stream, octave: ClosedRange<Double>, profiles: KeyProfiles? = nil,
+                        checkpoint: () throws -> Void) throws -> Result {
         let x = stream.x, rate = stream.lowRate
         let duration = Double(stream.frames) / stream.rate
         var r = Result(duration: duration, bpm: 0, anchor: 0, tempoConfidence: 0, phraseConfidence: 0, musicalKey: -1,
@@ -118,7 +126,7 @@ public enum TrackAnalyzer {
             r.phraseConfidence = a.phraseConfidence
         }
         try checkpoint()
-        if let k = key(stream.chroma) { r.musicalKey = k.code; r.keyClarity = k.clarity }
+        if let c = chroma(stream.chroma), let k = key(chroma: c, profiles: profiles) { r.musicalKey = k.code; r.keyClarity = k.clarity }
         return r
     }
 
@@ -939,14 +947,17 @@ public enum TrackAnalyzer {
         return da > 0 && db > 0 ? num / (da * db).squareRoot() : 0
     }
 
-    /// Tonart aus dem Chroma: Korrelation (z-normiert) mit beiden Profilsätzen, je Modus die bessere, Moll mit Bonus
-    static func key(chroma c: [Double], _ k: KeyParams = KeyParams()) -> Key? {
+    /// Tonart aus dem Chroma: Korrelation mit den Profilen (gelernt, sonst Krumhansl / Temperley, je Modus das bessere),
+    /// Moll mit Bonus
+    static func key(chroma c: [Double], _ k: KeyParams = KeyParams(), profiles: KeyProfiles? = nil) -> Key? {
         guard c.count == 12, c.reduce(0, +) > 0 else { return nil }
+        let sets = profiles.flatMap { $0.isValid ? [($0.major, $0.minor)] : nil }
+            ?? [(krumhanslMajor, krumhanslMinor), (temperleyMajor, temperleyMinor)]
         var scores = [Double](repeating: 0, count: 24)
         for tonic in 0..<12 {
             let rotated = (0..<12).map { c[(tonic + $0) % 12] }
-            scores[tonic] = max(correlation(rotated, krumhanslMajor), correlation(rotated, temperleyMajor))
-            let minor = max(correlation(rotated, krumhanslMinor), correlation(rotated, temperleyMinor))
+            scores[tonic] = sets.map { correlation(rotated, $0.0) }.max()!
+            let minor = sets.map { correlation(rotated, $0.1) }.max()!
             scores[12 + tonic] = minor > 0 ? minor * (1 + k.minorBonus) : minor
         }
         let order = scores.indices.sorted { scores[$0] > scores[$1] }
@@ -956,5 +967,74 @@ public enum TrackAnalyzer {
     static func key(_ f: ChromaFrames, _ k: KeyParams = KeyParams()) -> Key? {
         guard let c = chroma(f, k) else { return nil }
         return key(chroma: c, k)
+    }
+
+    // MARK: Gelernte Tonart-Profile
+
+    /// Profile aus Tracks mit bekannter Tonart: Mittel der z-normierten Chroma je Modus, auf C gedreht.
+    /// `exact` / `before`: Anteil exakt auf der Hold-out-Menge (jeder 5. Track, nicht gelernt) mit diesen Profilen /
+    /// mit Krumhansl-Temperley; gespeichert werden Profile aus allen Tracks
+    public struct KeyProfiles: Codable, Equatable, Sendable {
+        public var major: [Double]
+        public var minor: [Double]
+        public var tracks = 0, holdout = 0
+        public var exact = 0.0, before = 0.0
+        public var learned = Date()
+
+        public var isValid: Bool { major.count == 12 && minor.count == 12 && major.allSatisfy(\.isFinite) && minor.allSatisfy(\.isFinite) }
+
+        public static func load(url: URL) -> KeyProfiles? {
+            let dec = JSONDecoder()
+            dec.dateDecodingStrategy = .iso8601
+            guard let d = try? Data(contentsOf: url), let p = try? dec.decode(KeyProfiles.self, from: d), p.isValid else { return nil }
+            return p
+        }
+
+        public func save(url: URL) throws {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let e = JSONEncoder()
+            e.outputFormatting = [.prettyPrinted, .sortedKeys]
+            e.dateEncodingStrategy = .iso8601
+            try e.encode(self).write(to: url, options: .atomic)
+        }
+    }
+
+    /// mindestens so viele Tracks, je Modus mindestens 8
+    public static let minLearnTracks = 40
+
+    static func zNorm(_ a: [Double]) -> [Double] {
+        let m = a.reduce(0, +) / Double(a.count)
+        let sd = (a.map { ($0 - m) * ($0 - m) }.reduce(0, +) / Double(a.count)).squareRoot()
+        return a.map { sd > 0 ? ($0 - m) / sd : 0 }
+    }
+
+    /// nur das Mittel je Modus (nil = zu wenige Tracks eines Modus)
+    static func profiles(_ samples: [(chroma: [Double], key: Int)]) -> (major: [Double], minor: [Double])? {
+        var maj = [Double](repeating: 0, count: 12), mnr = maj
+        var nMaj = 0, nMin = 0
+        for s in samples where s.chroma.count == 12 && (0...23).contains(s.key) {
+            let z = zNorm(s.chroma), t = s.key % 12
+            for j in 0..<12 {
+                if s.key < 12 { maj[j] += z[(t + j) % 12] } else { mnr[j] += z[(t + j) % 12] }
+            }
+            if s.key < 12 { nMaj += 1 } else { nMin += 1 }
+        }
+        guard nMaj >= 8, nMin >= 8 else { return nil }
+        return (maj.map { $0 / Double(nMaj) }, mnr.map { $0 / Double(nMin) })
+    }
+
+    /// Profile lernen + Hold-out-Messung; nil = zu wenige Tracks
+    public static func learnProfiles(_ samples: [(chroma: [Double], key: Int)]) -> KeyProfiles? {
+        let valid = samples.filter { $0.chroma.count == 12 && $0.chroma.reduce(0, +) > 0 && (0...23).contains($0.key) }
+        guard valid.count >= minLearnTracks else { return nil }
+        let hold = valid.indices.filter { $0 % 5 == 4 }.map { valid[$0] }
+        let train = valid.indices.filter { $0 % 5 != 4 }.map { valid[$0] }
+        guard let t = profiles(train), let all = profiles(valid) else { return nil }
+        let trial = KeyProfiles(major: t.major, minor: t.minor)
+        func rate(_ p: KeyProfiles?) -> Double {
+            Double(hold.filter { key(chroma: $0.chroma, profiles: p)?.code == $0.key }.count) / Double(max(1, hold.count))
+        }
+        return KeyProfiles(major: all.major, minor: all.minor, tracks: valid.count, holdout: hold.count,
+                           exact: rate(trial), before: rate(nil))
     }
 }
