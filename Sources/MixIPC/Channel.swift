@@ -94,7 +94,7 @@ public final class Channel: @unchecked Sendable {
         }
     }
 
-    /// erster Teil per sendmsg, mit fd als Kontrollnachricht
+    /// erster Teil per sendmsg, mit fd als cmsg
     private func sendFirst(_ data: UnsafeRawBufferPointer, pass: Int32?) throws -> Int {
         var iov = iovec(iov_base: UnsafeMutableRawPointer(mutating: data.baseAddress), iov_len: data.count)
         let space = Self.cmsgSpace(1)
@@ -184,7 +184,7 @@ public final class Channel: @unchecked Sendable {
                 if errno == EINTR { continue }
                 throw errno == ECONNRESET ? ChannelError.closed : ChannelError.io(errno)
             }
-            // Kontrollnachrichten durchgehen (eine SCM_RIGHTS mit bis zu 4 fds)
+            // cmsg-Einträge durchgehen (eine SCM_RIGHTS mit bis zu 4 fds)
             var off = 0
             let total = controlLength
             while off + Self.cmsgHeader <= total {

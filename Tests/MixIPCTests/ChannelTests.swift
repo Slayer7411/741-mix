@@ -72,8 +72,12 @@ private struct Ping: Codable, Equatable { var n: Int; var text: String }
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("minos-ipc-\(UUID().uuidString)")
     FileManager.default.createFile(atPath: url.path, contents: Data())
     defer { try? FileManager.default.removeItem(at: url) }
-    let leak = open(url.path, O_RDONLY)   // ohne CLOEXEC
+    // ohne CLOEXEC, hohe Nummer (eine kleine könnte ls im Kind selbst für /dev/fd benutzen)
+    let first = open(url.path, O_RDONLY)
+    let leak = fcntl(first, F_DUPFD, 200)
+    close(first)
     defer { close(leak) }
+    #expect(leak >= 200)
     let h = try Helper.spawn(executable: URL(fileURLWithPath: "/bin/sh"),
                              arguments: ["-c", "ls /dev/fd >&3; echo \"$\(Helper.fdVariable)\" >&3"])
     var out = [UInt8]()

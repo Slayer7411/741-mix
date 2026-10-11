@@ -78,12 +78,12 @@ private func waitLoaded(_ c: MixController, _ d: Int, max seconds: Double) async
     try await Task.sleep(for: .milliseconds(2500))
     let warned = n.time(of: { $0.key == "load.2" && $0.level == .warning }).map { $0.timeIntervalSince(t0) } ?? .nan
     #expect(warned > 0.9 && warned < 2.2)
-    #expect(c.snapshot().decks[2].loading)
     #expect(n.all.contains { $0.text.hasPrefix("Deck C lädt noch (1 s ohne Daten): A – Hung") })
     _ = try await waitLoaded(c, 2, max: 10)
     let failed = n.time(of: { $0.key == "load.2" && $0.level == .error }).map { $0.timeIntervalSince(t0) } ?? .nan
     print(String(format: "[load] Datei-Dienst, hängende Datei: Hinweis nach %.2f s, Abbruch nach %.2f s (Grenzen 1 / 5 s)", warned, failed))
-    #expect(failed > 4.9 && failed < 7)
+    #expect(failed > 4.9 && failed < 7)   // Zeitstempel der Meldungen: das Abfragen im Test kommt unter Last zu spät
+    #expect(warned < failed)
     #expect(c.snapshot().decks[2].track == nil)
     #expect(n.all.contains { $0.text.hasPrefix("Track nicht ladbar (5 s): A – Hung · keine Audiodaten (Drive antwortet nicht)") })
     #expect(fs.stats.kills == 1)

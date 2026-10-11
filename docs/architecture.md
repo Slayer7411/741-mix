@@ -14,7 +14,11 @@ self test: main thread blocked for 3s -> deck a plays on (3.08 s), deck b follow
 
 * `MixCore` -> swift, no audio: track model, nml parser, smartlist queries, beatgrid, history, track edits, metadata edits, collection write-back, track overviews
 * `MixDSP` -> c++17 realtime core with a plain c api (`MixDSP.h`) and the coreaudio render callback
-* `MixEngine` -> swift: device output, routing, decoding, `MixController` (all commands, control thread)
+* `MixMedia` -> swift, no audio device: decoding, waveform analysis, overviews, phrase anchor, artwork, `.mtrk` track files
+* `MixEngine` -> swift: device output, routing, `MixController` (all commands, control thread), file service client
+* `MixIPC` -> swift: unix socket channel (framed messages, fd passing), helper spawn / exit watch / kill
+* `MixProtocol` -> swift: versioned messages between the processes (file service part)
+* `MixFiles` -> `minos-files`, the file service helper (one job per process)
 * `LibraryCloud` -> swift, no dependencies: cloud file state, scanner, download scheduler, folder watcher, pin state. later part of the file service
 * `MixApp` -> swiftui: decks, mixer, fx, master clock, browser, settings, controller driver, history store
 
@@ -48,9 +52,9 @@ dsp load (`MixDSPCoreAudio.cpp`):
 
 track load (`MixController.load`):
 
-* file missing -> error right away
-* decode on a background queue, progress after every chunk (frames, false = cancel)
-* watchdog on the control tick (every 0.25 s, not a utility queue: that one is starved under cpu load): no new frames for `loadTimeout` (4 s) -> cancel flag, load sequence bumped, deck emptied, notice. a decoder stuck in a read returns later and its result is dropped by the sequence check
+* through the file service (default, see FILE SERVICE): this process never touches the music path
+* in-process (`MIX741_INPROC_FILES=1`, helper missing, helper does not start): file check + decode on a background queue, progress after every chunk (frames, false = cancel)
+* watchdog on the control tick (every 0.25 s, not a utility queue: that one is starved under cpu load): no new frames for `loadTimeout` (4 s) -> file service: warning notice, deck keeps loading · in-process: cancel flag, load sequence bumped, deck emptied, notice. a decoder stuck in a read returns later and its result is dropped by the sequence check
 * notices (`EngineNotice`: level, key, text, detail) -> `StatusCenter` (main thread, `StatusLog` in MixCore: expiry, dedupe by key, history of 50)
 
 plugins (audio units):
@@ -112,18 +116,57 @@ plugin list and loading (`PluginCatalog`, `PluginInstaller`, `PluginValidator` i
 
 ## ◆ WAVEFORM SPECTRUM
 
-* `MixEngine/TrackAudio.swift` -> per block (300/s): peak + 3-band shares (one-pole filters, 3-band layers style, overviews) and, on a second core, `SpectrumAnalyzer`
-* `MixEngine/SpectrumAnalyzer.swift` -> fed in chunks (whole deck buffer or read chunks). lows: mono -> 2nd order low pass 1 kHz -> every 10th sample (~4.4 kHz) -> butterworth bands sub 20-60, bass 60-250, low mids 250-1k. highs: 256-point hann fft (5.8 ms) centered on each block -> high mids 1-4k, highs 4-10k, air 10-20k. hold of the highs: share of ±75 ms with highs within 8 dB of the window peak
+* `MixMedia/TrackAudio.swift` -> per block (300/s): peak + 3-band shares (one-pole filters, 3-band layers style, overviews) and, on a second core, `SpectrumAnalyzer`
+* `MixMedia/SpectrumAnalyzer.swift` -> fed in chunks (whole deck buffer or read chunks). lows: mono -> 2nd order low pass 1 kHz -> every 10th sample (~4.4 kHz) -> butterworth bands sub 20-60, bass 60-250, low mids 250-1k. highs: 256-point hann fft (5.8 ms) centered on each block -> high mids 1-4k, highs 4-10k, air 10-20k. hold of the highs: share of ±75 ms with highs within 8 dB of the window peak
 * `MixCore/WaveSpectrum.swift` -> 8 bytes per block: 6 band levels (0.5 dB steps, 255 = 0 dBFS), hold, spare. `reference(percentile:)` per band, `reduced(to:)` -> n columns (mean energy, mean hold) for overviews / the browser preview
 * `MixCore/SpectrumColors.swift` -> color per block: band level minus track reference (95th percentile, kept within -10 / +6 dB of a typical club track), +boost for highs, weight 10^(d / 3.5 dB), mix pulled to full saturation. returns body color, high layer height and color, dominant band
 * `MixApp/Waveform.swift` -> chunks of rects per quantized color (8 steps per channel, ~110 paths per 2048 blocks) + high layer, overview columns from mean band energy
+
+## ◆ FILE SERVICE
+
+step (a) of the process split: every syscall on a music path (`stat`, `open`, decoder) runs in a helper process that can be killed. a thread blocked inside a cloud file provider can't be cancelled, a process can.
+
+```
+MixController.load -> FileServiceClient.decode (blocking, background queue)
+   -> idle helper or posix_spawn minos-files (fd 3 = socketpair, only fds 0-3 inherited)
+   -> handshake {service, major, minor, build}
+   -> decode {id, path, rate, cache dir}            control plane: json frames over the socket
+   <- progress {stage, frames} every 0.25 s
+   <- done + fd (SCM_RIGHTS) | failed {code}
+   -> mmap read-only, check header, mlock -> TrackAudio over the mapping -> mdsp_set_track
+```
+
+* helper: `stat` -> cache key (path, size, mtime ns, rate, decoder version) -> cache hit: header checked, mtime touched, fd back. miss: `SF_DATALESS` -> stage `fetching`, decode + analysis (same code as in-process), write `.mtrk`, fd back
+* one job per helper, one helper per load in flight (4 decks load in parallel), 1 kept idle, started ahead
+* abort by lack of progress, never by total time: no beat for 3 s -> helper frozen, killed. no new frames for `loadAbortTimeout` (60 s, ⌘, -> AUDIO) -> killed, `keine Audiodaten (Drive antwortet nicht)`. another track for the deck -> old helper killed at once (checked every 0.1 s)
+* helper crash (channel eof / exit) -> one retry with a new helper, then error. killed and still alive after 2 s -> counted as zombie
+* helper does not start 3 times in a row -> blocked 60 s, loads decode in-process meanwhile (warning). helper missing next to the binary or `MIX741_INPROC_FILES=1` -> in-process, log line `[files]`
+* engine dies -> helpers see eof on the channel and `_exit` (also with a job stuck in the provider)
+* fault injection in the helper: `MIX741_FAULT=hang-open:<glob>,freeze-open:<glob>,crash-after:<bytes>,slow:<kB/s>,crash-start`
+* bundle: `Contents/MacOS/minos-files`, signed first (hardened runtime), then the app. dev: next to `minos741` in `.build/<config>/`
+
+`.mtrk` (`MixMedia/TrackFile.swift`), immutable:
+
+```
+0      header 4 kb: 'MTRK', format version, header size, decoder version, rate, frames, blocks, block frames,
+       source size + mtime ns, file size, 7 sections (offset, length), path, key, checksum (fnv-1a)
+16 kb  L[frames] float32, R[frames] float32, peak / low / mid / high [blocks] float32, spectrum [blocks × 8] u8
+       every section 16 kb aligned (page size apple silicon)
+```
+
+* written to `<key>.mtrk.tmp-<pid>-<rand>`, `F_BARRIERFSYNC`, `rename`. never modified afterwards
+* read: magic, version, checksum, file size == header, layout == expected, key -> otherwise rejected (decoded again)
+* `TrackAudio` = read-only view: heap (in-process decode) or mapping. unmapped in deinit, the control thread holds it until `mdsp_track_consumed`
+* cache `~/Library/Application Support/MINOS-741/cache/`, excluded from backups. limit ⌘, -> AUDIO (default 8 gb). lru by mtime (touched on every hit), mapped files skipped. eviction only `unlink`s, never truncates -> a mapped file stays readable (no SIGBUS). `*.tmp-*` older than 1 h removed. selftest: own cache in `$TMPDIR`
+
+measured (release, m1 pro, local m4a, 47 / 108 mb decoded): in-process 0.29 / 0.73 s · helper, first load 0.41 / 0.95 s (open 16-33 ms, decode 292 / 742 ms, write 75 / 157 ms) · cache hit 7 / 19 ms incl. mlock · helper start 9-21 ms, first start after a build ~0.5 s · hanging open killed 1.04-1.39 s after a 1 s limit
 
 ## ◆ TRACK OVERVIEWS
 
 browser preview column. per track 320 points × 4 bytes (peak, bass / mid / high share) = 1.25 kb, ~1.45 kb on disk with key and stamp.
 
 * `MixCore/TrackOverview.swift` -> `TrackOverview` (reduce waveform blocks to points) + `OverviewStore`: one append-only file `overviews/overviews.bin` (`MOV1`, records `len · key · size · mtime · duration · points`), later records win, rewritten on load when more than half is stale. valid while file size and mtime match, checked once per session per track off the main thread
-* `MixEngine/OverviewAnalyzer.swift` -> overview from a file without decoding it into memory: chunked read, same 3-band filters and 300 blocks/s as the deck waveform
+* `MixMedia/OverviewAnalyzer.swift` -> overview from a file without decoding it into memory: chunked read, same 3-band filters and 300 blocks/s as the deck waveform
 * sources: deck load (from `TrackAudio` blocks, ~1 ms) · right click batch · idle job (1 worker, newest first, skips cloud-only files)
 * jobs run on own threads (qos utility, max 2), pause while any deck plays or loads (checked between read chunks), cancellable
 * drawing: `PreviewSpec` (overview generation, grid with own edits, cues, palette, phrase) -> 400×34 px cgimage rendered off the main thread, `NSCache` (48 mb). a row only hashes its spec and looks the image up, no work per frame

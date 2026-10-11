@@ -18,6 +18,8 @@ BIN=$(swift build -c release $ARCHS --show-bin-path)
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Resources"
 cp "$BIN/minos741" "$APP/Contents/MacOS/MINOS-741"
+# Datei-Dienst: Helfer neben dem Programm (die App findet ihn neben ihrer eigenen Datei)
+cp "$BIN/minos-files" "$APP/Contents/MacOS/minos-files"
 cp -R Sources/MixApp/Resources/. "$APP/Contents/Resources/Resources/"
 cp -R Localization/. "$APP/Contents/Resources/"
 # Lizenzhinweise der fremden Bibliotheken (VST 3 SDK: MIT-Text + Markenhinweis) mit ausliefern
@@ -54,11 +56,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 
-codesign --force --deep --sign - "$APP"
+# von innen nach außen signieren (kein --deep): erst der Helfer (hardened runtime), dann die App
+codesign --force --sign - --options runtime "$APP/Contents/MacOS/minos-files"
+codesign --force --sign - "$APP"
+codesign --verify --strict "$APP"
 echo "gebaut: $APP ($VERSION, $BUILD)"
 
 if [[ "${1:-}" != "--no-install" ]]; then
   pkill -x MINOS-741 2>/dev/null || true
+  pkill -x minos-files 2>/dev/null || true   # Helfer (enden sonst selbst, sobald die App weg ist)
   pkill -x 741mix 2>/dev/null || true
   rm -rf /Applications/741-mix.app   # alter Name
   rm -rf /Applications/MINOS-741.app

@@ -6,6 +6,12 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* file service: tracks are read and decoded in an own process (`minos-files`), never in the audio / ui process. a cloud file that hangs only blocks that helper, it gets killed. result = `.mtrk` file (4 kb header, float32 L / R + waveform + spectrum, 16 kb aligned), mapped read-only into the engine and wired (mlock) before the core gets it
+* decoded track cache: `~/Library/Application Support/MINOS-741/cache`, size ⌘, -> AUDIO -> loading & cache (1-64 gb, default 8), oldest first, tracks in the decks stay, files only deleted, never truncated, not in backups
+* load times (release, m1 pro, 2 local m4a tracks, 47 / 108 mb decoded): in-process 0.29 / 0.73 s -> file service, first load 0.41 / 0.95 s (decode 292 / 742 ms + write 75 / 157 ms), from the cache 0.01 / 0.02 s. helper start 9-21 ms (first start after a build ~0.5 s)
+* `MIX741_INPROC_FILES=1` -> decode in-process as before. helper missing next to the binary -> in-process + log line `[files]`. helper does not start 3× in a row -> in-process for 60 s, warning
+* fault injection for tests: `MIX741_FAULT=hang-open:<glob>,freeze-open:<glob>,crash-after:<bytes>,slow:<kB/s>,crash-start`
+* new modules `MixIPC` (socket channel, fd passing, helper spawn / kill), `MixProtocol`, `MixFiles`. tests: `.mtrk` round trip bit-exact vs in-process decode, header corruption, unlink while mapped, hang / freeze / crash + retry / cancel / crash loop / lru, controller loads through the helper
 * deck header: tags from comment 2 as chips (browser colors) and the comment in grey, one line under the title, too long -> `…`. own row with a fixed height: play / tempo / key changes don't touch it, header layout per change unchanged (0.47 ms, bench). rows `Kommentar` / `Tags (Kommentar 2)`, on by default, old settings load with both on
 * compact decks: DECKS menu or ⌥⌘K -> pitch fader, hotcues and grid tools off / on together. without the pitch fader the waveform takes the width. also ⌘, -> DECKS
 * edit mode per deck: `EDIT` in the transport row, ⌥⌘E (focused deck) or menu DECKS, off by default, saved in the settings. cut row in place of the loop sizes, grid row shown, waveform keeps its height. switching swaps the rows in place: 11.5 ms median (state bench), the other decks are not touched
@@ -17,6 +23,10 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * zoom like a web browser: ⌘+ / ⌘− / ⌘0 and view menu, 50-200 % in browser steps, saved, step in the status bar, also under ⌘, -> DISPLAY. fonts, controls, waveform marks, canvases and table columns scale, drawn at full resolution, minimum window size × zoom (capped to the screen). toolbar, settings and dialogs stay at 100 %. no extra cost per update at 100 % or 150 % (15 ms both), one step ~0.9 s relayout. offscreen check: `MIX741_SELFTEST=1 MIX741_SHOT=zoom:<folder>`
 
 ### changed
+* track load through the file service: no audio data for 4 s (2-15 s) -> warning `Deck B lädt noch (4 s ohne Daten): … · Cloud-Datei wird geladen`, the deck keeps loading. no data for 60 s (15-300 s) -> helper killed, `Track nicht ladbar (60 s): … · keine Audiodaten (Drive antwortet nicht)`. helper frozen (no beat for 3 s) -> killed. another track for the deck -> hanging helper killed at once, next track 25-102 ms. helper crash -> one retry. measured with limits 1 / 5 s: warning after 1.0-1.25 s, abort after 5.02-5.34 s
+* load limits moved from ⌘, -> DISPLAY -> status bar to ⌘, -> AUDIO -> loading & cache
+* `TrackAudio` read-only, over own memory or a mapped `.mtrk`
+* app bundle: `Contents/MacOS/minos-files`, signed inside-out (helper with hardened runtime), no `--deep`. `make-app.sh` install also ends running helpers
 * grid edits on the deck are stored as full grid (bpm + anchor) and win over collection and own analysis. `Neu analysieren` no longer drops them, only RESET does (RESET = grid from the library, collection or own analysis)
 * `edits.json` is written in the background, collected for 0.5 s (was: on the main thread on every change). selftest and benches only read it
 * state bench: edit / cut actions, `MIX741_BENCH_EDIT=1`; takes the next track when a deck does not load (cloud file stuck)
