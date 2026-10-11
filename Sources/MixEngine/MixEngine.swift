@@ -141,10 +141,10 @@ public final class MixEngine: @unchecked Sendable {
     // MARK: - FX
 
     /// FX-Unit (Gruppenmodus Filter · Delay · Reverb) setzen und Deck zuweisen.
-    /// reverbLevel linear (1 = 0 dB), reverbBrightness 0…1, reverbPreDelay in Sekunden – gelten in beiden Modi.
+    /// reverbLevel linear (1 = 0 dB), reverbBrightness 0…1, reverbPreDelay in Sekunden, reverbFDN = Hall-Typ – gelten in beiden Modi.
     public func applyFX(unit u: Int, deck d: Int, _ fx: FXUnitState, assigned: Bool, bpm: Double,
                         feedback: Double, filterResonance: Double,
-                        reverbLevel: Double, reverbBrightness: Double, reverbPreDelay: Double) {
+                        reverbLevel: Double, reverbBrightness: Double, reverbPreDelay: Double, reverbFDN: Bool = false) {
         let un = Int32(u)
         mdsp_set_param(core, Int32(d), MDParam(rawValue: MD_FX1_ASSIGN.rawValue + UInt32(u)), assigned ? 1 : 0)
         let beat = 60 / (bpm > 0 ? bpm : 125)
@@ -152,6 +152,9 @@ public final class MixEngine: @unchecked Sendable {
         set(MDFX_DRYWET, fx.dryWet)
         set(MDFX_REVERB_LEVEL, max(0, reverbLevel)); set(MDFX_REVERB_BRIGHT, max(0, min(1, reverbBrightness)))
         set(MDFX_REVERB_PREDELAY, max(0, min(0.2, reverbPreDelay)))
+        set(MDFX_REVERB_TYPE, reverbFDN ? 1 : 0)
+        let reverbLoaded = fx.single ? FXUnitState.Effect(rawValue: fx.singleType) == .reverb : true
+        set(MDFX_REVERB_FREEZE, fx.reverbFreeze && reverbLoaded ? 1 : 0)
         if fx.single {
             // Single-Modus: ein Effekt, die 3 Regler sind seine Parameter
             let on = fx.singleOn, p = fx.params
