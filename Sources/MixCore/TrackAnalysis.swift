@@ -19,6 +19,7 @@ public struct TrackAnalysis: Codable, Equatable, Sendable {
     public var musicalKey: Int?
     /// Lautheit relativ zur Referenz der Collection (positiv = lauter); Auto-Gain = −perceivedDb
     public var perceivedDb: Double?
+    /// Abstand der Spitze zu 0 dBFS wie PEAK_DB der Collection (positiv = darunter)
     public var peakDb: Double?
     public var analyzed = Date()
     /// Version des Verfahrens
@@ -26,7 +27,8 @@ public struct TrackAnalysis: Codable, Equatable, Sendable {
     /// schon in die Collection-Datei geschrieben
     public var written = false
 
-    public static let currentVersion = 1
+    /// 2: PEAK_DB als Abstand zu 0 dBFS (1: Spitze in dBFS, Vorzeichen umgekehrt)
+    public static let currentVersion = 2
 
     public init(bpm: Double? = nil, gridAnchorMs: Double? = nil, musicalKey: Int? = nil, perceivedDb: Double? = nil, peakDb: Double? = nil) {
         self.bpm = bpm; self.gridAnchorMs = gridAnchorMs; self.musicalKey = musicalKey; self.perceivedDb = perceivedDb; self.peakDb = peakDb
@@ -104,7 +106,18 @@ public final class AnalysisStore: @unchecked Sendable {
 
     public init(url: URL?) {
         self.url = url
-        if let url, let d = try? Data(contentsOf: url), let e = try? JSONDecoder().decode([String: TrackAnalysis].self, from: d) { entries = e }
+        if let url, let d = try? Data(contentsOf: url), let e = try? JSONDecoder().decode([String: TrackAnalysis].self, from: d) {
+            entries = e.mapValues(Self.migrated)
+        }
+    }
+
+    /// alte Einträge: Vorzeichen der Spitze umdrehen
+    static func migrated(_ a: TrackAnalysis) -> TrackAnalysis {
+        guard a.version < 2 else { return a }
+        var a = a
+        a.peakDb = a.peakDb.map { -$0 }
+        a.version = 2
+        return a
     }
 
     public var all: [String: TrackAnalysis] { lock.lock(); defer { lock.unlock() }; return entries }

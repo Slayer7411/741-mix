@@ -117,7 +117,7 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
     #expect(rf.keyClarity > 0)
 }
 
-/// Pegel: Sinus −20 dBFS Spitze -> Spitze −20 dB; PERCEIVED_DB ist die Verstärkung auf die Referenz (6 dB leiser = 6 dB mehr)
+/// Pegel: Sinus −20 dBFS Spitze -> PEAK_DB +20 (Abstand zu 0 dBFS, wie die Collection); PERCEIVED_DB ist die Verstärkung auf die Referenz (6 dB leiser = 6 dB mehr)
 @Test func analyzerLoudness() throws {
     func sine(_ amp: Float, seconds: Double = 12, rate: Double = 44100) -> (l: [Float], r: [Float]) {
         let n = Int(seconds * rate)
@@ -125,8 +125,8 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
         return (l, l)
     }
     let a = try analyze(sine(0.1)), b = try analyze(sine(0.05))
-    #expect(abs(a.peakDb + 20) < 0.1)
-    #expect(abs(b.peakDb + 26.02) < 0.1)
+    #expect(abs(a.peakDb - 20) < 0.1)
+    #expect(abs(b.peakDb - 26.02) < 0.1)
     #expect(abs((b.perceivedDb - a.perceivedDb) - 6.02) < 0.1)
     // RMS eines Sinus mit Spitze 0,1 = −23 dBFS; Verstärkung = Referenz − Pegel
     #expect(abs(a.perceivedDb - (TrackAnalyzer.loudnessReference + 23.01)) < 0.1)

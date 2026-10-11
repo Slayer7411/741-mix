@@ -106,10 +106,11 @@ public enum TrackAnalyzer {
     static func analyze(decimated x: [Float], rate: Double, stream: Stream, checkpoint: () throws -> Void) throws -> Result {
         let duration = Double(stream.frames) / stream.rate
         var r = Result(duration: duration, bpm: 0, anchor: 0, tempoConfidence: 0, phraseConfidence: 0, musicalKey: -1,
-                       keyClarity: 0, perceivedDb: 0, peakDb: -200)
+                       keyClarity: 0, perceivedDb: 0, peakDb: 200)
         let loud = stream.loudness()
         r.perceivedDb = loudnessReference - loud.level
-        r.peakDb = 20 * log10(max(Double(stream.peak), 1e-10))
+        // PEAK_DB der Collection = Abstand der Spitze zu 0 dBFS (positiv = darunter)
+        r.peakDb = -20 * log10(max(Double(stream.peak), 1e-10))
         try checkpoint()
         // Tempo + Anker: ab 8 s Musik
         if let n = novelty(x, rate: rate), n.frames.count > Int(8 * n.fps),
