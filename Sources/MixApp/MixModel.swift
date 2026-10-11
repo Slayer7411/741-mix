@@ -106,6 +106,11 @@ final class MixModel {
     /// Vorhören: zählt jede Anfrage (eine spät geöffnete Datei spielt nur, wenn danach nichts mehr kam)
     @ObservationIgnored private var previewSeq = 0
     @ObservationIgnored private var previewOpening = false
+    /// Vorhören: Anhalten am Schnitt-Ende (der Player kennt nur das Dateiende)
+    @ObservationIgnored private var previewStop: DispatchWorkItem?
+    /// Vorhören: Track und gespielter Bereich, nil = still. Beobachtet von der Vorschau des Tracks und der Statuszeile
+    private(set) var previewing: Previewing?
+    struct Previewing: Equatable { var key: String; var cut: PreviewCut }
     @ObservationIgnored private var reroutePending = false
 
     /// Plugin-Verwaltung (⌘, → PLUGINS); teilt die Liste mit dem Kern
@@ -259,6 +264,7 @@ final class MixModel {
                 let newEdit: TrackEdit? = e.isEmpty ? nil : e
                 edits.set(newEdit, for: orig.key)
                 savedEdit[d] = newEdit
+                if previewing?.key == orig.key { previewCutChanged(newEdit?.trim) }
             }
         }
     }
@@ -459,11 +465,12 @@ final class MixModel {
     // MARK: - Vorhören im Browser
 
     /// Datei im Hintergrund öffnen: eine Datei nur in der Cloud lädt der Anbieter beim Öffnen erst ganz herunter,
-    /// auf dem Hauptthread stand die Oberfläche (Wellenformen, Browser) so lange
+    /// auf dem Hauptthread stand die Oberfläche (Wellenformen, Browser) so lange. Gespielt wird nur der Schnitt,
+    /// ab dem eingestellten Anteil davon. Selbsttest: stumm
     func preview(_ t: Track) {
         stopPreview()
         previewOpening = true
-        let seq = previewSeq, url = URL(fileURLWithPath: t.path), start = prefs.ui.previewStart
+        let seq = previewSeq, url = URL(fileURLWithPath: t.path), start = prefs.ui.previewStart, key = t.key
         DispatchQueue.global(qos: .userInitiated).async {
             let p = try? AVAudioPlayer(contentsOf: url)
             p?.prepareToPlay()
@@ -472,9 +479,13 @@ final class MixModel {
                     guard seq == self.previewSeq else { return }
                     self.previewOpening = false
                     guard let p else { return }
-                    p.currentTime = p.duration * start
+                    let cut = PreviewCut(trim: self.edits.edit(for: key)?.trim, duration: p.duration)
+                    if Session.isSelfTest { p.volume = 0 }
+                    p.currentTime = cut.start(fraction: start)
                     p.play()
                     self.previewPlayer = p
+                    self.previewing = Previewing(key: key, cut: cut)
+                    self.schedulePreviewStop()
                 }
             }
         }
@@ -484,10 +495,49 @@ final class MixModel {
         if previewPlayer?.isPlaying == true || previewOpening { stopPreview() } else { preview(t) }
     }
 
-    private func stopPreview() {
+    func stopPreview() {
         previewSeq += 1
         previewOpening = false
+        previewStop?.cancel()
+        previewStop = nil
         previewPlayer?.stop()
         previewPlayer = nil
+        if previewing != nil { previewing = nil }
+    }
+
+    /// Position des Vorhörens (s), nil = still
+    var previewPosition: Double? { previewPlayer?.currentTime }
+
+    /// Klick in die Vorschau des laufenden Tracks (Anteil der Dateilänge): außerhalb des Schnitts an den Rand innen
+    func seekPreview(_ key: String, fraction: Double) {
+        guard let p = previewPlayer, let v = previewing, v.key == key else { return }
+        p.currentTime = v.cut.clamp(fraction * p.duration)
+        schedulePreviewStop()
+    }
+
+    /// Schnitt des laufenden Tracks geändert (Deck): vor dem neuen Anfang -> dorthin, hinter dem neuen Ende -> Stopp
+    private func previewCutChanged(_ trim: TrackTrim?) {
+        guard let p = previewPlayer, var v = previewing else { return }
+        let cut = PreviewCut(trim: trim, duration: p.duration)
+        guard cut != v.cut else { return }
+        v.cut = cut
+        previewing = v
+        if p.currentTime < cut.lo { p.currentTime = cut.lo }
+        schedulePreviewStop()
+    }
+
+    /// am Schnitt-Ende (oder Dateiende) anhalten; Zeitpunkt aus der Restzeit, früh geweckt -> neu planen
+    private func schedulePreviewStop() {
+        previewStop?.cancel()
+        guard let p = previewPlayer, let cut = previewing?.cut else { return }
+        let seq = previewSeq
+        let w = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, seq == self.previewSeq, let p = self.previewPlayer else { return }
+                if !p.isPlaying || cut.isOver(p.currentTime) { self.stopPreview() } else { self.schedulePreviewStop() }
+            }
+        }
+        previewStop = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.02, cut.hi - p.currentTime), execute: w)
     }
 }
