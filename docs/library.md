@@ -8,6 +8,17 @@
 * space / browse push = big browser
 * split line between decks and browser can be dragged
 
+## ◆ FAVORITES
+
+* 6 slots per pane, above the tree and the list header
+* slot = source (track collection, preparation, running tracks, history, playlist, smartlist, playlist folder, smartlists 741, music folder) or filter (tags, roles, search)
+* click -> source of the pane / filter applied, active filter again -> cleared. red = active
+* right click -> `Aktuelle Quelle hier ablegen` · `Aktuellen Filter hier ablegen` · `Umbenennen …` · `Leeren`
+* drag a tree entry onto a slot
+* ⌃⌥1-6 -> last used pane
+* saved per pane in the session. playlists + smartlists by collection uuid, then path · smartlists 741 by id, then name · music folders by path
+* target gone after a reload -> slot grey, struck through
+
 ## ◆ MUSIC FOLDERS
 
 * tree node MUSIC FOLDERS -> the music library as folders on disk
