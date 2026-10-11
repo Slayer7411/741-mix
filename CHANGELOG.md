@@ -6,6 +6,9 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+
+### fixed
+* auto gain had the sign inverted: quiet tracks got quieter, loud ones louder. the collection's perceived loudness is the gain to apply (measured: −45 dBFS tracks carry +29…+37 dB, a −0.5 dBFS track −28.8 dB)
 * analysis: right click tracks or a source (collection, preparation, playlist, smartlist, folder, music folder) -> `Analysieren` (missing values) / `Neu analysieren` (everything, locked tracks only missing). tempo + grid anchor, key (open key), loudness (auto-gain) computed by MINOS-741: spectral flux -> fourier tempogram -> fine search -> whole beats, onset envelope folded on the beat (1 ms), phrase start via the phrase anchor logic, chroma vs krumhansl / temperley, gated block loudness as the collection's gain value
 * analysis: same background queue as the previews (2 files, throttled while a deck plays, pause while loading), status bar `Analyse 12/240`, ✕. results in `analysis.json` on top of the collection for list, columns, deck, sync, key readout, purple ✓. `Analyse verwerfen`. loose files from MUSIC FOLDERS get a grid. written into `collection.nml` (TEMPO, LOUDNESS, MUSICAL_KEY, grid cue) only with the write-back setting
 * analysis: 20 local tracks of the collection: bpm 18 / 20 within 0.1 (the other two 0.7–1.0 off, old vinyl tracks), key 6 / 20 exact + 2 related, loudness ±1.3 dB (median deviation from the collection's value), grid within 20 ms of the collection's marker 10 / 18, ~1 s per track. tests with click tracks (±0.05 bpm, ±5 ms), chords and sines

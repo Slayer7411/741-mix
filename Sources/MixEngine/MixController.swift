@@ -1114,7 +1114,8 @@ public final class MixController: @unchecked Sendable {
     private func applyMixer(_ d: Int) {
         let s = state.decks[d], p = state.prefs
         let ext = state.externalMixer
-        let auto = (ext ? p.autoGainExternal : p.autoGain) ? -(s.track?.perceivedDb ?? 0) : 0
+        // PERCEIVED_DB is the gain that brings the track to reference level (quiet track -> positive): add it
+        let auto = (ext ? p.autoGainExternal : p.autoGain) ? (s.track?.perceivedDb ?? 0) : 0
         engine.setGain(d, db: s.gainDb + auto + (ext ? p.headroomExternal : p.headroomInternal))
         engine.setChannelFilter(d, s.filter, resonance: p.channelFilterResonance)
         if state.externalMixer {
