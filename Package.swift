@@ -55,6 +55,8 @@ let package = Package(
         // Kern offline rendern (kein Audiogerät): Transport, Loop, Keylock, FX-Fahnen, Übergabe
         .testTarget(name: "MixEngineTests", dependencies: ["MixDSP", "MixMedia", "MixEngine"]),
         // Controller-Ereignisse offline (ohne Gerät, ohne Audio) durch den Kern schicken
+        // Prozesse: Helfer abschießen, fds zählen (eigener Test-Prozess)
+        .testTarget(name: "ProcessTests", dependencies: ["MixEngine", "MixProtocol"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "MixAppTests", dependencies: ["MixApp", "MixCore", "MixEngine"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ],
     cxxLanguageStandard: .cxx17

@@ -82,6 +82,7 @@ public final class Helper: @unchecked Sendable {
         let handlers: [(Int32) -> Void] = lock.withLock {
             guard status == nil else { return [] }
             status = st
+            defer { exitHandlers = [] }   // Zyklen über die Handler lösen
             return exitHandlers
         }
         source?.cancel()

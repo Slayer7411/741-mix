@@ -437,7 +437,7 @@ private final class Worker: @unchecked Sendable {
         t.qualityOfService = .userInitiated
         t.stackSize = 1 << 18
         t.start()
-        helper.onExit { [self] st in push(.gone(Helper.describe(st))) }
+        helper.onExit { [weak self] st in self?.push(.gone(Helper.describe(st))) }
     }
 
     /// läuft und hat nichts Offenes (alte Fortschrittsmeldungen werden verworfen)

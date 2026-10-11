@@ -38,14 +38,12 @@ private func error(_ f: () throws -> Any) -> FileServiceClient.ServiceError? {
     let t0 = Date()
     let ref = try TrackAudio.decode(url: url, sampleRate: 48000)
     let tIn = Date().timeIntervalSince(t0)
-    var stages: [DecodeStage] = []
     let t1 = Date()
-    let a = try c.decode(path: url.path, sampleRate: 48000, hardTimeout: 10, progress: { s, _ in if stages.last != s { stages.append(s) } })
+    let a = try c.decode(path: url.path, sampleRate: 48000, hardTimeout: 10)
     let tCold = Date().timeIntervalSince(t1)
     #expect(a.mapping != nil && a.frames == ref.frames)
     #expect(memcmp(a.left, ref.left, ref.frames * 4) == 0 && memcmp(a.right, ref.right, ref.frames * 4) == 0)
     #expect(Array(a.peak) == Array(ref.peak) && Array(a.high) == Array(ref.high) && a.spectrum == ref.spectrum)
-    #expect(stages.contains(.decoding) || tCold < 0.25)   // Herzschlag alle 0,25 s: ein schneller Helfer (Release) meldet keine Stufe
     let t2 = Date()
     let b = try c.decode(path: url.path, sampleRate: 48000, hardTimeout: 10)
     let tHit = Date().timeIntervalSince(t2)
@@ -204,4 +202,19 @@ private func error(_ f: () throws -> Any) -> FileServiceClient.ServiceError? {
     #expect(m.prefix(FileProtocol.statChunk).allSatisfy { $0 == .local })
     #expect(m.dropFirst(FileProtocol.statChunk).allSatisfy { $0 == nil })
     #expect(c.stats.kills == 1)
+}
+
+/// gedrosselter Helfer (slow): Herzschlag meldet Stufe und wachsende Frames
+@Test func progressReportsStageAndFrames() throws {
+    guard let (c, dir) = client(["MIX741_FAULT": "slow:1500"]) else { return }
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let url = try writeWAV(rate: 48000, channels: 2, seconds: 3)
+    defer { try? FileManager.default.removeItem(at: url) }
+    final class Box: @unchecked Sendable { var seen: [(DecodeStage, Int)] = [] }
+    let box = Box()
+    let a = try c.decode(path: url.path, sampleRate: 48000, hardTimeout: 5, progress: { box.seen.append(($0, $1)) })
+    #expect(a.frames == 144000)
+    let frames = box.seen.filter { $0.0 == .decoding }.map(\.1)
+    #expect(frames.count >= 2)
+    #expect(frames == frames.sorted())
 }
