@@ -107,6 +107,7 @@ enum ToggleBench {
             // vier Ladevorgänge gleichzeitig mit niedriger Priorität (nice) brauchen länger als die 4 s des Wächters
             var p = mix.prefs.engine
             p.loadTimeout = 15   // nur im Kern, nicht gespeichert
+            p.loadAbortTimeout = 15   // Datei-Dienst: nach 15 s ohne Daten abbrechen (sonst 60 s)
             core.setPrefs(p)
             for d in 0..<4 { mix.load(c[d], deck: d) }
             // nicht ladbar (Cloud-Datei hängt, Zeitlimit): nächster Kandidat statt endlos zu warten

@@ -50,6 +50,7 @@ enum StatusShot {
             // Deck B: Dekoder hängt -> nach 4 s abgebrochen
             let hang = dir.appendingPathComponent("cloud-only.flac")
             FileManager.default.createFile(atPath: hang.path, contents: Data([0]))
+            core.fileService = nil   // Bild zeigt den Abbruch des Wächters (Dekoder im Prozess, eingespeister Hänger)
             let real = core.decoder
             core.decoder = { url, rate, progress in
                 if url.lastPathComponent == "cloud-only.flac" { Thread.sleep(forTimeInterval: 30) }
