@@ -14,7 +14,7 @@ default layout:
 * play (shift: cup), sync (shift: master)
 * hotcue 1-4 (shift: delete)
 * loop encoder: turn = loop size, push = loop on / off, shift + turn = beatjump, shift + push = reloop
-* load -> selected track of the own browser pane
+* load -> selected track of the own browser pane. a playing deck is locked (load lock), shift + load forces it. ⌘, -> CONTROLLER -> `Shift + LOAD` -> instant double from the deck on the other side instead (load lock applies)
 * browse encoder -> selection (shift: x10), push = big browser, shift + push = preview
 * fx: d/w knob, knob 1-3, button 1-3 -> the unit's fx mapping ([manual](MANUAL.md#-08--fx)). default: knob 1-3 = filter / delay / reverb amount, button 1-3 = on / off
 * mode = fx on / off (group: remembers which slots were on), shift + mode = next effect (single) or next delay time (group)
