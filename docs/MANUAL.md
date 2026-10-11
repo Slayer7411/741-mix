@@ -271,6 +271,7 @@ grid edits:
 * shortest cut 1 s, else message `Schnitt zu kurz`
 * playback stays inside: nothing outside is audible (3 ms ramp at a cut edge), jumps, seeks, cue, CUP, hotcues land inside, forward play stops at the cut end like at the track end, reverse stops at the cut start, a loop over the cut end is shortened to it, a beatjump past the end lands on the last whole beat before it
 * cut start / end saved per track in `edits.json` (seconds), with the grid edits. a cut is never written into the collection
+* browser `Vorhören` plays only the cut (from the preview start share of the cut, stops at the cut end), a cut changed on a deck moves a running preview of the same track. browser preview: outside the cut dimmed, edges marked (not draggable)
 
 ## ◆ 06 · SYNC / CLOCK / LINK
 
@@ -444,6 +445,7 @@ a mini overview of the whole track per row. modes (⌘, -> DISPLAY -> browser pr
 * grid stays in the background (phrase bands, lines every 16 / 32 bars), fainter with the spectrum colors
 * phrase bands from the grid (phrase length = the waveform phrase), thin line every 16 bars, magenta every 32 bars
 * hotcues as short colored ticks, start cue as a triangle on top. own grid / phrase anchor / hotcue edits are drawn too
+* cut ([edit mode](#edit-mode)): outside dimmed, edges as a line with tabs. `Vorhören`: playhead in the row, click into that band jumps (outside the cut -> cut start, or 1 s before the cut end), status bar `Vorhören −1:23 / 4:10 (Schnitt)` = left to the cut end / cut length, ✕ = stop
 * no overview yet -> grid and cues only
 * overview comes from: loading the track into a deck (free, from the deck's waveform) · right click TRACK COLLECTION, PREPARATION, a playlist, smartlist, playlist folder or music folder -> `Vorschauen berechnen` · background job (setting, `immer (gedrosselt)` by default)
 * background order: rows on screen without an overview first (last shown first), then the whole collection, newest tracks first
