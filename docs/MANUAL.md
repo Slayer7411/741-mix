@@ -67,7 +67,7 @@ settings, session and history survive updates.
 5. double click a track = load into the focused deck (⌘1-4), right click -> load into deck A-D, or LOAD on the controller
 
 nothing is analyzed. bpm, key, grid, cues and loudness come from the collection.
-tracks without an analysis in the collection play, but have no grid -> no sync.
+tracks without an analysis in the collection play, but have no grid -> no sync. right click -> `Analysieren` computes tempo, grid, key and loudness in MINOS-741 (see [analyze](#analyze)).
 
 ## ◆ 03 · SCREEN
 
@@ -361,7 +361,7 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
   * right click a folder -> rescan, show in finder. folders that change on disk are rescanned on their own
   * default folder = the folder holding 90 % of the collection's files, own folders: ⌘, -> DISPLAY -> browser
 * all library columns: move by drag, hide via right click on the header, saved
-* `√` = analyzed in the collection, missing files show the artist in red
+* `√` = analyzed in the collection, purple `√` = own analysis (see [analyze](#analyze)), missing files show the artist in red
 * search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match, case and accents ignored
 * right click a track -> load into deck A-D, add to / remove from preparation, preview, show in finder, reset played state
 * played column ▶: ✓ = played since the last reset. reset: right click a track or TRACK COLLECTION -> Reset Played State, or ⌥⌘P
@@ -401,6 +401,21 @@ a mini overview of the whole track per row. modes (⌘, -> DISPLAY -> browser pr
 * reload ↻ / ⌘O during a set: parsing, file check and sorting run in the background, the decks keep drawing. the lists switch in one step when everything is ready
 
 role chips `BASIS · SYNTH · DRUMS · VOLL · ATMO` -> filter on the role at the end of comment 2 (`» BASIS`). several chips = any of them.
+
+### analyze
+
+right click tracks, TRACK COLLECTION, PREPARATION, a playlist, smartlist, playlist folder or music folder -> `Analysieren` / `Neu analysieren`.
+
+* `Analysieren` = only what is missing: tempo + grid, key, loudness. nothing to do -> message. `Neu analysieren` = everything again (tracks locked in the collection: only what is missing)
+* runs in the background like the previews: 2 files at a time, one file throttled while a deck plays, pause while a deck loads and 4 s after. status bar `Analyse 12/240`, `gedrosselt`, ✕ = cancel. done -> `Analysiert: 240 Tracks`, unreadable files are counted
+* results: `analysis.json` in the MINOS-741 folder, on top of the collection and the metadata edits on every load. list, columns, sorting, search, smartlists, deck, sync, key readout and auto-gain use them. purple `√` in the list = own values (hover = what)
+* right click -> `Analyse verwerfen` = back to the collection's values. `Neu analysieren` also drops an own grid edit (bpm / anchor) of the track, hotcues stay
+* a track on a deck keeps its grid until it is loaded again
+* files from MUSIC FOLDERS without a collection entry get all four values too
+* `Änderungen in die Collection-Datei schreiben` on (⌘, -> ANZEIGE -> browser): after a batch the analyzed entries go into `collection.nml` as `TEMPO`, `LOUDNESS`, `MUSICAL_KEY` and a grid marker (`CUE_V2` type 4, an existing marker keeps its place and hotcue slot), same backup and byte-exact replacement as the metadata edits, not while the library software runs
+* values: bpm with 3 decimals, grid anchor in ms, key as `MUSICAL_KEY` 0–23 (shown as open key `1d`–`12m`), `PERCEIVED_DB` = gain to the collection's reference (positive = quiet track), `PEAK_DB`
+* method: mono at ~11 kHz · tempo from the spectral flux: fourier tempogram with a harmonic comb over 60–200 bpm, fine search at the beat frequency to 0.001 bpm, then whole beats between the start and the end of the track (constant tempo assumed) · grid anchor: onset envelope (bass < 150 Hz + full band) folded on the beat with 1 ms resolution, the phrase start from the structural changes (same logic as the phrase anchor), else the first beat · key: chroma (energy per semitone, 55 Hz–3.5 kHz) against krumhansl and temperley profiles · loudness: block loudness with a −10 dB gate
+* synthetic checks (`swift test`): click track -> tempo ±0.05 bpm, grid ±5 ms at 44.1 and 48 kHz, chords -> key, sine -> loudness and peak. 20 tracks of the collection: bpm 18 / 20 within 0.1 (the other two 0.7–1.0 off, old vinyl tracks), key 6 / 20 exact + 2 related, loudness ±1.3 dB (median deviation from the collection's value), grid within 20 ms of the collection's marker 10 / 18, ~1 s per track
 
 ### edit tracks
 
@@ -541,6 +556,7 @@ controller mapping -> [controllers.md](controllers.md). flux on the controller =
 | session (decks, fx, clock, browser) | `~/Library/Application Support/MINOS-741/session.json` |
 | hotcue + grid edits | `~/Library/Application Support/MINOS-741/edits.json` |
 | browser previews (track overviews) | `~/Library/Application Support/MINOS-741/overviews/overviews.bin` |
+| own analysis (tempo, grid, key, loudness) | `~/Library/Application Support/MINOS-741/analysis.json` |
 | history | `~/Library/Application Support/MINOS-741/History` |
 | preparation archive | `~/Library/Application Support/MINOS-741/Preparation` |
 | cover thumbnails (cache, safe to delete) | `~/Library/Caches/MINOS-741/artwork` |
