@@ -83,6 +83,7 @@ struct ContentView: View {
         .windowToolbarFullScreenVisibility(.onHover)
         .background(MainWindowHook())
         .background(OverviewHook())   // Browser-Vorschau: Deck-Tracks, Pause-Regel, Leerlauf
+        .background(CloudHook())      // Cloud-Library: Prüfen, Lokal-halten, Pause beim Laden
         .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
             store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
         }
@@ -174,6 +175,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let a = NSAlert()
         a.messageText = String(localized: "MINOS-741 beenden?")
         a.informativeText = String(localized: "Sitzung und History werden gespeichert.")
+        let pending = MainActor.assumeIsolated { CloudLibrary.shared.pendingCount }
+        if pending > 0 {
+            let handOff = MainActor.assumeIsolated { CloudLibrary.shared.handOffOnQuit }
+            a.informativeText += "\n" + (handOff
+                ? String(localized: "\(pending) Cloud-Downloads offen: der Anbieter lädt sie nach dem Beenden weiter.")
+                : String(localized: "\(pending) Cloud-Downloads offen: sie werden abgebrochen."))
+        }
         a.addButton(withTitle: String(localized: "Beenden"))
         a.addButton(withTitle: String(localized: "Abbrechen"))
         guard a.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
@@ -261,6 +269,16 @@ struct MixApp: App {
                 ForEach([ShortcutID.hotcue1, .hotcue2, .hotcue3, .hotcue4, .hotcue5, .hotcue6, .hotcue7, .hotcue8]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
+                Divider()
+                Menu("Zeilen") {
+                    ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
+                        Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui.deckRows[keyPath: row.0] },
+                                                                      set: { mix.prefs.ui.deckRows[keyPath: row.0] = $0 }))
+                    }
+                    Toggle("Grid-Werkzeuge", isOn: Binding(get: { mix.prefs.ui.showGridTools }, set: { mix.prefs.ui.showGridTools = $0 }))
+                    Divider()
+                    Button("Alle Zeilen") { mix.prefs.ui.deckRows = DeckRows(); mix.prefs.ui.showGridTools = true }
+                }
             }
             CommandMenu("Browser") {
                 ForEach([ShortcutID.resetPlayed, .loadSelected, .previewSelected, .reloadCollection]) { a in
@@ -286,6 +304,7 @@ extension MixApp {
         appDelegate.onQuit = { [mix, browser, history] in
             Session.saveNow(mix: mix, browser: browser)
             history.finish()
+            CloudLibrary.shared.handOff()
         }
         let session = Session.load()
         session?.applyEngine(to: mix)
@@ -369,6 +388,7 @@ MainActor.assumeIsolated { CoverShot.runIfRequested() }   // nur Selbsttest mit 
 MainActor.assumeIsolated { SettingsShot.runPluginsIfRequested() }   // nur PLUGINS-Tab, ohne Audio: MIX741_SHOT=plugins:<ordner>
 MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=status:<ordner>, endet mit exit(0)
+MainActor.assumeIsolated { CloudShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cloud:<ordner>, endet mit exit(0)
 
 if ToggleBench.requested { MainActor.assumeIsolated { ToggleBench.run() } }   // Messung offscreen, ohne Fenster
 if ReloadBench.requested { MainActor.assumeIsolated { ReloadBench.run() } }   // Neu-Laden der Collection messen, offscreen

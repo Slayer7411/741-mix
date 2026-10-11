@@ -7,6 +7,15 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ### added
 * fx mapping: D/W, knobs 1-3 and buttons 1-3 of every unit on any parameter of the loaded effect -> built-in parameters or the full audio unit / VST3 list (unit, range, groups, list entries). right click a knob / button or ⌘, -> MIXER & FX (table per unit, search). buttons toggle switches, step lists, jump continuous ones min / max. remembered per effect / plugin id, the session keeps each unit's mapping. the controller's fx knobs and buttons use the same mapping. labels show the parameter, value with unit on hover / turn
+* deck rows on / off: readouts, phase bar, overview, transport, hotcues, loop sizes, beatjump, pitch fader, grid tools -> menu DECKS -> ROWS or ⌘, -> DECKS
+* browser preview, full row: text above the band 12 pt semibold, band dimmed; size, weight and band opacity in ⌘, -> DISPLAY -> preview
+* cloud libraries (file provider folders, e.g. google drive): column ☁ per track (● local · ☁ online only · ↓ downloading · ✕ missing), checked by file status without downloading (14k tracks ~0.1 s), again on changes in the folder (fsevents) and every 10 min
+* cloud: right click tracks or a source -> `Bereitmachen (herunterladen)` with progress and cancel in the status bar. 2 at a time, new downloads wait while a deck loads, 3 tries, timeout by size, 10 gb stay free, each file confirmed local
+* cloud: SET-CHECK in the browser header -> preparation + the pane's list, everything not local listed, one click fetches it. ● LOKAL filter
+* cloud: keep local while running (⌘, -> CLOUD): off / preparation + open playlists + decks (default) / whole library, evicted tracks are fetched again
+* cloud: online-only track into a deck -> download requested at once, message. quit with open downloads -> handed to the provider, it finishes them without MINOS-741
+* cloud: ⌘, -> CLOUD shows whether the library folder is available offline at the provider, SHOW IN FINDER + how to pin it
+* new module `LibraryCloud` with tests (classifier, scanner timeouts, scheduler). selftest image `MIX741_SHOT=cloud:<folder>`
 * status bar: one or two line messages (error red, warning gold, info purple, done bone), info 4 s, done 3 s, warning 8 s, errors stay until clicked. same key replaces in place (progress). click -> last 50 with time. messages from loading, phrase anchor, plugins, collection load / write-back, metadata save, export, played reset
 * status bar meters: DSP load (render time ÷ block duration, peak hold, red above 70 %), output latency + buffer + rate, dropouts (own over-budget blocks + device overload reports, click resets), memory, process cpu. 4 hz, drawn outside the swiftui layout. ⌘, -> DISPLAY -> status bar
 * track load: missing file fails at once, no audio data for 4 s cancels the load (setting 2-15 s), unreadable files fail with the reason. the deck stays empty, other decks untouched, message `Track nicht ladbar (4 s): artist – title · reason`

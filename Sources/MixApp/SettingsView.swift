@@ -14,6 +14,7 @@ struct SettingsView: View {
         SettingsTab("AUDIO") { AudioSettings() },
         SettingsTab("CONTROLLER") { ControllerSettings() },
         SettingsTab("TAGS") { TagColorSettings() },
+        SettingsTab("CLOUD") { CloudSettings() },
         SettingsTab("TASTATUR") { ShortcutSettings() },
     ]
 
@@ -330,6 +331,14 @@ struct DeckSettings: View {
             Section("Ansicht") {
                 Toggle("4 Decks anzeigen", isOn: $mix.prefs.ui.showFourDecks)
                 sliderRow("Vorhören im Browser ab (Anteil)", $mix.prefs.ui.previewStart, 0...0.9, format: "%.1f")
+            }
+            Section("Zeilen je Deck") {
+                ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
+                    Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui.deckRows[keyPath: row.0] },
+                                                                  set: { mix.prefs.ui.deckRows[keyPath: row.0] = $0 }))
+                }
+                Toggle("Grid-Werkzeuge", isOn: $mix.prefs.ui.showGridTools)
+                Text("auch im menü decks -> zeilen. wellenform und kopfzeile bleiben immer.").settingsHint()
             }
         }
     }

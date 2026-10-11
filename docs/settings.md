@@ -5,7 +5,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 ## ◆ LAYOUT
 
 * window resizable, min 720 × 520, default 820 × 640
-* sidebar left: DECKS · MIXER & FX · PLUGINS · DISPLAY · AUDIO · CONTROLLER · TAGS · KEYBOARD, active section with red bar
+* sidebar left: DECKS · MIXER & FX · PLUGINS · DISPLAY · AUDIO · CONTROLLER · TAGS · CLOUD · KEYBOARD, active section with red bar
 * page right, scrolls: `◆ SECTION` heading with hairline, rows with fixed label column left, control right
 * toggles as squares (red = on), sliders with value + unit (s, ms, pt), hints in small mono
 * controller: one block per unit (left / right deck, browser pane, fx unit, blink)
@@ -80,6 +80,16 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * mode: internal (mixer in the app) or external (mixing desk)
 * internal: which pair the master goes to
 * external: one pair per deck, default a 1/2 · b 3/4 · c 5/6 · d 7/8
+
+## ◆ CLOUD
+
+library in a cloud folder -> [library · cloud libraries](library.md#-cloud-libraries)
+
+* state: local · online only · missing, time and duration of the last check, CHECK NOW
+* keep local while MINOS-741 runs: off / preparation + open playlists + decks (default) / whole library. open playlists = playlists and smartlists in the browser panes up to 1000 tracks
+* parallel downloads 1-4 (2), keep at least 5 / 10 / 20 / 50 gb free (10)
+* on quit hand open downloads to the provider (on)
+* library folder, available offline (pinned / not / unknown, all local), SHOW IN FINDER, CHECK. pinning is done in the finder: right click -> make available offline
 
 ## ◆ KEYBOARD
 

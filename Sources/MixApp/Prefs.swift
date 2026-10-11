@@ -95,6 +95,27 @@ struct ControllerPrefs: Codable, Equatable {
     }
 }
 
+/// Sichtbare Zeilen je Deck; alles an = bisheriges Bild
+struct DeckRows: Codable, Equatable {
+    /// Kopf rechts: Zeit, BPM/Tempo, Code, Key + Phase
+    var info = true
+    var phaseBar = true
+    var overview = true
+    var transport = true
+    var hotcues = true
+    var loop = true
+    var jump = true
+    /// Pitch-Fader rechts
+    var tempo = true
+
+    /// Reihenfolge für Menü und Einstellungen
+    static let all: [(WritableKeyPath<DeckRows, Bool>, String)] = [
+        (\.info, "Zusatzinfos (Zeit, BPM, Code, Key)"), (\.phaseBar, "Phasenbalken"), (\.overview, "Übersicht"),
+        (\.transport, "Transport (CUE, PLAY, SYNC …)"), (\.hotcues, "Hotcues"), (\.loop, "Loop-Größen"),
+        (\.jump, "Beatjump"), (\.tempo, "Pitch-Fader"),
+    ]
+}
+
 struct UIPrefs: Codable, Equatable {
     var showMixer = true
     var showFourDecks = true
@@ -126,6 +147,8 @@ struct UIPrefs: Codable, Equatable {
     var tagColors: [String: String] = [:]
     /// Grid-Werkzeuge am Deck zeigen
     var showGridTools = true
+    /// Zeilen des Decks einzeln ein-/ausblenden (Menü DECKS -> Zeilen, ⌘, -> Decks)
+    var deckRows = DeckRows()
     /// History zusätzlich in den History-Ordner der Collection schreiben (dort im Archiv sichtbar)
     var historyToExternal = false
     /// Trennzeichen für Tags in Kommentar 2 (jedes Zeichen trennt; Standard Leerzeichen)
@@ -146,6 +169,11 @@ struct UIPrefs: Codable, Equatable {
     var previewBackground = true
     /// fehlende Vorschauen im Hintergrund berechnen: immer (gedrosselt, solange ein Deck spielt) / nur ohne Deck / aus
     var previewFill = PreviewFill.always
+    /// Vorschau „ganze Zeile“: Schriftgröße der Textzeile (pt) und ob halbfett
+    var previewTextSize = 12.0
+    var previewTextBold = true
+    /// Vorschau „ganze Zeile“: Deckkraft des Bandes (1 = voll, kleiner = gedämpft, Text hebt sich ab)
+    var previewBandAlpha = 0.75
     /// Cover links im Deck-Kopf
     var showDeckCover = true
     /// Cover des gewählten Tracks unter dem Baum im Browser
@@ -163,6 +191,8 @@ struct AppPrefs: Codable, Equatable {
     var engine = EnginePrefs()
     var ui = UIPrefs()
     var controller = ControllerPrefs()
+    /// Cloud-Library: lokal halten, Downloads (⌘, -> CLOUD)
+    var cloud = CloudPrefs()
     /// eigene Tastenkürzel: Aktion-ID -> Kombination als Text ("" = frei), sonst Standard (ShortcutID.defaultCombo)
     var shortcuts: [String: String] = [:]
 
