@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* fx mapping: D/W, knobs 1-3 and buttons 1-3 of every unit on any parameter of the loaded effect -> built-in parameters or the full audio unit / VST3 list (unit, range, groups, list entries). right click a knob / button or ⌘, -> MIXER & FX (table per unit, search). buttons toggle switches, step lists, jump continuous ones min / max. remembered per effect / plugin id, the session keeps each unit's mapping. the controller's fx knobs and buttons use the same mapping. labels show the parameter, value with unit on hover / turn
 * status bar: one or two line messages (error red, warning gold, info purple, done bone), info 4 s, done 3 s, warning 8 s, errors stay until clicked. same key replaces in place (progress). click -> last 50 with time. messages from loading, phrase anchor, plugins, collection load / write-back, metadata save, export, played reset
 * status bar meters: DSP load (render time ÷ block duration, peak hold, red above 70 %), output latency + buffer + rate, dropouts (own over-budget blocks + device overload reports, click resets), memory, process cpu. 4 hz, drawn outside the swiftui layout. ⌘, -> DISPLAY -> status bar
 * track load: missing file fails at once, no audio data for 4 s cancels the load (setting 2-15 s), unreadable files fail with the reason. the deck stays empty, other decks untouched, message `Track nicht ladbar (4 s): artist – title · reason`
@@ -55,6 +56,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * reverb settings (⌘, -> MIXER & FX): level (−18 … +6 dB), brightness, pre-delay (0 … 120 ms, default 15 ms)
 
 ### changed
+* fx: the unit's D/W acts only while a control sits on it (default: D/W knob) -> D/W on a plugin's mix runs the unit fully wet. single delay RATE takes the nearest of the 6 beat values
 * controller: sync held + pad 3 / 4 jumps one beat (one kick) instead of one bar; inside a loop the loop stays and the position wraps
 * plugin windows stay above the MINOS windows (also in full screen) and hide while another app is active
 * browser preview: strong 3-band colors (red = bass, green = mids / synths, blue = highs / drums), weighted against a typical track and saturated -> bass-heavy, synth-heavy and hat-heavy tracks tell apart at a glance. height from peak + bass, breaks clearly lower, thin bright line at big energy jumps (drops), grid fainter behind the waveform. setting preview colors: spectrum (default) / like the waveform (old look)

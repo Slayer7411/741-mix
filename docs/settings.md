@@ -36,6 +36,8 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * channel filter resonance
 * show fx units, 2 or 4 units, delay feedback, fx filter resonance
 * reverb level (dB, 0 = reverb ~4 dB below the track at full d/w), reverb brightness (dark -> airy: high decay 35 … 90 %, low cut 150 … 400 Hz, high shelf −4 … +6 dB, default 0.6), reverb pre-delay (ms)
+* fx mapping: per unit D/W, knob 1-3, button 1-3 -> parameter of the loaded effect (menu, search field above), all to default. same menu as the right click on the unit
+* remembered mappings per effect / plugin id (`engine.fxMappings`), forget per entry. a unit keeps its own mapping in the session
 
 ## ◆ PLUGINS
 
