@@ -9,8 +9,8 @@ enum PreviewRow {
     /// Mindesthöhe des Zelleninhalts zweizeilig; mit dem Rand der Tabelle ~34 pt je Zeile (Text ~17 pt + Band)
     static let rowHeight: CGFloat = 26
     /// Band: untere Hälfte, 2 pt Luft unten
-    static func band(in row: NSRect) -> NSRect {
-        NSRect(x: row.minX + 2, y: row.minY + row.height * 0.5, width: row.width - 4, height: row.height * 0.5 - 2)
+    @MainActor static func band(in row: NSRect) -> NSRect {
+        NSRect(x: row.minX + 2.z, y: row.minY + row.height * 0.5, width: row.width - 4.z, height: row.height * 0.5 - 2.z)
     }
 }
 
@@ -19,7 +19,7 @@ struct PreviewRowCell: ViewModifier {
     let on: Bool
     func body(content: Content) -> some View {
         if on {
-            content.frame(maxWidth: .infinity, minHeight: PreviewRow.rowHeight, maxHeight: .infinity, alignment: .topLeading)
+            content.frame(maxWidth: .infinity, minHeight: PreviewRow.rowHeight.z, maxHeight: .infinity, alignment: .topLeading)
         } else {
             content
         }

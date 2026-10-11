@@ -9,8 +9,11 @@ import MixEngine
 /// und dass Audio + Sync weiterlaufen, während der Hauptthread blockiert ist.
 @MainActor
 enum SelfTest {
+    /// aus: Messungen mit der ganzen Oberfläche (ZoomShot), die Decks bleiben, wie sie sind
+    static var enabled = true
+
     static func run(store: LibraryStore, mix: MixModel) {
-        guard ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" else { return }
+        guard enabled, ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" else { return }
         let core = mix.core
         Task { @MainActor in
             let env = ProcessInfo.processInfo.environment

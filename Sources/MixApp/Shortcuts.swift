@@ -30,6 +30,9 @@ extension ShortcutID: Identifiable {
         case .toggleFourDecks: String(localized: "2 / 4 Decks")
         case .bigBrowser: String(localized: "Browser groß")
         case .bigBrowserKey: String(localized: "Browser groß (zweite Taste, nicht im Suchfeld)")
+        case .zoomIn: String(localized: "Vergrößern")
+        case .zoomOut: String(localized: "Verkleinern")
+        case .zoomReset: String(localized: "Originalgröße")
         case .openCollection: String(localized: "Collection öffnen …")
         case .settings: String(localized: "Einstellungen …")
         case .closeWindow: String(localized: "Fenster schließen (Hauptfenster: beenden)")
@@ -144,6 +147,7 @@ struct AppActions {
         case .toggleMixer: mix.prefs.ui.showMixer.toggle()
         case .toggleFourDecks: mix.prefs.ui.showFourDecks.toggle()
         case .bigBrowser, .bigBrowserKey: browser.maximized.toggle()
+        case .zoomIn, .zoomOut, .zoomReset: ZoomControl.step(a, mix: mix)
         case .openCollection:
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [.init(filenameExtension: "nml")!]

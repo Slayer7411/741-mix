@@ -456,3 +456,10 @@
 "Beim Start prüfen" = "Check on start";
 "Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen" = "Search music folders for files without a collection entry";
 "browser-menü -> collection prüfen … oder rechtsklick auf TRACK COLLECTION. nur lesen: dateien, audio-kopf, dauer, schreibweise, namen, doppelte, analyse, grid, playlist-einträge. abbrechen jederzeit." = "browser menu -> check collection … or right click on TRACK COLLECTION. read only: files, audio header, duration, spelling, names, duplicates, analysis, grid, playlist entries. cancel any time.";
+"Vergrößern" = "Zoom In";
+"Verkleinern" = "Zoom Out";
+"Originalgröße" = "Actual Size";
+"Zoom %@" = "Zoom %@";
+"größer passt nicht auf diesen Bildschirm" = "larger does not fit this screen";
+"Zoom" = "Zoom";
+"Hauptfenster (⌘+ / ⌘− / ⌘0)" = "Main window (⌘+ / ⌘− / ⌘0)";

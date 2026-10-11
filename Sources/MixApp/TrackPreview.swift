@@ -375,7 +375,7 @@ struct TrackPreviewCell: View {
             if let img { Image(decorative: img, scale: 2).resizable().interpolation(.medium) }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: fill ? nil : PreviewRenderer.heightPt)
+        .frame(height: fill ? nil : PreviewRenderer.heightPt.z)
         .frame(maxHeight: fill ? .infinity : nil)
         .task(id: h) {
             // sichtbar ohne Übersicht: vor den Hintergrund ziehen
@@ -478,13 +478,13 @@ struct OverviewStatus: View {
         let o = Overviews.shared, p = o.progress
         let fill = mix.prefs.ui.previewFill
         if p.total > 0 {
-            HStack(spacing: 4) {
+            HStack(spacing: 4.z) {
                 Text("· " + String(localized: "Vorschauen \(p.done)/\(p.total)"))
                 if let s = Self.state(p.gate) { Text("· " + s).foregroundStyle(p.gate == .throttled ? Theme.muted : Theme.state) }
                 Button("✕") { o.cancel() }.buttonStyle(.plain).help("Vorschauen berechnen abbrechen")
             }
         } else if fill != .off, !o.stopped, p.left > 0 {
-            HStack(spacing: 4) {
+            HStack(spacing: 4.z) {
                 Text("· " + String(localized: "Vorschauen \(p.covered.formatted()) / \(p.collection.formatted())"))
                 if let s = Self.state(p.gate) { Text("· " + s).foregroundStyle(p.gate == .throttled ? Theme.muted : Theme.state) }
                 if p.onlineOnly > 0 {

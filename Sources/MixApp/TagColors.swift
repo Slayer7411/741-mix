@@ -33,9 +33,9 @@ struct TagChips: View {
 
     var body: some View {
         if ui.tagHighlight {
-            HStack(spacing: 3) {
+            HStack(spacing: 3.z) {
                 ForEach(Array(tags.enumerated()), id: \.offset) { _, t in
-                    Text(t).padding(.horizontal, 3).background(TagColors.color(t, ui)).lineLimit(1).fixedSize()
+                    Text(t).padding(.horizontal, 3.z).background(TagColors.color(t, ui)).lineLimit(1).fixedSize()
                 }
             }
         } else {

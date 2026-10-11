@@ -42,10 +42,10 @@ struct CoverTile: View {
         let path: String?
         var body: some View {
             CoverImage(path: path, size: .large) {
-                Text("◆").font(Theme.mono(11)).foregroundStyle(Theme.muted)
+                Text("◆").font(Theme.mono(11.z)).foregroundStyle(Theme.muted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.chitin)
             }
-            .frame(width: 32, height: 32)
+            .frame(width: 32.z, height: 32.z)
             .clipped()
             .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
         }
@@ -63,7 +63,7 @@ struct CoverThumb: View {
         Group {
             if let img { Image(decorative: img, scale: 1).resizable().interpolation(.high) } else { Color.clear }
         }
-        .frame(width: 16, height: 16)   // passt in die normale Zeilenhöhe (18 pt machte jede Zeile 2 pt höher)
+        .frame(width: 16.z, height: 16.z)   // passt in die normale Zeilenhöhe (18 pt machte jede Zeile 2 pt höher)
         .task(id: path) {
             guard ArtworkCache.shared.cached(path, .small) == nil else { return }
             let i = await ArtworkCache.shared.image(path, .small)
@@ -84,13 +84,13 @@ struct CoverPreview: View {
             CoverImage(path: path, size: .large) {
                 // „kein Cover“ erst, wenn das Laden fertig ist (sonst blitzt es bei jedem Wechsel auf)
                 let none = path.flatMap { ArtworkCache.shared.cached($0, .large) }.map { $0 == nil } ?? false
-                Text(none ? String(localized: "◆ KEIN COVER") : "◆").font(Theme.mono(10)).foregroundStyle(Theme.muted)
+                Text(none ? String(localized: "◆ KEIN COVER") : "◆").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.void)
             }
-            .frame(width: 140, height: 140)
+            .frame(width: 140.z, height: 140.z)
             .clipped()
             .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-            .padding(8)
+            .padding(8.z)
         }
         .frame(maxWidth: .infinity)
         .background(Theme.chitin)

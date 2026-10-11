@@ -45,7 +45,7 @@ struct ContentView: View {
                 SplitHandle(height: Binding(get: { mix.prefs.ui.browserHeight }, set: { mix.prefs.ui.browserHeight = $0 }))
             }
             browsers
-                .frame(height: big ? nil : mix.prefs.ui.browserHeight)
+                .frame(height: big ? nil : mix.prefs.ui.browserHeight.z)
                 .frame(maxHeight: big ? .infinity : nil)
                 .layoutPriority(big ? 1 : 0)
             statusBar
@@ -53,6 +53,7 @@ struct ContentView: View {
         .background(Theme.background)
         .foregroundStyle(Theme.bone)
         .tint(Theme.state)
+        .environment(\.uiZoom, UIZoom.shared.factor)
         .preferredColorScheme(.dark)
         .toolbar {
             ToolbarItemGroup {
@@ -82,6 +83,12 @@ struct ContentView: View {
         }
         .windowToolbarFullScreenVisibility(.onHover)
         .background(MainWindowHook())
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification)) { n in
+            if (n.object as? NSWindow) === MainWindow.window { ZoomControl.fit(mix: mix) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeMainNotification)) { n in
+            if (n.object as? NSWindow) === MainWindow.window { ZoomControl.fit(mix: mix) }   // gespeicherter Zoom zu groß für den Bildschirm
+        }
         .background(OverviewHook())   // Browser-Vorschau: Deck-Tracks, Pause-Regel, Leerlauf
         .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
             store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
@@ -105,40 +112,40 @@ struct ContentView: View {
         @State private var start: Double?
         var body: some View {
             Rectangle().fill(Theme.hairline).frame(height: 1)
-                .padding(.vertical, 3)
+                .padding(.vertical, 3.z)
                 .contentShape(Rectangle())
                 .onHover { inside in if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
                 .gesture(DragGesture(minimumDistance: 1)
                     .onChanged { g in
                         if start == nil { start = height }
-                        height = max(120, min(900, (start ?? height) - g.translation.height))
+                        height = max(120, min(900, (start ?? height) - g.translation.height / 1.z))
                     }
                     .onEnded { _ in start = nil })
         }
     }
 
     private var deckArea: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 6.z) {
             TopBar()
             // Decks mit fester Höhe: zwei flexible Decks übereinander ließen SwiftUI jede Zustandsänderung
             // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks)
             GeometryReader { geo in
                 let rows: CGFloat = mix.showFourDecks ? 2 : 1
-                let deckH = max(120, (geo.size.height - (rows - 1) * 6) / rows)
-                HStack(alignment: .top, spacing: 6) {
-                    VStack(spacing: 6) {
+                let deckH = max(120.z, (geo.size.height - (rows - 1) * 6.z) / rows)
+                HStack(alignment: .top, spacing: 6.z) {
+                    VStack(spacing: 6.z) {
                         DeckView(d: 0).frame(height: deckH)
                         if mix.showFourDecks { DeckView(d: 2).frame(height: deckH) }
                     }
                     if mix.prefs.ui.showMixer { MixerView().fixedSize(horizontal: true, vertical: false) }
-                    VStack(spacing: 6) {
+                    VStack(spacing: 6.z) {
                         DeckView(d: 1).frame(height: deckH)
                         if mix.showFourDecks { DeckView(d: 3).frame(height: deckH) }
                     }
                 }
             }
         }
-        .padding(6)
+        .padding(6.z)
     }
 
     @ViewBuilder private var browsers: some View {
@@ -209,10 +216,11 @@ struct MixApp: App {
                 .environment(controllerStatus)
                 .environment(waveforms)
                 .environment(history)
-                .frame(minWidth: 1280, minHeight: 860)
+                .frame(minWidth: ZoomControl.minContent.width.z, minHeight: ZoomControl.minContent.height.z)
                 .onAppear { startControllers() }
                 .onChange(of: mix.prefs.controller) { controller?.prefs = mix.prefs.controller }
                 .onChange(of: mix.prefs.ui.fxUnitCount) { controller?.fxUnits = mix.prefs.ui.fxUnitCount }
+                .onChange(of: mix.prefs.ui.zoom) { ZoomControl.apply(mix.prefs.ui.zoom) }
         }
         Settings {
             SettingsView()
@@ -246,6 +254,10 @@ struct MixApp: App {
                     .shortcut(keys.combo(.bigBrowser))
                 Picker("Browser-Anordnung", selection: Binding(get: { mix.prefs.ui.browserLayout }, set: { mix.prefs.ui.browserLayout = $0 })) {
                     ForEach(BrowserLayout.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                Divider()
+                ForEach([ShortcutID.zoomIn, .zoomOut, .zoomReset]) { a in
+                    Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
                 Divider()
             }
@@ -342,6 +354,7 @@ case "de", "en": UserDefaults.standard.set([AppPrefs.load().ui.language], forKey
 default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
 }
 Theme.registerFonts()
+if !Session.isSelfTest { MainActor.assumeIsolated { ZoomControl.apply(AppPrefs.load().ui.zoom) } }   // Zoom vor dem ersten Layout, Selbsttest 100 %
 MainActor.assumeIsolated { DeckShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=deck:…, kehrt dann nicht zurück
 
 // Selbsttest, nur Bild: MIX741_SHOT=wave:<png> | header:<png> rendert offscreen und beendet – kein Fenster
@@ -369,6 +382,7 @@ MainActor.assumeIsolated { CoverShot.runIfRequested() }   // nur Selbsttest mit 
 MainActor.assumeIsolated { SettingsShot.runPluginsIfRequested() }   // nur PLUGINS-Tab, ohne Audio: MIX741_SHOT=plugins:<ordner>
 MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=status:<ordner>, endet mit exit(0)
+MainActor.assumeIsolated { ZoomShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=zoom:<ordner>, endet mit exit(0)
 
 if ToggleBench.requested { MainActor.assumeIsolated { ToggleBench.run() } }   // Messung offscreen, ohne Fenster
 if ReloadBench.requested { MainActor.assumeIsolated { ReloadBench.run() } }   // Neu-Laden der Collection messen, offscreen

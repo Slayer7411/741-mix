@@ -38,6 +38,8 @@ import Testing
     #expect(m.combo(.resetPlayed)?.symbols == "⌥⌘P")
     #expect(m.combo(.play)?.symbols == "⌘SPACE")
     #expect(m.combo(.bigBrowserKey)?.symbols == "SPACE")
+    #expect([m.combo(.zoomIn), m.combo(.zoomOut), m.combo(.zoomReset)].map { $0?.symbols } == ["⌘+", "⌘-", "⌘0"])
+    #expect(ShortcutID.zoomIn.group == .view)
     #expect(m.action(for: KeyCombo("y")) == .sync)
     // eigener Wert, Konflikt, frei, zurück auf Standard
     m.set(.sync, KeyCombo("l"))

@@ -90,12 +90,13 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", previewSelected = "browser.preview"
     case reloadCollection = "browser.reload"
     case toggleMixer = "view.mixer", toggleFourDecks = "view.fourdecks", bigBrowser = "view.bigbrowser", bigBrowserKey = "view.bigbrowser.key"
+    case zoomIn = "view.zoom.in", zoomOut = "view.zoom.out", zoomReset = "view.zoom.reset"
     case openCollection = "app.open", settings = "app.settings", closeWindow = "app.close", reconnectAudio = "app.reconnect"
 
     public var group: ShortcutGroup {
         switch self {
         case .resetPlayed, .loadSelected, .previewSelected, .reloadCollection: .browser
-        case .toggleMixer, .toggleFourDecks, .bigBrowser, .bigBrowserKey: .view
+        case .toggleMixer, .toggleFourDecks, .bigBrowser, .bigBrowserKey, .zoomIn, .zoomOut, .zoomReset: .view
         case .openCollection, .settings, .closeWindow, .reconnectAudio: .general
         default: .decks
         }
@@ -141,6 +142,9 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .toggleFourDecks: KeyCombo("4", [.option, .command])
         case .bigBrowser: KeyCombo("b", [.option, .command])
         case .bigBrowserKey: KeyCombo("space", [])
+        case .zoomIn: KeyCombo("+")
+        case .zoomOut: KeyCombo("-")
+        case .zoomReset: KeyCombo("0")
         case .openCollection: KeyCombo("o")
         case .settings: KeyCombo(",")
         case .closeWindow: KeyCombo("w")

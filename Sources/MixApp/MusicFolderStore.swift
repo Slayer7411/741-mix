@@ -201,10 +201,11 @@ private struct MusicFolderRow: View {
     }
 
     static func label(_ glyph: String, _ name: String) -> some View {
-        HStack(spacing: 6) {
-            Text(glyph).font(Theme.mono(11)).foregroundStyle(Theme.muted).frame(width: 12)
-            Text(name).font(Theme.mono(11)).foregroundStyle(Theme.bone).lineLimit(1)
+        HStack(spacing: 6.z) {
+            Text(glyph).font(Theme.mono(11.z)).foregroundStyle(Theme.muted).frame(width: 12.z)
+            Text(name).font(Theme.mono(11.z)).foregroundStyle(Theme.bone).lineLimit(1)
         }
+        .frame(minHeight: 20.z)
     }
 }
 

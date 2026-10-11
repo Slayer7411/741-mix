@@ -111,7 +111,7 @@ struct BrowserPane: View {
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if tree && decks.prefs.ui.showCoverPreview { CoverPreview(model: model) }   // Cover des gewählten Tracks
                 }
-                .frame(minWidth: tree ? 170 : 0, idealWidth: tree ? 210 : 0, maxWidth: tree ? 320 : 0)
+                .frame(minWidth: tree ? 170.z : 0, idealWidth: tree ? 210.z : 0, maxWidth: tree ? 320.z : 0)
             VStack(spacing: 0) {
                 header(count: model.source.isHistory ? historyEntries.count : rows.count, separators: seps)
                 if model.source.isHistory {
@@ -120,7 +120,7 @@ struct BrowserPane: View {
                     TrackTable(rows: rows, model: model)
                 }
             }
-            .frame(minWidth: 380)
+            .frame(minWidth: 380.z)
         }
         .background {
             // ⌘E: Bearbeiten-Fenster für die Auswahl (nur der zuletzt benutzte Bereich reagiert)
@@ -135,6 +135,7 @@ struct BrowserPane: View {
                 model.selection = [key]
                 browserState.scrollRequest = (model.id, key)
             }
+            .environment(\.uiZoom, 1)   // Dialog bleibt bei 100 %
         }
         .onChange(of: decks.prefs.ui.writeCollection) { _, on in if on { store.scheduleWriteBack() } }
     }
@@ -148,27 +149,27 @@ struct BrowserPane: View {
     }
 
     private func header(count: Int, separators: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Button { model.showTree.toggle() } label: { Text("◧").font(Theme.mono(13)).foregroundStyle(Theme.bone) }
+        VStack(alignment: .leading, spacing: 4.z) {
+            HStack(spacing: 8.z) {
+                Button { model.showTree.toggle() } label: { Text("◧").font(Theme.mono(13.z)).foregroundStyle(Theme.bone) }
                     .buttonStyle(.borderless)
                     .help("Baum ein/aus")
-                Text(model.source.title.uppercased()).font(Theme.label(13, .bold)).lineLimit(1)
-                Text("\(count)").font(Theme.mono(11)).foregroundStyle(Theme.muted).fixedSize()
+                Text(model.source.title.uppercased()).font(Theme.label(13.z, .bold)).lineLimit(1)
+                Text("\(count)").font(Theme.mono(11.z)).foregroundStyle(Theme.muted).fixedSize()
                 if case .folder = model.source {
                     DeckButton(title: "UNTERORDNER", active: model.subfolders) { model.subfolders.toggle() }
                         .help("Dateien aus allen Unterordnern zeigen")
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: 8.z)
                 TextField("SUCHEN", text: $model.search)
                     .textFieldStyle(.plain)
-                    .font(Theme.mono(11))
-                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .font(Theme.mono(11.z))
+                    .padding(.horizontal, 6.z).padding(.vertical, 3.z)
                     .background(Theme.void)
                     .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-                    .frame(minWidth: 120, maxWidth: 220)
+                    .frame(minWidth: 120.z, maxWidth: 220.z)
             }
-            HStack(spacing: 4) {
+            HStack(spacing: 4.z) {
                 ForEach(RoleFilter.allCases) { r in
                     DeckButton(title: r.rawValue, active: model.roles.contains(r)) {
                         if model.roles.contains(r) { model.roles.remove(r) } else { model.roles.insert(r) }
@@ -180,7 +181,7 @@ struct BrowserPane: View {
                         TagPicker(model: model, separators: separators)
                     }
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 4.z) {
                         ForEach(model.tags.sorted(), id: \.self) { t in
                             DeckButton(title: t + " ✕", active: true) { model.tags.remove(t) }
                         }
@@ -188,8 +189,8 @@ struct BrowserPane: View {
                 }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 8.z)
+        .padding(.vertical, 5.z)
         .background(Theme.panelHeader)
     }
 }
@@ -209,32 +210,32 @@ struct TagPicker: View {
             .flatMap { BrowserPaneModel.tags(of: $0, separators: separators) }.map { ($0, 1) }, uniquingKeysWith: +)
         let list = counts.filter { filter.isEmpty || $0.key.localizedCaseInsensitiveContains(filter) }
             .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
-        VStack(alignment: .leading, spacing: 6) {
-            Text("TAGS · KOMMENTAR 2").font(Theme.label(12, .bold))
-            Text("trennzeichen: '\(separators)' (einstellbar unter ⌘, → anzeige)").font(Theme.mono(10)).foregroundStyle(Theme.muted)
-            TextField("FILTERN", text: $filter).textFieldStyle(.plain).font(Theme.mono(11))
-                .padding(4).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+        VStack(alignment: .leading, spacing: 6.z) {
+            Text("TAGS · KOMMENTAR 2").font(Theme.label(12.z, .bold))
+            Text("trennzeichen: '\(separators)' (einstellbar unter ⌘, → anzeige)").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
+            TextField("FILTERN", text: $filter).textFieldStyle(.plain).font(Theme.mono(11.z))
+                .padding(4.z).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
             ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 2.z) {
                     ForEach(list, id: \.key) { k, n in
                         Button {
                             if model.tags.contains(k) { model.tags.remove(k) } else { model.tags.insert(k) }
                         } label: {
                             HStack {
                                 Text(model.tags.contains(k) ? "■" : "□").foregroundStyle(model.tags.contains(k) ? Theme.state : Theme.muted)
-                                Text(k).foregroundStyle(Theme.bone).padding(.horizontal, 3)
+                                Text(k).foregroundStyle(Theme.bone).padding(.horizontal, 3.z)
                                     .background(ui.tagHighlight ? TagColors.color(k, ui) : .clear)
                                 Spacer()
                                 Text("\(n)").foregroundStyle(Theme.muted)
                             }
-                            .font(Theme.mono(11))
+                            .font(Theme.mono(11.z))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
                 }
             }
-            .frame(height: 320)
+            .frame(height: 320.z)
             if !model.tags.isEmpty {
                 HStack {
                     DeckButton(title: "ALLE TAGS LÖSEN") { model.tags.removeAll() }
@@ -247,8 +248,8 @@ struct TagPicker: View {
                 }
             }
         }
-        .padding(10)
-        .frame(width: 320)
+        .padding(10.z)
+        .frame(width: 320.z)
         .background(Theme.chitin)
     }
 }
@@ -326,6 +327,7 @@ struct SourceTree: View {
                 else { store.customSmartlists.append(saved) }
                 selection = .custom(saved)
             }
+            .environment(\.uiZoom, 1)
         }
     }
 
@@ -363,10 +365,11 @@ struct SourceTree: View {
     }
 
     private func row(_ glyph: String, _ name: String) -> some View {
-        HStack(spacing: 6) {
-            Text(glyph).font(Theme.mono(11)).foregroundStyle(Theme.muted).frame(width: 12)
-            Text(name).font(Theme.mono(11)).foregroundStyle(Theme.bone).lineLimit(1)
+        HStack(spacing: 6.z) {
+            Text(glyph).font(Theme.mono(11.z)).foregroundStyle(Theme.muted).frame(width: 12.z)
+            Text(name).font(Theme.mono(11.z)).foregroundStyle(Theme.bone).lineLimit(1)
         }
+        .frame(minHeight: 20.z)   // Zeilenhöhe der Seitenleiste mit dem Zoom (100 %: 28 pt)
     }
 }
 
@@ -425,16 +428,16 @@ struct HistoryTable: View {
     var body: some View {
         let rows = entries.enumerated().map { Row(id: $0.offset, e: $0.element) }
         Table(rows, selection: $selection) {
-            TableColumn("#") { (r: Row) in Text("\(r.id + 1)") }.width(28)
-            TableColumn("Start") { (r: Row) in Text(Theme.timeFormat.string(from: r.e.start)) }.width(64)
-            TableColumn("Deck") { (r: Row) in Text(deckLetters[max(0, min(3, r.e.deck))]) }.width(36)
+            TableColumn("#") { (r: Row) in Text("\(r.id + 1)") }.width(28.z)
+            TableColumn("Start") { (r: Row) in Text(Theme.timeFormat.string(from: r.e.start)) }.width(64.z)
+            TableColumn("Deck") { (r: Row) in Text(deckLetters[max(0, min(3, r.e.deck))]) }.width(36.z)
             TableColumn("Artist") { (r: Row) in Text(r.e.artist) }
             TableColumn("Title") { (r: Row) in Text(r.e.title) }
-            TableColumn("BPM") { (r: Row) in Text(r.e.bpm > 0 ? String(format: "%.1f", r.e.bpm) : "") }.width(48)
-            TableColumn("Key") { (r: Row) in Text(r.e.keyText) }.width(36)
-            TableColumn("Dauer") { (r: Row) in Text(Theme.time(r.e.duration)) }.width(48)
+            TableColumn("BPM") { (r: Row) in Text(r.e.bpm > 0 ? String(format: "%.1f", r.e.bpm) : "") }.width(48.z)
+            TableColumn("Key") { (r: Row) in Text(r.e.keyText) }.width(36.z)
+            TableColumn("Dauer") { (r: Row) in Text(Theme.time(r.e.duration)) }.width(48.z)
         }
-        .font(Theme.mono(11))
+        .font(Theme.mono(11.z))
         .scrollContentBackground(.hidden)
         .background(Theme.void)
         .contextMenu(forSelectionType: Int.self) { ids in
@@ -498,17 +501,17 @@ struct TrackTable: View {
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols0: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("▶") { (t: Track) in Text(history.played.contains(t.key) ? "✓" : "").foregroundStyle(Theme.secondary).modifier(PreviewRowCell(on: twoLine)) }
-            .width(16).customizationID("played")
+            .width(16.z).customizationID("played")
         TableColumn("✓", value: \Track.analyzedSort) { (t: Track) in Text(t.analyzed ? "✓" : "").foregroundStyle(Theme.muted).modifier(PreviewRowCell(on: twoLine)) }
-            .width(16).customizationID("analyzed")
-        TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4).modifier(PreviewRowCell(on: twoLine)) }
-            .width(6).customizationID("color")
+            .width(16.z).customizationID("analyzed")
+        TableColumn("", value: \Track.color) { (t: Track) in Theme.trackColor(t.color).frame(width: 4.z).modifier(PreviewRowCell(on: twoLine)) }
+            .width(6.z).customizationID("color")
         TableColumn("Cover") { (t: Track) in CoverThumb(path: t.path).modifier(PreviewRowCell(on: twoLine)) }
-            .width(min: 22, ideal: 44).customizationID("cover").defaultVisibility(.hidden)
+            .width(min: 22.z, ideal: 44.z).customizationID("cover").defaultVisibility(.hidden)
         TableColumn("Artist", value: \Track.artist) { (t: Track) in
                 cell(t, .artist) { Text(t.artist).foregroundStyle(t.loose ? Theme.muted : t.fileExists ? Theme.bone : Theme.state) }.modifier(PreviewRowCell(on: twoLine))
             }
-            .width(min: 80, ideal: 150).customizationID("artist")
+            .width(min: 80.z, ideal: 150.z).customizationID("artist")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
@@ -516,48 +519,48 @@ struct TrackTable: View {
         TableColumn("Title", value: \Track.title) { (t: Track) in
                 cell(t, .title) { Text(t.title).foregroundStyle(t.loose ? Theme.muted : Theme.bone) }.modifier(PreviewBehindTitle(mix: decks, track: t)).modifier(PreviewRowCell(on: twoLine))
             }
-            .width(min: 80, ideal: 200).customizationID("title")
+            .width(min: 80.z, ideal: 200.z).customizationID("title")
         // Mini-Übersicht (Wellenform, Phrasen, Cues) – ⌘, → Anzeige → Browser-Vorschau
         TableColumn("Preview") { (t: Track) in TrackPreviewCell(mix: decks, track: t).modifier(PreviewRowCell(on: twoLine)) }
-            .width(min: 60, ideal: 150, max: 400).customizationID("preview")
+            .width(min: 60.z, ideal: 150.z, max: 400.z).customizationID("preview")
         TableColumn("Remixer", value: \Track.remixer) { (t: Track) in text(t, .remixer).modifier(PreviewRowCell(on: twoLine)) }
-            .width(min: 60, ideal: 110).customizationID("remixer").defaultVisibility(.hidden)
+            .width(min: 60.z, ideal: 110.z).customizationID("remixer").defaultVisibility(.hidden)
         TableColumn("Producer", value: \Track.producer) { (t: Track) in text(t, .producer).modifier(PreviewRowCell(on: twoLine)) }
-            .width(min: 60, ideal: 110).customizationID("producer").defaultVisibility(.hidden)
+            .width(min: 60.z, ideal: 110.z).customizationID("producer").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols2: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Release", value: \Track.album) { (t: Track) in text(t, .album).modifier(PreviewRowCell(on: twoLine)) }
-            .width(min: 60, ideal: 130).customizationID("release").defaultVisibility(.hidden)
+            .width(min: 60.z, ideal: 130.z).customizationID("release").defaultVisibility(.hidden)
         TableColumn("Track #", value: \Track.trackNumber) { (t: Track) in text(t, .trackNumber).modifier(PreviewRowCell(on: twoLine)) }
-            .width(40).customizationID("trackno").defaultVisibility(.hidden)
+            .width(40.z).customizationID("trackno").defaultVisibility(.hidden)
         TableColumn("BPM", value: \Track.bpm) { (t: Track) in
                 cell(t, .bpm) { Text(t.bpm > 0 ? String(format: "%.2f", t.bpm) : "").monospacedDigit() }.modifier(PreviewRowCell(on: twoLine))
             }
-            .width(56).customizationID("bpm")
+            .width(56.z).customizationID("bpm")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols3: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Key", value: \Track.openKey) { (t: Track) in Text(t.openKey).modifier(PreviewRowCell(on: twoLine)) }
-            .width(36).customizationID("key")
+            .width(36.z).customizationID("key")
         TableColumn("Key Text", value: \Track.keyText) { (t: Track) in text(t, .keyText).modifier(PreviewRowCell(on: twoLine)) }
-            .width(40).customizationID("keytext").defaultVisibility(.hidden)
+            .width(40.z).customizationID("keytext").defaultVisibility(.hidden)
         TableColumn("Time", value: \Track.duration) { (t: Track) in Text(Theme.time(t.duration)).monospacedDigit().modifier(PreviewRowCell(on: twoLine)) }
-            .width(44).customizationID("time")
+            .width(44.z).customizationID("time")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols4: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Gain", value: \Track.gainSort) { (t: Track) in Text(t.perceivedDb.map { String(format: "%+.1f", $0) } ?? "").monospacedDigit().modifier(PreviewRowCell(on: twoLine)) }
-            .width(42).customizationID("gain").defaultVisibility(.hidden)
+            .width(42.z).customizationID("gain").defaultVisibility(.hidden)
         TableColumn("Rating", value: \Track.rating) { (t: Track) in
                 cell(t, .rating) { Text(String(repeating: "★", count: max(0, min(5, t.rating)))) }.modifier(PreviewRowCell(on: twoLine))
             }
-            .width(56).customizationID("rating").defaultVisibility(.hidden)
+            .width(56.z).customizationID("rating").defaultVisibility(.hidden)
         TableColumn("Comment", value: \Track.comment) { (t: Track) in text(t, .comment).modifier(PreviewRowCell(on: twoLine)) }
-            .width(min: 80, ideal: 170).customizationID("comment")
+            .width(min: 80.z, ideal: 170.z).customizationID("comment")
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
@@ -565,39 +568,39 @@ struct TrackTable: View {
         TableColumn("Comment 2", value: \Track.comment2) { (t: Track) in
                 cell(t, .comment2) { TagChips(tags: BrowserPaneModel.tags(of: t, separators: decks.prefs.ui.tagSeparators), ui: decks.prefs.ui) }.modifier(PreviewRowCell(on: twoLine))
             }
-            .width(min: 80, ideal: 260).customizationID("comment2")
+            .width(min: 80.z, ideal: 260.z).customizationID("comment2")
         TableColumn("Label", value: \Track.label) { (t: Track) in text(t, .label).modifier(PreviewRowCell(on: twoLine)) }
-            .width(min: 60, ideal: 110).customizationID("label")
+            .width(min: 60.z, ideal: 110.z).customizationID("label")
         TableColumn("Catalog No", value: \Track.catalogNo) { (t: Track) in text(t, .catalogNo).modifier(PreviewRowCell(on: twoLine)) }
-            .width(min: 50, ideal: 90).customizationID("catalog").defaultVisibility(.hidden)
+            .width(min: 50.z, ideal: 90.z).customizationID("catalog").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols6: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Genre", value: \Track.genre) { (t: Track) in text(t, .genre).modifier(PreviewRowCell(on: twoLine)) }
-            .width(min: 50, ideal: 100).customizationID("genre").defaultVisibility(.hidden)
+            .width(min: 50.z, ideal: 100.z).customizationID("genre").defaultVisibility(.hidden)
         TableColumn("Plays", value: \Track.playCount) { (t: Track) in Text(t.playsText).modifier(PreviewRowCell(on: twoLine)) }
-            .width(38).customizationID("plays")
+            .width(38.z).customizationID("plays")
         TableColumn("Last Played", value: \Track.lastPlayedSort) { (t: Track) in Text(Track.dateText(t.lastPlayed)).modifier(PreviewRowCell(on: twoLine)) }
-            .width(74).customizationID("lastplayed").defaultVisibility(.hidden)
+            .width(74.z).customizationID("lastplayed").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols7: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Import", value: \Track.importSort) { (t: Track) in Text(t.importText).modifier(PreviewRowCell(on: twoLine)) }
-            .width(74).customizationID("import")
+            .width(74.z).customizationID("import")
         TableColumn("Release Date", value: \Track.releaseSort) { (t: Track) in text(t, .releaseDate).modifier(PreviewRowCell(on: twoLine)) }
-            .width(74).customizationID("releasedate").defaultVisibility(.hidden)
+            .width(74.z).customizationID("releasedate").defaultVisibility(.hidden)
         TableColumn("Bitrate", value: \Track.bitrate) { (t: Track) in Text(t.bitrate > 0 ? "\(t.bitrate)" : "").modifier(PreviewRowCell(on: twoLine)) }
-            .width(44).customizationID("bitrate").defaultVisibility(.hidden)
+            .width(44.z).customizationID("bitrate").defaultVisibility(.hidden)
     }
 
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols8: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("File Name", value: \Track.fileName) { (t: Track) in Text(t.fileName).modifier(PreviewRowCell(on: twoLine)) }
-            .width(min: 80, ideal: 220).customizationID("file").defaultVisibility(.hidden)
+            .width(min: 80.z, ideal: 220.z).customizationID("file").defaultVisibility(.hidden)
         TableColumn("Mix", value: \Track.mix) { (t: Track) in text(t, .mix).modifier(PreviewRowCell(on: twoLine)) }
-            .width(min: 60, ideal: 110).customizationID("mix").defaultVisibility(.hidden)
+            .width(min: 60.z, ideal: 110.z).customizationID("mix").defaultVisibility(.hidden)
     }
 
     var body: some View {
@@ -622,7 +625,11 @@ struct TrackTable: View {
         .onChange(of: columns) {
             if let d = try? JSONEncoder().encode(columns) { UserDefaults.standard.set(d, forKey: "columns.\(model.name)") }
         }
-        .font(Theme.mono(11))
+        .onChange(of: UIZoom.shared.factor) { old, new in
+            // Spaltenbreiten wachsen mit dem Zoom; die Tabelle meldet sie zurück in die gespeicherte Anordnung
+            for c in inlineCtl.table?.tableColumns ?? [] { c.width = (c.width * new / old * 2).rounded() / 2 }
+        }
+        .font(Theme.mono(11.z))
         .scrollContentBackground(.hidden)
         .background(Theme.void)
         .background(TableViewFinder(controller: inlineCtl))

@@ -14,9 +14,9 @@ struct StatusBar: View {
     private var center: StatusCenter { StatusCenter.shared }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 10.z) {
             message
-                .frame(minWidth: 240, maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 240.z, maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     if let m = center.current, m.level == .error { center.dismiss(m) }
@@ -24,29 +24,29 @@ struct StatusBar: View {
                 }
                 .popover(isPresented: $showHistory, arrowEdge: .top) { StatusHistory() }
                 .help("Klick: letzte Meldungen")
-            VStack(alignment: .trailing, spacing: 1) {
-                HStack(spacing: 4) {
+            VStack(alignment: .trailing, spacing: 1.z) {
+                HStack(spacing: 4.z) {
                     Text(mix.engineStatus).lineLimit(1).truncationMode(.middle)
                     Button("↻") { mix.reconnect() }
                         .buttonStyle(.plain)
                         .help("Audio-Interface neu verbinden")
                 }
-                HStack(spacing: 4) {
+                HStack(spacing: 4.z) {
                     Text("Preparation: \(store.preparation.count)")
                     OverviewStatus()
                 }
                 .fixedSize()
             }
-            .font(Theme.mono(10))
+            .font(Theme.mono(10.z))
             .foregroundStyle(Theme.muted)
-            .frame(minWidth: 200, maxWidth: 440, alignment: .trailing)
+            .frame(minWidth: 200.z, maxWidth: 440.z, alignment: .trailing)
             if mix.prefs.ui.showMeters {
-                Rectangle().fill(Theme.hairline).frame(width: 1, height: 24)
+                Rectangle().fill(Theme.hairline).frame(width: 1, height: 24.z)
                 StatusMeters(engine: mix.engine)
             }
         }
-        .padding(.horizontal, 8)
-        .frame(height: 34)
+        .padding(.horizontal, 8.z)
+        .frame(height: 34.z)
         .background(Theme.chitin)
         .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
         .onAppear { center.attach(mix.core) }
@@ -54,8 +54,8 @@ struct StatusBar: View {
 
     @ViewBuilder private var message: some View {
         if let m = center.current {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 1.z) {
+                HStack(spacing: 6.z) {
                     Text(verbatim: "◆").foregroundStyle(Self.color(m.level))
                     Text(verbatim: m.text).foregroundStyle(m.level == .info ? Theme.bone : Self.color(m.level)).lineLimit(1)
                         .truncationMode(.tail)
@@ -66,32 +66,32 @@ struct StatusBar: View {
                         Button("✕") { center.cancel(m) }.buttonStyle(.plain).foregroundStyle(Theme.muted).help("Abbrechen")
                     }
                 }
-                .font(Theme.mono(11))
+                .font(Theme.mono(11.z))
                 secondLine(m)
             }
         } else {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: store.status).font(Theme.mono(11)).foregroundStyle(Theme.muted).lineLimit(1)
-                Text(verbatim: " ").font(Theme.mono(9.5))
+            VStack(alignment: .leading, spacing: 1.z) {
+                Text(verbatim: store.status).font(Theme.mono(11.z)).foregroundStyle(Theme.muted).lineLimit(1)
+                Text(verbatim: " ").font(Theme.mono(9.5.z))
             }
         }
     }
 
     @ViewBuilder private func secondLine(_ m: StatusMessage) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 6.z) {
             if let p = m.progress {
                 ZStack(alignment: .leading) {
                     Rectangle().fill(Theme.hairline)
-                    Rectangle().fill(Self.color(m.level)).frame(width: 90 * p)
+                    Rectangle().fill(Self.color(m.level)).frame(width: 90.z * p)
                 }
-                .frame(width: 90, height: 3)
+                .frame(width: 90.z, height: 3.z)
                 if let t = m.progressText { Text(verbatim: t) }
             }
             Text(verbatim: m.detail ?? (m.progress == nil ? " " : "")).lineLimit(1).truncationMode(.middle)
         }
-        .font(Theme.mono(9.5))
+        .font(Theme.mono(9.5.z))
         .foregroundStyle(Theme.muted)
-        .padding(.leading, 14)
+        .padding(.leading, 14.z)
     }
 
     static func color(_ l: StatusMessage.Level) -> Color {
@@ -111,37 +111,37 @@ struct StatusHistory: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("MELDUNGEN").font(Theme.label(11)).foregroundStyle(Theme.bone)
+                Text("MELDUNGEN").font(Theme.label(11.z)).foregroundStyle(Theme.bone)
                 Spacer()
-                Button("Leeren") { center.clearHistory() }.buttonStyle(.plain).font(Theme.mono(10)).foregroundStyle(Theme.muted)
+                Button("Leeren") { center.clearHistory() }.buttonStyle(.plain).font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
             }
-            .padding(8)
+            .padding(8.z)
             Rectangle().fill(Theme.hairline).frame(height: 1)
             if center.history.isEmpty {
-                Text("Keine Meldungen").font(Theme.mono(11)).foregroundStyle(Theme.muted).padding(8)
+                Text("Keine Meldungen").font(Theme.mono(11.z)).foregroundStyle(Theme.muted).padding(8.z)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
+                    LazyVStack(alignment: .leading, spacing: 4.z) {
                         ForEach(center.history) { m in
-                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            HStack(alignment: .firstTextBaseline, spacing: 6.z) {
                                 Text(verbatim: Theme.timeFormat.string(from: m.updated)).foregroundStyle(Theme.muted)
                                 Text(verbatim: "◆").foregroundStyle(StatusBar.color(m.level))
-                                VStack(alignment: .leading, spacing: 1) {
+                                VStack(alignment: .leading, spacing: 1.z) {
                                     Text(verbatim: m.text + (m.progressText.map { " · \($0)" } ?? ""))
                                         .foregroundStyle(m.level == .error ? Theme.state : Theme.bone)
-                                    if let d = m.detail { Text(verbatim: d).font(Theme.mono(9.5)).foregroundStyle(Theme.muted) }
+                                    if let d = m.detail { Text(verbatim: d).font(Theme.mono(9.5.z)).foregroundStyle(Theme.muted) }
                                 }
                                 .textSelection(.enabled)
                             }
-                            .font(Theme.mono(11))
+                            .font(Theme.mono(11.z))
                         }
                     }
-                    .padding(8)
+                    .padding(8.z)
                 }
-                .frame(maxHeight: 360)
+                .frame(maxHeight: 360.z)
             }
         }
-        .frame(width: 560)
+        .frame(width: 560.z)
         .background(Theme.void)
     }
 }
@@ -242,10 +242,10 @@ struct StatusMeters: View {
 
     var body: some View {
         LiveCanvas(fps: 4) { ctx, size in Self.draw(ctx, size, MeterSampler.shared.sample) }
-            .frame(width: Self.width, height: 26)
+            .frame(width: Self.width.z, height: 26.z)
             .contentShape(Rectangle())
             .onTapGesture(coordinateSpace: .local) { p in
-                if Self.dropRange.contains(p.x) { MeterSampler.shared.resetDropouts() } else { showDetails.toggle() }
+                if Self.dropRange.contains(p.x / 1.z) { MeterSampler.shared.resetDropouts() } else { showDetails.toggle() }
             }
             .popover(isPresented: $showDetails, arrowEdge: .top) { MeterDetails() }
             .help("DSP-Last, Latenz, Aussetzer (Klick: zurücksetzen), Speicher, CPU – Klick: Details")
@@ -317,8 +317,8 @@ struct MeterDetails: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
             let s = MeterSampler.shared.sample, l = s.load
-            VStack(alignment: .leading, spacing: 3) {
-                Text("AUDIO-LAST").font(Theme.label(11)).foregroundStyle(Theme.bone).padding(.bottom, 4)
+            VStack(alignment: .leading, spacing: 3.z) {
+                Text("AUDIO-LAST").font(Theme.label(11.z)).foregroundStyle(Theme.bone).padding(.bottom, 4.z)
                 row("DSP-Last (Mittel)", String(format: "%.1f %%", l.average * 100))
                 row("DSP-Last (Spitze, gehalten)", String(format: "%.1f %%", s.peakHold * 100))
                 row("Ausgabelatenz", String(format: "%.1f ms", l.outputLatency * 1000))
@@ -329,11 +329,11 @@ struct MeterDetails: View {
                 row("Speicher", StatusMeters.megabytes(s.memoryBytes))
                 row("CPU (alle Kerne, 100 % = ein Kern)", String(format: "%.0f %%", s.cpu * 100))
                 Button("Aussetzer zurücksetzen") { MeterSampler.shared.resetDropouts() }
-                    .buttonStyle(.plain).font(Theme.mono(10)).foregroundStyle(Theme.state).padding(.top, 6)
+                    .buttonStyle(.plain).font(Theme.mono(10.z)).foregroundStyle(Theme.state).padding(.top, 6.z)
             }
-            .font(Theme.mono(11))
-            .padding(10)
-            .frame(width: 380, alignment: .leading)
+            .font(Theme.mono(11.z))
+            .padding(10.z)
+            .frame(width: 380.z, alignment: .leading)
         }
         .background(Theme.void)
     }

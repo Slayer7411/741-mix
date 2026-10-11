@@ -3,6 +3,7 @@ import QuartzCore
 import SwiftUI
 
 /// Zeichenfläche mit eigenem Display-Link: läuft am SwiftUI-Graphen vorbei (kein Layout pro Frame).
+/// Gezeichnet wird in Punkten bei 100 %, der Zoom des Hauptfensters skaliert den Kontext.
 struct LiveCanvas: NSViewRepresentable {
     var fps: Float = 30
     var running = true
@@ -12,6 +13,7 @@ struct LiveCanvas: NSViewRepresentable {
 
     func updateNSView(_ v: LiveCanvasView, context: Context) {
         v.drawer = draw
+        v.zoom = context.environment.uiZoom
         v.configure(fps: fps, running: running)
         v.needsDisplay = true
     }
@@ -19,6 +21,7 @@ struct LiveCanvas: NSViewRepresentable {
 
 final class LiveCanvasView: NSView {
     var drawer: @MainActor (CGContext, CGSize) -> Void = { _, _ in }
+    var zoom: CGFloat = 1
     private var link: CADisplayLink?
     private var fps: Float = 30
     private var running = true
@@ -57,7 +60,8 @@ final class LiveCanvasView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        drawer(ctx, bounds.size)
+        ctx.scaleBy(x: zoom, y: zoom)
+        drawer(ctx, CGSize(width: bounds.width / zoom, height: bounds.height / zoom))
     }
 }
 

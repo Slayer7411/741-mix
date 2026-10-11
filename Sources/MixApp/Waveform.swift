@@ -300,11 +300,11 @@ struct WaveformView: View {
             cues: deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }.map {
                 WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)))
             },
-            cuePoint: deck.cuePoint, hasTrack: deck.track != nil)
+            cuePoint: deck.cuePoint, hasTrack: deck.track != nil, zoom: 1.z)
         WaveLayerView(scene: scene, wave: wf, position: { [mix, d] in mix.position(d) }, loop: { [mix, d] in mix.engine.loop(d) })
             .overlay {
                 if deck.track != nil, wf == nil {
-                    Text("Wellenform wird berechnet …").font(Theme.mono(10)).foregroundStyle(.secondary)
+                    Text("Wellenform wird berechnet …").font(Theme.mono(10.z)).foregroundStyle(.secondary)
                 }
             }
             .overlay {

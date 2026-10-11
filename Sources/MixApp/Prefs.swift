@@ -156,6 +156,8 @@ struct UIPrefs: Codable, Equatable {
     var checkOnStart = false
     /// Collection prüfen: Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen
     var checkMusicFolders = true
+    /// Zoom des Hauptfensters (1 = 100 %, ZoomSteps)
+    var zoom = 1.0
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.

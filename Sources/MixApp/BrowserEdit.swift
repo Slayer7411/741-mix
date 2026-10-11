@@ -235,8 +235,8 @@ struct InlineEditor: View {
         } else {
             TextField("", text: $model.inlineText)
                 .textFieldStyle(.plain)
-                .font(Theme.mono(11))
-                .padding(.horizontal, 2)
+                .font(Theme.mono(11.z))
+                .padding(.horizontal, 2.z)
                 .background(Theme.chitinRaised)
                 .overlay(Rectangle().stroke(edit.field.normalize(model.inlineText) == nil ? Theme.state : Theme.bone.opacity(0.6), lineWidth: 1))
                 .focused($focused)
@@ -253,9 +253,10 @@ struct StarPicker: View {
     let value: Int
     var dim = false
     let set: (Int) -> Void
+    @Environment(\.uiZoom) private var zoom
 
     var body: some View {
-        HStack(spacing: 1) {
+        HStack(spacing: 1 * zoom) {
             ForEach(1...5, id: \.self) { n in
                 Button { set(n == value ? 0 : n) } label: {
                     Text(n <= value ? "★" : "☆").contentShape(Rectangle())
@@ -263,7 +264,7 @@ struct StarPicker: View {
                 .buttonStyle(.plain)
             }
         }
-        .font(Theme.mono(13))
+        .font(Theme.mono(13 * zoom))
         .foregroundStyle(dim ? Theme.muted : Theme.bone)
     }
 }

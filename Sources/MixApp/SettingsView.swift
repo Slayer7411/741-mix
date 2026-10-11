@@ -420,6 +420,11 @@ struct WaveformSettings: View {
                 Toggle("Taktnummern", isOn: $mix.prefs.ui.showBarNumbers)
                 Toggle("Marker alle 8 / 16 / 32 Takte (magenta)", isOn: $mix.prefs.ui.barMarkers)
             }
+            Section("Zoom") {
+                Picker("Hauptfenster (⌘+ / ⌘− / ⌘0)", selection: Binding(get: { mix.prefs.ui.zoom }, set: { ZoomControl.set($0, mix: mix) })) {
+                    ForEach(Set(ZoomSteps.levels + [mix.prefs.ui.zoom]).sorted(), id: \.self) { Text(verbatim: ZoomSteps.percent($0)).tag($0) }
+                }
+            }
             Section("Sprache") {
                 Picker("Sprache (wirkt nach Neustart)", selection: $mix.prefs.ui.language) {
                     Text("Systemstandard").tag("system")

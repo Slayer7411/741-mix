@@ -10,15 +10,15 @@ struct DeckView: View {
     var body: some View {
         let deck = mix.deck(d)
         let focused = mix.focusedDeck == d
-        HStack(alignment: .top, spacing: 6) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .top, spacing: 6.z) {
+            VStack(alignment: .leading, spacing: 4.z) {
                 header(deck)
                 WaveformView(d: d)
                     .overlay { DeckIdleView(d: d) }   // leer: Lobster, nach Ladefehler 5 s Totenkopf
-                    .frame(minHeight: mix.prefs.ui.waveformHeight, maxHeight: .infinity)
-                PhaseBar(d: d).frame(height: 8)
+                    .frame(minHeight: mix.prefs.ui.waveformHeight.z, maxHeight: .infinity)
+                PhaseBar(d: d).frame(height: 8.z)
                 OverviewView(d: d)
-                    .frame(height: 18)
+                    .frame(height: 18.z)
                 transportRow(deck)
                 cueRow(deck)
                 loopRow(deck)
@@ -27,7 +27,7 @@ struct DeckView: View {
             }
             TempoColumn(d: d)
         }
-        .padding(6)
+        .padding(6.z)
         .frame(maxHeight: .infinity)
         .background(Rectangle().fill(focused ? Theme.deckFocused : Theme.deck))
         .overlay(Rectangle().stroke(mix.effectiveMaster == d ? Theme.gold : (focused ? Theme.bone.opacity(0.5) : Theme.hairline),
@@ -37,23 +37,23 @@ struct DeckView: View {
     }
 
     private func header(_ deck: DeckState) -> some View {
-        HStack(alignment: .center, spacing: 6) {
-            Text(deckLetters[d]).font(Theme.label(22, .bold)).foregroundStyle(deck.playing ? Theme.state : Theme.bone)
+        HStack(alignment: .center, spacing: 6.z) {
+            Text(deckLetters[d]).font(Theme.label(22.z, .bold)).foregroundStyle(deck.playing ? Theme.state : Theme.bone)
             CoverTile(d: d)
             VStack(alignment: .leading, spacing: 0) {
                 Text(deck.loading ? "Lade …" : (deck.track?.title ?? "—"))
-                    .font(Theme.mono(13, .semibold)).lineLimit(1)
+                    .font(Theme.mono(13.z, .semibold)).lineLimit(1)
                 Text(deck.error ?? deck.track?.artist ?? String(localized: "Kein Track geladen"))
-                    .font(Theme.mono(11)).foregroundStyle(deck.error == nil ? Color.secondary : Color.red).lineLimit(1)
+                    .font(Theme.mono(11.z)).foregroundStyle(deck.error == nil ? Color.secondary : Color.red).lineLimit(1)
             }
-            Spacer(minLength: 4)
+            Spacer(minLength: 4.z)
             if !mix.prefs.ui.showMixer {
                 // ohne Mixer-Ansicht: FX-Zuweisung direkt am Deck
                 // FX-Zuweisung am Kanal: 1 2 (3 4)
                 let n = mix.prefs.ui.fxUnitCount
-                VStack(spacing: 2) {
+                VStack(spacing: 2.z) {
                     ForEach(0..<(n == 4 ? 2 : 1), id: \.self) { row in
-                        HStack(spacing: 2) {
+                        HStack(spacing: 2.z) {
                             ForEach([0, 1].map { row * 2 + $0 }, id: \.self) { u in
                                 DeckButton(title: "FX\(u + 1)", active: deck.fxAssign[u], color: Theme.state) { mix.toggleFXAssign(d, u) }
                             }
@@ -63,24 +63,24 @@ struct DeckView: View {
             }
             TimeReadout(d: d)
             VStack(alignment: .trailing, spacing: 0) {
-                Text(String(format: "%.2f", deck.bpm)).font(Theme.mono(15, .bold))
-                Text(String(format: "%+.2f%%", deck.tempoPct)).font(Theme.mono(10)).foregroundStyle(.secondary)
+                Text(String(format: "%.2f", deck.bpm)).font(Theme.mono(15.z, .bold))
+                Text(String(format: "%+.2f%%", deck.tempoPct)).font(Theme.mono(10.z)).foregroundStyle(.secondary)
             }
             CodeReadout(d: d)
             VStack(alignment: .trailing, spacing: 0) {
                 KeyReadout(d: d)
-                PhaseMeter(d: d).frame(width: 44, height: 6)
+                PhaseMeter(d: d).frame(width: 44.z, height: 6.z)
             }
-            .frame(minWidth: 46)
+            .frame(minWidth: 46.z)
         }
     }
 
     private func transportRow(_ deck: DeckState) -> some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 3.z) {
             DeckButton(title: "CUP", width: 26) { mix.cup(d) }
             PressButton(title: "CUE", active: deck.cueHeld, width: 30, down: { mix.cueDown(d) }, up: { mix.cueUp(d) })
             DeckButton(title: deck.playing ? "❚❚" : "▶", active: deck.playing, color: Theme.state, width: 30) { mix.togglePlay(d) }
-            Divider().frame(height: 14)
+            Divider().frame(height: 14.z)
             DeckButton(title: "SYNC", active: deck.sync, color: Theme.state) { mix.toggleSync(d) }
             DeckButton(title: "MASTER", active: mix.effectiveMaster == d,
                        color: Theme.secondary) { mix.toggleMaster(d) }
@@ -89,31 +89,31 @@ struct DeckView: View {
             DeckButton(title: "+") { mix.shiftKey(d, 1) }
             DeckButton(title: "REV", active: deck.reverse, color: Theme.state) { mix.toggleReverse(d) }
             DeckButton(title: "FLUX", active: deck.flux, color: Theme.state) { mix.toggleFlux(d) }
-            Spacer(minLength: 2)
+            Spacer(minLength: 2.z)
         }
     }
 
     /// Grid-Werkzeuge: verschieben, BPM, ×2/÷2, Marker setzen, zurücksetzen
     private func gridRow(_ deck: DeckState) -> some View {
-        HStack(spacing: 3) {
-            Text("GRID").font(Theme.label(9, .bold)).foregroundStyle(Theme.muted).frame(width: 30, alignment: .leading)
+        HStack(spacing: 3.z) {
+            Text("GRID").font(Theme.label(9.z, .bold)).foregroundStyle(Theme.muted).frame(width: 30.z, alignment: .leading)
             DeckButton(title: "◂◂") { mix.shiftGrid(d, ms: -10) }.help("Grid 10 ms früher")
             DeckButton(title: "◂") { mix.shiftGrid(d, ms: -1) }.help("Grid 1 ms früher")
             DeckButton(title: "▸") { mix.shiftGrid(d, ms: 1) }.help("Grid 1 ms später")
             DeckButton(title: "▸▸") { mix.shiftGrid(d, ms: 10) }.help("Grid 10 ms später")
-            Divider().frame(height: 14)
+            Divider().frame(height: 14.z)
             DeckButton(title: "BPM −") { mix.setGridBPM(d, (deck.grid?.bpm ?? 0) - 0.01) }
-            Text(deck.grid.map { String(format: "%.3f", $0.bpm) } ?? "—").font(Theme.mono(10)).frame(width: 52)
+            Text(deck.grid.map { String(format: "%.3f", $0.bpm) } ?? "—").font(Theme.mono(10.z)).frame(width: 52.z)
             DeckButton(title: "+") { mix.setGridBPM(d, (deck.grid?.bpm ?? 0) + 0.01) }
             DeckButton(title: "÷2") { mix.scaleGridBPM(d, 0.5) }
             DeckButton(title: "×2") { mix.scaleGridBPM(d, 2) }
-            Divider().frame(height: 14)
+            Divider().frame(height: 14.z)
             DeckButton(title: "SET") { mix.setGridAnchorHere(d) }.help("Beat 1 an die aktuelle Position")
             DeckButton(title: "RESET") { mix.resetGrid(d) }.help("Grid aus der Collection")
             // Anker um ganze Beats/Takte: Raster bleibt, nur Takt- und Phrasenzählung wandert; schmale Decks: weniger Knöpfe
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 3) { Divider().frame(height: 14); anchorButtons([-4, -1, 1, 4]); phraseButton(deck, short: false) }
-                HStack(spacing: 3) { Divider().frame(height: 14); anchorButtons([-1, 1]); phraseButton(deck, short: true) }
+                HStack(spacing: 3.z) { Divider().frame(height: 14.z); anchorButtons([-4, -1, 1, 4]); phraseButton(deck, short: false) }
+                HStack(spacing: 3.z) { Divider().frame(height: 14.z); anchorButtons([-1, 1]); phraseButton(deck, short: true) }
                 phraseButton(deck, short: true)
             }
             Spacer(minLength: 0)
@@ -139,7 +139,7 @@ struct DeckView: View {
 
     /// Hotcues über die ganze Breite, rechts manueller Loop (IN / OUT / RE)
     private func cueRow(_ deck: DeckState) -> some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 3.z) {
             ForEach(0..<8, id: \.self) { n in
                 let c = deck.hotcues[n]
                 DeckButton(title: "\(n + 1)", active: c != nil,
@@ -148,7 +148,7 @@ struct DeckView: View {
                 }
                 .help("Klick: springen/setzen · ⌥-Klick: löschen")
             }
-            Divider().frame(height: 14)
+            Divider().frame(height: 14.z)
             DeckButton(title: "IN", active: deck.loopIn != nil && !deck.loopActive, color: Theme.state) { mix.setLoopIn(d) }
             DeckButton(title: "OUT") { mix.setLoopOut(d) }
             DeckButton(title: "RE") { mix.reloop(d) }
@@ -158,7 +158,7 @@ struct DeckView: View {
     /// Loopgrößen über die ganze Breite: gewählte Größe rot (auch vom Encoder), LOOP = an/aus.
     /// Klick auf eine Größe wählt sie; läuft ein Loop, wird er auf die neue Größe gestellt.
     private func loopRow(_ deck: DeckState) -> some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 3.z) {
             DeckButton(title: "LOOP", active: deck.loopActive, color: Theme.state, width: 30) { mix.autoLoop(d) }
             ForEach(BeatSizes.loop, id: \.self) { s in
                 let selected = Self.same(deck.loopSize, s)
@@ -172,7 +172,7 @@ struct DeckView: View {
 
     /// Beatjump-Größen über die ganze Breite: gewählte Größe rot (auch über Flux + Pads / Encoder), ◀◀ ▶▶ springen
     private func jumpRow(_ deck: DeckState) -> some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 3.z) {
             DeckButton(title: "◀◀", width: 30) { mix.beatjump(d, beats: -deck.jumpSize) }
             ForEach(BeatSizes.jump, id: \.self) { s in
                 DeckButton(title: BeatSizes.label(s), active: Self.same(deck.jumpSize, s), color: Theme.state, fill: true) {
@@ -205,7 +205,7 @@ struct TimeReadout: View {
                 CG.text("\(bb.bar).\(bb.beat)", size: 10, weight: "Regular", color: NSColor(Theme.muted), rightAt: size.width, y: 17)
             }
         }
-        .frame(width: 66, height: 31)
+        .frame(width: 66.z, height: 31.z)
     }
 }
 
@@ -231,7 +231,7 @@ struct CodeReadout: View {
                 : c.aligned ? ("◆ CODE", lila) : (c.offsetLabel ?? "", NSColor(Theme.state))
             CG.text(s, size: 10, weight: "Regular", color: col, rightAt: size.width, y: 17)
         }
-        .frame(width: 62, height: 31)
+        .frame(width: 62.z, height: 31.z)
         .help(String(localized: "Code: Takt in der \(bars)-Takt-Phrase des Tracks, Abstand zum Bar-Zähler"))
     }
 }
@@ -247,16 +247,16 @@ struct KeyReadout: View {
         let dev = mix.keyDeviation(d)
         let off = track != nil && abs(dev) >= 0.05
         VStack(alignment: .trailing, spacing: 0) {
-            HStack(spacing: 3) {
-                Text(track?.openKey ?? "").font(Theme.mono(13, .semibold))
+            HStack(spacing: 3.z) {
+                Text(track?.openKey ?? "").font(Theme.mono(13.z, .semibold))
                     .foregroundStyle(off ? Color.secondary : Theme.bone)
                 if off, let track {
-                    Text("→").font(Theme.mono(10)).foregroundStyle(.secondary)
-                    Text(track.openKey(shiftedBy: Int(dev.rounded()))).font(Theme.mono(13, .semibold))
+                    Text("→").font(Theme.mono(10.z)).foregroundStyle(.secondary)
+                    Text(track.openKey(shiftedBy: Int(dev.rounded()))).font(Theme.mono(13.z, .semibold))
                         .foregroundStyle(Theme.state)
                 }
             }
-            Text(track == nil ? " " : String(format: "%+.2f", dev)).font(Theme.mono(10))
+            Text(track == nil ? " " : String(format: "%+.2f", dev)).font(Theme.mono(10.z))
                 .foregroundStyle(off ? Theme.state : Color.secondary)
                 .help(String(localized: "Abweichung von der Tonart des Tracks in Halbtönen"))
         }
@@ -311,20 +311,20 @@ struct TempoColumn: View {
 
     var body: some View {
         let deck = mix.deck(d)
-        VStack(spacing: 3) {
+        VStack(spacing: 3.z) {
             Menu(String(format: "±%g", deck.tempoRange)) {
                 ForEach([6.0, 8, 10, 16, 50, 100], id: \.self) { r in Button(String(format: "±%g %%", r)) { mix.setTempoRange(d, r) } }
             }
-            .menuStyle(.borderlessButton).font(Theme.mono(9)).fixedSize()
+            .menuStyle(.borderlessButton).controlSize(zoomed: .regular).font(Theme.mono(9.z)).fixedSize()
             GeometryReader { geo in
                 let h = geo.size.height
                 let f = (deck.tempoPct / deck.tempoRange + 1) / 2   // unten = schneller
                 ZStack(alignment: .top) {
-                    Rectangle().fill(Theme.void).frame(width: 4).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-                    Rectangle().fill(Theme.muted).frame(width: 14, height: 1).offset(y: h / 2)
+                    Rectangle().fill(Theme.void).frame(width: 4.z).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+                    Rectangle().fill(Theme.muted).frame(width: 14.z, height: 1).offset(y: h / 2)
                     Rectangle().fill(deck.sync ? Theme.secondary : Theme.bone)
-                        .frame(width: geo.size.width, height: 8)
-                        .offset(y: (h - 8) * CGFloat(f))
+                        .frame(width: geo.size.width, height: 8.z)
+                        .offset(y: (h - 8.z) * CGFloat(f))
                 }
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
@@ -335,14 +335,14 @@ struct TempoColumn: View {
                 })
                 .onTapGesture(count: 2) { mix.setTempo(d, 0) }
             }
-            .frame(width: 22)
-            HStack(spacing: 1) {
+            .frame(width: 22.z)
+            HStack(spacing: 1.z) {
                 PressButton(title: "‹", width: 8, down: { mix.bend(d, -1) }, up: { mix.bend(d, 0) })
                 PressButton(title: "›", width: 8, down: { mix.bend(d, 1) }, up: { mix.bend(d, 0) })
             }
             DeckButton(title: "0", width: 10) { mix.setTempo(d, 0) }.help("Tempo zurücksetzen")
         }
-        .frame(width: 34)
+        .frame(width: 34.z)
     }
 }
 

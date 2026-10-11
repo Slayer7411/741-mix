@@ -8,23 +8,23 @@ struct MixerView: View {
 
     var body: some View {
         let order = mix.showFourDecks ? [2, 0, 1, 3] : [0, 1]
-        VStack(spacing: 6) {
-            HStack(alignment: .top, spacing: 4) {
+        VStack(spacing: 6.z) {
+            HStack(alignment: .top, spacing: 4.z) {
                 ForEach(order, id: \.self) { ChannelStrip(d: $0) }
             }
             if mix.mixerMode == .internalMixer {
-                HStack(spacing: 4) {
-                    Text("A").font(Theme.label(9, .bold)).foregroundStyle(.secondary)
+                HStack(spacing: 4.z) {
+                    Text("A").font(Theme.label(9.z, .bold)).foregroundStyle(.secondary)
                     Slider(value: Binding(get: { mix.state.crossfader }, set: { mix.setCrossfader($0) }), in: -1...1)
-                        .controlSize(.mini)
-                    Text("B").font(Theme.label(9, .bold)).foregroundStyle(.secondary)
+                        .controlSize(zoomed: .mini)
+                    Text("B").font(Theme.label(9.z, .bold)).foregroundStyle(.secondary)
                 }
                 .onTapGesture(count: 2) { mix.setCrossfader(0) }
             } else {
-                Text("EXTERN").font(Theme.label(9, .heavy)).foregroundStyle(.secondary)
+                Text("EXTERN").font(Theme.label(9.z, .heavy)).foregroundStyle(.secondary)
             }
         }
-        .padding(6)
+        .padding(6.z)
         .background(Rectangle().fill(Theme.deck))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
     }
@@ -36,8 +36,8 @@ struct ChannelStrip: View {
 
     var body: some View {
         let deck = mix.deck(d)
-        VStack(spacing: 3) {
-            Text(deckLetters[d]).font(Theme.label(12, .heavy))
+        VStack(spacing: 3.z) {
+            Text(deckLetters[d]).font(Theme.label(12.z, .heavy))
                 .foregroundStyle(mix.focusedDeck == d ? Theme.bone : Theme.muted)
             knob(\.gainDb, -12...12, "GAIN")
             if mix.mixerMode == .internalMixer {
@@ -46,31 +46,31 @@ struct ChannelStrip: View {
                 knob(\.eqLow, -26...12, "LO")
             }
             knob(\.filter, -1...1, "FILTER", color: Theme.state)
-            HStack(spacing: 2) {
+            HStack(spacing: 2.z) {
                 ForEach(0..<mix.prefs.ui.fxUnitCount, id: \.self) { u in
                     DeckButton(title: "\(u + 1)", active: deck.fxAssign[u], color: Theme.state) { mix.toggleFXAssign(d, u) }
                 }
             }
             if mix.mixerMode == .internalMixer {
                 LevelFader(value: Binding(get: { deck.fader }, set: { v in mix.updateDeck(d) { $0.fader = v } }))
-                    .frame(width: 22, height: 84)
+                    .frame(width: 22.z, height: 84.z)
                 Picker("", selection: Binding(get: { deck.xf }, set: { v in mix.updateDeck(d) { $0.xf = v } })) {
                     ForEach(XFAssign.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                .controlSize(.mini)
+                .controlSize(zoomed: .mini)
                 .labelsHidden()
-                .frame(width: 54)
+                .frame(width: 54.z)
             } else {
                 let p = mix.deckPairs[d]
                 Text("USB\n\(p + 1)/\(p + 2)")
-                    .font(Theme.mono(10, .bold))
+                    .font(Theme.mono(10.z, .bold))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
-                    .padding(.top, 4)
+                    .padding(.top, 4.z)
             }
         }
-        .frame(width: 58)
+        .frame(width: 58.z)
     }
 
     private func knob(_ kp: WritableKeyPath<DeckState, Double>, _ r: ClosedRange<Double>, _ label: String,
@@ -88,11 +88,11 @@ struct LevelFader: View {
         GeometryReader { geo in
             let h = geo.size.height
             ZStack(alignment: .bottom) {
-                Rectangle().fill(Theme.void).frame(width: 4).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-                Rectangle().fill(Theme.bone.opacity(0.5)).frame(width: 4, height: h * value)
+                Rectangle().fill(Theme.void).frame(width: 4.z).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+                Rectangle().fill(Theme.bone.opacity(0.5)).frame(width: 4.z, height: h * value)
                 Rectangle().fill(Theme.bone)
-                    .frame(width: geo.size.width, height: 8)
-                    .offset(y: -(h - 8) * value)
+                    .frame(width: geo.size.width, height: 8.z)
+                    .offset(y: -(h - 8.z) * value)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
@@ -112,9 +112,9 @@ struct FXUnitView: View {
 
     var body: some View {
         let fx = mix.state.fx[u]
-        HStack(spacing: 8) {
-            VStack(spacing: 2) {
-                Text("FX \(u + 1)").font(Theme.label(11, .heavy)).foregroundStyle(fx.anyOn ? Theme.state : Theme.muted)
+        HStack(spacing: 8.z) {
+            VStack(spacing: 2.z) {
+                Text("FX \(u + 1)").font(Theme.label(11.z, .heavy)).foregroundStyle(fx.anyOn ? Theme.state : Theme.muted)
                 DeckButton(title: fx.single ? "SNGL" : "GRP", active: fx.single, color: Theme.secondary, width: 32) {
                     mix.updateFX(u) { $0.single.toggle() }
                 }
@@ -124,15 +124,15 @@ struct FXUnitView: View {
                  range: 0...1, defaultValue: 1, label: "D/W", color: Theme.state, size: 24)
             if fx.single { single(fx) } else { group(fx) }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 8.z)
+        .padding(.vertical, 4.z)
         .background(Rectangle().fill(Theme.deck))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
     }
 
     @ViewBuilder private func group(_ fx: FXUnitState) -> some View {
         ForEach(0..<3, id: \.self) { i in
-            VStack(spacing: 2) {
+            VStack(spacing: 2.z) {
                 Knob(value: Binding(get: { mix.state.fx[u].slots[i].amount },
                                     set: { v in mix.updateFX(u) { $0.slots[i].amount = v } }),
                      range: 0...1, defaultValue: 0.5, bipolar: i == 0, label: FXUnitState.slotNames[i],
@@ -147,8 +147,8 @@ struct FXUnitView: View {
                 Button("Delay \(BeatSizes.label(MixEngine.delayBeats[i])) Beat") { mix.updateFX(u) { $0.delayIndex = i } }
             }
         }
-        .menuStyle(.borderlessButton)
-        .font(Theme.label(10, .bold))
+        .menuStyle(.borderlessButton).controlSize(zoomed: .regular)
+        .font(Theme.label(10.z, .bold))
         .fixedSize()
         .help("Delay-Zeit in Beats")
         Knob(value: Binding(get: { mix.state.fx[u].reverbSize }, set: { v in mix.updateFX(u) { $0.reverbSize = v } }),
@@ -157,14 +157,14 @@ struct FXUnitView: View {
 
     @ViewBuilder private func single(_ fx: FXUnitState) -> some View {
         let effect = FXUnitState.Effect(rawValue: fx.singleType) ?? .delay
-        VStack(spacing: 2) {
+        VStack(spacing: 2.z) {
             Menu(effect.name) {
                 ForEach(FXUnitState.Effect.allCases, id: \.self) { e in
                     Button(e.name) { mix.updateFX(u) { $0.singleType = e.rawValue } }
                 }
             }
-            .menuStyle(.borderlessButton)
-            .font(Theme.label(10, .bold))
+            .menuStyle(.borderlessButton).controlSize(zoomed: .regular)
+            .font(Theme.label(10.z, .bold))
             .fixedSize()
             DeckButton(title: "ON", active: fx.singleOn, color: Theme.state, width: 30) { mix.updateFX(u) { $0.singleOn.toggle() } }
         }
@@ -183,7 +183,7 @@ struct FXUnitView: View {
         let list = mix.core.pluginList()
         let current = list.first { $0.id == fx.pluginID } ?? fx.pluginID.flatMap(mix.core.pluginCatalog.info)   // auch abgeschaltet
         let error = mix.state.pluginErrors[u]
-        VStack(spacing: 2) {
+        VStack(spacing: 2.z) {
             Menu {
                 ForEach(list) { p in
                     Button(p.name + " · " + p.manufacturer + (p.isVST3 ? "  VST3" : "")) { mix.setPlugin(u, p.id) }
@@ -193,8 +193,8 @@ struct FXUnitView: View {
             } label: {
                 Text(error != nil ? "⚠︎ " + String((current?.name ?? "PLUGIN").prefix(10)) : current.map { String($0.name.prefix(12)) } ?? "—")
             }
-            .menuStyle(.borderlessButton)
-            .font(Theme.label(10, .bold))
+            .menuStyle(.borderlessButton).controlSize(zoomed: .regular)
+            .font(Theme.label(10.z, .bold))
             .fixedSize()
             .help(error ?? String(localized: "Effekt-Plugin wählen (Audio Unit oder VST3)"))
             DeckButton(title: "EDIT", active: false, color: Theme.state, width: 30) { PluginWindow.show(unit: u, core: mix.core) }
@@ -208,21 +208,21 @@ struct TopBar: View {
     @Environment(MixModel.self) private var mix
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 6.z) {
             if mix.prefs.ui.showFXUnits {
                 FXUnitView(u: 0)
                 if mix.prefs.ui.fxUnitCount == 4 { FXUnitView(u: 2) }
             }
-            Spacer(minLength: 4)
+            Spacer(minLength: 4.z)
             MasterClockPanel()
             BarCounter()
             Button { mix.core.resetSession() } label: {
-                Text("↺").font(Theme.mono(14)).foregroundStyle(Theme.bone).frame(width: 22, height: 42)
+                Text("↺").font(Theme.mono(14.z)).foregroundStyle(Theme.bone).frame(width: 22.z, height: 42.z)
             }
             .buttonStyle(.plain)
             .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
             .help("Takt-Zähler neu starten: der aktuelle Beat wird Takt 1")
-            Spacer(minLength: 4)
+            Spacer(minLength: 4.z)
             if mix.prefs.ui.showFXUnits {
                 FXUnitView(u: 1)
                 if mix.prefs.ui.fxUnitCount == 4 { FXUnitView(u: 3) }
@@ -238,11 +238,11 @@ struct MasterClockPanel: View {
 
     var body: some View {
         let s = mix.state
-        HStack(spacing: 6) {
+        HStack(spacing: 6.z) {
             DeckButton(title: s.linkEnabled && s.linkPeers > 0 ? "LINK \(s.linkPeers)" : "LINK", active: s.linkEnabled,
                        color: Theme.secondary, width: 38) { mix.toggleLink() }
                 .help("Link: MINOS gibt das Tempo vor")
-            VStack(spacing: 2) {
+            VStack(spacing: 2.z) {
                 DeckButton(title: "AUTO", active: !s.clockMaster, width: 40) { mix.setClockMaster(false) }
                     .help("Ein Deck ist Master (automatisch oder per MASTER-Taste)")
                 DeckButton(title: "MASTER", active: s.clockMaster, color: Theme.secondary, width: 40) { mix.setClockMaster(true) }
@@ -250,22 +250,22 @@ struct MasterClockPanel: View {
             }
             VStack(spacing: 0) {
                 Text(String(format: "%.2f", mix.masterBPM))
-                    .font(Theme.mono(17, .semibold))
+                    .font(Theme.mono(17.z, .semibold))
                     .foregroundStyle(s.clockMaster ? Theme.secondary : Theme.bone)
                     .gesture(DragGesture(minimumDistance: 1)
                         .onChanged { g in
                             // ziehen: 1 BPM pro 20 pt; schaltet auf Clock-Master
                             if dragStart == nil { dragStart = mix.masterBPM; mix.setClockMaster(true) }
-                            mix.setClockBPM((dragStart ?? 128) - Double(g.translation.height) / 20)
+                            mix.setClockBPM((dragStart ?? 128) - Double(g.translation.height / 1.z) / 20)
                         }
                         .onEnded { _ in dragStart = nil })
                     .help("ziehen = Tempo ändern")
                 Text(s.clockMaster ? "CLOCK" : (mix.effectiveMaster.map { "DECK " + deckLetters[$0] } ?? "KEIN MASTER"))
-                    .font(Theme.label(8)).foregroundStyle(Theme.muted)
+                    .font(Theme.label(8.z)).foregroundStyle(Theme.muted)
             }
-            .frame(width: 66)
-            VStack(spacing: 2) {
-                HStack(spacing: 2) {
+            .frame(width: 66.z)
+            VStack(spacing: 2.z) {
+                HStack(spacing: 2.z) {
                     DeckButton(title: "−", width: 12) { mix.setClockMaster(true); mix.nudgeClock(-0.1) }
                     DeckButton(title: "+", width: 12) { mix.setClockMaster(true); mix.nudgeClock(0.1) }
                 }
@@ -274,14 +274,14 @@ struct MasterClockPanel: View {
             DeckButton(title: "SEMI", active: s.semiSync, color: Theme.state, width: 38) { mix.setSemiSync(!s.semiSync) }
                 .help("Semi-Sync: neue Tracks laden mit dem Tempo des Masters, ohne Phasen-Sync")
             Text("│").foregroundStyle(Theme.hairline)
-            VStack(spacing: 2) {
+            VStack(spacing: 2.z) {
                 DeckButton(title: "TICK", active: s.metronome, width: 30) { mix.setMetronome(!s.metronome) }
                     .help("Metronom auf dem Beat der Clock")
             }
             Knob(value: Binding(get: { mix.state.metronomeVolume }, set: { mix.setMetronome(mix.state.metronome, volume: $0) }),
                  range: 0...1, defaultValue: 0.5, label: "TICK", size: 20)
             Text("│").foregroundStyle(Theme.hairline)
-            VStack(spacing: 2) {
+            VStack(spacing: 2.z) {
                 DeckButton(title: "S", active: mix.prefs.engine.snap, width: 14) { mix.toggleSnap() }
                     .help("Snap: Cues und Loop-Punkte rasten auf den Beat")
                 DeckButton(title: "Q", active: mix.prefs.engine.quantize, width: 14) { mix.toggleQuantize() }
@@ -289,12 +289,12 @@ struct MasterClockPanel: View {
             }
             Knob(value: Binding(get: { mix.state.masterVolume }, set: { mix.setMasterVolume($0) }), range: 0...1,
                  defaultValue: 0.85, label: "MAIN", size: 24)
-            SettingsLink { Text("⚙︎").font(Theme.mono(14)).foregroundStyle(Theme.bone) }
+            SettingsLink { Text("⚙︎").font(Theme.mono(14.z)).foregroundStyle(Theme.bone) }
                 .buttonStyle(.borderless)
                 .help("Einstellungen (⌘,)")
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 8.z)
+        .padding(.vertical, 4.z)
         .background(Rectangle().fill(Theme.deck))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
     }
@@ -346,7 +346,7 @@ struct BarCounter: View {
                 CG.text("\(n)", size: 8, weight: "Regular", color: NSColor(Theme.muted), rightAt: x0 - 2 + 0, y: y - 1)
             }
         }
-        .frame(width: 300, height: 42)
+        .frame(width: 300.z, height: 42.z)
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
         .onTapGesture(count: 2) { mix.core.resetSession() }
         .help("Bar-Zähler: läuft ab dem ersten Play · Doppelklick = neu auf Takt 1")
