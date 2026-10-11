@@ -41,6 +41,8 @@ let package = Package(
                           linkerSettings: [.linkedFramework("CoreAudioKit")]),   // Plugin-Fenster (AUGenericView)
         .testTarget(name: "MixCoreTests", dependencies: ["MixCore"]),
         .testTarget(name: "LibraryCloudTests", dependencies: ["LibraryCloud"]),
+        // .mtrk: Rundreise gegen Dekodieren im Prozess, kaputte Köpfe, Löschen während eingeblendet
+        .testTarget(name: "MixMediaTests", dependencies: ["MixMedia", "MixCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
         // Kern offline rendern (kein Audiogerät): Transport, Loop, Keylock, FX-Fahnen, Übergabe
         .testTarget(name: "MixEngineTests", dependencies: ["MixDSP", "MixMedia", "MixEngine"]),
         // Controller-Ereignisse offline (ohne Gerät, ohne Audio) durch den Kern schicken
