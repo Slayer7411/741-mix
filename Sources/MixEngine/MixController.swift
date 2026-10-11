@@ -286,6 +286,8 @@ public final class MixController: @unchecked Sendable {
 
     /// zusätzliche Aufgaben im Steuertakt (z. B. Controller-LEDs)
     private var tickHandlers: [(MixController) -> Void] = []
+    /// laufende Ladevorgänge, vom Wächter im Steuertakt geprüft (unter der Sperre)
+    private var loads: [PendingLoad] = []
 
     public init() {
         observeInvalidation()
@@ -364,7 +366,7 @@ public final class MixController: @unchecked Sendable {
             return
         }
         let watch = LoadWatch()
-        watchLoad(t, d, seq: seq, watch, timeout: timeout)
+        locked { loads.append(PendingLoad(deck: d, seq: seq, track: t, watch: watch, timeout: timeout)) }
         let decode = decoder
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             do {
@@ -403,17 +405,24 @@ public final class MixController: @unchecked Sendable {
         func cancel() { lock.withLock { stop = true } }
     }
 
-    /// Wächter: kommen `timeout` Sekunden keine Audiodaten, wird der Ladevorgang abgebrochen (das Ergebnis verworfen)
-    private func watchLoad(_ t: Track, _ d: Int, seq: Int, _ w: LoadWatch, timeout: Double) {
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + min(0.25, timeout / 4)) { [self] in
-            guard locked({ seq == loadSeq[d] }), let idle = w.stalled() else { return }
-            if idle >= timeout {
-                w.cancel()
-                failLoad(t, d, seq: seq, reason: String(localized: "keine Audiodaten (Cloud-Datei nicht geladen, Lesen hängt?)"), timeout: timeout)
-            } else {
-                watchLoad(t, d, seq: seq, w, timeout: timeout)
-            }
+    private struct PendingLoad {
+        let deck: Int, seq: Int, track: Track, watch: LoadWatch, timeout: Double
+    }
+
+    /// Wächter (Steuertakt, alle 0,25 s): kommen `timeout` Sekunden keine Audiodaten, wird der Ladevorgang abgebrochen
+    /// (das Ergebnis verworfen). Läuft im Steuertakt und nicht auf einer Hintergrund-Queue: unter CPU-Last (Analyse,
+    /// Builds) kommt eine Utility-Queue Sekunden zu spät, ein hängender Dekoder belegte dann doch noch das Deck.
+    /// Liefert die abgelaufenen Ladevorgänge; melden außerhalb der Sperre
+    private func expiredLoads() -> [PendingLoad] {
+        var expired: [PendingLoad] = []
+        loads.removeAll { l in
+            guard l.seq == loadSeq[l.deck], let idle = l.watch.stalled() else { return true }   // überholt oder fertig gelesen
+            guard idle >= l.timeout else { return false }
+            l.watch.cancel()
+            expired.append(l)
+            return true
         }
+        return expired
     }
 
     /// Laden fehlgeschlagen: Deck leer, Fehler am Deck, Meldung in der Statusleiste. Gilt nur für den aktuellen Ladevorgang
@@ -1531,6 +1540,7 @@ public final class MixController: @unchecked Sendable {
     // MARK: Steuertakt (200 Hz, Steuer-Queue)
 
     private func tick() {
+        var expired: [PendingLoad] = []
         let handlers: [(MixController) -> Void] = locked {
             state.autoMaster = state.effectiveMaster   // Auto-Master klebt am laufenden Deck
             let master = state.effectiveMaster
@@ -1600,7 +1610,11 @@ public final class MixController: @unchecked Sendable {
             if tickCount % 4 == 0 { healPlugins() }
             // beat-synchrones Delay folgt dem Tempo
             if tickCount % 50 == 0, state.fx.contains(where: { $0.slots[1].on }) { applyAllFX() }
+            if tickCount % 50 == 0, !loads.isEmpty { expired = expiredLoads() }
             return tickCount % 6 == 0 ? tickHandlers : []
+        }
+        for l in expired {
+            failLoad(l.track, l.deck, seq: l.seq, reason: String(localized: "keine Audiodaten (Cloud-Datei nicht geladen, Lesen hängt?)"), timeout: l.timeout)
         }
         for h in handlers { h(self) }
     }
