@@ -212,7 +212,14 @@ final class MixModel {
             for d in decks.indices where s.decks[d] != decks[d].state {
                 decks[d].state = s.decks[d]
                 let key = s.decks[d].track?.key ?? ""
-                if key != decks[d].trackKey { decks[d].trackKey = key }
+                if key != decks[d].trackKey {
+                    decks[d].trackKey = key
+                    // Instant Double (auch vom Controller): Collection-Stand und gespeicherte Änderung vom Quell-Deck
+                    if !key.isEmpty, originals[d]?.key != key, let e = originals.first(where: { $0.value.key == key })?.key {
+                        originals[d] = originals[e]
+                        savedEdit[d] = savedEdit[e]
+                    }
+                }
             }
             if s.effectiveMaster != effectiveMaster { effectiveMaster = s.effectiveMaster }
             if s.clockMaster != clockMaster { clockMaster = s.clockMaster }
@@ -263,14 +270,20 @@ final class MixModel {
 
     // MARK: - Befehle (weitergeleitet an den Kern)
 
-    func load(_ t: Track, deck d: Int) {
+    /// Lade-Schutz (⌘, → DECKS): spielt das Deck, bleibt es, wie es ist (Hinweis in der Statusleiste).
+    /// `force` nil = ⌥ beim Klick/Doppelklick lädt trotzdem; Controller (Shift + LOAD) und Tastatur geben ihn an
+    @discardableResult
+    func load(_ t: Track, deck d: Int, force: Bool? = nil) -> Bool {
+        if !(force ?? NSEvent.modifierFlags.contains(.option)), core.loadBlocked(d) { return false }
         CloudLibrary.shared.deckWillLoad(t, deck: d)   // nur online -> sofort anfordern, Hinweis
         originals[d] = t
         let e = edits.edit(for: t.key)
         savedEdit[d] = e
-        core.load(e?.apply(to: t) ?? t, deck: d, trim: e?.trim ?? TrackTrim(), gridEdited: e?.hasGrid ?? false)
+        core.load(e?.apply(to: t) ?? t, deck: d, trim: e?.trim ?? TrackTrim(), gridEdited: e?.hasGrid ?? false,
+                  activeLoops: Set(e?.activeLoops ?? []))
         focusedDeck = d
         pull()
+        return true
     }
 
     /// eigene Änderungen eines Decks speichern (nur wenn sich etwas geändert hat): von Hand gesetztes Grid ganz (BPM +
@@ -285,6 +298,7 @@ final class MixModel {
             if deck.gridEdited, let g = deck.grid { e.bpm = g.bpm; e.gridAnchorMs = g.anchor * 1000 }
             let cues = deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }
             if cues != orig.hotcues { e.hotcues = cues }
+            if !deck.activeLoops.isEmpty { e.activeLoops = deck.activeLoops.sorted() }
             let old = savedEdit[d] ?? nil
             if !e.same(as: old) {
                 let newEdit: TrackEdit? = e.isEmpty ? nil : e
@@ -342,6 +356,7 @@ final class MixModel {
     func toggleReverse(_ d: Int) { run { core.toggleReverse(d) } }
     func toggleFlux(_ d: Int) { run { core.toggleFlux(d) } }
     func hotcue(_ d: Int, _ n: Int, delete: Bool = false) { run { core.hotcue(d, n, delete: delete) } }
+    func toggleActiveLoop(_ d: Int, _ n: Int) { run { core.toggleActiveLoop(d, n) } }
     func autoLoop(_ d: Int, size: Double? = nil) { run { core.autoLoop(d, size: size) } }
     func exitLoop(_ d: Int) { run { core.exitLoop(d) } }
     func reloop(_ d: Int) { run { core.reloop(d) } }
@@ -356,6 +371,11 @@ final class MixModel {
     func toggleMaster(_ d: Int) { run { core.toggleMaster(d) } }
     func toggleKeylock(_ d: Int) { run { core.toggleKeylock(d) } }
     func shiftKey(_ d: Int, _ s: Int) { run { core.shiftKey(d, s) } }
+    func keySync(_ d: Int) { run { core.keySync(d) } }
+    /// Instant Double; `force` nil = ⌥ beim Klick übergeht den Lade-Schutz
+    func instantDouble(from s: Int, to d: Int, force: Bool? = nil) {
+        run { core.instantDouble(from: s, to: d, force: force ?? NSEvent.modifierFlags.contains(.option)) }
+    }
     func bend(_ d: Int, _ v: Double) { run { core.bend(d, v) } }
     func updateDeck(_ d: Int, _ f: (inout DeckState) -> Void) { run { core.updateDeck(d, f) } }
     func setCrossfader(_ v: Double) { run { core.setCrossfader(v) } }

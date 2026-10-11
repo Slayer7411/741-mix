@@ -57,6 +57,11 @@ enum PadColor: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+/// Shift + LOAD: laden trotz Lade-Schutz oder Instant Double vom Deck der anderen Seite
+enum ControllerShiftLoad: String, CaseIterable, Codable, Identifiable {
+    case force = "Laden trotz Lade-Schutz", double = "Instant Double (Deck der anderen Seite)"
+    var id: String { rawValue }
+}
 struct ControllerPrefs: Codable, Equatable {
     var cueAction = ControllerCueAction.fluxReverse
     var fluxButton = ControllerFluxButton.padLayer
@@ -67,6 +72,7 @@ struct ControllerPrefs: Codable, Equatable {
     var stripMode = ControllerStripMode.bend
     var stripSensitivity = 1.0
     var browseFastStep = 10
+    var shiftLoad = ControllerShiftLoad.force
     var ledOn = 127
     var ledOff = 5
     // alte Felder (nicht mehr benutzt, bleiben für gespeicherte Einstellungen)

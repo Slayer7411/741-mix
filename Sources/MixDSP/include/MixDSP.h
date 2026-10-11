@@ -80,6 +80,9 @@ void mdsp_fx_plugin_reset_done(MDEngine *e, int unit, int deck);
 
 void mdsp_seek(MDEngine *e, int deck, double seconds);
 void mdsp_set_loop(MDEngine *e, int deck, bool active, double startSeconds, double endSeconds);
+/// Instant Double: am Anfang des nächsten Blocks die hörbare Position von `source` übernehmen (sample-genau zum Quell-Deck,
+/// gleiche Datei vorausgesetzt). Gilt nach mdsp_set_track/mdsp_seek desselben Blocks
+void mdsp_follow(MDEngine *e, int deck, int source);
 /// Schnitt (nicht destruktiv): nur zwischen Start und Ende ist etwas hörbar (Sekunden, Ende <= 0 = Track-Ende).
 /// Sprünge und Ladeposition landen im Schnitt, ein Loop wirkt nur bis zu dessen Ende, vorwärts stoppt das Deck am Ende
 /// wie am Track-Ende, rückwärts bleibt es am Start stehen. Ende <= Start = kein Schnitt. Gilt bis zum nächsten Aufruf.

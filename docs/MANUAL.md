@@ -126,6 +126,7 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 * code readout: bar of the track in its phrase (`5/16`, phrase start = grid anchor, length = waveform phrase, ⌘, -> DISPLAY) against the bar counter. purple `◆ CODE` -> same bar and beat as the counter, red `+2 BARS` / `−3 BEATS` -> the deck is that far ahead / behind (wrapped to half a phrase), grey -> deck stopped or no counter
 * remaining time, bpm, tempo offset, key readout: open key of the track (e.g. `11m`), next to it the audible key in red as soon as it deviates (`11m → 6m`), below the deviation in semitones (`+0.60`). keylock off -> the tempo detunes, keylock on -> only the key shift counts
 * `±8 ▾` -> tempo range ±6 / 8 / 10 / 16 / 50 / 100 %
+* KEY SYNC -> key shift so the audible key fits the master's audible key: same key, relative or neighbour on the open key wheel, smallest shift, at most ±6. keylock off -> on. result in the status bar (`Deck B: Key-Shift -3 -> 4m (Master 4d)`). needs a key on both tracks and another deck as master
 
 ### rows
 
@@ -148,13 +149,14 @@ DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, commen
 | − / + | key shift ±1 semitone (±12) |
 | REV | reverse |
 | FLUX | flux mode: loops, jumps and reverse continue in the background, release -> back where the track would be |
+| DBL | instant double: track, position, tempo, keylock, key shift, sync, loop, cues and cut of the neighbour deck (A↔B, C↔D), plays along in sync. right click -> any deck, ⌥-click -> even if this deck plays |
 | EDIT | edit mode: cut row instead of the loop sizes, grid row, handles in the waveform ([edit mode](#edit-mode)) |
 
 ### cues + loops
 
 | button | action |
 |---|---|
-| 1-8 | hotcue: click = jump / set, ⌥-click = delete |
+| 1-8 | hotcue: click = jump / set, ⌥-click = delete, right click -> active loop / delete |
 | IN / OUT | manual loop |
 | RE | reloop |
 | LOOP | auto loop on / off with the selected size |
@@ -173,6 +175,7 @@ DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, commen
   3. otherwise the normal beat snap
   * no jump: the playhead runs into the loop or is already inside. both rules and windows under ⌘, -> DECKS -> loops & beatjump
 * QUANT -> jumps keep the beat phase
+* active loop: right click a loop hotcue -> `Active Loop`. dot on the button (`3 •`), dashed frame in the waveform. the playhead reaches the loop start (forward, no other loop on) -> the loop engages, no jump. LOOP leaves it, the next pass engages again. ⌘, -> DECKS -> loops & beatjump -> every pass / once per load. saved per track with the own edits
 
 ### tempo
 
@@ -184,6 +187,8 @@ DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, commen
 ### load
 
 * double click = focused deck, right click -> load into deck A-D, controller LOAD = selected track of its own pane
+* load lock (⌘, -> DECKS, on by default): a playing deck (also cue held) takes no track -> `Deck B spielt · Laden gesperrt` in the status bar. force: ⌥-double click, shift + LOAD on the controller, key `load selection (even if playing)`
+* instant double (DBL, key, shift + LOAD if set): no load, the deck shares the audio of the source and takes its audible position at the next audio block, sample exact. counts once in the history
 * jumps to load cue / grid, track start or hotcue 1 (⌘, -> DECKS), inside the cut if the track has one
 * first load: keylock on (setting)
 * track end warning: remaining time blinks red x seconds before the end (0 = off). remaining time and warning count to the cut end
@@ -621,7 +626,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | ⌘, | settings |
 | ⌘W | close window -> main window: quit (asks first) |
 
-no default, assignable: master, keylock, reloop, cut start here, cut end here, grid beat 1 here, load selection into the focused deck, preview selection, reload collection, reconnect audio.
+no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, reconnect audio.
 ⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.
 
 controller mapping -> [controllers.md](controllers.md). flux on the controller = pad layer switch: tap -> pads 1-4 play hotcues 5-8 (flux led lit), tap again -> back, shift + flux = flux mode. old layout under ⌘, -> CONTROLLER -> flux button.

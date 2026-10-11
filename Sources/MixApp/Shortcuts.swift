@@ -26,8 +26,11 @@ extension ShortcutID: Identifiable {
         case .cutIn: String(localized: "Schnitt-Anfang hier (Fokus-Deck)")
         case .cutOut: String(localized: "Schnitt-Ende hier (Fokus-Deck)")
         case .gridSet: String(localized: "Grid: Beat 1 hier (Fokus-Deck)")
+        case .keySync: String(localized: "Key Sync (Fokus-Deck)")
+        case .instantDouble: String(localized: "Instant Double ins Fokus-Deck (vom Nachbardeck A↔B, C↔D)")
         case .resetPlayed: String(localized: "Reset Played State")
         case .loadSelected: String(localized: "Auswahl ins Fokus-Deck laden")
+        case .loadSelectedForce: String(localized: "Auswahl ins Fokus-Deck laden (auch wenn es spielt)")
         case .previewSelected: String(localized: "Auswahl vorhören")
         case .reloadCollection: String(localized: "Collection neu laden")
         case .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6:
@@ -151,8 +154,11 @@ struct AppActions {
         case .cutIn: mix.trimHere(d, end: false)
         case .cutOut: mix.trimHere(d, end: true)
         case .gridSet: mix.setGridAnchorHere(d)
+        case .keySync: mix.keySync(d)
+        case .instantDouble: mix.instantDouble(from: d ^ 1, to: d, force: false)
         case .resetPlayed: history.resetPlayed()
-        case .loadSelected: if let t = browser.selectedTrack() { mix.load(t, deck: d) }
+        case .loadSelected: if let t = browser.selectedTrack() { mix.load(t, deck: d, force: false) }
+        case .loadSelectedForce: if let t = browser.selectedTrack() { mix.load(t, deck: d, force: true) }
         case .previewSelected: if let t = browser.selectedTrack() { mix.togglePreview(t) }
         case .reloadCollection: store.load(store.sourceURL ?? LibraryStore.defaultNML)
         case .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6:

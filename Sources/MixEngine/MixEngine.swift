@@ -276,6 +276,8 @@ public final class MixEngine: @unchecked Sendable {
     public func seek(_ d: Int, seconds: Double) { mdsp_seek(core, Int32(d), max(0, seconds)) }
     public func position(_ d: Int) -> Double { mdsp_position(core, Int32(d)) }
     public func fluxPosition(_ d: Int) -> Double { mdsp_flux_position(core, Int32(d)) }
+    /// Instant Double: Deck `d` übernimmt am nächsten Block die hörbare Position von `source` (sample-genau)
+    public func follow(_ d: Int, deck source: Int) { mdsp_follow(core, Int32(d), Int32(source)) }
 
     public func setLoop(_ d: Int, active: Bool, start: Double, end: Double) {
         mdsp_set_loop(core, Int32(d), active, start, end)

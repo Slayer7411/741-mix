@@ -275,6 +275,9 @@ struct DeckSettings: View {
                     ForEach(LoadPosition.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 sliderRow("Track-Ende-Warnung (s, 0 = aus)", $mix.prefs.engine.trackEndWarning, 0...90, step: 5, format: "%.0f", unit: "s")
+                Toggle("Lade-Schutz bei laufendem Deck", isOn: $mix.prefs.engine.loadProtection)
+                Text("spielt das deck, wird nicht geladen (doppelklick, taste, controller-load) -> hinweis in der statusleiste. trotzdem laden: ⌥-doppelklick, shift + load, taste „auswahl ins fokus-deck laden (auch wenn es spielt)“.")
+                    .settingsHint()
             }
             Section("Master-Clock & Metronom") {
                 Picker("Metronom auf Kanalpaar", selection: $mix.prefs.engine.metronomeChannel) {
@@ -321,6 +324,11 @@ struct DeckSettings: View {
                         .settingsHint()
                 }
                 .disabled(!mix.prefs.engine.snap)
+                Picker("Active Loop greift", selection: $mix.prefs.engine.activeLoopMode) {
+                    ForEach(ActiveLoopMode.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                Text("rechtsklick auf einen loop-hotcue -> active loop (punkt auf der taste, gestrichelter rahmen in der wellenform). erreicht die position den loop-anfang, rastet der loop ein, die loop-taste verlässt ihn. gespeichert je track in den eigenen änderungen.")
+                    .settingsHint()
             }
             Section("History & Preparation") {
                 sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f", unit: "s")
@@ -747,6 +755,7 @@ struct ControllerSettings: View {
                 Picker("Touchstrip", selection: $mix.prefs.controller.stripMode) { ForEach(ControllerStripMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
                 sliderRow("Touchstrip-Empfindlichkeit", $mix.prefs.controller.stripSensitivity, 0.2...3, format: "%.1f")
                 Stepper("Browse mit Shift: \(mix.prefs.controller.browseFastStep) Zeilen", value: $mix.prefs.controller.browseFastStep, in: 2...50)
+                Picker("Shift + LOAD", selection: $mix.prefs.controller.shiftLoad) { ForEach(ControllerShiftLoad.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
             }
             Section("LEDs") {
                 sliderRow("Helligkeit an", Binding(get: { Double(mix.prefs.controller.ledOn) }, set: { mix.prefs.controller.ledOn = Int($0) }),
@@ -758,7 +767,7 @@ struct ControllerSettings: View {
             Section("Feste Belegung (Standard)") {
                 Text("""
                 Play (Shift: CUP) · Sync (Shift: Master) · Hotcues 1–4 (Shift: löschen) · Loop-Encoder drehen = Loopgröße, \
-                drücken = Loop (Shift: drehen = Beatjump, drücken = Reloop) · Load · Browse (drücken = Vorhören) · \
+                drücken = Loop (Shift: drehen = Beatjump, drücken = Reloop) · Load (Shift: siehe Belegung) · Browse (drücken = Vorhören) · \
                 FX: D/W, Regler 1–3, Tasten 1–3 nach FX-Belegung (Standard: Filter/Delay/Reverb + an/aus), Mode = alle aus bzw. Delay-Zeit · FX-Zuweisung.
                 """)
                 .settingsHint()
