@@ -15,6 +15,11 @@ struct LiveCanvas: NSViewRepresentable {
         v.configure(fps: fps, running: running)
         v.needsDisplay = true
     }
+
+    /// nimmt den angebotenen Platz; ohne das misst SwiftUI die NSView bei jedem Layout über Auto Layout (fittingSize)
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: LiveCanvasView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
 }
 
 final class LiveCanvasView: NSView {
@@ -69,6 +74,8 @@ enum CG {
     static let muted = NSColor(Theme.muted).cgColor
     static let hairline = NSColor(Theme.hairline).cgColor
     static let state = NSColor(Theme.state).cgColor
+    static let boneNS = NSColor(Theme.bone), mutedNS = NSColor(Theme.muted), stateNS = NSColor(Theme.state)
+    static let secondaryNS = NSColor(Theme.secondary)
 
     static func text(_ s: String, size: CGFloat, weight: String = "SemiBold", color: NSColor, rightAt x: CGFloat, y: CGFloat) {
         let font = NSFont(name: "IBMPlexMono-\(weight)", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .semibold)

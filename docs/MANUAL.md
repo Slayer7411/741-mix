@@ -150,7 +150,7 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 | ◀◀ 1/4 … 64 ▶▶ | beatjump size + jump. inside a loop = move the loop |
 
 * hotcues, loop sizes and beatjump sizes each span the full deck width
-* the selected loop size and beatjump size are red, also when changed from the controller (loop encoder, flux + pads)
+* the selected loop size is purple, the selected beatjump size red, also when changed from the controller (loop encoder, flux + pads)
 
 * hotcues come from the collection. colors: start cue red, cues white, loops green, short loops magenta (⌘, -> DISPLAY)
 * edits are saved in an own file. the collection stays untouched
@@ -246,7 +246,7 @@ LINK 1 │ AUTO  128.00  − +  SEMI │ TICK ◯ │ S │ MAIN ◯ ⚙
 * tempo: drag the number or − / +, TAP = tap tempo
 * TICK -> metronome on the clock beat, own volume, own output pair (setting)
 * S = snap, Q = quant
-* MAIN -> main volume (internal mode)
+* MAIN -> main volume. hidden in external mode unless `main volume also in external mode` (⌘, -> MIXER & FX)
 
 sync modes (⌘, -> DECKS):
 
@@ -599,6 +599,7 @@ settings as png without a window: add `MIX741_SHOT=settings:<folder>` -> one ima
 status bar, failed and empty deck as png: `MIX741_SHOT=status:<folder>` (add `MIX741_SHOT_AUDIO=1` for live meters, silent on a built-in device).
 collection check without a window: add `MIX741_CHECK=1` -> counts per check and duration, `MIX741_CHECK_LIST=<n>` lists the first n findings each. `MIX741_SHOT=consistency:<png>` renders the check window mid-run and finished.
 reload stall: add `MIX741_BENCH=reload` -> loads and reloads the collection offscreen, prints the longest main-thread gap per reload (`MIX741_BENCH_N` rounds).
+ui cost (no selftest needed, offscreen, silent on a built-in output): `MIX741_BENCH=state` -> play, sync, loop, sizes, hotcue, tempo, keylock, clock bpm on deck A, median / p95 / max per action (`MIX741_BENCH_N`, `MIX741_BENCH_UI=live` = two browsers without mixer, `MIX741_BENCH_LAYOUT=1` layout time per hosting view, `MIX741_BENCH_ONLY=play,hotcue`). `MIX741_BENCH=play` -> 2 or 4 decks play (`MIX741_BENCH_DECKS`, `MIX741_BENCH_SECS`): main thread load, hitches, waveform steps per frame (`MIX741_BENCH_RAW=1` = playhead unsmoothed).
 cloud column + set-check as png: `MIX741_SHOT=cloud:<folder>` -> real check of the collection in the log, images with real and with set states, nothing downloaded.
 tag chips as png: `MIX741_SHOT=tags:<folder>` -> pane with tag filter, chip click checks, filter and paging times (`MIX741_SHOT_FULLROW=1` two-line rows, `MIX741_SHOT_TEXT=<pt>` their text size, `MIX741_SHOT_PAGES=<n>`).
 

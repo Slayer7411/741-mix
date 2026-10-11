@@ -82,11 +82,9 @@ struct ContentView: View {
         }
         .windowToolbarFullScreenVisibility(.onHover)
         .background(MainWindowHook())
+        .background(RunningTracks())
         .background(OverviewHook())   // Browser-Vorschau: Deck-Tracks, Pause-Regel, Leerlauf
         .background(CloudHook())      // Cloud-Library: Prüfen, Lokal-halten, Pause beim Laden
-        .onChange(of: (0..<4).map { mix.deck($0).track?.key ?? "" }, initial: true) { _, keys in
-            store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
-        }
         .onChange(of: mix.prefs.ui.musicFolders, initial: true) { _, f in store.folders.configured = f }
         .onAppear {
             if store.tracks.isEmpty { store.load() }
@@ -97,6 +95,19 @@ struct ContentView: View {
                 if l.contains("nobrowser") { mix.prefs.ui.browserLayout = .single; mix.prefs.ui.browserHeight = 120 }
             }
             SelfTest.run(store: store, mix: mix)
+        }
+    }
+
+    /// RUNNING TRACKS im Browser nachführen – eigene leere Ansicht: liest alle vier Decks, ohne dass
+    /// ContentView bei jeder Deck-Änderung neu ausgewertet wird
+    struct RunningTracks: View {
+        @Environment(LibraryStore.self) private var store
+        @Environment(MixModel.self) private var mix
+        var body: some View {
+            Color.clear
+                .onChange(of: mix.decks.map(\.trackKey), initial: true) { _, keys in
+                    store.running = keys.filter { !$0.isEmpty }.compactMap { store.track($0) }
+                }
         }
     }
 
@@ -122,19 +133,20 @@ struct ContentView: View {
         VStack(spacing: 6) {
             TopBar()
             // Decks mit fester Höhe: zwei flexible Decks übereinander ließen SwiftUI jede Zustandsänderung
-            // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks)
+            // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks); jedes Deck in eigener
+            // Hosting-View (DeckHost), damit eine Deck-Änderung nicht das ganze Fenster neu misst
             GeometryReader { geo in
                 let rows: CGFloat = mix.showFourDecks ? 2 : 1
                 let deckH = max(120, (geo.size.height - (rows - 1) * 6) / rows)
                 HStack(alignment: .top, spacing: 6) {
                     VStack(spacing: 6) {
-                        DeckView(d: 0).frame(height: deckH)
-                        if mix.showFourDecks { DeckView(d: 2).frame(height: deckH) }
+                        DeckHost(d: 0).frame(height: deckH)
+                        if mix.showFourDecks { DeckHost(d: 2).frame(height: deckH) }
                     }
                     if mix.prefs.ui.showMixer { MixerView().fixedSize(horizontal: true, vertical: false) }
                     VStack(spacing: 6) {
-                        DeckView(d: 1).frame(height: deckH)
-                        if mix.showFourDecks { DeckView(d: 3).frame(height: deckH) }
+                        DeckHost(d: 1).frame(height: deckH)
+                        if mix.showFourDecks { DeckHost(d: 3).frame(height: deckH) }
                     }
                 }
             }
@@ -210,14 +222,15 @@ struct MixApp: App {
 
     var body: some Scene {
         WindowGroup(appTitle) {
-            ContentView()
-                .environment(store)
-                .environment(mix)
-                .environment(browser)
-                .environment(controllerStatus)
-                .environment(waveforms)
-                .environment(history)
-                .frame(minWidth: 1280, minHeight: 860)
+            MinSize(width: 1280, height: 860) {
+                ContentView()
+                    .environment(store)
+                    .environment(mix)
+                    .environment(browser)
+                    .environment(controllerStatus)
+                    .environment(waveforms)
+                    .environment(history)
+            }
                 .onAppear { startControllers() }
                 .onChange(of: mix.prefs.controller) { controller?.prefs = mix.prefs.controller }
                 .onChange(of: mix.prefs.ui.fxUnitCount) { controller?.fxUnits = mix.prefs.ui.fxUnitCount }

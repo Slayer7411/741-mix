@@ -388,7 +388,7 @@ struct MixerFXSettings: View {
                 ForEach(0..<min(mix.prefs.ui.fxUnitCount, MixEngine.fxUnitCount), id: \.self) { u in
                     LabeledContent {
                         HStack(spacing: 10) {
-                            Text(verbatim: mix.effectName(mix.state.fx[u].effectKey)).foregroundStyle(Theme.bone)
+                            Text(verbatim: mix.effectName(mix.fxUnits[u].state.effectKey)).foregroundStyle(Theme.bone)
                             Button("Alle auf Standard") { mix.resetFXMapping(u) }
                         }
                     } label: {
@@ -427,7 +427,7 @@ private struct FXAssignRow: View {
     let search: String
 
     var body: some View {
-        let info = mix.state.fxControls[u][c.slot]
+        let info = mix.fxUnits[u].controls[c.slot]
         HStack(spacing: 10) {
             Menu {
                 FXAssignMenu(u: u, c: c, filter: search)

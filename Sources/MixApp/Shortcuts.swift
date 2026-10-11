@@ -243,4 +243,9 @@ struct MainWindowHook: NSViewRepresentable {
     func updateNSView(_ v: NSView, context: Context) {
         DispatchQueue.main.async { if let w = v.window { MainWindow.attach(w) } }
     }
+
+    /// nimmt den angebotenen Platz, ohne Auto-Layout-Messung (fittingSize) bei jedem Layout
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
 }

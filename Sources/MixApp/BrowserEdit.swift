@@ -220,6 +220,11 @@ struct TableViewFinder: NSViewRepresentable {
 
     func updateNSView(_ v: FinderView, context: Context) { controller.finder = v }
 
+    /// nimmt den angebotenen Platz, ohne Auto-Layout-Messung (fittingSize) bei jedem Layout
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: FinderView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+
     final class FinderView: NSView {
         private weak var cached: NSTableView?
 

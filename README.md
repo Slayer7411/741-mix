@@ -122,7 +122,7 @@ MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 
 ci-741:
 * void / chitin black, bone white text
-* red only as state (playing, sync, loop, fx on), purple for master and phrases
+* red only as state (playing, sync, loop, fx on), purple for master, phrases and the selected loop size
 * cinzel in caps for labels, ibm plex mono for data
 * radius 0, 1px hairlines, unicode instead of icons
 
