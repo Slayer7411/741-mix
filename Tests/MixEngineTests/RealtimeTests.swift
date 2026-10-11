@@ -174,6 +174,7 @@ private func allFinite(_ blocks: [[Float]]) -> Bool { blocks.allSatisfy { $0.all
 func benchRenderCPU() {
     let seconds = Double(ProcessInfo.processInfo.environment["MIX741_BENCH_SECS"] ?? "") ?? 60
     let fdn = ProcessInfo.processInfo.environment["MIX741_BENCH_FDN"] == "1"   // Hall-Typ FDN statt Allpass-Ring
+    let preview = ProcessInfo.processInfo.environment["MIX741_BENCH_PREVIEW"] == "1"   // Vorhören spielt mit (Paar 1/2)
     for (decks, fx, block) in [(2, false, 512), (2, false, 128), (4, true, 512), (4, true, 256), (4, true, 128), (4, true, 64)] {
         let c = Engine()
         var plug: OpaquePointer?
@@ -198,6 +199,15 @@ func benchRenderCPU() {
                 mdsp_set_fx(c.e, 3, MDFX_PLUGIN_ON, 1); mdsp_set_fx(c.e, 3, MDFX_DRYWET, 0.5)
             }
         }
+        if preview {
+            let n = Int((seconds + 10) * c.fs)
+            let l = UnsafeMutablePointer<Float>.allocate(capacity: n), r = UnsafeMutablePointer<Float>.allocate(capacity: n)
+            for i in 0..<n { let v = Float(sin(2 * .pi * 330 * Double(i) / c.fs)) * 0.3; l[i] = v; r[i] = v }
+            c.tracks.append((l, r, n))
+            mdsp_preview_set_output(c.e, 0, false)
+            mdsp_preview_set_track(c.e, l, r, Int64(n), c.fs, 0)
+            mdsp_preview_play(c.e, true)
+        }
         var bufs: [UnsafeMutablePointer<Float>?] = (0..<2).map { _ in .allocate(capacity: block) }
         defer { bufs.forEach { $0?.deallocate() } }
         // einschwingen
@@ -215,7 +225,7 @@ func benchRenderCPU() {
         let deadline = Double(block) / c.fs * 1e6
         let over = times.filter { Double($0) / 1000 > deadline }.count
         print(String(format: "[bench] %d decks keylock%@ · %d frames: %.2f %% of one core · avg %.1f µs · p99 %.1f µs · max %.1f µs (deadline %.0f µs, %d of %d blocks over)",
-                     decks, fx ? (plug != nil ? " + fx + plugin" : " + fx") : "", block, total / seconds * 100,
+                     decks, (fx ? (plug != nil ? " + fx + plugin" : " + fx") : "") + (preview ? " + preview" : ""), block, total / seconds * 100,
                      Double(times.reduce(0, +)) / Double(count) / 1000, Double(sorted[count * 99 / 100]) / 1000,
                      Double(sorted.last ?? 0) / 1000, deadline, over, count))
         if let plug {

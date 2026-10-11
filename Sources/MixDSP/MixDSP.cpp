@@ -3,6 +3,7 @@
 #include "MixDSP.h"
 #include "MixDSPPlugin.h"
 #include "PluginBackend.h"
+#include "Preview.h"
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -675,7 +676,10 @@ struct MDEngine {
     float masterSm = 0.85f;
     uint64_t renderHost = 0;   // setzt der CoreAudio-Callback vor jedem Block
     std::atomic<uint64_t> renders{0};   // fertig gerechnete Blöcke (Plugin-Übergabe)
+    MDPreview preview;                  // Vorhören (Preview.cpp)
 };
+
+MDPreview &mdsp_preview_of(MDEngine *e) { return e->preview; }
 
 // ---------- Lesen aus dem Track ----------
 
@@ -1141,6 +1145,7 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
             k.clickEnv *= 0.9985f;
         }
     }
+    mdpv_render(e->preview, out, channels, frames, e->fs);   // Vorhören: eigenes Paar, nach dem Master
     k.beatOut.store(k.beat);
     k.stampSeq.fetch_add(1, std::memory_order_acq_rel);
     k.stampBeat.store(beatStart, std::memory_order_relaxed);

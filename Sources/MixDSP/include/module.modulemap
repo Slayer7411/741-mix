@@ -4,5 +4,6 @@ module MixDSP {
     header "MixDSPPlugin.h"
     header "MixDSPAUHost.h"
     header "MixDSPVST3Host.h"
+    header "MixDSPPreview.h"
     export *
 }
