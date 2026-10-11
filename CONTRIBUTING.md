@@ -54,7 +54,7 @@ swift test
 MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 ```
 
-`swift test` also renders the audio core offline (no device): transport, seek, loop, reverse, keylock, fx tail, limiter, clock, track handoff, decode, nan / denormal / low-rate guards, load order -> `Tests/MixEngineTests`. controller reports (sync / flux / pad combos, jumps per deck state) go through the controller layer and the core without a device -> `Tests/MixAppTests`. the same runs in ci on every push. cpu per block (local only): `MIX741_BENCH=1 swift test --filter benchRenderCPU`.
+`swift test` also renders the audio core offline (no device): transport, seek, loop, reverse, keylock, fx tail, limiter, clock, track handoff, decode, nan / denormal / low-rate guards, load order -> `Tests/MixEngineTests`. controller reports (sync / flux / pad combos, jumps per deck state) go through the controller layer and the core without a device -> `Tests/MixAppTests`. the same runs in ci on every push. cpu per block (local only): `MIX741_BENCH=1 swift test --filter benchRenderCPU` (2 / 4 decks keylock, fx, plugin, 512 … 64 frames). dropouts on a device: `MIX741_SELFTEST=1 MIX741_NOEXT=1 MIX741_BENCH=load swift run minos741` -> `[selftest] Lastprobe` per buffer size.
 the self test plays, syncs, loops and jumps without sound and ends by itself. check the `[selftest]` lines: phase error should stay at ~0.00 beats.
 audio / sync changes -> also test live with 2 decks + keylock, note the cpu load.
 controller changes -> name the device and serial-free setup you tested with.

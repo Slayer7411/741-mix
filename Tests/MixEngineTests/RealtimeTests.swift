@@ -168,13 +168,16 @@ private func allFinite(_ blocks: [[Float]]) -> Bool { blocks.allSatisfy { $0.all
     #expect(recoveredLevel(c) > 0.25)         // Sinus 0,5 -> RMS 0,35: Gain/Volume unverändert
 }
 
-/// Rechenzeit je Block: 2 Decks Keylock, 4 Decks Keylock + FX. Nur mit MIX741_BENCH=1 (Zahlen für CHANGELOG/PR).
+/// Rechenzeit je Block: 2 Decks Keylock, 4 Decks Keylock + FX (Hall, Delay, Plugin AUMatrixReverb auf FX 4 / Deck D),
+/// Blöcke 512 … 64. Nur mit MIX741_BENCH=1 (Zahlen für CHANGELOG/PR); MIX741_BENCH_SECS = Sekunden je Lauf (60)
 @Test(.enabled(if: ProcessInfo.processInfo.environment["MIX741_BENCH"] == "1"))
 func benchRenderCPU() {
-    for (decks, fx, block) in [(2, false, 512), (2, false, 128), (4, true, 512), (4, true, 128)] {
+    let seconds = Double(ProcessInfo.processInfo.environment["MIX741_BENCH_SECS"] ?? "") ?? 60
+    for (decks, fx, block) in [(2, false, 512), (2, false, 128), (4, true, 512), (4, true, 256), (4, true, 128), (4, true, 64)] {
         let c = Engine()
+        var plug: OpaquePointer?
         for d in 0..<decks {
-            c.loadMusic(deck: d, seconds: 70)
+            c.loadMusic(deck: d, seconds: seconds + 10)
             c.set(d, MD_PLAYING, 1)
             c.set(d, MD_KEYLOCK, 1)
             c.set(d, MD_RATE, d % 2 == 0 ? 1.03 : 0.97)
@@ -185,12 +188,18 @@ func benchRenderCPU() {
             for u in 0..<4 {
                 mdsp_set_fx(c.e, Int32(u), u % 2 == 0 ? MDFX_REVERB_ON : MDFX_DELAY_ON, 1)
             }
+            var err = [CChar](repeating: 0, count: 256)
+            let fcc = { (s: String) in s.utf8.reduce(UInt32(0)) { $0 << 8 | UInt32($1) } }
+            plug = mdplug_open(fcc("aufx"), fcc("mrev"), fcc("appl"), c.fs, UInt32(MDSP_MAX_FRAMES), &err, Int32(err.count))
+            if let plug {
+                _ = mdsp_set_fx_plugin(c.e, 3, 3, plug)
+                mdsp_set_fx(c.e, 3, MDFX_PLUGIN_ON, 1); mdsp_set_fx(c.e, 3, MDFX_DRYWET, 0.5)
+            }
         }
         var bufs: [UnsafeMutablePointer<Float>?] = (0..<2).map { _ in .allocate(capacity: block) }
         defer { bufs.forEach { $0?.deallocate() } }
         // einschwingen
         for _ in 0..<50 { c.renderInto(&bufs, block) }
-        let seconds = 60.0
         let count = Int(seconds * c.fs) / block
         var times = [UInt64](repeating: 0, count: count)
         let t0 = DispatchTime.now().uptimeNanoseconds
@@ -202,10 +211,16 @@ func benchRenderCPU() {
         let total = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e9
         let sorted = times.sorted()
         let deadline = Double(block) / c.fs * 1e6
-        print(String(format: "[bench] %d decks keylock%@ · %d frames: %.2f %% of one core · avg %.1f µs · p99 %.1f µs · max %.1f µs (deadline %.0f µs)",
-                     decks, fx ? " + fx" : "", block, total / seconds * 100,
+        let over = times.filter { Double($0) / 1000 > deadline }.count
+        print(String(format: "[bench] %d decks keylock%@ · %d frames: %.2f %% of one core · avg %.1f µs · p99 %.1f µs · max %.1f µs (deadline %.0f µs, %d of %d blocks over)",
+                     decks, fx ? (plug != nil ? " + fx + plugin" : " + fx") : "", block, total / seconds * 100,
                      Double(times.reduce(0, +)) / Double(count) / 1000, Double(sorted[count * 99 / 100]) / 1000,
-                     Double(sorted.last ?? 0) / 1000, deadline))
+                     Double(sorted.last ?? 0) / 1000, deadline, over, count))
+        if let plug {
+            _ = mdsp_set_fx_plugin(c.e, 3, 3, nil)
+            c.renderInto(&bufs, block)
+            mdplug_close(plug)
+        }
     }
 }
 
