@@ -1011,8 +1011,8 @@ public final class MixController: @unchecked Sendable {
     /// er ein. Danach erst wieder scharf, wenn die Position vor dem Anfang liegt (Loop-Taste verlässt ihn, der nächste
     /// Durchlauf greift wieder) – im Modus „einmal je Laden“ nicht mehr
     private func checkActiveLoops(_ d: Int) {
+        guard !state.decks[d].activeLoops.isEmpty, audio[d] != nil else { return }   // vor der Kopie: Normalfall 200 Hz × 4
         let s = state.decks[d]
-        guard !s.activeLoops.isEmpty, audio[d] != nil else { return }
         let pos = position(d), lead = Self.activeLoopLead * max(1, s.rate)
         for n in s.activeLoops {
             guard let c = s.hotcues[n], Self.isLoop(c) else { continue }
