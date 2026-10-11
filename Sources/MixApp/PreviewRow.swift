@@ -15,26 +15,13 @@ enum PreviewRow {
     }
 }
 
-/// Zelle zweizeilig: Inhalt oben, Mindesthöhe = Zeilenhöhe (die Tabelle wächst mit)
-struct PreviewRowCell: ViewModifier {
-    let on: Bool
-    /// Zeilenhöhe (PreviewRow.rowHeight) – als Wert, Zellen haben keine Umgebung
-    let height: CGFloat
-    func body(content: Content) -> some View {
-        if on {
-            content.frame(maxWidth: .infinity, minHeight: height, maxHeight: .infinity, alignment: .topLeading)
-        } else {
-            content
-        }
-    }
-}
-
 /// zeichnet die Bänder; liegt als Geschwister über dem Inhalt der Scroll-Ansicht der Tabelle
 @MainActor
 final class PreviewRowController {
     weak var inline: InlineEditController?
     private var pending: Set<Int> = []
-    var rows: [Track] = [] { didSet { view?.needsDisplay = true } }
+    /// Zeilen der Tabelle (dieselbe Liste, die sie zeigt)
+    var rows: () -> [Track] = { [] }
     var mix: MixModel?
     var on = false { didSet { if on != oldValue { sync() } } }
     /// Deckkraft des Bandes (Prefs)
@@ -96,7 +83,7 @@ final class PreviewRowController {
     /// Band des vorgehörten Tracks in `v`, falls sichtbar (nur sichtbare Zeilen durchsucht)
     fileprivate func activeBand(in v: NSView) -> NSRect? {
         guard on, let key = previewKey, let tv = inline?.table else { return nil }
-        let range = tv.rows(in: tv.visibleRect)
+        let range = tv.rows(in: tv.visibleRect), rows = rows()
         for r in range.location..<min(rows.count, range.location + range.length) where rows[r].key == key {
             return v.convert(PreviewRow.band(in: tv.rect(ofRow: r)), from: tv)
         }
@@ -186,9 +173,10 @@ final class PreviewRowController {
             if let tv = table, let c = controller {
                 let range = tv.rows(in: tv.visibleRect)
                 let opacity = Float(c.alpha)
-                for r in range.location..<min(c.rows.count, range.location + range.length) {
+                let rows = c.rows()
+                for r in range.location..<min(rows.count, range.location + range.length) {
                     let rect = convert(PreviewRow.band(in: tv.rect(ofRow: r)), from: tv)
-                    guard rect.intersects(bounds), let img = c.image(c.rows[r]) else { continue }
+                    guard rect.intersects(bounds), let img = c.image(rows[r]) else { continue }
                     if used == bands.count {
                         let l = CALayer()
                         l.contentsGravity = .resize
@@ -214,11 +202,10 @@ final class PreviewRowController {
 /// eigene Ansicht, damit nur sie (nicht die ganze Tabelle) am Übersichten-Zähler hängt
 struct PreviewRowLayer: View {
     let controller: PreviewRowController
-    let rows: [Track]
     let mix: MixModel
     let on: Bool
     var body: some View {
-        PreviewRowHost(controller: controller, rows: rows, mix: mix, on: on, tick: on ? Overviews.shared.tick : 0,
+        PreviewRowHost(controller: controller, mix: mix, on: on, tick: on ? Overviews.shared.tick : 0,
                        previewKey: on ? mix.previewing?.key : nil)
     }
 }
@@ -226,7 +213,6 @@ struct PreviewRowLayer: View {
 /// unsichtbar hinter der Tabelle: hält den Band-Zeichner aktuell
 struct PreviewRowHost: NSViewRepresentable {
     let controller: PreviewRowController
-    let rows: [Track]
     let mix: MixModel
     let on: Bool
     /// Übersichten/Grid geändert (Overviews.tick)
@@ -241,7 +227,6 @@ struct PreviewRowHost: NSViewRepresentable {
 
     func updateNSView(_ v: NSView, context: Context) {
         controller.mix = mix
-        controller.rows = rows
         controller.on = on
         controller.alpha = CGFloat(mix.prefs.ui.previewBandAlpha)
         controller.previewKey = previewKey

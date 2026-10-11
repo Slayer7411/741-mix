@@ -54,16 +54,16 @@ struct CloudCell: View {
         CloudGlyph(glyph: b.glyph, color: b.color).help(b.help)
     }
 
-    @MainActor static func badge(_ path: String) -> (glyph: String, color: Color, help: LocalizedStringKey) {
+    @MainActor static func badge(_ path: String) -> (glyph: String, color: Color, help: String) {
         guard CloudPaths.isCloudBacked(path) else { return ("", Theme.muted, "") }
         let c = CloudLibrary.shared
-        if c.isFetching(path) { return ("↓", Theme.secondary, "Wird heruntergeladen") }
-        if c.isQueued(path) { return ("↓", Theme.muted, "Wartet auf Download") }
+        if c.isFetching(path) { return ("↓", Theme.secondary, String(localized: "Wird heruntergeladen")) }
+        if c.isQueued(path) { return ("↓", Theme.muted, String(localized: "Wartet auf Download")) }
         switch c.state(path) {
-        case .local: return ("●", Theme.muted, "Lokal")
-        case .cloud: return ("☁", Theme.gold, "Nur online – Rechtsklick → Bereitmachen")
-        case .missing: return ("✕", Theme.state, "Datei fehlt")
-        case .unknown: return ("·", Theme.muted, "Noch nicht geprüft")
+        case .local: return ("●", Theme.muted, String(localized: "Lokal"))
+        case .cloud: return ("☁", Theme.gold, String(localized: "Nur online – Rechtsklick → Bereitmachen"))
+        case .missing: return ("✕", Theme.state, String(localized: "Datei fehlt"))
+        case .unknown: return ("·", Theme.muted, String(localized: "Noch nicht geprüft"))
         }
     }
 }

@@ -54,8 +54,8 @@ enum TableShot {
         pane.showTree = false
         browser.separators = { mix.prefs.ui.tagSeparators }
 
-        func host(size: NSSize) -> (NSHostingView<AnyView>, NSWindow) {
-            let view = AnyView(BrowserPane(model: pane)
+        func host(size: NSSize, model: BrowserPaneModel? = nil) -> (NSHostingView<AnyView>, NSWindow) {
+            let view = AnyView(BrowserPane(model: model ?? pane)
                 .frame(width: size.width, height: size.height)
                 .background(Theme.background)
                 .foregroundStyle(Theme.bone)
@@ -99,8 +99,8 @@ enum TableShot {
             if tv.numberOfRows > 0, let rv = tv.rowView(atRow: 0, makeIfNecessary: false) {
                 log("zeilen-ansicht \(type(of: rv)) · \(NSStringFromRect(rv.frame)) · emphasized \(rv.isEmphasized) · hintergrund \(rv.backgroundColor)")
                 for (i, c) in tv.tableColumns.enumerated() where !c.isHidden {
-                    guard let v = tv.view(atColumn: i, row: 0, makeIfNecessary: false) else { continue }
-                    log("  zelle \(c.identifier.rawValue): \(type(of: v)) \(NSStringFromRect(v.frame))")
+                    let v = tv.view(atColumn: i, row: 0, makeIfNecessary: false)
+                    log("  zelle \(c.identifier.rawValue): \(v.map { "\(type(of: $0))" } ?? "gezeichnet") \(NSStringFromRect(tv.frameOfCell(atColumn: i, row: 0)))")
                 }
             }
         }
@@ -123,6 +123,114 @@ enum TableShot {
                 }
             }
             exit(0)
+        }
+
+        // MIX741_SHOT_CHECKS=1: Verhalten der Tabelle ohne Maus (Sortierung, Auswahl, Encoder, Return, Spalten, Listenwechsel)
+        if env["MIX741_SHOT_CHECKS"] == "1" {
+            var ok = true
+            func check(_ name: String, _ pass: Bool) { log("prüfung \(name): \(pass ? "ok" : "FEHLER")"); ok = ok && pass }
+            mix.prefs.ui.previewMode = .off
+            // Bereich A des Browsers (Ziel von Encoder und Controller)
+            let pane = browser.paneA
+            pane.showTree = false
+            let (h, win) = host(size: NSSize(width: 1400, height: 640), model: pane)
+            func settle() { for _ in 0..<6 { h.layoutSubtreeIfNeeded(); spin(0.1) } }
+            settle()
+            guard let tv = table(h) else { log("keine tabelle"); exit(1) }
+            check("zeilen = liste", tv.numberOfRows == pane.shown.count && tv.numberOfRows == store.tracks.count)
+            // Spaltenkopf: Sortierung nach Titel, dann absteigend
+            tv.sortDescriptors = [NSSortDescriptor(key: "title", ascending: true)]
+            settle(); spin(0.3); settle()
+            check("sortieren titel", pane.sortOrder.first?.keyPath == \Track.title && pane.shown.first?.title == TrackSort.sorted(store.tracks, using: [KeyPathComparator(\Track.title)]).first?.title)
+            tv.sortDescriptors = [NSSortDescriptor(key: "title", ascending: false)]
+            settle(); spin(0.3); settle()
+            check("sortieren absteigend", pane.sortOrder.first?.order == .reverse && tv.numberOfRows == pane.shown.count)
+            // Auswahl Tabelle -> Modell (Mehrfach), Modell -> Tabelle
+            tv.selectRowIndexes(IndexSet([2, 5, 9]), byExtendingSelection: false)
+            check("mehrfachauswahl", pane.selection == Set([2, 5, 9].map { pane.shown[$0].key }))
+            pane.selection = [pane.shown[40].key]
+            settle()
+            check("auswahl aus dem modell", tv.selectedRowIndexes == IndexSet(integer: 40))
+            // Browse-Encoder: Schritt +3 -> Auswahl und sichtbar
+            browser.activePaneID = pane.id
+            browser.moveSelection(by: 300, pane: 0)
+            settle()
+            check("encoder", tv.selectedRowIndexes == IndexSet(integer: 340) && tv.rows(in: tv.visibleRect).contains(340))
+            // Return: Inline-Bearbeitung der gewählten Zeile
+            win.makeFirstResponder(tv)
+            if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: win.windowNumber,
+                                        context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36) {
+                tv.keyDown(with: e)
+            }
+            settle()
+            let editing = pane.inline
+            check("return = inline", editing?.key == pane.shown[340].key && tv.subviews.contains { $0 is NSTableRowView && $0.subviews.contains { $0 is InlineFieldCell } })
+            pane.inline = nil
+            settle()
+            // Suche (Hintergrund) und Quelle
+            pane.search = "techno"
+            settle(); spin(0.3); settle()
+            check("suche", tv.numberOfRows == pane.shown.count && pane.shown.count < store.tracks.count && pane.shown.count == pane.rows(from: store, history: history, separators: mix.prefs.ui.tagSeparators).count)
+            pane.search = ""
+            pane.roles = [.basis]
+            settle(); spin(0.3); settle()
+            check("rolle", tv.numberOfRows == pane.shown.count && pane.shown.allSatisfy { $0.comment2.localizedCaseInsensitiveContains("» BASIS") })
+            pane.roles = []
+            func lists(_ n: PlaylistNode) -> [PlaylistNode] { (n.kind == .playlist ? [n] : []) + n.children.flatMap(lists) }
+            if let big = lists(store.root).max(by: { $0.trackKeys.count < $1.trackKeys.count }) {
+                pane.source = .node(big)
+                settle(); spin(0.3); settle()
+                check("quelle playlist", tv.numberOfRows == store.tracks(for: .node(big)).count)
+                pane.source = .collection
+                settle(); spin(0.3); settle()
+                check("quelle collection", tv.numberOfRows == store.tracks.count)
+            }
+            // Spalten: ausblenden, verschieben, Breite -> Anordnung im Format der gespeicherten Spalten
+            if let c = tv.tableColumns.first(where: { $0.identifier.rawValue == "label" }) { c.isHidden = true }
+            tv.moveColumn(tv.column(withIdentifier: NSUserInterfaceItemIdentifier("bpm")), toColumn: 0)
+            var st = ColumnLayout.State()
+            for c in tv.tableColumns { st.order.append(c.identifier.rawValue); st.widths[c.identifier.rawValue] = c.width; if c.isHidden != TrackColumn.byID[c.identifier.rawValue]!.hidden { st.hidden[c.identifier.rawValue] = c.isHidden } }
+            let back = ColumnLayout.decode(ColumnLayout.encode(st))
+            // Kontextmenü einer Zeile (Rechtsklick auf Zeile 3, nicht in der Auswahl -> nur diese Zeile)
+            let p3 = tv.convert(NSPoint(x: tv.rect(ofRow: 3).midX, y: tv.rect(ofRow: 3).midY), to: nil)
+            if let e = NSEvent.mouseEvent(with: .rightMouseDown, location: p3, modifierFlags: [], timestamp: 0, windowNumber: win.windowNumber,
+                                          context: nil, eventNumber: 1, clickCount: 1, pressure: 1),
+               let menu = tv.menu(for: e) {
+                menu.delegate?.menuNeedsUpdate?(menu)
+                let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+                log("kontextmenü zeile \(tv.clickedRow): " + titles.joined(separator: " · "))
+                let prep = menu.items.first { $0.title == String(localized: "An Preparation anhängen") }
+                if let prep, let a = prep.action { NSApp.sendAction(a, to: prep.target, from: prep) }
+                check("kontextmenü", tv.clickedRow == 3 && titles.count >= 10 && store.preparation == [pane.shown[3].key])
+                store.preparation = []
+            }
+            // Kopf-Menü: eine Zeile je Spalte (ohne Vorschau), Klick blendet ein/aus
+            if let menu = tv.headerView?.menu {
+                menu.delegate?.menuNeedsUpdate?(menu)
+                let item = menu.items.first { $0.title == "Genre" }
+                let before = tv.tableColumns.first { $0.identifier.rawValue == "genre" }?.isHidden
+                if let item, let a = item.action { NSApp.sendAction(a, to: item.target, from: item) }
+                check("kopf-menü", menu.items.count == TrackColumn.all.count - 1 && item?.state == .off && before == true
+                      && tv.tableColumns.first { $0.identifier.rawValue == "genre" }?.isHidden == false)
+            }
+            check("spalten", back?.order.first == "bpm" && back?.hidden["label"] == true)
+            // Zoom: Zeilenhöhe und Breiten wachsen mit (Fenster wächst wie in der App mit)
+            func width(_ id: String) -> CGFloat { tv.tableColumns.first { $0.identifier.rawValue == id }?.width ?? 0 }
+            let w0 = width("artist"), b0 = width("bpm"), r0 = tv.rowHeight
+            UIZoom.shared.factor = 1.5
+            win.setContentSize(NSSize(width: 2100, height: 960))
+            h.frame = NSRect(x: 0, y: 0, width: 2100, height: 960)
+            settle()
+            log(String(format: "zoom 1 -> 1.5: zeile %.1f -> %.1f, artist %.1f -> %.1f, bpm %.1f -> %.1f", r0, tv.rowHeight, w0, width("artist"), b0, width("bpm")))
+            // flexible Spalten verteilt die Tabelle auf die Breite (gleichmäßig), feste und Mindestbreiten wachsen mit
+            let artistMin = tv.tableColumns.first { $0.identifier.rawValue == "artist" }?.minWidth ?? 0
+            check("zoom", tv.rowHeight > r0 * 1.2 && abs(width("bpm") - b0 * 1.5) < 1 && abs(artistMin - 120) < 1 && width("artist") >= artistMin)
+            UIZoom.shared.factor = 1
+            settle()
+            win.contentView = nil
+            win.close()
+            log(ok ? "prüfungen OK" : "prüfungen FEHLER")
+            exit(ok ? 0 : 1)
         }
 
         // Liste: Collection nach Artist, ab einer Stelle mit Kommentar 2 (Tags sichtbar)
