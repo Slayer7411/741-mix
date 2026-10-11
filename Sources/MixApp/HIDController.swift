@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import IOKit.hid
 import Observation
 import MixCore
@@ -86,6 +87,31 @@ final class ControllerManager: @unchecked Sendable {
     }
 
     func start() {
+        open()
+        core.addTickHandler { [weak self] c in self?.refreshLEDs(c) }
+        // nach dem Ruhezustand alle Controller neu verbinden (USB-Geräte kommen mit neuer Verbindung zurück)
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil,
+                                                                         queue: nil) { [weak self] _ in
+            guard let self else { return }
+            self.core.controlQueue.async { self.reopen() }
+        }
+    }
+    private var wakeObserver: NSObjectProtocol?
+
+    /// Manager schließen, Geräte vergessen, neu öffnen (Steuer-Queue): Matching meldet alle angeschlossenen neu
+    private func reopen() {
+        if let m = manager {
+            IOHIDManagerCancel(m)
+            IOHIDManagerClose(m, IOOptionBits(kIOHIDOptionsTypeNone))
+        }
+        manager = nil
+        units.removeAll()
+        DispatchQueue.main.async { self.status.devices.removeAll() }
+        print("[hid] nach dem Aufwachen neu verbinden")
+        open()
+    }
+
+    private func open() {
         let m = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerSetDeviceMatching(m, [kIOHIDVendorIDKey: 0x17cc, kIOHIDProductIDKey: 0x1220] as CFDictionary)
         let ctx = Unmanaged.passUnretained(self).toOpaque()
@@ -109,7 +135,6 @@ final class ControllerManager: @unchecked Sendable {
         print("[hid] HID-Manager geöffnet: \(st)")
         IOHIDManagerActivate(m)
         manager = m
-        core.addTickHandler { [weak self] c in self?.refreshLEDs(c) }
     }
 
     private func attach(_ device: IOHIDDevice) {

@@ -112,6 +112,7 @@ final class MixModel {
     private(set) var previewing: Previewing?
     struct Previewing: Equatable { var key: String; var cut: PreviewCut }
     @ObservationIgnored private var reroutePending = false
+    @ObservationIgnored private var sleepObservers: [NSObjectProtocol] = []
     /// Gerät, auf das die Engine wartet (Statuszeile)
     @ObservationIgnored private var lostDevice: String?
 
@@ -154,6 +155,22 @@ final class MixModel {
         engine.onOutputEvent = { [weak self] e in
             Task { @MainActor in self?.outputEvent(e) }
         }
+        // Ruhezustand: Ausgabe sauber anhalten, nach dem Aufwachen dasselbe Gerät neu öffnen (Decks spielen weiter)
+        let ws = NSWorkspace.shared.notificationCenter
+        sleepObservers = [
+            ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.engine.willSleep() }
+            },
+            ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    print("[audio] aufgewacht: Ausgabe neu öffnen")
+                    self.engine.didWake()
+                    self.refreshDevices()
+                    self.refreshEngineStatus()
+                }
+            },
+        ]
         // .common: läuft auch, solange ein Menü offen ist oder das Fenster gezogen wird (sonst steht die Anzeige still)
         let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pull() }
