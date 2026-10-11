@@ -406,6 +406,8 @@ struct TrackPreviewCell: View {
         let img = PreviewImages.cached(h) ?? (imageHash == h ? image : nil)
         ZStack {
             if let img { Image(decorative: img, scale: 2).resizable().interpolation(.medium) }
+            // hinter dem Titel: nur der Strich, der Klick bleibt beim Titel
+            if mix.previewing?.key == track.key { PreviewPlayhead(mix: mix, key: track.key, seeks: !fill) }
         }
         .frame(maxWidth: .infinity)
         .frame(height: fill ? nil : PreviewRenderer.heightPt.z)
@@ -419,6 +421,48 @@ struct TrackPreviewCell: View {
             imageHash = h
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// Vorhören dieses Tracks: Position als Strich (10 Hz, nur diese eine Zelle), Klick springt – außerhalb des
+/// Schnitts an den nächsten Rand innen
+struct PreviewPlayhead: View {
+    let mix: MixModel
+    let key: String
+    var seeks = true
+
+    var body: some View {
+        GeometryReader { geo in
+            TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                Canvas { ctx, size in
+                    guard let f = mix.previewFraction, f.isFinite else { return }
+                    ctx.fill(Path(CGRect(x: CGFloat(f) * size.width - 1, y: 0, width: 2, height: size.height)), with: .color(Theme.state))
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(coordinateSpace: .local) { p in mix.seekPreview(key, fraction: p.x / max(1, geo.size.width)) }
+            .allowsHitTesting(seeks)
+        }
+    }
+}
+
+/// Statuszeile: Vorhören läuft – Restzeit bis zum Schnitt-Ende / Länge des Schnitts, ✕ hält an
+struct PreviewPlayStatus: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        if let v = mix.previewing {
+            HStack(spacing: 4.z) {
+                TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                    let rest = v.cut.remaining(at: mix.previewPosition ?? v.cut.lo)
+                    Text(verbatim: "· " + String(localized: "Vorhören") + " −" + Theme.time(rest) + " / " + Theme.time(v.cut.length)
+                         + (v.cut.isCut ? " " + String(localized: "(Schnitt)") : ""))
+                        .monospacedDigit()
+                }
+                .help("Vorhören: Restzeit bis zum Schnitt-Ende / Länge des Schnitts")
+                Button("✕") { mix.stopPreview() }.buttonStyle(.plain).help("Vorhören beenden")
+            }
+        }
     }
 }
 

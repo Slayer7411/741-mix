@@ -502,11 +502,27 @@ final class MixModel {
         previewStop = nil
         previewPlayer?.stop()
         previewPlayer = nil
+        shotPreview = nil
         if previewing != nil { previewing = nil }
     }
 
     /// Position des Vorhörens (s), nil = still
-    var previewPosition: Double? { previewPlayer?.currentTime }
+    var previewPosition: Double? { previewPlayer?.currentTime ?? shotPreview?.position }
+    /// Position als Anteil der Dateilänge (Strich in der Vorschau)
+    var previewFraction: Double? {
+        if let p = previewPlayer { return p.duration > 0 ? p.currentTime / p.duration : nil }
+        return shotPreview.map { $0.position / $0.duration }
+    }
+    @ObservationIgnored private var shotPreview: (position: Double, duration: Double)?
+
+    /// Selbsttest-Bilder: Vorhören darstellen ohne Player (kein Audio, keine Datei)
+    func showPreviewForShot(_ t: Track, at position: Double) {
+        guard Session.isSelfTest, t.duration > 0 else { return }
+        stopPreview()
+        let cut = PreviewCut(trim: edits.edit(for: t.key)?.trim, duration: t.duration)
+        shotPreview = (cut.clamp(position), t.duration)
+        previewing = Previewing(key: t.key, cut: cut)
+    }
 
     /// Klick in die Vorschau des laufenden Tracks (Anteil der Dateilänge): außerhalb des Schnitts an den Rand innen
     func seekPreview(_ key: String, fraction: Double) {

@@ -111,7 +111,8 @@ enum PreviewShot {
             let a = shotRows[1], b = shotRows[2]
             mix.edits.set(TrackEdit(trim: TrackTrim(start: a.duration * 0.2, end: a.duration * 0.75)), for: a.key)
             mix.edits.set(TrackEdit(trim: TrackTrim(end: b.duration * 0.6)), for: b.key)
-            log("schnitt: zeile 2 20–75 %, zeile 3 bis 60 %")
+            mix.showPreviewForShot(a, at: a.duration * 0.5)   // Strich in Zeile 2, ohne Audio
+            log("schnitt: zeile 2 20–75 % (vorhören bei 50 %), zeile 3 bis 60 %")
         }
         for (mode, name) in [(PreviewMode.fullRow, "preview-row.png"), (.column, "preview-column.png"), (.behindTitle, "preview-title.png")] {
             mix.prefs.ui.previewMode = mode
