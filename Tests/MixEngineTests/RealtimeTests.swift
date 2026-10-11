@@ -174,6 +174,9 @@ private func allFinite(_ blocks: [[Float]]) -> Bool { blocks.allSatisfy { $0.all
 func benchRenderCPU() {
     let seconds = Double(ProcessInfo.processInfo.environment["MIX741_BENCH_SECS"] ?? "") ?? 60
     let fdn = ProcessInfo.processInfo.environment["MIX741_BENCH_FDN"] == "1"   // Hall-Typ FDN statt Allpass-Ring
+    // Beat-FX statt Hall/Delay auf allen 4 Units (gater, roll, flanger, phaser)
+    let beatFX: MDFXParam? = ["gater": MDFX_GATER_ON, "roll": MDFX_ROLL_ON, "flanger": MDFX_FLANGER_ON,
+                              "phaser": MDFX_PHASER_ON][ProcessInfo.processInfo.environment["MIX741_BENCH_FX"] ?? ""]
     for (decks, fx, block) in [(2, false, 512), (2, false, 128), (4, true, 512), (4, true, 256), (4, true, 128), (4, true, 64)] {
         let c = Engine()
         var plug: OpaquePointer?
@@ -187,7 +190,8 @@ func benchRenderCPU() {
         }
         if fx {
             for u in 0..<4 {
-                mdsp_set_fx(c.e, Int32(u), u % 2 == 0 ? MDFX_REVERB_ON : MDFX_DELAY_ON, 1)
+                mdsp_set_fx(c.e, Int32(u), beatFX ?? (u % 2 == 0 ? MDFX_REVERB_ON : MDFX_DELAY_ON), 1)
+                mdsp_set_fx(c.e, Int32(u), MDFX_PHASER_STAGES, 8)
                 mdsp_set_fx(c.e, Int32(u), MDFX_REVERB_TYPE, fdn ? 1 : 0)
             }
             var err = [CChar](repeating: 0, count: 256)

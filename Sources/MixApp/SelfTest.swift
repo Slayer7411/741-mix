@@ -172,6 +172,16 @@ enum SelfTest {
             log(String(format: "Reverb Single HP: D/W 0 %.3f (trocken %.3f) · D/W 1 %.3f · nach Drop 1 s %.4f · 4 s %.4f",
                        rDry, dry, rWet, r1, r4))
             core.togglePlay(0)
+            // Beat-FX (FX3 Single) auf Deck A: Pegel an / nach dem Ausschalten (Roll: Deck läuft darunter weiter)
+            core.toggleFXAssign(0, 2)
+            for e in FXCatalog.beatFX {
+                core.updateFX(2) { $0.single = true; $0.singleType = e.rawValue; $0.singleOn = true; $0.dryWet = 1 }
+                let on = await level()
+                core.updateFX(2) { $0.singleOn = false }
+                let off = await level()
+                log(String(format: "%@ Single: an %.3f · aus %.3f (trocken %.3f)", e.name, on, off, dry))
+            }
+            core.toggleFXAssign(0, 2)
             // Plugin (FX4 Single): Apples AUMatrixReverb, lädt im Hintergrund, Regler = erste 3 Parameter, Fahne nach Stopp
             core.toggleFXAssign(0, 3)
             core.setPlugin(3, id: "aufx:mrev:appl")

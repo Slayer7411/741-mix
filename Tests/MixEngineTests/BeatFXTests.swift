@@ -1,0 +1,191 @@
+import Foundation
+import Testing
+import MixDSP
+
+/// Beat-FX offline (Gater): Raster der Clock, Ein/Aus ohne Knacken,
+/// D/W 0 = trocken, NaN/Denormal bei 44,1/48/96 kHz
+private final class Rig {
+    let e: OpaquePointer
+    let fs: Double
+    let l: UnsafeMutablePointer<Float>, r: UnsafeMutablePointer<Float>
+    var bufs: [UnsafeMutablePointer<Float>?]
+
+    init(seconds: Double, fs: Double = 44100, bpm: Double = 125, make: (Int) -> (Float, Float)) {
+        self.fs = fs
+        e = mdsp_create(fs)
+        let n = Int(seconds * fs)
+        l = .allocate(capacity: n); r = .allocate(capacity: n)
+        for i in 0..<n { (l[i], r[i]) = make(i) }
+        bufs = [.allocate(capacity: 512), .allocate(capacity: 512)]
+        mdsp_set_track(e, 0, l, r, Int64(n), fs, 0)
+        _ = capture(512.0 / fs)
+        mdsp_set_param(e, 0, MD_FX1_ASSIGN, 1)
+        mdsp_clock_set_bpm(e, bpm)
+        mdsp_clock_set_beat(e, 0)   // übernimmt der nächste Block: Sample 0 = Beat 0
+    }
+    deinit { mdsp_destroy(e); l.deallocate(); r.deallocate(); bufs.forEach { $0?.deallocate() } }
+
+    func fx(_ p: MDFXParam, _ v: Float) { mdsp_set_fx(e, 0, p, v) }
+    func play(_ on: Bool) { mdsp_set_param(e, 0, MD_PLAYING, on ? 1 : 0) }
+    func capture(_ seconds: Double) -> ([Float], [Float]) {
+        var a: [Float] = [], b: [Float] = []
+        for _ in 0..<Int((seconds * fs / 512).rounded()) {
+            bufs.withUnsafeMutableBufferPointer { mdsp_render(e, $0.baseAddress, 2, 512) }
+            a += UnsafeBufferPointer(start: bufs[0], count: 512); b += UnsafeBufferPointer(start: bufs[1], count: 512)
+        }
+        return (a, b)
+    }
+}
+
+private func white(_ s: UInt32) -> () -> Float {
+    var seed = s
+    return { seed = seed &* 1664525 &+ 1013904223; return (Float(seed >> 8) / Float(1 << 24) - 0.5) * 0.6 }
+}
+
+private enum Effect: CaseIterable { case gater }
+
+private extension Rig {
+    func set(_ fx: Effect, on: Bool) {
+        switch fx {
+        case .gater: self.fx(MDFX_GATER_ON, on ? 1 : 0)
+        }
+    }
+}
+
+/// Gater 1/4 Beat, offen ½: Pegel geht im Raster auf und zu, ±1 ms (44,1 und 96 kHz)
+@Test(arguments: [44100.0, 96000.0])
+func gaterFollowsBeatDivider(fs: Double) {
+    let r = Rig(seconds: 3, fs: fs, bpm: 120) { _ in (0.5, 0.5) }
+    r.fx(MDFX_GATER_BEATS, 0.25); r.fx(MDFX_GATER_WIDTH, 0.5); r.fx(MDFX_GATER_SHAPE, 0); r.fx(MDFX_GATER_ON, 1)
+    r.play(true)
+    let (a, _) = r.capture(2)
+    let spb = fs / 2   // 120 BPM
+    let open = a[Int(0.3 * fs)..<Int(0.4 * fs)].max() ?? 0, half = open / 2
+    #expect(open > 0.4 && a[Int(0.3 * fs)..<Int(0.4 * fs)].min()! < open * 0.01)
+    var worst = 0.0, edges = 0
+    for k in 4..<12 {   // ab Beat 1 (Lautstärke-Rampe des Decks vorbei)
+        for (frac, rising) in [(0.0, true), (0.125, false)] {
+            let want = (Double(k) * 0.25 + frac) * spb
+            let lo = Int(want - 0.004 * fs), hi = Int(want + 0.004 * fs)
+            guard let i = (lo..<hi).first(where: { rising ? a[$0] >= half && a[$0 - 1] < half : a[$0] <= half && a[$0 - 1] > half })
+            else { Issue.record("keine Flanke bei Beat \(Double(k) * 0.25 + frac)"); continue }
+            worst = max(worst, abs(Double(i) - want) / fs * 1000)
+            edges += 1
+        }
+    }
+    print(String(format: "[beatfx] gater %.0f kHz: %d Flanken, größte Abweichung vom Raster %.3f ms", fs / 1000, edges, worst))
+    #expect(edges == 16 && worst <= 1)
+}
+
+/// Ein/Aus mit Sinus 220 Hz: kein Sprung (zweite Differenz < −40 dBFS) in den 20 ms nach dem Schalten
+@Test func beatFXToggleWithoutClick() {
+    for fx in Effect.allCases {
+        let r = Rig(seconds: 4, bpm: 120) { i in let v = Float(0.5 * sin(2 * Double.pi * 220 * Double(i) / 44100)); return (v, v) }
+        r.fx(MDFX_ROLL_BEATS, 0.25); r.fx(MDFX_FLANGER_FEEDBACK, 0.8); r.fx(MDFX_PHASER_FEEDBACK, 0.8)
+        r.play(true)
+        _ = r.capture(0.5)
+        func worst(_ a: [Float], _ n: Int) -> Float {
+            var m: Float = 0
+            for i in 2..<n { m = max(m, abs(a[i] - 2 * a[i - 1] + a[i - 2])) }
+            return m
+        }
+        let w = Int(0.02 * 44100)
+        r.set(fx, on: true)
+        let (on, _) = r.capture(1.0)
+        // aus bei Gater-Phase ~0,75 (Tor zu, nächste Flanke 30 ms später): Beat ≈ k + 0,1875
+        let beat = mdsp_clock_beat(r.e), next = (beat * 4).rounded(.up) / 4 + 0.1875
+        _ = r.capture((next - beat) / 2)
+        r.set(fx, on: false)
+        let (off, _) = r.capture(0.3)
+        print(String(format: "[beatfx] %@ zweite Differenz nach ein %.4f · aus %.4f (Sinus allein 0.0004, Grenze 0.0100)", "\(fx)", worst(on, w), worst(off, w)))
+        #expect(worst(on, w) < 0.01 && worst(off, w) < 0.01)
+    }
+}
+
+/// D/W 0 (oder Anteil 0): Ausgang bitgleich mit einem Deck ohne Effekt
+@Test func beatFXDryWetZeroIsBitExact() {
+    let w = white(21), w2 = white(21)
+    let r = Rig(seconds: 3) { _ in let v = w(); return (v, -v) }
+    let d = Rig(seconds: 3) { _ in let v = w2(); return (v, -v) }
+    r.fx(MDFX_DRYWET, 0)
+    for fx in Effect.allCases { r.set(fx, on: true) }
+    r.play(true); d.play(true)
+    let a = r.capture(2), b = d.capture(2)
+    #expect(a.0 == b.0 && a.1 == b.1)
+}
+
+/// extreme Einstellungen, danach Stille: kein NaN, keine Denormals (44,1 / 48 / 96 kHz)
+@Test(arguments: [44100.0, 48000.0, 96000.0])
+func beatFXNoNaNOrDenormal(fs: Double) {
+    let w = white(5)
+    let r = Rig(seconds: 4, fs: fs, bpm: 174) { i in
+        let v = Double(i) < fs ? w() * 3 : 0
+        return (v, v)
+    }
+    r.fx(MDFX_GATER_BEATS, 0.0625); r.fx(MDFX_GATER_SHAPE, 1); r.fx(MDFX_ROLL_BEATS, 1.0 / 32); r.fx(MDFX_ROLL_DECAY, 24)
+    r.fx(MDFX_ROLL_REVERSE, 1)
+    r.fx(MDFX_FLANGER_FEEDBACK, 1); r.fx(MDFX_FLANGER_DEPTH, 1); r.fx(MDFX_FLANGER_BEATS, 0.5)
+    r.fx(MDFX_PHASER_FEEDBACK, 1); r.fx(MDFX_PHASER_DEPTH, 1); r.fx(MDFX_PHASER_STAGES, 8); r.fx(MDFX_PHASER_BEATS, 0)
+    r.fx(MDFX_PHASER_HZ, 8)
+    for fx in Effect.allCases { r.set(fx, on: true) }
+    r.play(true)
+    let (a, b) = r.capture(3)
+    let bad = (a + b).filter { !$0.isFinite || ($0 != 0 && abs($0) < Float.leastNormalMagnitude) }.count
+    let tail = (a.suffix(Int(fs)) + b.suffix(Int(fs))).map(abs).max() ?? 0
+    print(String(format: "[beatfx] %.0f kHz extrem: %d ungültige Samples, Spitze nach 2 s Stille %.2e", fs / 1000, bad, tail))
+    #expect(bad == 0 && tail < 1e-3)
+}
+
+/// Rechenzeit je Effekt (MIX741_BENCH=1): 1 Deck, 512 Frames, ein Effekt an; Bezug Delay
+@Test(.enabled(if: ProcessInfo.processInfo.environment["MIX741_BENCH"] == "1"))
+func beatFXCPU() {
+    func measure(_ setup: (Rig) -> Void) -> Double {
+        let w = white(5)
+        let r = Rig(seconds: 100) { _ in let v = w(); return (v, v) }   // 7700 Blöcke = 89 s
+        setup(r)
+        r.play(true)
+        for _ in 0..<200 { r.bufs.withUnsafeMutableBufferPointer { mdsp_render(r.e, $0.baseAddress, 2, 512) } }
+        // kürzeste von 5 Runden (andere Last auf der Maschine)
+        var best = Double.infinity
+        for _ in 0..<5 {
+            let count = 1500, t0 = DispatchTime.now().uptimeNanoseconds
+            for _ in 0..<count { r.bufs.withUnsafeMutableBufferPointer { mdsp_render(r.e, $0.baseAddress, 2, 512) } }
+            best = min(best, Double(DispatchTime.now().uptimeNanoseconds - t0) / 1000 / Double(count))
+        }
+        return best
+    }
+    let base = measure { _ in }
+    let delay = measure { $0.fx(MDFX_DELAY_ON, 1) } - base
+    var line = String(format: "[beatfx] cpu 1 deck · 512 frames · ohne fx %.1f µs/block · je effekt: delay %.1f", base, delay)
+    for fx in Effect.allCases {
+        let us = measure { r in r.set(fx, on: true); r.fx(MDFX_PHASER_STAGES, 8) } - base
+        line += String(format: " · %@ %.1f", "\(fx)", us)
+    }
+    print(line + " µs")
+}
+
+/// FFT (Radix 2, an Ort und Stelle)
+private func fft(_ re: inout [Double], _ im: inout [Double]) {
+    let n = re.count
+    var j = 0
+    for i in 1..<n {
+        var bit = n >> 1
+        while j & bit != 0 { j ^= bit; bit >>= 1 }
+        j |= bit
+        if i < j { re.swapAt(i, j); im.swapAt(i, j) }
+    }
+    var len = 2
+    while len <= n {
+        let ang = -2 * Double.pi / Double(len)
+        for i in stride(from: 0, to: n, by: len) {
+            for k in 0..<len / 2 {
+                let wr = cos(ang * Double(k)), wi = sin(ang * Double(k))
+                let ur = re[i + k], ui = im[i + k]
+                let vr = re[i + k + len / 2] * wr - im[i + k + len / 2] * wi, vi = re[i + k + len / 2] * wi + im[i + k + len / 2] * wr
+                re[i + k] = ur + vr; im[i + k] = ui + vi
+                re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi
+            }
+        }
+        len *= 2
+    }
+}

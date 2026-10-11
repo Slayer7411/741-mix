@@ -11,6 +11,10 @@ public final class MixEngine: @unchecked Sendable {
     public static let fxUnitCount = Int(MDSP_FX_UNITS)
     /// Delay-Zeiten in Beats (FXUnitState.delayIndex)
     public static let delayBeats: [Double] = [1.0 / 4, 1.0 / 2, 3.0 / 4, 1, 3.0 / 2, 2]
+    /// Beat-FX in Beats: Gater-Periode, Roll-Länge, LFO-Periode (Flanger/Phaser)
+    public static let gaterBeats: [Double] = [1.0 / 16, 1.0 / 8, 1.0 / 4, 1.0 / 2]
+    public static let rollBeats: [Double] = [1.0 / 32, 1.0 / 16, 1.0 / 8, 1.0 / 4, 1.0 / 2, 1]
+    public static let lfoBeats: [Double] = [1.0 / 2, 1, 2, 4, 8, 16, 32]
 
     let core: OpaquePointer
     private let output = CoreAudioOutput()
@@ -140,26 +144,54 @@ public final class MixEngine: @unchecked Sendable {
 
     // MARK: - FX
 
-    /// FX-Unit (Gruppenmodus Filter · Delay · Reverb) setzen und Deck zuweisen.
+    /// FX-Unit (Gruppenmodus: 3 Slots, Single: ein Effekt) setzen und Deck zuweisen.
     /// reverbLevel linear (1 = 0 dB), reverbBrightness 0…1, reverbPreDelay in Sekunden, reverbFDN = Hall-Typ – gelten in beiden Modi.
     public func applyFX(unit u: Int, deck d: Int, _ fx: FXUnitState, assigned: Bool, bpm: Double,
                         feedback: Double, filterResonance: Double,
                         reverbLevel: Double, reverbBrightness: Double, reverbPreDelay: Double, reverbFDN: Bool = false) {
+        typealias Effect = FXUnitState.Effect
         let un = Int32(u)
         mdsp_set_param(core, Int32(d), MDParam(rawValue: MD_FX1_ASSIGN.rawValue + UInt32(u)), assigned ? 1 : 0)
         let beat = 60 / (bpm > 0 ? bpm : 125)
         func set(_ p: MDFXParam, _ v: Double) { mdsp_set_fx(core, un, p, Float(v)) }
+        func set(_ p: MDFXParam, _ v: Bool) { mdsp_set_fx(core, un, p, v ? 1 : 0) }
+        func pick(_ list: [Double], _ v: Double) -> Double { list[max(0, min(list.count - 1, Int((v * Double(list.count - 1)).rounded())))] }
+        /// Beat-FX aus den Einstellungen der Unit (FXUnitState.opts); aus = Anteil rampt weg, Roll gibt das Live-Signal zurück
+        func beatFX(_ e: Effect, on: Bool, amount: Double) {
+            let o = { FXCatalog.opt(fx, e, $0) }
+            switch e {
+            case .gater:
+                set(MDFX_GATER_ON, on); set(MDFX_GATER_AMOUNT, amount)
+                set(MDFX_GATER_BEATS, pick(Self.gaterBeats, o("rate")) * (o("trip") >= 0.5 ? 2.0 / 3 : 1))
+                set(MDFX_GATER_SHAPE, o("shape")); set(MDFX_GATER_WIDTH, 0.05 + 0.9 * o("width")); set(MDFX_GATER_MUTE, o("mute") >= 0.5)
+            case .roll:
+                set(MDFX_ROLL_ON, on); set(MDFX_ROLL_AMOUNT, amount); set(MDFX_ROLL_BEATS, pick(Self.rollBeats, o("len")))
+                set(MDFX_ROLL_REVERSE, o("rev") >= 0.5); set(MDFX_ROLL_DECAY, o("decay") * 24)   // bis −24 dB je Beat
+            case .flanger:
+                set(MDFX_FLANGER_ON, on); set(MDFX_FLANGER_AMOUNT, amount)
+                set(MDFX_FLANGER_BEATS, o("sync") >= 0.5 ? pick(Self.lfoBeats, o("rate")) : 0); set(MDFX_FLANGER_HZ, 0.02 * pow(200, o("hz")))
+                set(MDFX_FLANGER_DEPTH, o("depth")); set(MDFX_FLANGER_FEEDBACK, o("feedback")); set(MDFX_FLANGER_SPREAD, o("spread"))
+                set(MDFX_FLANGER_FREEZE, o("freeze") >= 0.5)
+            case .phaser:
+                set(MDFX_PHASER_ON, on); set(MDFX_PHASER_AMOUNT, amount)
+                set(MDFX_PHASER_BEATS, o("sync") >= 0.5 ? pick(Self.lfoBeats, o("rate")) : 0); set(MDFX_PHASER_HZ, 0.02 * pow(200, o("hz")))
+                set(MDFX_PHASER_DEPTH, o("depth")); set(MDFX_PHASER_FEEDBACK, o("feedback")); set(MDFX_PHASER_STAGES, o("stages") >= 0.5 ? 8 : 4)
+                set(MDFX_PHASER_FREEZE, o("freeze") >= 0.5)
+            default: break
+            }
+        }
         set(MDFX_DRYWET, fx.dryWet)
         set(MDFX_REVERB_LEVEL, max(0, reverbLevel)); set(MDFX_REVERB_BRIGHT, max(0, min(1, reverbBrightness)))
         set(MDFX_REVERB_PREDELAY, max(0, min(0.2, reverbPreDelay)))
         set(MDFX_REVERB_TYPE, reverbFDN ? 1 : 0)
-        let reverbLoaded = fx.single ? FXUnitState.Effect(rawValue: fx.singleType) == .reverb : true
+        let reverbLoaded = fx.single ? Effect(rawValue: fx.singleType) == .reverb : fx.slot(of: .reverb) != nil
         set(MDFX_REVERB_FREEZE, fx.reverbFreeze && reverbLoaded ? 1 : 0)
         if fx.single {
             // Single-Modus: ein Effekt, die 3 Regler sind seine Parameter
-            let on = fx.singleOn, p = fx.params
+            let on = fx.singleOn, p = fx.params, type = Effect(rawValue: fx.singleType) ?? .delay
             let filterOn = { (v: Double) in on && abs(v - 0.5) > 0.02 }
-            switch FXUnitState.Effect(rawValue: fx.singleType) ?? .delay {
+            for e in FXCatalog.beatFX { beatFX(e, on: on && e == type, amount: 1) }
+            switch type {
             case .filter:
                 set(MDFX_FILTER_ON, on ? 1 : 0); set(MDFX_FILTER_AMOUNT, p[0]); set(MDFX_FILTER_RES, 0.2 + p[1] * 1.3)
                 set(MDFX_DELAY_ON, 0); set(MDFX_REVERB_ON, 0)
@@ -174,27 +206,35 @@ public final class MixEngine: @unchecked Sendable {
                 set(MDFX_FILTER_ON, 0); set(MDFX_DELAY_ON, 0)
                 set(MDFX_REVERB_ON, on ? 1 : 0); set(MDFX_REVERB_AMOUNT, 1); set(MDFX_REVERB_SIZE, p[0])
                 set(MDFX_REVERB_HP, p[1]); set(MDFX_REVERB_LP, p[2]); set(MDFX_REVERB_DWSEND, 1)
-            case .plugin:
-                // Regler gehen direkt an die Plugin-Parameter (MixController), hier nur an/aus
+            case .roll:
+                // FILTER-Regler wie beim Delay: Filter der Unit (formt auch die Wiederholung)
+                let f = FXCatalog.opt(fx, .roll, "filter")
+                set(MDFX_FILTER_ON, filterOn(f) ? 1 : 0); set(MDFX_FILTER_AMOUNT, f); set(MDFX_FILTER_RES, filterResonance)
+                set(MDFX_DELAY_ON, 0); set(MDFX_REVERB_ON, 0)
+            case .plugin, .gater, .flanger, .phaser:
+                // Plugin: Regler gehen direkt an die Plugin-Parameter (MixController), hier nur an/aus
                 set(MDFX_FILTER_ON, 0); set(MDFX_DELAY_ON, 0); set(MDFX_REVERB_ON, 0)
             }
-            set(MDFX_PLUGIN_ON, on && FXUnitState.Effect(rawValue: fx.singleType) == .plugin ? 1 : 0)
-            if FXUnitState.Effect(rawValue: fx.singleType) != .reverb { set(MDFX_REVERB_HP, 0); set(MDFX_REVERB_LP, 1); set(MDFX_REVERB_DWSEND, 0) }
+            set(MDFX_PLUGIN_ON, on && type == .plugin ? 1 : 0)
+            if type != .reverb { set(MDFX_REVERB_HP, 0); set(MDFX_REVERB_LP, 1); set(MDFX_REVERB_DWSEND, 0) }
             return
         }
+        // Gruppe: je Slot ein Effekt, Regler = Stärke (Roll: Länge), Taste = an/aus
+        let slot = { (e: Effect) in fx.slot(of: e).map { fx.slots[$0] } }
         set(MDFX_PLUGIN_ON, 0)
-        set(MDFX_FILTER_ON, fx.slots[0].on ? 1 : 0)
-        set(MDFX_FILTER_AMOUNT, fx.slots[0].amount)
+        set(MDFX_FILTER_ON, slot(.filter)?.on ?? false)
+        set(MDFX_FILTER_AMOUNT, slot(.filter)?.amount ?? 0.5)
         set(MDFX_FILTER_RES, filterResonance)
-        set(MDFX_DELAY_ON, fx.slots[1].on ? 1 : 0)
-        set(MDFX_DELAY_AMOUNT, fx.slots[1].amount)
+        set(MDFX_DELAY_ON, slot(.delay)?.on ?? false)
+        set(MDFX_DELAY_AMOUNT, slot(.delay)?.amount ?? 0.5)
         let idx = max(0, min(Self.delayBeats.count - 1, fx.delayIndex))
         set(MDFX_DELAY_SECONDS, min(2, Self.delayBeats[idx] * beat))
         set(MDFX_DELAY_FEEDBACK, feedback)
-        set(MDFX_REVERB_ON, fx.slots[2].on ? 1 : 0)
-        set(MDFX_REVERB_AMOUNT, fx.slots[2].amount)
+        set(MDFX_REVERB_ON, slot(.reverb)?.on ?? false)
+        set(MDFX_REVERB_AMOUNT, slot(.reverb)?.amount ?? 0.5)
         set(MDFX_REVERB_SIZE, fx.reverbSize)
         set(MDFX_REVERB_HP, 0); set(MDFX_REVERB_LP, 1); set(MDFX_REVERB_DWSEND, 0)
+        for e in FXCatalog.beatFX { beatFX(e, on: slot(e)?.on ?? false, amount: e == .roll ? 1 : slot(e)?.amount ?? 0) }
     }
 
     public func setReverbSize(unit u: Int, _ size: Double) { mdsp_set_fx(core, Int32(u), MDFX_REVERB_SIZE, Float(size)) }

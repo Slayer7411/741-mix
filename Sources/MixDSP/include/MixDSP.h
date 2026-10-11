@@ -1,6 +1,7 @@
 // MixDSP – schlanker Echtzeit-Audiokern von MINOS-741.
 // Ein einziger Render-Callback rechnet alle Decks: Abspielen (Tempo/Keylock/Loop/Reverse/Flux),
-// Kanalzug (Gain, EQ, Filter), 4 FX-Units (Filter, Delay, Reverb – zwei Typen), Fader/Crossfader, Routing auf Kanalpaare.
+// Kanalzug (Gain, EQ, Filter), 4 FX-Units (Filter, Delay, Reverb – zwei Typen, Gater, Roll, Flanger, Phaser),
+// Fader/Crossfader, Routing auf Kanalpaare.
 // Der Audio-Thread nimmt keine Sperren und fordert keinen Speicher an. Steuerwerte sind atomar.
 #ifndef MIXDSP_H
 #define MIXDSP_H
@@ -53,6 +54,20 @@ typedef enum {
     MDFX_PLUGIN_ON,                         // Plugin der Unit an (aus = Eingang zu, Fahne klingt aus)
     MDFX_REVERB_TYPE,                       // 0 = Reverb (Allpass-Ring, Standard), 1 = Reverb (FDN)
     MDFX_REVERB_FREEZE,                     // 1 = Eingang zu, Fahne steht (nur solange der Hall an ist)
+    // Beat-FX im Raster der Master-Clock (AMOUNT × D/W = Anteil, 0 = trocken unverändert)
+    MDFX_GATER_ON, MDFX_GATER_AMOUNT,       // Tiefe 0…1
+    MDFX_GATER_BEATS,                       // Periode in Beats (1/16 … 1/2, Triole × 2/3)
+    MDFX_GATER_SHAPE, MDFX_GATER_WIDTH,     // Form 0 = Rechteck … 1 = Abklingen, offener Anteil 0,05…0,95
+    MDFX_GATER_MUTE,                        // 1 = Tor zu
+    MDFX_ROLL_ON, MDFX_ROLL_AMOUNT,         // Puffer-Wiederholer
+    MDFX_ROLL_BEATS,                        // Länge in Beats (1/32 … 1)
+    MDFX_ROLL_REVERSE, MDFX_ROLL_DECAY,     // rückwärts 0/1, Abklingen in dB je Beat (0 = keins)
+    MDFX_FLANGER_ON, MDFX_FLANGER_AMOUNT,
+    MDFX_FLANGER_BEATS, MDFX_FLANGER_HZ,    // LFO-Periode in Beats; ≤ 0 = frei mit Hz
+    MDFX_FLANGER_DEPTH, MDFX_FLANGER_FEEDBACK, MDFX_FLANGER_SPREAD, MDFX_FLANGER_FREEZE,   // 0…1, Spread 1 = 180° L/R, Freeze = LFO steht
+    MDFX_PHASER_ON, MDFX_PHASER_AMOUNT,
+    MDFX_PHASER_BEATS, MDFX_PHASER_HZ,
+    MDFX_PHASER_DEPTH, MDFX_PHASER_FEEDBACK, MDFX_PHASER_STAGES, MDFX_PHASER_FREEZE,      // Stufen 4 oder 8
     MDFX_PARAM_COUNT
 } MDFXParam;
 
