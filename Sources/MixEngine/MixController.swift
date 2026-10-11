@@ -265,7 +265,11 @@ public struct MixState: Equatable, Sendable {
 /// Der Audio-Thread nimmt die Sperre nie – er liest nur `DeckPlayer`.
 public final class MixController: @unchecked Sendable {
     /// Rate aus den Audio-Einstellungen (0 = Gerät) – der Kern rechnet ab dem Start damit
-    public let engine = MixEngine(rate: { let r = UserDefaults.standard.double(forKey: "sampleRate"); return r > 0 ? r : nil }())
+    /// Messung: MIX741_CORE_RATE setzt nur die Kernrate (Gerät bleibt, AUHAL rechnet um), z. B. Live-Rate am eingebauten Gerät
+    public let engine = MixEngine(rate: {
+        if let r = ProcessInfo.processInfo.environment["MIX741_CORE_RATE"].flatMap(Double.init), r > 0 { return r }
+        let r = UserDefaults.standard.double(forKey: "sampleRate"); return r > 0 ? r : nil
+    }())
     public let controlQueue = DispatchQueue(label: "minos741.control", qos: .userInteractive)
 
     private let lock = NSRecursiveLock()
@@ -1278,7 +1282,6 @@ public final class MixController: @unchecked Sendable {
     }
 
     public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on; link.enabled = on } }
-
     /// Link – MINOS gibt Tempo und Takt vor
     public let link = LinkSession()
     private var linkTicks = 0

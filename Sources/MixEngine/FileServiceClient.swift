@@ -53,6 +53,8 @@ public final class FileServiceClient: @unchecked Sendable {
         public var zombies = 0
         public var cacheHits = 0
         public var decodes = 0
+        /// mlock abgelehnt (Grenze für festen Speicher): Track nur vorgelesen
+        public var lockFailures = 0
         /// Start bis Handshake des letzten Helfers
         public var lastSpawnMs = 0.0
     }
@@ -269,6 +271,7 @@ public final class FileServiceClient: @unchecked Sendable {
               m.header.key.path == path || path.utf8.count > 3800 else { throw ServiceError.invalid("header does not match request") }
         if !m.lock() {
             // Grenze für festen Speicher: Seiten nur einmal gelesen, können unter Speicherdruck wieder ausgelagert werden
+            lock.withLock { counters.lockFailures += 1 }
             print("[files] mlock fehlgeschlagen (\(String(cString: strerror(errno)))): \(m.length / 1_000_000) MB nur vorgelesen")
         }
         lock.withLock {
