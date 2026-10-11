@@ -5,7 +5,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 ## ◆ LAYOUT
 
 * window resizable, min 720 × 520, default 820 × 640
-* sidebar left: DECKS · MIXER & FX · PLUGINS · DISPLAY · AUDIO · CONTROLLER · TAGS · CLOUD · KEYBOARD, active section with red bar
+* sidebar left: DECKS · MIXER & FX · PLUGINS · DISPLAY · BROWSER · AUDIO · CONTROLLER · TAGS · CLOUD · KEYBOARD, active section with red bar
 * page right, scrolls: `◆ SECTION` heading with hairline, rows with fixed label column left, control right
 * toggles as squares (red = on), sliders with value + unit (s, ms, pt), hints in small mono
 * controller: one block per unit (left / right deck, browser pane, fx unit, blink)
@@ -73,6 +73,12 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * status bar: load meters DSP · latency · dropouts · memory · cpu (on) -> [manual](MANUAL.md#status-bar)
 * cancel loading after x s without audio data (4 s, 2-15)
 
+## ◆ BROWSER
+
+* harmony to the master: color the key column (on) -> [manual](MANUAL.md#harmony--matching)
+* ◆ PASST (matching): which steps count besides the same key: ±1 on the wheel (on), relative major / minor (on), energy ±2 (off). bpm window ±1-10 % (±4), half / double tempo (off)
+* saved under `ui.harmonyColors` and `ui.match`
+
 ## ◆ AUDIO
 
 * output device (the system default or any device, saved by uid)
@@ -110,4 +116,5 @@ library in a cloud folder -> [library · cloud libraries](library.md#-cloud-libr
 * flux held + pads: hotcues 5-8 or beatjump on pads 3 / 4, beatjump size for flux + hotcue 3 / 4
 * touch strip: bend or seek, sensitivity
 * browse step with shift
+* browse push: big browser (default) / matching on / off
 * led brightness on / off, cue and loop pad colors
