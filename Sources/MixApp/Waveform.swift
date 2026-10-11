@@ -5,18 +5,49 @@ import MixCore
 import MixEngine
 
 /// Vorberechnete Wellenform eines Tracks: Vektor-Abschnitte für die Scroll-Ansicht (GPU zeichnet sie in
-/// Bildschirmauflösung, scharf bei jedem Zoom) + ein Übersichtsbild.
+/// Bildschirmauflösung, scharf bei jedem Zoom) oder Blockdaten zum Rastern (3-Band Mischung) + ein Übersichtsbild.
 final class RenderedWaveform: @unchecked Sendable {
     /// Abschnitt: Pfade in Sekunden (x, ab `t0`) und Amplitude (y, -1…1 = 0 dBFS)
     struct Chunk { let t0: Double; let layers: [(color: CGColor, path: CGPath)] }
     static let chunkBlocks = 2048
 
+    /// Mischung: Spitzen und Hüllkurven je Block (Kopie – hält den Track-Puffer nicht fest), gerastert je Kachel
+    struct Raster: Sendable {
+        let peak: [Float]
+        let blend: [UInt8]
+        let palette: BlendPaint.Palette
+
+        /// Spalten `x0..<x0+width` (Pixel) in ein RGBA-Bild (vormultipliziert): Spalte x deckt die Zeit
+        /// `t0 + x·dt …`, `height` Zeilen, volle Höhe = 0 dBFS
+        func draw(into data: UnsafeMutableRawPointer, bytesPerRow: Int, width: Int, height: Int, t0: Double, dt: Double) {
+            let half = height / 2, bps = TrackAudio.blocksPerSecond
+            let px = data.assumingMemoryBound(to: UInt8.self)
+            peak.withUnsafeBufferPointer { pk in
+                blend.withUnsafeBufferPointer { bl in
+                    for x in 0..<width {
+                        let a = t0 + Double(x) * dt
+                        let from = Int((a * bps).rounded(.down)), to = Int(((a + dt) * bps).rounded(.up))
+                        guard to > 0, from < pk.count else { continue }
+                        BlendPaint.column(peak: pk, blend: bl, from: max(0, from), to: max(from + 1, to), half: half, palette: palette) {
+                            j, r, g, b, al in
+                            let o = (half - 1 - j) * bytesPerRow + x * 4, u = (height - half + j) * bytesPerRow + x * 4
+                            px[o] = r; px[o + 1] = g; px[o + 2] = b; px[o + 3] = al
+                            px[u] = r; px[u + 1] = g; px[u + 2] = b; px[u + 3] = al
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let chunks: [Chunk]
+    let raster: Raster?
     let overview: CGImage?
     let duration: Double
 
-    init(chunks: [Chunk], overview: CGImage?, duration: Double) {
+    init(chunks: [Chunk], raster: Raster? = nil, overview: CGImage?, duration: Double) {
         self.chunks = chunks
+        self.raster = raster
         self.overview = overview
         self.duration = duration
     }
@@ -27,6 +58,7 @@ final class RenderedWaveform: @unchecked Sendable {
         var low: RGB, mid: RGB, high: RGB
         static func of(_ p: WaveformPalette) -> Colors {
             switch p {
+            case .rgb: Colors(low: RGB(r: 0.92, g: 0.14, b: 0.10), mid: RGB(r: 0.16, g: 0.86, b: 0.26), high: RGB(r: 0.30, g: 0.50, b: 1.0))
             case .bone: Colors(low: RGB(r: 0.36, g: 0.33, b: 0.30), mid: RGB(r: 0.64, g: 0.60, b: 0.55), high: RGB(r: 0.95, g: 0.93, b: 0.88))
             case .orange: Colors(low: RGB(r: 0.66, g: 0.15, b: 0.04), mid: RGB(r: 1.0, g: 0.60, b: 0.12), high: RGB(r: 1.0, g: 0.96, b: 0.88))
             case .blue: Colors(low: RGB(r: 0.09, g: 0.28, b: 0.90), mid: RGB(r: 1.0, g: 0.60, b: 0.18), high: RGB(r: 1, g: 1, b: 1))
@@ -158,7 +190,7 @@ final class RenderedWaveform: @unchecked Sendable {
         switch style {
         case .mono:
             return [(cg(colors.mid), outline(pk, dt: dt))]
-        case .threeBand:
+        case .threeBand, .blend:
             // drei eigene Amplituden übereinander: Bass hinten, Mitten, Höhen vorn
             if let bands {
                 let b = bands[range]
@@ -201,7 +233,7 @@ final class RenderedWaveform: @unchecked Sendable {
             ctx.fill(CGRect(x: x, y: mid - hh, width: 1, height: hh * 2))
         }
         switch style {
-        case .threeBand:
+        case .threeBand, .blend:
             bar(col.pk, colors.low)
             bar(col.pk * (col.mi + col.hi).squareRoot(), colors.mid)
             bar(col.pk * highLevel(Float(col.hi)), colors.high)
@@ -234,6 +266,9 @@ final class RenderedWaveform: @unchecked Sendable {
     static func render(_ a: TrackAudio, style: WaveformStyle, palette: WaveformPalette,
                        detail: SpectrumDetail = .fine, highBoost: Double = 1) -> RenderedWaveform {
         let colors = Colors.of(palette)
+        if style == .blend, a.blend.count >= a.peak.count, !a.peak.isEmpty {
+            return blend(a, palette: palette, highBoost: highBoost)
+        }
         let env = envelope(a)
         let fine = style == .spectrum && detail != .simple && a.spectrum.count >= a.peak.count && !a.peak.isEmpty
             ? Fine(a.spectrum, highBoost: highBoost, layers: detail == .fine) : nil
@@ -285,6 +320,31 @@ final class RenderedWaveform: @unchecked Sendable {
             overview = ctx.makeImage()
         }
         return RenderedWaveform(chunks: chunks, overview: overview, duration: a.duration)
+    }
+}
+
+extension RenderedWaveform {
+    /// Palette der Mischung: RGB = Bandanteile direkt, sonst die drei Palettenfarben
+    static func blendPalette(_ p: WaveformPalette, highBoost: Double) -> BlendPaint.Palette {
+        let k = Float(pow(2, highBoost - 1))
+        if p == .rgb { var r = BlendPaint.Palette.rgb; r.highShare = k; return r }
+        let c = Colors.of(p)
+        let f = { (v: RGB) in (r: Float(v.r), g: Float(v.g), b: Float(v.b)) }
+        return BlendPaint.Palette(low: f(c.low), mid: f(c.mid), high: f(c.high), highShare: k)
+    }
+
+    /// 3-Band Mischung: keine Pfade, die Kacheln rastern aus den Blöcken; Übersicht gleich gerastert
+    static func blend(_ a: TrackAudio, palette: WaveformPalette, highBoost: Double) -> RenderedWaveform {
+        let raster = Raster(peak: Array(a.peak), blend: Array(a.blend.data.prefix(a.peak.count * WaveBlend.stride)),
+                            palette: blendPalette(palette, highBoost: highBoost))
+        let ow = 1600, oh = 60
+        var overview: CGImage?
+        if let ctx = CGContext(data: nil, width: ow, height: oh, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue), let data = ctx.data {
+            raster.draw(into: data, bytesPerRow: ctx.bytesPerRow, width: ow, height: oh, t0: 0, dt: a.duration / Double(ow))
+            overview = ctx.makeImage()
+        }
+        return RenderedWaveform(chunks: [], raster: raster, overview: overview, duration: a.duration)
     }
 }
 

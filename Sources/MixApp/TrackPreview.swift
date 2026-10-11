@@ -330,7 +330,7 @@ enum PreviewRenderer {
                 let pk = level(i)
                 let bar = { (a: CGFloat) in CGRect(x: CGFloat(x), y: mid - max(0.5, a * amp), width: 1, height: max(1, 2 * a * amp)) }
                 switch s.style {
-                case .threeBand:
+                case .threeBand, .blend:
                     lo.append(bar(pk * (0.35 + 0.65 * CGFloat(o.low(i)).squareRoot())))
                     mi.append(bar(pk * 0.7 * CGFloat(o.mid(i) + o.high(i)).squareRoot()))
                     hi.append(bar(pk * 0.6 * RenderedWaveform.highLevel(o.high(i))))
