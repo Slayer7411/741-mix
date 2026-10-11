@@ -329,6 +329,15 @@ per channel (order C · A · B · D):
 routing is in ⌘, -> AUDIO. the device sample rate is never changed by minos.
 the status bar shows device, mode and routing.
 
+### device gone, rate change, sleep
+
+* interface unplugged or off -> output stops, status bar `Warte auf <device> …`, the decks keep their state. same device back (same uid) -> output reopens by itself (self test: ~5-12 ms after the device shows up), notice with the gap
+* no fallback to the built-in speakers while minos waits for the chosen device. ↻ / ⌘, -> AUDIO -> reconnect still works by hand
+* rate changed in audio midi setup -> output reopens on the new rate, the core keeps its rate (resampled), notice. buffer changed from outside -> latency re-read
+* while the output runs: no app nap, no idle sleep (`pmset -g assertions` -> `MINOS-741 audio output`)
+* mac goes to sleep -> output stopped before, reopened after wake, playing decks play on. controllers are reconnected after wake
+* counters: click the meters -> `Gerät neu verbunden`, `Raten-/Pufferwechsel am Gerät`
+
 ## ◆ 08 · FX
 
 2 or 4 units (⌘, -> MIXER & FX). each unit:
@@ -400,8 +409,10 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
 
 #### crash safety
 
-* isolated loading: third-party plugins run in a separate system service (default on, ⌘, -> PLUGINS -> load third-party plugins isolated, per plugin: default / isolated / in-process). a crash there kills only the service -> the unit goes dry, the plugin gets blocked, the set plays on
-* apple plugins, plugins from own folders and VST3 always load in-process
+* live rule (default): ⌘, -> PLUGINS -> `Plugins im Prozess (riskant)` off -> audio units from other vendors run only isolated in a separate system service. VST3 and plugins from own folders can only run in-process -> not loaded, not in the fx menu (`nur im Prozess – aus` in the list)
+* isolated plugin crashes or renders nothing for 2 s -> the unit goes dry, notice, the plugin reloads after 2 s. 3rd crash -> blocked (count in the plugin row, BLOCK AUFHEBEN resets it). single blocks it missed -> notice `antwortet nicht rechtzeitig – n Blöcke trocken`, the signal stays dry for those blocks
+* `Plugins im Prozess (riskant)` on -> as before: default isolated for third-party, per plugin default / isolated / in-process, VST3 and own folders in-process. a crash in-process ends minos
+* apple plugins always load in-process
 * cost of isolation, AUMatrixReverb, 512 frames at 48 kHz (budget 10.7 ms): no added latency, ~0.04 ms -> ~0.05 ms per block on the audio thread (mean), p99 0.06-0.16 ms -> 0.08-0.27 ms
 * crash marker: before an in-process plugin (or its window, or a bundle from an own folder) opens, MINOS-741 notes it. if the app dies right there, the next start blocks that plugin and shows it in the PLUGINS tab. a blocked plugin never loads, also not from a saved session -> BLOCK AUFHEBEN to try again
 
@@ -661,11 +672,27 @@ settings as png without a window: add `MIX741_SHOT=settings:<folder>` -> one ima
 status bar, failed and empty deck as png: `MIX741_SHOT=status:<folder>` (add `MIX741_SHOT_AUDIO=1` for live meters, silent on a built-in device).
 collection check without a window: add `MIX741_CHECK=1` -> counts per check and duration, `MIX741_CHECK_LIST=<n>` lists the first n findings each. `MIX741_SHOT=consistency:<png>` renders the check window mid-run and finished.
 reload stall: add `MIX741_BENCH=reload` -> loads and reloads the collection offscreen, prints the longest main-thread gap per reload (`MIX741_BENCH_N` rounds).
-load probe on the device: add `MIX741_BENCH=load` -> 4 decks with keylock, reverb on fx 1, plugin on fx 2, buffer 64 / 128 / 256 for `MIX741_BENCH_SECS` s (8) each, prints dsp load, peak, blocks over budget and device overloads per buffer size (`[selftest] Lastprobe`). offline core numbers without a device: `MIX741_BENCH=1 swift test --filter benchRenderCPU`.
+load probe on the device: add `MIX741_BENCH=load` -> 4 decks with keylock, reverb on fx 1, plugin on fx 2 (`MIX741_BENCH_PLUGIN=<id>|none`), delay on fx 3 (all decks), buffers `MIX741_BENCH_BUFFERS` (512,256,128) for `MIX741_BENCH_SECS` s (8) each, a line per minute, prints dsp load, peak, blocks over budget and device overloads per buffer size (`[selftest] Lastprobe`). offline core numbers without a device: `MIX741_BENCH=1 swift test --filter benchRenderCPU`.
+memory with long tracks: add `MIX741_BENCH=memory` (`MIX741_BENCH_MIN` = minimum length in minutes, 10; `MIX741_CORE_RATE=96000` = core at the live rate, device untouched) -> 4 local tracks, rss, wired memory, mlock failures, memory pressure, then 4 decks keylock.
 ui cost (no selftest needed, offscreen, silent on a built-in output): `MIX741_BENCH=state` -> play, sync, loop, sizes, hotcue, tempo, keylock, clock bpm, edit mode on / off, cut on deck A, median / p95 / max per action (`MIX741_BENCH_N`, `MIX741_BENCH_EDIT=1` = deck A in edit mode, `MIX741_BENCH_UI=live` = two browsers without mixer, `MIX741_BENCH_LAYOUT=1` layout time per hosting view, `MIX741_BENCH_ONLY=play,hotcue`). `MIX741_BENCH=play` -> 2 or 4 decks play (`MIX741_BENCH_DECKS`, `MIX741_BENCH_SECS`): main thread load, hitches, waveform steps per frame (`MIX741_BENCH_RAW=1` = playhead unsmoothed).
 browser cost with 4 decks playing (offscreen, silent on a built-in output): `MIX741_BENCH=browser` -> search, typing, roles, tags, sort, source, scroll, preparation, load, analysis results, session, idle on pane A. per action the time until the main thread is free, every main-thread gap > 16 ms (`MIX741_BENCH_ONLY=search,sort`, `MIX741_BENCH_N`, `MIX741_BENCH_UI=live`, `MIX741_BENCH_ALL=1` every value, `MIX741_BENCH_PREVIEW=row|column|title|off`, `MIX741_BENCH_PROFILE=<phase>` main-thread profile by function, `MIX741_BENCH_SAMPLE=<file>` full call tree via `sample`).
 cloud column + set-check as png: `MIX741_SHOT=cloud:<folder>` -> real check of the collection in the log, images with real and with set states, nothing downloaded.
 tag chips as png: `MIX741_SHOT=tags:<folder>` -> pane with tag filter, chip click checks, filter and paging times (`MIX741_SHOT_FULLROW=1` two-line rows, `MIX741_SHOT_TEXT=<pt>` their text size, `MIX741_SHOT_PAGES=<n>`).
+
+### live load test (interface)
+
+```
+scripts/loadtest.sh --minutes 30          # release build, first external interface (≥ 8 outputs)
+tail -f ~/Library/Application\ Support/MINOS-741/loadtest/latest.log
+```
+
+* stages: buffer 512 -> 256 -> 128 (`--buffers 512,256,128,64`), `--minutes` each (10)
+* per stage: 4 local tracks, keylock, B-D synced to A, link on, fx 1 (A/C) + fx 2 (B/D) delay + reverb, fx 3 (all) isolated plugin (`--plugin <id>|none`, default apple matrix reverb isolated)
+* stress: track change on B / C / D every 60 s (file service), search + sort over the collection every 20 s, main thread blocked 1 s every 5 min
+* routing external A 1/2 · B 3/4 · C 5/6 · D 7/8, master 0 dB -> turn the desk down first. `--mute` silent, `--out <name>` picks the device, `--builtin` built-in output (silent)
+* log: dsp mean / peak, blocks over budget, device overloads, main-thread hitches > 16 ms, link phase every 10 s, rss, track load times, file service helpers, mlock failures. table per stage with PASS / FAIL: peak < 70 %, 0 over budget, 0 overloads, link phase < 0.02 beats. 3 device overloads -> stage FAIL, next stage runs
+* ctrl-c -> summary so far, output off. self test mode: no settings, session or cache of yours written
+* `--debug` = debug build (dsp much slower, only to check the runner), `--no-build`
 
 bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) with version, macos, device, mode, controller.
 

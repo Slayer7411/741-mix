@@ -42,6 +42,16 @@ master clock -> metronome click -> own pair
 * a deck block with nan / inf is dropped, the deck resets its recursive state (`healDeck`) and fades back in; nan never reaches the device
 * hard clip as last stage
 
+output and device (`CoreAudioOutput`, `MixEngine`, `OutputWatch`):
+
+* start / stop, all listeners and reconnects on one serial device queue (`minos741.device`), never main or audio thread. `apply` from the ui waits on it (sync)
+* listeners on the running device: `DeviceIsAlive`, `NominalSampleRate` (debounced 150 ms), `BufferFrameSize`, `ProcessorOverload` (own utility queue). on the system object: `Devices`, `DefaultOutputDevice`. callbacks only read the new value and hand an event to `OutputWatch`
+* `OutputWatch` (pure state machine, tests): stopped · running · waiting · sleeping. alive 0 or uid missing from the list -> stop, wait for the same uid (list listener + 100 ms poll) -> reopen by uid (`TranslateUIDToDevice`). rate change -> reopen, `setDeviceRate` nil: the device rate is never set automatically, the core rate stays, auhal resamples. buffer change -> latency / buffer re-read. sleep -> stop, wake -> reopen or wait. a failed reopen keeps waiting
+* `running` is set before `AudioOutputUnitStart` (the first callback can come first): buffer / plugin releases wait for the core instead of freeing early
+* `ProcessInfo.beginActivity([.userInitiated, .latencyCritical, .idleSystemSleepDisabled])` while running or waiting, ended on stop / sleep
+* `MixModel` only mirrors: notices, status line, switch to another device (preferred interface back, following the system default). `NSWorkspace` will sleep / did wake -> `engine.willSleep()` / `didWake()`, `ControllerManager` reopens its hid manager after wake
+* keylock / fx state needs no reset on a device rate change: the core runs at its own rate throughout, `healDeck` still catches nan
+
 dsp load (`MixDSPCoreAudio.cpp`):
 
 * render callback: `mach_absolute_time` before and after `mdsp_render` -> `mdsp_load_record(start, end, frames)`
@@ -99,7 +109,10 @@ plugin list and loading (`PluginCatalog`, `PluginInstaller`, `PluginValidator` i
 * own folders: Info.plist `AudioComponents` (type, subtype, manufacturer, name, version, factoryFunction) -> `CFBundleLoadExecutable` -> `CFBundleGetFunctionPointerForName` -> `AudioComponentRegister`. once per bundle path and process, ids already in the system are not registered twice. a removed folder hides its plugins, they stay registered until restart
 * fx menu = enabled and not blocked; a blocked or disabled plugin is never instantiated, also not from the session
 * isolated: `AudioComponentInstantiate` with `kAudioComponentInstantiation_LoadOutOfProcess` (v2 and v3) on the plugin queue, waited for (10 s timeout), then `mdplug_wrap` configures it like `mdplug_open`. in-process: `mdplug_open` (`AudioComponentInstanceNew`). both off the audio thread, handed over by the same atomic pointer swap
-* isolated instance gone (`kAudioComponentInstanceInvalidationNotification`) -> its instances are taken out, the plugin is blocked, render errors keep the signal dry until then
+* live rule (`PluginSettings.allowInProcess`, default off): third-party audio units always isolated, in-process-only plugins (VST3, own folders) not loaded and not in the menu. on -> per-plugin / default isolation as set
+* isolated instance gone (`kAudioComponentInstanceInvalidationNotification`) or 2 s without a rendered block -> its instances are taken out (dry), crash counted in `plugins.json` (once per second and plugin), reload after 2 s, blocked at 3
+* render errors keep the signal dry: `failedBlocks` / `failingFrames` (relaxed atomics in `MDPlugin`, written by the audio thread) -> control tick reads them once per second
+* audio thread only calls `mdplug_process`. open, reset, state on the plugin queue / ui thread; parameter sets on isolated instances on an own serial queue (a hanging service never holds the control lock), reads wait for that queue first
 * isolated plugin window: view controller from the service or the generic view, never the v2 view code in-process
 * crash marker: `plugin-opening.json` written before an in-process open (instances, plugin window, own-folder bundle code), removed after. found on start -> plugin (or bundle) blocked
 * `auval -v type subtype manu` as a child process, pass = exit 0 + `AU VALIDATION SUCCEEDED`, tail of the log kept per `id@version`
