@@ -701,7 +701,8 @@ struct TrackTable: View {
         }
         .onChange(of: decks.prefs.ui.previewMode) { _, m in columns[visibility: "preview"] = m == .column ? .visible : .hidden }
         .onChange(of: columns) {
-            if let d = try? JSONEncoder().encode(columns) { UserDefaults.standard.set(d, forKey: "columns.\(model.name)") }
+            guard !Session.isSelfTest, let d = try? JSONEncoder().encode(columns) else { return }
+            UserDefaults.standard.set(d, forKey: "columns.\(model.name)")
         }
         .onChange(of: UIZoom.shared.factor) { old, new in
             // Spaltenbreiten wachsen mit dem Zoom; die Tabelle meldet sie zurück in die gespeicherte Anordnung

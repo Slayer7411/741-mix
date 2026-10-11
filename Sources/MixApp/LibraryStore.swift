@@ -49,13 +49,14 @@ final class LibraryStore {
 
     /// Eigene Smartlists (Smartlist-Regel-Syntax), gespeichert in UserDefaults
     var customSmartlists: [CustomSmartlist] = CustomSmartlist.load() {
-        didSet { revision += 1; CustomSmartlist.save(customSmartlists) }
+        didSet { revision += 1; if !Session.isSelfTest { CustomSmartlist.save(customSmartlists) } }
     }
 
-    /// Preparation: wird gespeichert, beim nächsten Start archiviert und geleert
-    var preparation: [String] = UserDefaults.standard.stringArray(forKey: "prep.current") ?? [] {
+    /// Preparation: wird gespeichert, beim nächsten Start archiviert und geleert (Selbsttest/Messung: nur im Speicher)
+    var preparation: [String] = Session.isSelfTest ? [] : UserDefaults.standard.stringArray(forKey: "prep.current") ?? [] {
         didSet {
             revision += 1
+            guard !Session.isSelfTest else { return }
             UserDefaults.standard.set(preparation, forKey: "prep.current")
             UserDefaults.standard.set(Date(), forKey: "prep.date")
         }
