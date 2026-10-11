@@ -147,6 +147,8 @@ struct UIPrefs: Codable, Equatable {
     var dimPlayed = true
     var waveformHeight = 60.0
     var previewStart = 0.3
+    /// Vorhören: Lautstärke (linear, 1 = Track-Pegel)
+    var previewVolume = 1.0
     var browserHeight = 240.0
     var browserLayout = BrowserLayout.sideBySide
     /// Ordner-Baum ausblenden, solange die Decks zu sehen sind (Browser-Listen breiter)

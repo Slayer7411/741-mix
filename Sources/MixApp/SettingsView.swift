@@ -640,6 +640,7 @@ struct AudioSettings: View {
                         .settingsHint()
                 }
             }
+            PreviewOutputSettings()
             LoadCacheSettings()
             Section { Text(mix.engineStatus).settingsHint() }
         }
@@ -652,6 +653,41 @@ struct AudioSettings: View {
                 Text("\(c + 1)/\(c + 2)").tag(c)
             }
         }
+    }
+}
+
+/// Vorhören im Browser: Kanalpaar am Ausgabegerät (nie der Systemausgang), Lautstärke
+private struct PreviewOutputSettings: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        @Bindable var mix = mix
+        let external = mix.mixerMode == .external
+        Section("Vorhören") {
+            Picker("Vorhören auf Kanalpaar", selection: Binding(get: { mix.previewPair }, set: { mix.previewPair = $0; mix.applyRouting() })) {
+                Text(external ? "Automatisch – erstes freies Paar nach den Decks" : "Automatisch – Hauptausgang").tag(MixModel.previewAuto)
+                ForEach(Array(stride(from: 0, to: max(2, mix.deviceChannels - 1), by: 2)), id: \.self) { c in
+                    Text(verbatim: "\(c + 1)/\(c + 2)" + label(c)).tag(c)
+                }
+                Text("Aus").tag(MixModel.previewOff)
+            }
+            LabeledContent("Vorhören jetzt auf") {
+                Text(verbatim: mix.previewRoute.map { "\($0 + 1)/\($0 + 2)" }
+                     ?? (mix.previewPair == MixModel.previewOff ? String(localized: "aus") : String(localized: "aus – kein freies Kanalpaar")))
+            }
+            sliderRow(String(localized: "Lautstärke Vorhören"), $mix.prefs.ui.previewVolume, 0...1.5, format: "%.2f")
+            Text(external
+                 ? "am mischpult einen freien kanal auf dieses usb-paar stellen, fader zu, cue an -> vorhören nur im kopfhörer. ein deck-paar nur von hand wählbar."
+                 : "läuft auf dem gewählten paar mit, unabhängig von main. ein paar fürs kopfhörer-signal des interfaces -> vorhören nur dort.")
+                .settingsHint()
+        }
+    }
+
+    /// Paar eines Decks (Extern) bzw. Hauptausgang (Intern) markieren
+    private func label(_ c: Int) -> String {
+        if mix.mixerMode == .internalMixer { return c == mix.internalPair ? " · Master" : "" }
+        let decks = mix.deckPairs.indices.filter { mix.deckPairs[$0] == c }.map { "Deck \(deckLetters[$0])" }
+        return decks.isEmpty ? "" : " · " + decks.joined(separator: " ")
     }
 }
 

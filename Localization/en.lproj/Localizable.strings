@@ -724,3 +724,14 @@
 "Bei jedem Durchlauf" = "Every pass";
 "Einmal je Laden" = "Once per load";
 "rechtsklick auf einen loop-hotcue -> active loop (punkt auf der taste, gestrichelter rahmen in der wellenform). erreicht die position den loop-anfang, rastet der loop ein, die loop-taste verlässt ihn. gespeichert je track in den eigenen änderungen." = "right click a loop hotcue -> active loop (dot on the button, dashed frame in the waveform). when the position reaches the loop start the loop engages, the loop button leaves it. saved per track with the own edits.";
+"Vorhören auf Kanalpaar" = "Preview on channel pair";
+"Automatisch – erstes freies Paar nach den Decks" = "Automatic – first free pair after the decks";
+"Automatisch – Hauptausgang" = "Automatic – main output";
+"Vorhören jetzt auf" = "Preview now on";
+"aus – kein freies Kanalpaar" = "off – no free channel pair";
+"Lautstärke Vorhören" = "Preview volume";
+"am mischpult einen freien kanal auf dieses usb-paar stellen, fader zu, cue an -> vorhören nur im kopfhörer. ein deck-paar nur von hand wählbar." = "on the mixer set a free channel to this usb pair, fader down, cue on -> preview only in the headphones. a deck pair only by hand.";
+"läuft auf dem gewählten paar mit, unabhängig von main. ein paar fürs kopfhörer-signal des interfaces -> vorhören nur dort." = "plays on the chosen pair, independent of main. a pair for the interface's headphone signal -> preview only there.";
+"Vorhören lädt …" = "Preview loading …";
+"Vorhören: Datei fehlt" = "Preview: file missing";
+"Vorhören nicht möglich: %@" = "Preview not possible: %@";

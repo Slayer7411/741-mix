@@ -446,7 +446,7 @@ struct PreviewPlayhead: View {
     }
 }
 
-/// Statuszeile: Vorhören läuft – Restzeit bis zum Schnitt-Ende / Länge des Schnitts, ✕ hält an
+/// Statuszeile: Vorhören läuft – Restzeit bis zum Schnitt-Ende / Länge des Schnitts, lädt noch; ✕ hält an
 struct PreviewPlayStatus: View {
     @Environment(MixModel.self) private var mix
 
@@ -460,6 +460,11 @@ struct PreviewPlayStatus: View {
                         .monospacedDigit()
                 }
                 .help("Vorhören: Restzeit bis zum Schnitt-Ende / Länge des Schnitts")
+                Button("✕") { mix.stopPreview() }.buttonStyle(.plain).help("Vorhören beenden")
+            }
+        } else if mix.previewLoading != nil {
+            HStack(spacing: 4.z) {
+                Text(verbatim: "· " + String(localized: "Vorhören lädt …"))
                 Button("✕") { mix.stopPreview() }.buttonStyle(.plain).help("Vorhören beenden")
             }
         }

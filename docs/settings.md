@@ -81,6 +81,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * mode: internal (mixer in the app) or external (mixing desk)
 * internal: which pair the master goes to
 * external: one pair per deck, default a 1/2 · b 3/4 · c 5/6 · d 7/8
+* preview: channel pair of the browser preview (automatic: external -> first free pair after the decks, none free -> off; internal -> main output · any pair · off), preview volume -> [manual · preview output](MANUAL.md#preview-output)
 * loading & cache: decoding in the file service (own process) or in the app. notice after (no audio data, 2-15 s, default 4), cancel loading after (15-300 s, default 60, file service only), decoded track cache (1-64 gb, default 8) + used size -> [architecture · file service](architecture.md#-file-service)
 
 ## ◆ CLOUD
