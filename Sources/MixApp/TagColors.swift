@@ -26,24 +26,6 @@ enum TagColors {
     }
 }
 
-/// Tags eines Kommentar-2-Felds als Marker
-struct TagChips: View {
-    let tags: [String]
-    let ui: UIPrefs
-
-    var body: some View {
-        if ui.tagHighlight {
-            HStack(spacing: 3) {
-                ForEach(Array(tags.enumerated()), id: \.offset) { _, t in
-                    Text(t).padding(.horizontal, 3).background(TagColors.color(t, ui)).lineLimit(1).fixedSize()
-                }
-            }
-        } else {
-            Text(tags.joined(separator: " · ")).lineLimit(1)
-        }
-    }
-}
-
 /// Einstellungen: Farbe je Tag (alle Tags der Collection, nach Häufigkeit)
 struct TagColorSettings: View {
     @Environment(MixModel.self) private var mix
@@ -67,7 +49,7 @@ struct TagColorSettings: View {
                 TextField("Filtern", text: $filter).settingsField().frame(maxWidth: 260)
                 ForEach(list.prefix(300), id: \.key) { tag, n in
                     HStack {
-                        Text(tag).font(Theme.mono(12)).padding(.horizontal, 3).background(TagColors.color(tag, mix.prefs.ui))
+                        TagChip(tag: tag, mark: .none, style: .of(tag, mix.prefs.ui)).font(Theme.mono(12))
                         Text("\(n)").font(Theme.mono(10)).foregroundStyle(Theme.muted)
                         Spacer()
                         ColorPicker("", selection: Binding(

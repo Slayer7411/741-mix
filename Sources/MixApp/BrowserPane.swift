@@ -17,6 +17,8 @@ final class BrowserPaneModel: Identifiable {
     var roles: Set<RoleFilter> = []
     /// gewählte Tags aus Kommentar 2 (alle müssen passen)
     var tags: Set<String> = []
+    /// ausgeschlossene Tags (⌥-Klick): keiner darf vorkommen
+    var excludedTags: Set<String> = []
     var sortOrder: [KeyPathComparator<Track>] = [KeyPathComparator(\Track.artist)]
     var selection: Set<Track.ID> = []
     var showTree = true
@@ -37,12 +39,25 @@ final class BrowserPaneModel: Identifiable {
         self.source = source
     }
 
-    /// Tags eines Tracks: Kommentar 2 an den eingestellten Trennzeichen zerlegt
-    static func tags(of t: Track, separators: String) -> [String] {
-        let seps = Set(separators.isEmpty ? " " : separators)
-        return t.comment2.split(whereSeparator: { seps.contains($0) })
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+    /// Tags eines Tracks: Kommentar 2 an den eingestellten Trennzeichen zerlegt (einmal je Text, dann aus dem Speicher)
+    static func tags(of t: Track, separators: String) -> [String] { tagIndex.entry(t.comment2, separators: separators).tags }
+    static let tagIndex = TagIndex()
+
+    @ObservationIgnored private var filterMemo = TagFilter()
+    /// Tag-Filter aus `tags` + `excludedTags` (Vergleichsformen gemerkt)
+    var tagFilter: TagFilter {
+        let inc = tags, exc = excludedTags
+        if filterMemo.include != inc || filterMemo.exclude != exc { filterMemo = TagFilter(include: inc, exclude: exc) }
+        return filterMemo
+    }
+
+    /// Klick auf einen Tag: einschließen/lösen, ⌥ (`exclude`): ausschließen/lösen
+    func toggleTag(_ tag: String, exclude: Bool) { setTagFilter(tagFilter.toggling(tag, exclude: exclude)) }
+    func removeTag(_ tag: String) { setTagFilter(tagFilter.removing(tag)) }
+    func clearTags() { tags = []; excludedTags = [] }
+    private func setTagFilter(_ f: TagFilter) {
+        if tags != f.include { tags = f.include }
+        if excludedTags != f.exclude { excludedTags = f.exclude }
     }
 
     /// Tracks der Quelle vor Tag-Filter/Suche (für die Tag-Auswahl)
@@ -66,7 +81,7 @@ final class BrowserPaneModel: Identifiable {
             sortedBase = store.presorted(source, order: sortOrder) ?? base(from: store, history: history).sorted(using: sortOrder)
             sortedKey = baseKey
         }
-        let key = baseKey + [search, roles, tags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0] as [AnyHashable]
+        let key = baseKey + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0] as [AnyHashable]
         if key == cacheKey { return cachedRows }
         cachedRows = filtered(sortedBase, separators: separators)
         cacheKey = key
@@ -87,8 +102,10 @@ final class BrowserPaneModel: Identifiable {
         if !roles.isEmpty {
             list = list.filter { t in roles.contains { t.comment2.localizedCaseInsensitiveContains("» " + $0.rawValue) } }
         }
-        if !tags.isEmpty {
-            list = list.filter { t in tags.isSubset(of: Set(Self.tags(of: t, separators: separators))) }
+        let tf = tagFilter
+        if !tf.isEmpty {
+            let index = Self.tagIndex
+            list = list.filter { tf.matches(keys: index.entry($0.comment2, separators: separators).keys) }
         }
         let words = search.split(separator: " ").map { Track.fold(String($0)) }
         if !words.isEmpty { list = list.filter { $0.matches(words: words) } }
@@ -196,11 +213,15 @@ struct BrowserPane: View {
                         .help("Nur lokale Tracks (ohne ☁ nur online)")
                     SetCheckButton(model: model)
                 }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(model.tags.sorted(), id: \.self) { t in
-                            DeckButton(title: t + " ✕", active: true) { model.tags.remove(t) }
-                        }
+                // aktiver Tag-Filter: eingeschlossene gefüllt, ausgeschlossene durchgestrichen – Klick löst den Tag
+                if !model.tagFilter.isEmpty {
+                    if CloudLibrary.shared.hasCloudTracks { Text("│").foregroundStyle(Theme.hairline) }
+                    DeckButton(title: "✕ TAGS") { model.clearTags() }
+                        .help("Tag-Filter löschen")
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        TagChips(tags: model.tags.sorted() + model.excludedTags.sorted(), ui: decks.prefs.ui,
+                                 filter: model.tagFilter) { t, _ in model.removeTag(t) }
+                            .font(Theme.mono(11))
                     }
                 }
             }
@@ -226,21 +247,24 @@ struct TagPicker: View {
             .flatMap { BrowserPaneModel.tags(of: $0, separators: separators) }.map { ($0, 1) }, uniquingKeysWith: +)
         let list = counts.filter { filter.isEmpty || $0.key.localizedCaseInsensitiveContains(filter) }
             .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+        let tf = model.tagFilter
         VStack(alignment: .leading, spacing: 6) {
             Text("TAGS · KOMMENTAR 2").font(Theme.label(12, .bold))
             Text("trennzeichen: '\(separators)' (einstellbar unter ⌘, → anzeige)").font(Theme.mono(10)).foregroundStyle(Theme.muted)
+            Text("klick = filter · ⌥-klick = ausschließen · auch in der liste").font(Theme.mono(10)).foregroundStyle(Theme.muted)
             TextField("FILTERN", text: $filter).textFieldStyle(.plain).font(Theme.mono(11))
                 .padding(4).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(list, id: \.key) { k, n in
+                        let mark = tf.mark(k)
                         Button {
-                            if model.tags.contains(k) { model.tags.remove(k) } else { model.tags.insert(k) }
+                            model.toggleTag(k, exclude: NSApp.currentEvent?.modifierFlags.contains(.option) == true)
                         } label: {
                             HStack {
-                                Text(model.tags.contains(k) ? "■" : "□").foregroundStyle(model.tags.contains(k) ? Theme.state : Theme.muted)
-                                Text(k).foregroundStyle(Theme.bone).padding(.horizontal, 3)
-                                    .background(ui.tagHighlight ? TagColors.color(k, ui) : .clear)
+                                Text(mark == .include ? "■" : mark == .exclude ? "⊘" : "□")
+                                    .foregroundStyle(mark == .none ? Theme.muted : Theme.state)
+                                TagChip(tag: k, mark: mark, style: TagChipStyle.of(k, ui))
                                 Spacer()
                                 Text("\(n)").foregroundStyle(Theme.muted)
                             }
@@ -252,15 +276,16 @@ struct TagPicker: View {
                 }
             }
             .frame(height: 320)
-            if !model.tags.isEmpty {
+            if !tf.isEmpty {
                 HStack {
-                    DeckButton(title: "ALLE TAGS LÖSEN") { model.tags.removeAll() }
+                    DeckButton(title: "✕ TAGS") { model.clearTags() }
                     DeckButton(title: "ALS SMARTLIST") {
-                        let tags = model.tags.sorted()
-                        let q = tags.map { "$COMMENT2 % \"\($0.replacingOccurrences(of: "\"", with: ""))\"" }.joined(separator: " & ")
-                        store.customSmartlists.append(CustomSmartlist(name: tags.joined(separator: " + "), query: q))
+                        let inc = model.tags.sorted(), exc = model.excludedTags.sorted()
+                        let quote = { (t: String) in "\"\(t.replacingOccurrences(of: "\"", with: ""))\"" }
+                        let q = (inc.map { "$COMMENT2 % \(quote($0))" } + exc.map { "$COMMENT2 !% \(quote($0))" }).joined(separator: " & ")
+                        store.customSmartlists.append(CustomSmartlist(name: (inc + exc.map { "!" + $0 }).joined(separator: " + "), query: q))
                     }
-                    .help("Smartlist aus den gewählten Tags anlegen (alle müssen passen)")
+                    .help("Smartlist aus den gewählten Tags anlegen (alle müssen passen, ausgeschlossene nicht)")
                 }
             }
         }
@@ -511,6 +536,16 @@ struct TrackTable: View {
 
     private func text(_ t: Track, _ f: TrackField) -> some View { cell(t, f) { Text(f.value(of: t)) } }
 
+    /// Kommentar 2 als Tag-Chips; gewählte Tags des Bereichs hell gefüllt. Klicks: `chipAt` (InlineEditController)
+    @ViewBuilder private func tagCell(_ t: Track) -> some View {
+        if TagChips.benchPlain {
+            Text(t.comment2)
+        } else {
+            let e = BrowserPaneModel.tagIndex.entry(t.comment2, separators: decks.prefs.ui.tagSeparators)
+            TagChipsText(tags: e.tags, keys: e.keys, ui: decks.prefs.ui, filter: model.tagFilter)
+        }
+    }
+
     /// gespeicherte Spaltenreihenfolge: neue Spalten (z. B. „played“) vorne einsetzen statt hinten anhängen
     private static func withNewColumnsFirst(_ data: Data) -> Data {
         guard var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -606,7 +641,7 @@ struct TrackTable: View {
     @TableColumnBuilder<Track, KeyPathComparator<Track>>
     private var cols5: some TableColumnContent<Track, KeyPathComparator<Track>> {
         TableColumn("Comment 2", value: \Track.comment2) { (t: Track) in
-                cell(t, .comment2) { TagChips(tags: BrowserPaneModel.tags(of: t, separators: decks.prefs.ui.tagSeparators), ui: decks.prefs.ui) }.modifier(PreviewRowCell(on: twoLine, height: rowHeight))
+                cell(t, .comment2) { tagCell(t) }.modifier(PreviewRowCell(on: twoLine, height: rowHeight))
             }
             .width(min: 80, ideal: 260).customizationID("comment2")
         TableColumn("Label", value: \Track.label) { (t: Track) in text(t, .label).modifier(PreviewRowCell(on: twoLine, height: rowHeight)) }
@@ -665,7 +700,7 @@ struct TrackTable: View {
         .onChange(of: columns) {
             if let d = try? JSONEncoder().encode(columns) { UserDefaults.standard.set(d, forKey: "columns.\(model.name)") }
         }
-        .font(twoLine ? Theme.mono(decks.prefs.ui.previewTextSize, decks.prefs.ui.previewTextBold ? .semibold : .regular) : Theme.mono(11))
+        .font(TagChipsText.Metrics.of(decks.prefs.ui).font)
         .scrollContentBackground(.hidden)
         .background(Theme.void)
         .background(TableViewFinder(controller: inlineCtl))
@@ -677,6 +712,12 @@ struct TrackTable: View {
                 model.rows(from: store, history: history, separators: decks.prefs.ui.tagSeparators)
             }
             inlineCtl.writeBack = { [decks] in decks.prefs.ui.writeCollection }
+            // Tag-Chip unter dem Klick, nur ganz sichtbare (abgeschnittene enden in „…“)
+            inlineCtl.chipAt = { [decks] t, x, width in
+                let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: decks.prefs.ui.tagSeparators).tags
+                return TagChipsText.spans(tags: tags, .of(decks.prefs.ui)).firstIndex { $0.contains(x) && $0.upperBound <= width }.map { tags[$0] }
+            }
+            inlineCtl.twoLine = { [decks] in decks.prefs.ui.previewMode == .fullRow }
             inlineCtl.install()
             rowBand.inline = inlineCtl
         }

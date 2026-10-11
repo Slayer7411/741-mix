@@ -78,12 +78,12 @@ extension ShortcutID {
 }
 
 extension BrowserPaneModel {
-    var filterFavorite: BrowserFavorite? { .filter(tags: tags, roles: Set(roles.map(\.rawValue)), search: search) }
+    var filterFavorite: BrowserFavorite? { .filter(tags: tags, excluded: excludedTags, roles: Set(roles.map(\.rawValue)), search: search) }
 
     func isActive(_ f: BrowserFavorite, _ t: BrowserFavorite.Target) -> Bool {
         switch t {
         case let .source(s): source.same(s)
-        case .filter: f.matchesFilter(tags: tags, roles: Set(roles.map(\.rawValue)), search: search)
+        case .filter: f.matchesFilter(tags: tags, excluded: excludedTags, roles: Set(roles.map(\.rawValue)), search: search)
         case .missing: false
         }
     }
@@ -97,9 +97,10 @@ extension BrowserPaneModel {
             if !source.same(s) { source = s }
         case .filter:
             if isActive(f, t) {
-                tags = []; roles = []; search = ""
+                tags = []; excludedTags = []; roles = []; search = ""
             } else {
                 tags = Set(f.tags ?? [])
+                excludedTags = Set(f.excludedTags ?? [])
                 roles = Set((f.roles ?? []).compactMap(RoleFilter.init(rawValue:)))
                 search = f.search ?? ""
             }
@@ -249,7 +250,8 @@ struct FavoritesBar: View {
             f.name = n
         } else if case let .source(s) = f.target(store: store) {
             f.name = s.title
-        } else if f.isFilter, let d = BrowserFavorite.filter(tags: Set(f.tags ?? []), roles: Set(f.roles ?? []), search: f.search ?? "") {
+        } else if f.isFilter, let d = BrowserFavorite.filter(tags: Set(f.tags ?? []), excluded: Set(f.excludedTags ?? []),
+                                                              roles: Set(f.roles ?? []), search: f.search ?? "") {
             f.name = d.name
         }
         model.favorites[i] = f

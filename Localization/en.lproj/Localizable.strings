@@ -110,7 +110,7 @@
 "Reverb-Vorverzögerung (ms)" = "Reverb pre-delay (ms)";
 "Rot" = "Red";
 "Scharf (Cut)" = "Sharp (cut)";
-"Smartlist aus den gewählten Tags anlegen (alle müssen passen)" = "Create a smartlist from the selected tags (all must match)";
+"Smartlist aus den gewählten Tags anlegen (alle müssen passen, ausgeschlossene nicht)" = "Create a smartlist from the selected tags (all must match, excluded ones must not)";
 "Snap (Cues und Loop-Punkte rasten auf den Beat)" = "Snap (cues and loop points snap to the beat)";
 "Snap: Cues und Loop-Punkte rasten auf den Beat" = "Snap: cues and loop points snap to the beat";
 "Spektrum" = "Spectrum";
@@ -125,6 +125,9 @@
 "Tag-Farben" = "Tag colors";
 "Tags (Kommentar 2)" = "Tags (comment 2)";
 "Tags farbig markieren" = "Highlight tags in color";
+"Tag-Filter löschen" = "Clear tag filter";
+"klick = filter · ⌥-klick = ausschließen · auch in der liste" = "click = filter · ⌥-click = exclude · also in the list";
+"trennzeichen: '%@' (einstellbar unter ⌘, → anzeige)" = "separators: '%@' (set under ⌘, → display)";
 "Taktnummern" = "Bar numbers";
 "Tempo zurücksetzen" = "Reset tempo";
 "Tempo-Bereich (Standard)" = "Tempo range (default)";
@@ -146,7 +149,6 @@
 "Sprache" = "Language";
 "Sprache (wirkt nach Neustart)" = "Language (after restart)";
 "Kein Track geladen" = "No track loaded";
-"ALLE TAGS LÖSEN" = "CLEAR TAGS";
 "ALS SMARTLIST" = "AS SMARTLIST";
 "SUCHEN" = "SEARCH";
 "Darstellung" = "View";

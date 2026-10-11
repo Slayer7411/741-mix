@@ -14,6 +14,9 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * favorites saved per pane in the session: playlists + smartlists by collection uuid, then path, music folders by path. missing target after a reload -> grey, struck through. selftest image `MIX741_SHOT=browser:<png>` also renders the bar filled, narrow and empty
 * deck rows on / off: readouts, phase bar, overview, transport, hotcues, loop sizes, beatjump, pitch fader, grid tools -> menu DECKS -> ROWS or ⌘, -> DECKS
 * browser preview, full row: text above the band 12 pt semibold, band dimmed; size, weight and band opacity in ⌘, -> DISPLAY -> preview
+* browser: tags in the comment 2 column as chips -> click = filter by that tag, again = off, ⌥-click = exclude. double click on a chip does nothing, click next to the chips selects / edits as before
+* browser: active tag filter as chips in the pane header (excluded struck through), click removes one, ✕ TAGS clears all. TAGS ▾ takes ⌥-click too, the smartlist from tags keeps excluded ones (`!%`). whole tags, case and accents ignored. excluded tags saved per pane in the session
+* tag chips offscreen: `MIX741_SELFTEST=1 MIX741_SHOT=tags:<folder>` -> image, click checks, paging times
 * cloud libraries (file provider folders, e.g. google drive): column ☁ per track (● local · ☁ online only · ↓ downloading · ✕ missing), checked by file status without downloading (14k tracks ~0.1 s), again on changes in the folder (fsevents) and every 10 min
 * cloud: right click tracks or a source -> `Bereitmachen (herunterladen)` with progress and cancel in the status bar. 2 at a time, new downloads wait while a deck loads, 3 tries, timeout by size, 10 gb stay free, each file confirmed local
 * cloud: SET-CHECK in the browser header -> preparation + the pane's list, everything not local listed, one click fetches it. ● LOKAL filter

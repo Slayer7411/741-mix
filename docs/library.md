@@ -11,7 +11,7 @@
 ## ◆ FAVORITES
 
 * 6 slots per pane, above the tree and the list header
-* slot = source (track collection, preparation, running tracks, history, playlist, smartlist, playlist folder, smartlists 741, music folder) or filter (tags, roles, search)
+* slot = source (track collection, preparation, running tracks, history, playlist, smartlist, playlist folder, smartlists 741, music folder) or filter (tags, excluded tags, roles, search)
 * click -> source of the pane / filter applied, active filter again -> cleared. red = active
 * right click -> `Aktuelle Quelle hier ablegen` · `Aktuellen Filter hier ablegen` · `Umbenennen …` · `Leeren`
 * drag a tree entry onto a slot
@@ -99,6 +99,10 @@ K tief kurz · B sub leicht roll · H off » BASIS
 
 * "tags ▾" lists all tags of the source with counts
 * click = filter, several tags = all must match
+* ⌥-click = exclude, none of the excluded tags may be there
+* comment 2 column shows the tags as chips -> click / ⌥-click works there too
+* whole tags only, case and accents ignored
+* active filter in the pane header, ✕ TAGS clears it, kept in the session
 
 ## ◆ SMARTLISTS
 
