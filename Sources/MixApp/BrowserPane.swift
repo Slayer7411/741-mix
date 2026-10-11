@@ -29,6 +29,8 @@ final class BrowserPaneModel: Identifiable {
     var inlineText = ""
     /// offenes Bearbeiten-Fenster (⌘E, Rechtsklick -> Bearbeiten …)
     var editSession: TrackEditSession?
+    /// Favoritenleiste (6 Plätze, BrowserFavorites.swift)
+    var favorites: [BrowserFavorite?] = BrowserFavorite.normalized(nil)
 
     init(name: String, source: BrowserSource = .collection) {
         self.name = name
@@ -112,6 +114,8 @@ struct BrowserPane: View {
         // Baum bleibt im Split, ausgeblendet = Breite 0 (nur der 1-pt-Trenner bleibt): Entfernen/Einsetzen des
         // Split-Elements hängte jede Zeile aus dem Fenster aus und wieder ein (~850 ms beim Umschalten Browser groß ⇄ Decks)
         let tree = model.showTree && !(decks.prefs.ui.hideTreeWithDecks && !browserState.maximized)
+        VStack(spacing: 0) {
+        FavoritesBar(model: model, keys: decks.prefs.keys)
         HSplitView {
             SourceTree(selection: $model.source)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -127,6 +131,7 @@ struct BrowserPane: View {
                 }
             }
             .frame(minWidth: 380)
+        }
         }
         .background {
             // ⌘E: Bearbeiten-Fenster für die Auswahl (nur der zuletzt benutzte Bereich reagiert)
@@ -275,6 +280,7 @@ struct SourceTree: View {
     var body: some View {
         List(selection: Binding<BrowserSource?>(get: { selection }, set: { if let s = $0 { selection = s } })) {
             row("≣", "TRACK COLLECTION").tag(BrowserSource.collection)
+                .favoriteDrag { BrowserFavorite.source(.collection, store: store) }
                 .contextMenu {
                     exportMenu(.collection)
                     Button("Collection prüfen …") { ConsistencyWindow.show(store: store) }
@@ -283,7 +289,9 @@ struct SourceTree: View {
                     CloudMenuButton(label: "Track Collection") { store.tracks }
                 }
             row("▶", "RUNNING TRACKS").tag(BrowserSource.running)
+                .favoriteDrag { BrowserFavorite.source(.running, store: store) }
             row("▤", "PREPARATION").tag(BrowserSource.preparation)
+                .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
                 .contextMenu {
                     exportMenu(.preparation)
                     OverviewMenuButton { store.tracks(for: .preparation) }
@@ -296,6 +304,7 @@ struct SourceTree: View {
                 }
             } label: { row("▸", "PREPARATION ARCHIV") }
             row("◷", "HISTORY").tag(BrowserSource.historyLive)
+                .favoriteDrag { BrowserFavorite.source(.historyLive, store: store) }
                 .contextMenu { exportMenu(.historyLive) }
             DisclosureGroup {
                 ForEach(history.archive) { s in
@@ -306,6 +315,7 @@ struct SourceTree: View {
             DisclosureGroup {
                 ForEach(store.customSmartlists) { sl in
                     row("◆", sl.name).tag(BrowserSource.custom(sl))
+                        .favoriteDrag { BrowserFavorite.source(.custom(sl), store: store) }
                         .contextMenu {
                             exportMenu(.custom(sl))
                             OverviewMenuButton { store.tracks(for: .custom(sl)) }
@@ -325,6 +335,7 @@ struct SourceTree: View {
                     row(icon(node), node.name)
                         .tag(BrowserSource.node(node))
                         .lineLimit(1)
+                        .favoriteDrag { BrowserFavorite.source(.node(node), store: store) }
                         .contextMenu {
                             if node.kind != .folder { exportMenu(.node(node)) }
                             OverviewMenuButton { nodeTracks(node) }

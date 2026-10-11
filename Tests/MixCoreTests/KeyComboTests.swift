@@ -39,6 +39,8 @@ import Testing
     #expect(m.combo(.play)?.symbols == "⌘SPACE")
     #expect(m.combo(.bigBrowserKey)?.symbols == "SPACE")
     #expect(m.action(for: KeyCombo("y")) == .sync)
+    #expect(m.combo(.favorite1)?.symbols == "⌃⌥1" && m.combo(.favorite6)?.symbols == "⌃⌥6")
+    #expect(ShortcutID.favorite4.group == .browser && ShortcutID.favorite4.index == 3)
     // eigener Wert, Konflikt, frei, zurück auf Standard
     m.set(.sync, KeyCombo("l"))
     #expect(m.overrides == ["deck.sync": "cmd+l"])

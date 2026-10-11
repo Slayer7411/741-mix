@@ -520,3 +520,13 @@
 "%lld Cloud-Downloads offen: der Anbieter lädt sie nach dem Beenden weiter." = "%lld cloud downloads open: the provider keeps downloading them after quit.";
 "%lld Cloud-Downloads offen: sie werden abgebrochen." = "%lld cloud downloads open: they are cancelled.";
 "Zeitüberschreitung" = "timeout";
+"Aktuelle Quelle hier ablegen" = "Put current source here";
+"Aktuellen Filter hier ablegen" = "Put current filter here";
+"Umbenennen …" = "Rename …";
+"FAVORIT UMBENENNEN" = "RENAME FAVORITE";
+"NAME" = "NAME";
+"Favorit %lld · leer · Rechtsklick: Quelle oder Filter ablegen, oder Eintrag aus dem Baum hierher ziehen" = "Favorite %lld · empty · right click: put a source or filter here, or drag an entry from the tree";
+"Ziel nicht gefunden: %@ · Rechtsklick: neu belegen" = "Target not found: %@ · right click: assign again";
+"Filter: %@ · Klick = anwenden, nochmal = lösen" = "Filter: %@ · click = apply, again = clear";
+"Favorit %lld: %@" = "Favorite %1$lld: %2$@";
+"Favorit %lld (Fokus-Bereich)" = "Favorite %lld (focused pane)";

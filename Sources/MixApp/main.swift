@@ -276,6 +276,10 @@ struct MixApp: App {
                 }
                 Button(String(localized: "Collection prüfen …")) { ConsistencyWindow.show(store: store) }
                 Divider()
+                ForEach(ShortcutID.favorites) { a in
+                    Button(a.title) { run(a) }.shortcut(keys.combo(a))
+                }
+                Divider()
                 Button(ShortcutID.reconnectAudio.title) { run(.reconnectAudio) }.shortcut(keys.combo(.reconnectAudio))
             }
         }
