@@ -11,6 +11,7 @@ struct SettingsView: View {
         SettingsTab("MIXER & FX") { MixerFXSettings() },
         SettingsTab("PLUGINS") { PluginSettingsView() },
         SettingsTab("ANZEIGE") { WaveformSettings() },
+        SettingsTab("BROWSER") { BrowserSettings() },
         SettingsTab("AUDIO") { AudioSettings() },
         SettingsTab("CONTROLLER") { ControllerSettings() },
         SettingsTab("TAGS") { TagColorSettings() },
@@ -672,6 +673,23 @@ private struct LoadCacheSettings: View {
             guard let service else { return }
             try? await Task.sleep(for: .milliseconds(300))   // Aufräumen nach einer neuen Grenze abwarten
             usage = await Task.detached(priority: .utility) { service.cacheUsage() }.value
+        }
+    }
+}
+
+/// Browser: Harmonie zum Master (Key-Farben)
+struct BrowserSettings: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        @Bindable var mix = mix
+        Form {
+            Section("Harmonie zum Master") {
+                Toggle("Key-Spalte färben", isOn: $mix.prefs.ui.harmonyColors)
+                Text("""
+                bezug: hörbarer key des master-decks (mit key-shift, ohne keylock mit dem tempo), spielt kein master:                 fokus-deck. ◆ lila = gleich · ▲▼ hell = ±1 auf dem rad · ◇ hell = relativ dur/moll · grau = ±2 (energie) ·                 gedimmt = unpassend. spalte match: pitch in prozent, den der track bis zum master-tempo braucht
+                """).settingsHint()
+            }
         }
     }
 }

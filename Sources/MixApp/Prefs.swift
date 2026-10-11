@@ -197,6 +197,8 @@ struct UIPrefs: Codable, Equatable {
     var zoom = 1.0
     /// eigene Analyse: BPM-Bereich genau eine Oktave, Untergrenze (Obergrenze = 2 ×)
     var analysisBpmLow = 100.0
+    /// Browser: Key-Spalte nach Harmonie zum Master färben (◆ gleich, ▲▼ ±1, ◇ Relativ)
+    var harmonyColors = true
 
     /// kompakte Decks: ohne Pitch-Fader, Hotcues und Grid-Werkzeuge (mehr Platz für Wellenform und Beatgrid)
     var compactDecks: Bool {
