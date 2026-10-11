@@ -87,6 +87,7 @@ tracks without an analysis in the collection play, but have no grid -> no sync.
 * ↻ -> reload the collection
 * the line between decks and browser can be dragged, the height is saved
 * fullscreen -> toolbar hides, comes back with the mouse at the top
+* zoom like a web browser -> ⌘+ / ⌘− / ⌘0 (view menu), 50 · 67 · 75 · 80 · 90 · 100 · 110 · 125 · 150 · 175 · 200 %, step shown in the status bar, saved. text, controls, waveform marks and table columns scale at full resolution. minimum window size × zoom, capped at what fits the screen. toolbar, settings and dialogs stay at 100 %
 
 ### status bar
 
@@ -94,7 +95,7 @@ tracks without an analysis in the collection play, but have no grid -> no sync.
 * colors: red = error, gold = warning, purple = info, bone = done
 * info 4 s, done 3 s, warning 8 s, error stays until clicked or replaced. `+n` = more active messages
 * click -> last 50 messages with time
-* messages: track load failed / timed out, track loaded, phrase anchor found, plugin not loaded / blocked, collection loaded, collection file written / not written, metadata saved, export progress / done, played state reset
+* messages: track load failed / timed out, track loaded, phrase anchor found, plugin not loaded / blocked, collection loaded, collection file written / not written, metadata saved, export progress / done, played state reset, zoom step
 * middle: device · mode · routing · rate, ↻ reconnect, preparation count, preview progress
 * right (⌘, -> DISPLAY -> status bar):
 
@@ -515,6 +516,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | ⌥⌘M | mixer on / off |
 | ⌥⌘4 | 2 / 4 decks |
 | ⌥⌘B | big browser |
+| ⌘+ / ⌘− / ⌘0 | zoom in / out / actual size |
 | space | big browser (not while typing in a search field) |
 | ⌘O | open collection |
 | ⌘E | edit the selected tracks (browser) |

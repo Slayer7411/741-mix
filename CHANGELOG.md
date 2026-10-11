@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* zoom like a web browser: ⌘+ / ⌘− / ⌘0 and view menu, 50-200 % in browser steps, saved, step in the status bar, also under ⌘, -> DISPLAY. fonts, controls, waveform marks, canvases and table columns scale, drawn at full resolution, minimum window size × zoom (capped to the screen). toolbar, settings and dialogs stay at 100 %. no extra cost per update at 100 % or 150 % (15 ms both), one step ~0.9 s relayout. offscreen check: `MIX741_SELFTEST=1 MIX741_SHOT=zoom:<folder>`
 * status bar: one or two line messages (error red, warning gold, info purple, done bone), info 4 s, done 3 s, warning 8 s, errors stay until clicked. same key replaces in place (progress). click -> last 50 with time. messages from loading, phrase anchor, plugins, collection load / write-back, metadata save, export, played reset
 * status bar meters: DSP load (render time ÷ block duration, peak hold, red above 70 %), output latency + buffer + rate, dropouts (own over-budget blocks + device overload reports, click resets), memory, process cpu. 4 hz, drawn outside the swiftui layout. ⌘, -> DISPLAY -> status bar
 * track load: missing file fails at once, no audio data for 4 s cancels the load (setting 2-15 s), unreadable files fail with the reason. the deck stays empty, other decks untouched, message `Track nicht ladbar (4 s): artist – title · reason`
