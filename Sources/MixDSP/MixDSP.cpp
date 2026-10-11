@@ -358,6 +358,12 @@ struct PluginSlot {
     }
     bool tail(double fs) const { return last && quiet < quietLimit(fs); }
     bool active(double fs) const { return send > 0.0005f || tail(fs); }
+    /// Audio-Thread: Zeiger des Steuer-Threads übernehmen; ein neues (oder kein) Plugin beginnt ohne Fahne
+    MDPlugin *sync() {
+        MDPlugin *p = plugin.load(std::memory_order_acquire);
+        if (p != last) { last = p; send = 0; quiet = 0x7fffffff; }
+        return p;
+    }
     /// out = dry·(1 − dw·send) + wet·dw – an: klassisches Dry/Wet, aus: trocken + ausklingende Fahne
     void run(MDPlugin *p, float *L, float *R, int n, float dw, bool on, double fs) {
         float target = on ? 1.f : 0.f;
@@ -553,9 +559,12 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
         if (!jumped) { d.pos = std::max(0.0, d.pos - d.latSm * d.latDir); d.flux = std::max(0.0, d.flux - d.latSm * d.latDir); }
         d.latSm = 0; d.wasStretching = false;
     }
-    // Deck steht: weiterrechnen, solange Echo oder Hall noch klingen (gemessen, kein festes Zeitlimit)
+    // Deck steht: weiterrechnen, solange Echo oder Hall noch klingen (gemessen, kein festes Zeitlimit).
+    // Plugin-Zeiger zuerst abgleichen: eine nicht zugewiesene Unit kommt unten nicht vorbei, `last` zeigte sonst
+    // auf ein längst geschlossenes Plugin, und active() liest dessen Nachklingzeit
     bool fxTail = false;
     for (int u = 0; u < MDSP_FX_UNITS; u++) {
+        d.fx[u].plug.sync();
         if (d.p[MD_FX1_ASSIGN + u].load() > 0.5f &&
             (d.fx[u].delay.tail > 1e-5f || d.fx[u].reverb.tail > 1e-5f || d.fx[u].plug.active(e->fs))) fxTail = true;
     }
@@ -650,9 +659,8 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
                          fp[MDFX_REVERB_LEVEL].load(), fp[MDFX_REVERB_BRIGHT].load(), fp[MDFX_REVERB_PREDELAY].load(),
                          reverbOn, dwSend);
         }
-        MDPlugin *pl = c.plug.plugin.load(std::memory_order_acquire);
+        MDPlugin *pl = c.plug.sync();
         bool plugOn = pl && fp[MDFX_PLUGIN_ON].load() > 0.5f;
-        if (pl != c.plug.last) { c.plug.last = pl; c.plug.send = 0; c.plug.quiet = 0x7fffffff; }   // neues Plugin: ohne Fahne
         if (pl && !c.plug.resetPending.load(std::memory_order_acquire) && (plugOn || c.plug.active(e->fs))) {
             pl->tempo = e->clock.bpm.load(std::memory_order_relaxed);
             pl->beat = e->clock.beat;
