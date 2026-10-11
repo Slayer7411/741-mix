@@ -586,7 +586,8 @@ final class BrowserState {
         guard let store else { return }
         let pane = i.map(self.pane) ?? activePane
         activePaneID = pane.id
-        let rows = pane.rows(from: store, history: history, separators: separators())
+        // angezeigte Liste: Encoder-Schritt sortiert nie neu (läuft eine Hintergrund-Liste, gilt noch die alte)
+        let rows = pane.shown.isEmpty ? pane.rows(from: store, history: history, separators: separators()) : pane.shown
         guard !rows.isEmpty else { return }
         let current = pane.selection.first.flatMap { id in rows.firstIndex { $0.id == id } } ?? -1
         let next = max(0, min(rows.count - 1, current + delta))

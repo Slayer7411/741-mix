@@ -17,7 +17,7 @@ struct InlineEdit: Equatable {
 /// darunter, ohne die Auswahl der Tabelle zu stören), startet das Feld, behandelt Tab/Return/Esc und übernimmt.
 @MainActor
 final class InlineEditController {
-    weak var finder: TableViewFinder.FinderView?
+    weak var tableView: NSTableView?
     weak var model: BrowserPaneModel?
     weak var store: LibraryStore?
     var rows: () -> [Track] = { [] }
@@ -35,7 +35,7 @@ final class InlineEditController {
         "comment2": .comment2, "label": .label, "catalog": .catalogNo, "genre": .genre, "releasedate": .releaseDate, "mix": .mix,
     ]
 
-    var table: NSTableView? { finder?.table() }
+    var table: NSTableView? { tableView }
 
     func install() {
         guard mouseMonitor == nil else { return }
@@ -74,9 +74,8 @@ final class InlineEditController {
         guard tv.visibleRect.contains(p) else { return false }
         let r = tv.row(at: p), c = tv.column(at: p), list = rows()
         guard r >= 0, r < list.count, field(ofColumn: c, in: tv) == .comment2,
-              !twoLine() || p.y < tv.rect(ofRow: r).midY,
-              let cv = tv.view(atColumn: c, row: r, makeIfNecessary: false) else { return false }
-        let f = tv.convert(cv.bounds, from: cv)
+              !twoLine() || p.y < tv.rect(ofRow: r).midY else { return false }
+        let f = tv.frameOfCell(atColumn: c, row: r)
         guard p.x - f.minX < f.width, let tag = chipAt(list[r], p.x - f.minX, f.width) else { return false }
         pending?.cancel()
         pending = nil
@@ -204,85 +203,6 @@ final class InlineEditController {
     private func removeKeys() {
         if let k = keyMonitor { NSEvent.removeMonitor(k) }
         keyMonitor = nil
-    }
-}
-
-/// Unsichtbare Hilfsansicht hinter der Tabelle: findet das NSTableView der SwiftUI-Tabelle (größte Überdeckung
-/// mit der eigenen Fläche, damit es bei zwei Browser-Bereichen das richtige ist).
-struct TableViewFinder: NSViewRepresentable {
-    let controller: InlineEditController
-
-    func makeNSView(context: Context) -> FinderView {
-        let v = FinderView()
-        controller.finder = v
-        return v
-    }
-
-    func updateNSView(_ v: FinderView, context: Context) { controller.finder = v }
-
-    /// nimmt den angebotenen Platz, ohne Auto-Layout-Messung (fittingSize) bei jedem Layout
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: FinderView, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
-    }
-
-    final class FinderView: NSView {
-        private weak var cached: NSTableView?
-
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-        func table() -> NSTableView? {
-            guard let window, let root = window.contentView else { return nil }
-            let mine = convert(bounds, to: nil)
-            if let c = cached, c.window === window, overlap(c, mine) > 0 { return c }
-            var best: (NSTableView, CGFloat)?
-            func walk(_ v: NSView) {
-                // SwiftUIs Table ist intern selbst ein NSOutlineView (SwiftUIOutlineTableView) – der Baum links hat
-                // nur eine Spalte, die Track-Tabelle viele: daran unterscheiden
-                if let t = v as? NSTableView, t.tableColumns.count > 1 {
-                    let o = overlap(t, mine)
-                    if o > (best?.1 ?? 0) { best = (t, o) }
-                }
-                v.subviews.forEach(walk)
-            }
-            walk(root)
-            cached = best?.0
-            return cached
-        }
-
-        private func overlap(_ t: NSTableView, _ rect: NSRect) -> CGFloat {
-            let v: NSView = t.enclosingScrollView ?? t
-            let r = v.convert(v.bounds, to: nil).intersection(rect)
-            return r.isNull ? 0 : r.width * r.height
-        }
-    }
-}
-
-/// Eingabe in der Zelle: Textfeld oder Sterne (Bewertung)
-struct InlineEditor: View {
-    @Bindable var model: BrowserPaneModel
-    let edit: InlineEdit
-    let finish: (_ commit: Bool, _ move: Int) -> Void
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        if edit.field == .rating {
-            StarPicker(value: Int(model.inlineText) ?? 0) { n in
-                model.inlineText = String(n)
-                finish(true, 0)
-            }
-        } else {
-            TextField("", text: $model.inlineText)
-                .textFieldStyle(.plain)
-                .font(Theme.mono(11.z))
-                .padding(.horizontal, 2.z)
-                .background(Theme.chitinRaised)
-                .overlay(Rectangle().stroke(edit.field.normalize(model.inlineText) == nil ? Theme.state : Theme.bone.opacity(0.6), lineWidth: 1))
-                .focused($focused)
-                .onAppear { DispatchQueue.main.async { focused = true } }
-                .onSubmit { finish(true, 0) }
-                .onExitCommand { finish(false, 0) }
-                .onChange(of: focused) { was, now in if was, !now { finish(true, 0) } }
-        }
     }
 }
 

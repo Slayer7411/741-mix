@@ -181,8 +181,8 @@ enum TagShot {
                 spin(0.15)
             }
             // Lage der Chips: berechnete x-Bereiche gegen das Bild (gewählter Chip hell gefüllt, Lücke dahinter nicht)
-            if let shot, let cell = tv.view(atColumn: col, row: 0, makeIfNecessary: false) {
-                let cvf = tv.convert(cell.bounds, from: cell)
+            if let shot {
+                let cvf = tv.frameOfCell(atColumn: col, row: 0)
                 let tags0 = Self.tags(model.rows(from: store, history: history, separators: seps)[0], seps)
                 let sx = CGFloat(shot.pixelsWide) / h.bounds.width
                 func px(_ x: CGFloat) -> NSColor? {
@@ -267,8 +267,7 @@ enum TagShot {
             let rowsNow = model.rows(from: store, history: history, separators: seps)
             var emptyRow = 1, empty = NSPoint.zero
             for r in 1..<min(rowsNow.count, 20) {
-                guard let cell = tv.view(atColumn: col, row: r, makeIfNecessary: false) else { continue }
-                let cvf = tv.convert(cell.bounds, from: cell)
+                let cvf = tv.frameOfCell(atColumn: col, row: r)
                 let end = TagChipsText.spans(tags: Self.tags(rowsNow[r], seps), metrics).last?.upperBound ?? 0
                 if end + 12 < cvf.width, cvf.minX + (end + cvf.width) / 2 < tv.visibleRect.maxX - 4 { emptyRow = r; empty = NSPoint(x: cvf.minX + (end + cvf.width) / 2, y: lineY(cvf)); break }
             }
@@ -374,7 +373,7 @@ enum TagShot {
                 // Markierung ohne Filter: alle Zeilen, nur die Chips zeigen die gewählten Tags
                 let m = BrowserPaneModel(name: "Shot")
                 m.tags = mark.include
-                let (h, win) = host(TrackTable(rows: all, generation: 0, model: m), size: NSSize(width: 1400, height: 1000))
+                let (h, win) = host(TrackTable(model: m), size: NSSize(width: 1400, height: 1000))
                 for _ in 0..<6 { h.layoutSubtreeIfNeeded(); spin(0.2) }
                 guard let tv = table(h) else { log("keine tabelle"); break }
                 if let c = tv.tableColumns.indices.first(where: { InlineEditController().field(ofColumn: $0, in: tv) == .comment2 }) {

@@ -670,3 +670,9 @@
 "3-Band (Mischung)" = "3-band (blend)";
 "Spektrum (RGB)" = "Spectrum (RGB)";
 "Je Pixelzeile gemischt: Farbe aus Bass (< 150 Hz), Mitten (um 670 Hz) und Höhen (> 3 kHz) der Samples, die die Zeile erreichen, Helligkeit nach oben weich auslaufend. Spektrum (RGB): Bass rot, Mitten grün, Höhen blau, Mischungen gelb / cyan / weiß." = "Blended per pixel row: color from bass (< 150 Hz), mids (around 670 Hz) and highs (> 3 kHz) of the samples that reach the row, brightness fading softly towards the top. Spectrum (RGB): bass red, mids green, highs blue, mixes yellow / cyan / white.";
+
+/* Track-Tabelle: Spalten-Menü im Kopf */
+"▶ Gespielt" = "▶ Played";
+"☁ Cloud" = "☁ Cloud";
+"✓ Analysiert" = "✓ Analyzed";
+"Farbe" = "Color";
