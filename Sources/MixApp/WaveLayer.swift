@@ -1,4 +1,5 @@
 import AppKit
+import os
 import QuartzCore
 import SwiftUI
 import MixCore
@@ -427,7 +428,9 @@ final class WaveLayerNSView: NSView {
             tilesPending.insert(i)
             let gen = tileGen, pps = pps, scale = scale, chunks = wave.chunks
             Self.tileQueue.async {
+                let t0 = CACurrentMediaTime()
                 let img = Self.renderTile(i, chunks: chunks, pps: pps, h: h, tw: tw, scale: scale)
+                Self.tileTime.withLock { $0.count += 1; $0.seconds += CACurrentMediaTime() - t0 }
                 DispatchQueue.main.async { [weak self] in
                     guard let self, gen == self.tileGen else { return }
                     self.tilesPending.remove(i)
@@ -444,6 +447,9 @@ final class WaveLayerNSView: NSView {
             }
         }
     }
+
+    /// Kacheln gerechnet + Zeit dafür (Wellenform-Bild im Selbsttest)
+    static let tileTime = OSAllocatedUnfairLock(initialState: (count: 0, seconds: 0.0))
 
     /// eine Kachel in Bildschirmauflösung zeichnen (Hintergrund-Queue; Pfade und Farben sind unveränderliche CF-Objekte)
     private static func renderTile(_ i: Int, chunks: [RenderedWaveform.Chunk], pps: Double, h: CGFloat, tw: CGFloat, scale: CGFloat) -> CGImage? {

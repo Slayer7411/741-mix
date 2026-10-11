@@ -334,6 +334,7 @@ enum WaveShot {
         let tick = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in }   // hält den Run-Loop wach
         defer { tick.invalidate() }
         for (row, lk) in looks.enumerated() {
+            WaveLayerNSView.tileTime.withLock { $0 = (0, 0) }
             let tr = Date()
             let wf = RenderedWaveform.render(audio, style: lk.0, palette: ui.waveformPalette, detail: lk.1, highBoost: ui.waveformHighBoost)
             SelfTest.log(String(format: "%@: Wellenform gerechnet in %.2f s, %.0f Pfade je Abschnitt", lk.2, Date().timeIntervalSince(tr), Double(wf.chunks.reduce(0) { $0 + $1.layers.count }) / Double(max(1, wf.chunks.count))))
@@ -364,6 +365,8 @@ enum WaveShot {
                 view.layer?.render(in: ctx)
                 ctx.restoreGState()
             }
+            let tt = WaveLayerNSView.tileTime.withLock { $0 }
+            SelfTest.log(String(format: "%@: %d Kacheln, %.2f ms je Kachel", lk.2, tt.count, tt.seconds * 1000 / Double(max(1, tt.count))))
             // Übersicht (ganzer Track) darunter
             if let img = wf.overview {
                 let r = CGRect(x: 0, y: top - label - h * 2 - gap * 2 - oh, width: w, height: oh)
