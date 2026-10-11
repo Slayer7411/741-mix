@@ -450,7 +450,7 @@ struct ReverbClassic {
         double tau = t60 / 13.8, eff = tau * (1 - std::exp(-kRvBuildS / tau));   // gleiche Lautheit über die Größe (wie FDN)
         inGain = float(1 / std::sqrt(eff));
         g1 = 0.55f + 0.15f * size; g2 = 0.45f + 0.1f * size;
-        depth = float(kRcDepthMs[0] + (kRcDepthMs[1] - kRcDepthMs[0]) * size) * (1 - 0.8f * frz) * float(1e-3 * fs);   // Freeze: weniger Modulation, weniger Verlust beim Lesen
+        depth = float(kRcDepthMs[0] + (kRcDepthMs[1] - kRcDepthMs[0]) * size) * (1 - 0.8f * frz) * float(1e-3 * fs);   // Freeze: weniger Schwanken (stehende Fläche)
     }
 
     /// Schnittstelle wie Reverb::run (Send: trocken bleibt, Hall kommt dazu), dazu `freeze`

@@ -6,6 +6,9 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* reverb `Reverb` (new default type): allpass ring in figure-eight, 2 × 4 modulated lines (12-50 ms with the size, own rate per line 0.5-1.1 Hz, allpass reads), shelf damping in the ring, input diffuser. rt60 0.57 / 1.42 / 4.49 s at size 0.2 / 0.5 / 0.9 (fdn 0.77 / 2.97 / 18.5 s). tail 300 ms after stop, >4 kHz re 200 Hz-2 kHz: -17.0 / -10.1 / -6.5 dB at 0.3 / 0.6 / 0.9 (fdn +3.9 / +8.6 / +10.7 dB). stereo corr 0.01-0.02. same loudness as the fdn (total / dry 1.07-1.15, pink noise, full d/w). cpu 1 deck 512 frames 35.5 µs (fdn 57.6 µs), 4 decks keylock + fx + plugin 4.5 % of a core (fdn 4.9 %)
+* ⌘, -> MIXER & FX -> `Reverb-Typ`: `Reverb` / `Reverb (FDN)`, saved in the settings, old settings load with `Reverb`. switching while it rings: the old type rings out
+* reverb freeze `FRZ`: single REVERB button 2, group assignable (`Reverb-Freeze`). input closed, ring lossless: level after 9 s within ±0.15 dB (44.1-192 kHz), FRZ off -> rings out. fdn: freeze = input closed + size 1. not restored from the session
 * deck header: tags from comment 2 as chips (browser colors) and the comment in grey, one line under the title, too long -> `…`. own row with a fixed height: play / tempo / key changes don't touch it, header layout per change unchanged (0.47 ms, bench). rows `Kommentar` / `Tags (Kommentar 2)`, on by default, old settings load with both on
 * compact decks: DECKS menu or ⌥⌘K -> pitch fader, hotcues and grid tools off / on together. without the pitch fader the waveform takes the width. also ⌘, -> DECKS
 * edit mode per deck: `EDIT` in the transport row, ⌥⌘E (focused deck) or menu DECKS, off by default, saved in the settings. cut row in place of the loop sizes, grid row shown, waveform keeps its height. switching swaps the rows in place: 11.5 ms median (state bench), the other decks are not touched
