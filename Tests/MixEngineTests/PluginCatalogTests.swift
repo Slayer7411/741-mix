@@ -208,7 +208,7 @@ private func renderThroughCore(_ inst: PluginInstance, fs: Double = 44100) -> Fl
 /// isoliert (außerhalb des Prozesses) geladen: AUMatrixReverb klingt offline durch den Kern; Messung gegen im Prozess
 @Test func outOfProcessPluginRendersAndIsMeasured() throws {
     let info = try #require(PluginHost.installed().first { $0.id == mrev })
-    let iso = try PluginInstance(info, sampleRate: 48000, outOfProcess: true)
+    let iso = try PluginInstance(info, sampleRate: 48000, outOfProcess: true, timeout: 60)   // xpc-start unter voller cpu-last > 10 s
     #expect(iso.outOfProcess)
     #expect(iso.parameters.count >= 3)
     iso.setKnob(0, 0.3)
