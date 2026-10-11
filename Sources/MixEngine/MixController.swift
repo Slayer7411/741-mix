@@ -1282,6 +1282,14 @@ public final class MixController: @unchecked Sendable {
     }
 
     public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on; link.enabled = on } }
+    /// Phasenabstand der Clock zu Link in Beats und Teilnehmer (Messung; auf der Steuer-Queue wie `lead`)
+    public func linkPhase() -> (error: Double, peers: Int)? {
+        controlQueue.sync {
+            guard let st = engine.clockStamp, let e = link.phaseError(beat: st.beat, hostTime: st.hostTime) else { return nil }
+            return (e, link.peers)
+        }
+    }
+
     /// Link – MINOS gibt Tempo und Takt vor
     public let link = LinkSession()
     private var linkTicks = 0

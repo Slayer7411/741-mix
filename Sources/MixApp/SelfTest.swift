@@ -19,7 +19,8 @@ enum SelfTest {
             let env = ProcessInfo.processInfo.environment
             for _ in 0..<20 where mix.outputDevices.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
             core.engine.deviceRate = nil   // Geräterate nie umstellen (ein anderes MINOS könnte gerade darauf spielen)
-            if env["MIX741_NOEXT"] == nil, let ext = mix.outputDevices.first(where: { $0.channels >= 8 }) {   // externes Interface, jedes Deck auf ein eigenes Paar
+            let named = env["MIX741_OUT"].flatMap { n in mix.outputDevices.first { $0.channels >= 8 && $0.name.localizedCaseInsensitiveContains(n) } }
+            if env["MIX741_NOEXT"] == nil, let ext = named ?? mix.outputDevices.first(where: { $0.channels >= 8 }) {   // externes Interface, jedes Deck auf ein eigenes Paar
                 core.engine.apply(.init(device: ext.id, firstChannel: [0, 2, 4, 6]))
                 log("Routing \(ext.name) extern: läuft=\(core.engine.running) Fehler=\(core.engine.lastError ?? "keine")")
             } else if let dev = mix.outputDevices.first(where: { d in env["MIX741_OUT"].map { d.name.localizedCaseInsensitiveContains($0) } ?? false })
@@ -40,6 +41,7 @@ enum SelfTest {
             core.setPrefs(p)
             while store.tracks.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
             if env["MIX741_BENCH"] == "memory" { await memoryProbe(core, tracks: store.tracks); exit(0) }
+            if env["MIX741_BENCH"] == "loadtest" { await LoadTest.run(core, tracks: store.tracks); exit(0) }
             let c = store.tracks.filter { $0.bpm > 120 && $0.bpm < 140 && $0.gridAnchorMs != nil && $0.fileExists }
             guard c.count >= 2 else { log("zu wenige Tracks"); exit(1) }
             log("A: \(c[0].artist) – \(c[0].title) \(c[0].bpm) · B: \(c[1].artist) – \(c[1].title) \(c[1].bpm)")

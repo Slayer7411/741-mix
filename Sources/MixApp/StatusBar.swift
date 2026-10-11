@@ -189,8 +189,11 @@ final class MeterSampler {
         sample.lastDropout = nil
     }
 
+    /// Lasttest holt die Last selbst ab (`takeLoad` hat nur einen Abholer)
+    var paused = false
+
     private func step() {
-        guard let engine else { return }
+        guard let engine, !paused else { return }
         let now = Date()
         var s = sample
         let l = engine.takeLoad()
