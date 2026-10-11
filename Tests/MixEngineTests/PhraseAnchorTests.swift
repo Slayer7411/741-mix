@@ -3,7 +3,8 @@ import Foundation
 import ImageIO
 import Testing
 import MixCore
-@testable import MixEngine
+@testable import MixMedia
+import MixEngine
 
 /// Synthetischer Track: Kick auf jedem Beat, ab Takt 9 wechseln alle 8 Takte Hi-Hat, Bass und ein Breakdown
 /// (Takt 33–40 ohne Kick, mit Fläche). Echter Taktanfang bei `start` Sekunden, 128 BPM.
