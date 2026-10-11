@@ -91,7 +91,19 @@ final class MixModel {
     @ObservationIgnored private var previewPlayer: AVAudioPlayer?
     @ObservationIgnored private var reroutePending = false
 
+    /// Plugin-Verwaltung (⌘, → PLUGINS); teilt die Liste mit dem Kern
+    @ObservationIgnored lazy var plugins = PluginManager(catalog: core.pluginCatalog)
+
     init() {
+        // gespeicherte Plugin-Einstellungen + Absturz-Markierung vom letzten Lauf, bevor eine Sitzung Plugins lädt.
+        // Selbsttest: nur lesen (keine Markierung, keine Änderungen)
+        VST3Thread.useMain = true   // VST3: Laden, Zustand, Controller, Ansicht immer auf dem Haupt-Thread
+        core.pluginCatalog = PluginCatalog(directory: HistoryStore.baseDir, readOnly: Session.isSelfTest)
+        // Selbsttest: zusätzlicher Plugin-Ordner nur im Speicher (Bilder des PLUGINS-Tabs mit Test-Plugin)
+        if Session.isSelfTest, let f = ProcessInfo.processInfo.environment["MIX741_SHOT_PLUGINS"] {
+            core.pluginCatalog.update { $0.folders.append(f) }
+        }
+        if let c = core.pluginCatalog.crashedLastRun { print("[plugin] beim letzten Lauf abgestürzt beim Öffnen: \(c.name) -> blockiert") }
         loadSetup()
         core.setPrefs(prefs.engine)
         outputDevices = MixEngine.outputDevices()
@@ -202,6 +214,7 @@ final class MixModel {
     // MARK: - Befehle (weitergeleitet an den Kern)
 
     func load(_ t: Track, deck d: Int) {
+        CloudLibrary.shared.deckWillLoad(t, deck: d)   // nur online -> sofort anfordern, Hinweis
         originals[d] = t
         let e = edits.edit(for: t.key)
         savedEdit[d] = e

@@ -183,12 +183,12 @@ struct FXUnitView: View {
     /// Plugin wählen (Name · Hersteller) und sein Fenster öffnen
     @ViewBuilder private func pluginControls(_ fx: FXUnitState) -> some View {
         let list = mix.core.pluginList()
-        let current = list.first { $0.id == fx.pluginID }
+        let current = list.first { $0.id == fx.pluginID } ?? fx.pluginID.flatMap(mix.core.pluginCatalog.info)   // auch abgeschaltet
         let error = unit.pluginError
         VStack(spacing: 2) {
             Menu {
                 ForEach(list) { p in
-                    Button(p.name + " · " + p.manufacturer) { mix.setPlugin(u, p.id) }
+                    Button(p.name + " · " + p.manufacturer + (p.isVST3 ? "  VST3" : "")) { mix.setPlugin(u, p.id) }
                 }
                 Divider()
                 Button("Plugin-Liste neu einlesen") { _ = mix.core.pluginList(refresh: true) }
@@ -198,7 +198,7 @@ struct FXUnitView: View {
             .menuStyle(.borderlessButton)
             .font(Theme.label(10, .bold))
             .fixedSize()
-            .help(error ?? String(localized: "Audio-Unit-Plugin wählen"))
+            .help(error ?? String(localized: "Effekt-Plugin wählen (Audio Unit oder VST3)"))
             DeckButton(title: "EDIT", active: false, color: Theme.state, width: 30) { PluginWindow.show(unit: u, core: mix.core) }
                 .help("Plugin-Fenster öffnen")
         }

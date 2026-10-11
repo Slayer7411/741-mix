@@ -11,22 +11,27 @@ struct DeckView: View {
     let d: Int
 
     var body: some View {
+        let rows = mix.prefs.ui.deckRows
         HStack(alignment: .top, spacing: 6) {
             VStack(alignment: .leading, spacing: 4) {
-                // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen)
-                row("header", DeckHeader(d: d), key: mix.prefs.ui.showMixer ? 0 : mix.prefs.ui.fxUnitCount)
+                // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen), am Cover und an den Zusatzinfos
+                row("header", DeckHeader(d: d),
+                    key: [mix.prefs.ui.showMixer ? 0 : mix.prefs.ui.fxUnitCount, mix.prefs.ui.showDeckCover ? 1 : 0, rows.info ? 1 : 0])
                 WaveformView(d: d)
+                    .overlay { DeckIdleView(d: d) }   // leer: Lobster, nach Ladefehler 5 s Totenkopf
                     .frame(minHeight: mix.prefs.ui.waveformHeight, maxHeight: .infinity)
-                PhaseBar(d: d).frame(height: 8)
-                OverviewView(d: d)
-                    .frame(height: 18)
-                row("transport", TransportRow(d: d))
-                row("cues", CueRow(d: d))
-                row("loop", LoopRow(d: d))
-                row("jump", JumpRow(d: d))
+                if rows.phaseBar { PhaseBar(d: d).frame(height: 8) }
+                if rows.overview {
+                    OverviewView(d: d)
+                        .frame(height: 18)
+                }
+                if rows.transport { row("transport", TransportRow(d: d)) }
+                if rows.hotcues { row("cues", CueRow(d: d)) }
+                if rows.loop { row("loop", LoopRow(d: d)) }
+                if rows.jump { row("jump", JumpRow(d: d)) }
                 if mix.prefs.ui.showGridTools { row("grid", GridToolsRow(d: d)) }
             }
-            TempoColumn(d: d)
+            if rows.tempo { TempoColumn(d: d) }
         }
         .padding(6)
         .frame(maxHeight: .infinity)
@@ -107,7 +112,7 @@ struct DeckHeader: View {
 
     struct Model: Equatable {
         var playing = false, title = "", subtitle = "", isError = false
-        var showFX = false, fxUnits = 2, fxAssign: [Bool] = []
+        var showFX = false, fxUnits = 2, fxAssign: [Bool] = [], info = true
         var bpm = 0.0, tempoPct = 0.0
         var time = TimeReadout.Model(), code = CodeReadout.Model(), key = KeyReadout.Model(), phaseActive = false
     }
@@ -122,6 +127,7 @@ struct DeckHeader: View {
         m.showFX = !ui.showMixer
         m.fxUnits = ui.fxUnitCount
         m.fxAssign = s.fxAssign
+        m.info = ui.deckRows.info
         m.bpm = s.bpm
         m.tempoPct = s.tempoPct
         m.time = .init(hasTrack: s.track != nil, duration: s.duration, playing: s.playing, grid: s.grid, warnAt: mix.prefs.engine.trackEndWarning)
@@ -140,6 +146,7 @@ struct DeckHeader: View {
         var body: some View {
             HStack(alignment: .center, spacing: 6) {
                 Text(deckLetters[d]).font(Theme.label(22, .bold)).foregroundStyle(m.playing ? Theme.state : Theme.bone)
+                CoverTile(d: d)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(m.title)
                         .font(Theme.mono(13, .semibold)).lineLimit(1)
@@ -160,17 +167,19 @@ struct DeckHeader: View {
                         }
                     }
                 }
-                TimeReadout(d: d, m: m.time).equatable()
-                VStack(alignment: .trailing, spacing: 0) {
-                    Text(String(format: "%.2f", m.bpm)).font(Theme.mono(15, .bold))
-                    Text(String(format: "%+.2f%%", m.tempoPct)).font(Theme.mono(10)).foregroundStyle(.secondary)
+                if m.info {
+                    TimeReadout(d: d, m: m.time).equatable()
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text(String(format: "%.2f", m.bpm)).font(Theme.mono(15, .bold))
+                        Text(String(format: "%+.2f%%", m.tempoPct)).font(Theme.mono(10)).foregroundStyle(.secondary)
+                    }
+                    CodeReadout(d: d, m: m.code).equatable()
+                    VStack(alignment: .trailing, spacing: 0) {
+                        KeyReadout(m: m.key).equatable()
+                        PhaseMeter(d: d, active: m.phaseActive).equatable().frame(width: 44, height: 6)
+                    }
+                    .frame(minWidth: 46)
                 }
-                CodeReadout(d: d, m: m.code).equatable()
-                VStack(alignment: .trailing, spacing: 0) {
-                    KeyReadout(m: m.key).equatable()
-                    PhaseMeter(d: d, active: m.phaseActive).equatable().frame(width: 44, height: 6)
-                }
-                .frame(minWidth: 46)
             }
         }
     }

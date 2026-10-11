@@ -48,7 +48,7 @@ typedef enum {
     MDFX_REVERB_HP, MDFX_REVERB_LP,         // Filter vor dem Hall: 0…1 (HP 0 = aus, LP 1 = aus)
     MDFX_REVERB_DWSEND,                     // 1 = D/W regelt, wie viel in den Hall geht (Single), 0 = D/W regelt den Hall-Anteil
     MDFX_REVERB_LEVEL,                      // Hall-Pegel, linear (1 = bei vollem D/W Hall ≈ 4 dB unter dem Track)
-    MDFX_REVERB_BRIGHT,                     // Helligkeit 0…1 (Dämpfung der Kammfilter + Tiefpass am Ausgang 2,5…12 kHz)
+    MDFX_REVERB_BRIGHT,                     // Helligkeit 0…1 (Höhen-Nachhall 35…90 %, Hochpass vor dem Hall 150…400 Hz, Höhenregal −4…+6 dB)
     MDFX_REVERB_PREDELAY,                   // Vorverzögerung in Sekunden (0…0,2)
     MDFX_PLUGIN_ON,                         // Plugin der Unit an (aus = Eingang zu, Fahne klingt aus)
     MDFX_PARAM_COUNT
@@ -71,6 +71,10 @@ void mdsp_set_master(MDEngine *e, float volume);
 /// wenn mdsp_fx_plugin_released() true liefert (Audio-Thread hat einen ganzen Block ohne es gerechnet).
 MDPlugin *mdsp_set_fx_plugin(MDEngine *e, int unit, int deck, MDPlugin *p);
 bool mdsp_fx_plugin_released(MDEngine *e, int unit, int deck, MDPlugin *old);
+/// NaN im Deck: das Plugin der Unit wird nicht mehr gerechnet, bis der Steuer-Thread es zurückgesetzt hat
+/// (mdplug_reset) und mdsp_fx_plugin_reset_done() meldet
+bool mdsp_fx_plugin_needs_reset(MDEngine *e, int unit, int deck);
+void mdsp_fx_plugin_reset_done(MDEngine *e, int unit, int deck);
 
 void mdsp_seek(MDEngine *e, int deck, double seconds);
 void mdsp_set_loop(MDEngine *e, int deck, bool active, double startSeconds, double endSeconds);
@@ -89,6 +93,9 @@ double mdsp_clock_beat(MDEngine *e);
 bool mdsp_clock_stamp(MDEngine *e, double *beat, uint64_t *hostTime);
 void mdsp_set_render_host(MDEngine *e, uint64_t hostTime);
 void mdsp_metronome(MDEngine *e, bool on, float volume, int firstChannel);
+
+/// Vorlauf des Keylock-Stretchers in Sekunden (wird beim Abspielen ausgeglichen: hörbare Position stimmt)
+double mdsp_keylock_latency(MDEngine *e);
 
 /// Direkt rendern (Tests/Offline): out[ch][frame]
 void mdsp_render(MDEngine *e, float **out, int channels, int frames);

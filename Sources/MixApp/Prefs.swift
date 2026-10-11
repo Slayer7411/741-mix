@@ -8,6 +8,12 @@ enum WaveformStyle: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Spektrum-Stil: fein (6 Bänder, eigene Farben, Höhen zusätzlich als Ebene darüber), fein nur gemischt, oder einfach (3 Bänder, Palette)
+enum SpectrumDetail: String, CaseIterable, Codable, Identifiable {
+    case fine = "Spektrum fein (6 Bänder)", fineMix = "Spektrum fein, ohne Höhen-Ebene", simple = "Spektrum (3 Bänder)"
+    var id: String { rawValue }
+}
+
 enum WaveformPalette: String, CaseIterable, Codable, Identifiable {
     case bone = "741 Knochen", orange = "Orange", blue = "Blau/Weiß", classic = "Klassisch"
     var id: String { rawValue }
@@ -16,6 +22,12 @@ enum WaveformPalette: String, CaseIterable, Codable, Identifiable {
 /// Was die Cue-Taste am Controller macht
 enum ControllerCueAction: String, CaseIterable, Codable, Identifiable {
     case fluxReverse = "Flux-Reverse (halten)", cue = "Cue (Standard)", reverse = "Reverse (halten)"
+    var id: String { rawValue }
+}
+
+/// Was die Flux-Taste am Controller macht: Pad-Ebene umschalten (Hotcues 5–8, Shift + Flux = Flux-Modus) oder Flux-Modus
+enum ControllerFluxButton: String, CaseIterable, Codable, Identifiable {
+    case padLayer = "Pad-Ebene umschalten (Hotcues 5–8)", fluxMode = "Flux-Modus"
     var id: String { rawValue }
 }
 
@@ -47,7 +59,8 @@ enum PadColor: String, CaseIterable, Codable, Identifiable {
 
 struct ControllerPrefs: Codable, Equatable {
     var cueAction = ControllerCueAction.fluxReverse
-    /// Flux antippen schaltet Flux-Modus (gehalten = Beatjump-Ebene für Hotcue 3/4)
+    var fluxButton = ControllerFluxButton.padLayer
+    /// nur im Flux-Modus: Flux antippen schaltet Flux-Modus (gehalten = Pad-Ebene)
     var fluxTapToggles = true
     var fluxBeatjumpBeats = 1.0
     var fluxPads = ControllerFluxPads.hotcues
@@ -82,6 +95,27 @@ struct ControllerPrefs: Codable, Equatable {
     }
 }
 
+/// Sichtbare Zeilen je Deck; alles an = bisheriges Bild
+struct DeckRows: Codable, Equatable {
+    /// Kopf rechts: Zeit, BPM/Tempo, Code, Key + Phase
+    var info = true
+    var phaseBar = true
+    var overview = true
+    var transport = true
+    var hotcues = true
+    var loop = true
+    var jump = true
+    /// Pitch-Fader rechts
+    var tempo = true
+
+    /// Reihenfolge für Menü und Einstellungen
+    static let all: [(WritableKeyPath<DeckRows, Bool>, String)] = [
+        (\.info, "Zusatzinfos (Zeit, BPM, Code, Key)"), (\.phaseBar, "Phasenbalken"), (\.overview, "Übersicht"),
+        (\.transport, "Transport (CUE, PLAY, SYNC …)"), (\.hotcues, "Hotcues"), (\.loop, "Loop-Größen"),
+        (\.jump, "Beatjump"), (\.tempo, "Pitch-Fader"),
+    ]
+}
+
 struct UIPrefs: Codable, Equatable {
     var showMixer = true
     var showFourDecks = true
@@ -89,6 +123,10 @@ struct UIPrefs: Codable, Equatable {
     var waveformSeconds = 4.0
     var waveformStyle = WaveformStyle.threeBand
     var waveformPalette = WaveformPalette.bone
+    /// Spektrum-Stil: feine 6-Band-Farben oder die alten 3 Bänder
+    var spectrumDetail = SpectrumDetail.fine
+    /// Höhen-Betonung im feinen Spektrum (0 = neutral, 1 = Standard, 2 = stark)
+    var waveformHighBoost = 1.0
     var showBeatgrid = true
     var showBarNumbers = true
     var dimPlayed = true
@@ -109,6 +147,8 @@ struct UIPrefs: Codable, Equatable {
     var tagColors: [String: String] = [:]
     /// Grid-Werkzeuge am Deck zeigen
     var showGridTools = true
+    /// Zeilen des Decks einzeln ein-/ausblenden (Menü DECKS -> Zeilen, ⌘, -> Decks)
+    var deckRows = DeckRows()
     /// History zusätzlich in den History-Ordner der Collection schreiben (dort im Archiv sichtbar)
     var historyToExternal = false
     /// Trennzeichen für Tags in Kommentar 2 (jedes Zeichen trennt; Standard Leerzeichen)
@@ -121,6 +161,29 @@ struct UIPrefs: Codable, Equatable {
     var musicFolders: [String] = []
     /// Metadaten-Änderungen aus dem Browser auch in die Collection-Datei schreiben (mit Sicherung davor)
     var writeCollection = false
+    /// Browser-Vorschau (Mini-Wellenform + Grid + Cues): ganze Zeile (zweizeilig), eigene Spalte, hinter dem Titel oder aus
+    var previewMode = PreviewMode.fullRow
+    /// Farben der Vorschau: Spektrum (rot/grün/blau) oder wie die Wellenform
+    var previewColors = PreviewColors.spectrum
+    /// alt (bis 0.x): Hintergrund an/aus – nur noch für die Umstellung auf `previewFill`
+    var previewBackground = true
+    /// fehlende Vorschauen im Hintergrund berechnen: immer (gedrosselt, solange ein Deck spielt) / nur ohne Deck / aus
+    var previewFill = PreviewFill.always
+    /// Vorschau „ganze Zeile“: Schriftgröße der Textzeile (pt) und ob halbfett
+    var previewTextSize = 12.0
+    var previewTextBold = true
+    /// Vorschau „ganze Zeile“: Deckkraft des Bandes (1 = voll, kleiner = gedämpft, Text hebt sich ab)
+    var previewBandAlpha = 0.75
+    /// Cover links im Deck-Kopf
+    var showDeckCover = true
+    /// Cover des gewählten Tracks unter dem Baum im Browser
+    var showCoverPreview = true
+    /// Last-Anzeigen rechts in der Statusleiste (DSP, Latenz, Aussetzer, Speicher, CPU)
+    var showMeters = true
+    /// Collection prüfen: beim Start nach dem Laden automatisch
+    var checkOnStart = false
+    /// Collection prüfen: Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen
+    var checkMusicFolders = true
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.
@@ -128,6 +191,8 @@ struct AppPrefs: Codable, Equatable {
     var engine = EnginePrefs()
     var ui = UIPrefs()
     var controller = ControllerPrefs()
+    /// Cloud-Library: lokal halten, Downloads (⌘, -> CLOUD)
+    var cloud = CloudPrefs()
     /// eigene Tastenkürzel: Aktion-ID -> Kombination als Text ("" = frei), sonst Standard (ShortcutID.defaultCombo)
     var shortcuts: [String: String] = [:]
 
@@ -141,6 +206,27 @@ struct AppPrefs: Codable, Equatable {
     /// Lädt gespeicherte Einstellungen; fehlende (neue) Felder bekommen ihren Standardwert,
     /// statt dass alles auf Standard zurückfällt.
     static func load() -> AppPrefs {
+        var p = loadSaved()
+        // FDN-Hall: neue Standard-Helligkeit 0,6; wer den alten Standard 0,4 nie verändert hat, bekommt den neuen (einmalig)
+        let d = UserDefaults.standard
+        if !Session.isSelfTest, !d.bool(forKey: "migrated.reverb-fdn") {
+            if d.data(forKey: key) != nil, p.engine.reverbBrightness == 0.4 { p.engine.reverbBrightness = EnginePrefs().reverbBrightness; p.save() }
+            d.set(true, forKey: "migrated.reverb-fdn")
+        }
+        // Browser-Vorschau: alter Standard „eigene Spalte“ -> neuer Standard „ganze Zeile“ (einmalig)
+        if !Session.isSelfTest, !d.bool(forKey: "migrated.preview-row") {
+            if d.data(forKey: key) != nil, p.ui.previewMode == .column { p.ui.previewMode = .fullRow; p.save() }
+            d.set(true, forKey: "migrated.preview-row")
+        }
+        // Hintergrund-Vorschauen: wer den alten Schalter ausgeschaltet hatte, bekommt „aus“ (einmalig)
+        if !Session.isSelfTest, !d.bool(forKey: "migrated.preview-fill") {
+            if d.data(forKey: key) != nil, !p.ui.previewBackground { p.ui.previewFill = .off; p.save() }
+            d.set(true, forKey: "migrated.preview-fill")
+        }
+        return p
+    }
+
+    private static func loadSaved() -> AppPrefs {
         guard let data = UserDefaults.standard.data(forKey: key),
               var saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let defData = try? JSONEncoder().encode(AppPrefs()),

@@ -10,11 +10,20 @@ let package = Package(
     ],
     targets: [
         .target(name: "MixCore"),
+        // Cloud-Library (File Provider): Prüfen lokal / nur online, Download-Planer, FSEvents, Anheft-Status.
+        // Ohne Abhängigkeiten, später Teil des Datei-Dienstes
+        .target(name: "LibraryCloud"),
         // Echtzeit-Audiokern (C++, plattformneutral) + CoreAudio-Backend; Time-Stretch-Bibliothek (MIT) für Keylock
+        // VST 3 SDK 3.8.1 (MIT, Steinberg): nur Laden und Betreiben von Plugins (Module, Fabrik, Parameter, Verbindung)
+        .target(name: "VST3SDK",
+                exclude: ["LICENSE.txt", "VERSION.txt", "pluginterfaces/LICENSE.txt", "public.sdk/LICENSE.txt"],
+                cxxSettings: [.headerSearchPath("."), .define("RELEASE", to: "1")],
+                linkerSettings: [.linkedFramework("Cocoa")]),
         .target(name: "MixDSP",
+                dependencies: ["VST3SDK"],
                 exclude: ["vendor/signalsmith-stretch/LICENSE.txt", "vendor/signalsmith-linear/LICENSE.txt", "vendor/VERSIONS.txt"],
-                cxxSettings: [.headerSearchPath("vendor"), .define("SIGNALSMITH_USE_ACCELERATE"),
-                              .unsafeFlags(["-O3"])],
+                cxxSettings: [.headerSearchPath("vendor"), .headerSearchPath("../VST3SDK"), .define("SIGNALSMITH_USE_ACCELERATE"),
+                              .define("RELEASE", to: "1"), .unsafeFlags(["-O3"])],
                 linkerSettings: [.linkedFramework("Accelerate"), .linkedFramework("AudioToolbox")]),
         // Link 3.1.5 (Netzwerk-Tempo-Sync, GPL-2.0-or-later) über die C-Schnittstelle abl_link
         .target(name: "LinkKit",
@@ -24,13 +33,16 @@ let package = Package(
                               .define("LINK_PLATFORM_MACOSX", to: "1")]),
         // Audio-Thread-Code arbeitet bewusst mit geteiltem Zustand → Swift-5-Modus
         .target(name: "MixEngine", dependencies: ["MixCore", "MixDSP", "LinkKit"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .executableTarget(name: "MixApp", dependencies: ["MixCore", "MixEngine"],
+        .executableTarget(name: "MixApp", dependencies: ["MixCore", "MixEngine", "LibraryCloud"],
                           resources: [.copy("Resources")],
                           swiftSettings: [.swiftLanguageMode(.v5)],
                           linkerSettings: [.linkedFramework("CoreAudioKit")]),   // Plugin-Fenster (AUGenericView)
         .testTarget(name: "MixCoreTests", dependencies: ["MixCore"]),
+        .testTarget(name: "LibraryCloudTests", dependencies: ["LibraryCloud"]),
         // Kern offline rendern (kein Audiogerät): Transport, Loop, Keylock, FX-Fahnen, Übergabe
         .testTarget(name: "MixEngineTests", dependencies: ["MixDSP", "MixEngine"]),
+        // Controller-Ereignisse offline (ohne Gerät, ohne Audio) durch den Kern schicken
+        .testTarget(name: "MixAppTests", dependencies: ["MixApp", "MixCore", "MixEngine"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ],
     cxxLanguageStandard: .cxx17
 )

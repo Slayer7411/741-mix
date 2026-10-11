@@ -26,9 +26,11 @@ default layout:
 
 my custom mappings:
 * cue held = flux reverse (shift + cue = normal cue)
-* flux held + pad 1-4 = hotcue 5-8: set / jump, shift = delete, pads show the colors of hotcues 5-8 while flux is held (setting: beatjump -1 / +1 on pads 3 / 4 instead)
-* flux tap = flux mode on / off
-* sync held + hotcue 3 / 4 = one bar back / forward, inside a loop the loop stays and the position wraps (sync toggles on release if no pad was hit)
+* flux tap = pad layer switch: pads 1-4 play hotcue 5-8 (set / jump, shift = delete), pads show the colors of hotcues 5-8 and the flux led stays lit; tap again = back to hotcue 1-4. per side, the layer stays when the pads are used
+* shift + flux = flux mode on / off (flux led half bright while only flux mode is on)
+* flux held + pad 1-4 = hotcue 5-8 only while held (setting: beatjump -1 / +1 on pads 3 / 4 instead), a tap with a pad in between does not switch the layer
+* setting "flux button" -> flux mode: old layout, flux tap = flux mode on / off, held = layer as above
+* sync held + hotcue 3 / 4 = exactly one beat (one kick, 1/4 bar) back / forward, also with flux held or the pad layer on. inside a loop the loop stays and the position wraps (sync toggles on release if no pad was hit). `MIX741_DEBUG=1` logs each jump: `[jump] deck A: from → to s (reason, ±beats)`
 
 all of it under ⌘, -> controller.
 

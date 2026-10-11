@@ -49,17 +49,38 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var channelFilterResonance = 0.6
     public var defaultLoopSize = 4.0
     public var defaultJumpSize = 4.0
+    /// Loop-Snap (nur mit Snap): gespeicherten Loop-Cue übernehmen, wenn er bis zu loopSnapCueBeats vor oder hinter
+    /// der Position beginnt; sonst auf eine 4-Takt-Grenze innerhalb von loopSnapPhraseBeats
+    public var loopSnapCues = true
+    public var loopSnapPhrase = true
+    public var loopSnapCueBeats = 4.0
+    public var loopSnapPhraseBeats = 1.0
     public var delayFeedback = 0.45
     public var fxFilterResonance = 0.4
     /// Reverb: Pegel in dB (0 = Hall bei vollem D/W ≈ 4 dB unter dem Track), Helligkeit 0…1, Vorverzögerung in ms
     public var reverbLevelDb = 0.0
-    public var reverbBrightness = 0.4
+    public var reverbBrightness = 0.6
     public var reverbPreDelayMs = 15.0
     /// Track gilt als gespielt (History), wenn er so viele Sekunden hörbar lief
     public var historyThreshold = 30.0
     /// Grid-Anker beim Laden auf Takt-/Phrasenanfang prüfen (aus / vorschlagen / automatisch verschieben)
     public var phraseAnchor = PhraseAnchorMode.suggest
+    /// Laden abbrechen, wenn so viele Sekunden keine Audiodaten kommen (Cloud-Datei, hängendes Lesen)
+    public var loadTimeout = 4.0
     public init() {}
+}
+
+/// Meldung des Kerns für die Statusleiste (kommt auf beliebigem Thread)
+public struct EngineNotice: Sendable, Equatable {
+    public enum Level: Int, Sendable { case info, ok, warning, error }
+    public var level: Level
+    /// gleicher Schlüssel ersetzt die vorige Meldung an ihrer Stelle
+    public var key: String
+    public var text: String
+    public var detail: String?
+    public init(_ level: Level, key: String, _ text: String, detail: String? = nil) {
+        self.level = level; self.key = key; self.text = text; self.detail = detail
+    }
 }
 
 public struct DeckState: Equatable, Sendable {
@@ -238,10 +259,18 @@ public final class MixController: @unchecked Sendable {
     /// Wird (auf der Steuer-Queue) gerufen, sobald ein Track als gespielt gilt: Deck, Track, Startzeit
     public var onPlayed: ((Int, Track, Date) -> Void)?
 
+    /// Statusmeldungen (Ladefehler, Phrasen-Vorschlag, Plugin-Fehler); beliebiger Thread
+    public var onNotice: (@Sendable (EngineNotice) -> Void)?
+    /// Dekoder: URL, Rate, Fortschritt (Frames; false = abbrechen). Tests setzen einen langsamen/hängenden ein
+    public var decoder: @Sendable (URL, Double, @escaping (Int) -> Bool) throws -> TrackAudio = {
+        try TrackAudio.decode(url: $0, sampleRate: $1, progress: $2)
+    }
+
     /// zusätzliche Aufgaben im Steuertakt (z. B. Controller-LEDs)
     private var tickHandlers: [(MixController) -> Void] = []
 
     public init() {
+        observeInvalidation()
         timer = DispatchSource.makeTimerSource(flags: .strict, queue: controlQueue)
         timer?.schedule(deadline: .now(), repeating: .milliseconds(5), leeway: .milliseconds(1))
         timer?.setEventHandler { [weak self] in self?.tick() }
@@ -302,31 +331,112 @@ public final class MixController: @unchecked Sendable {
 
     public func load(_ t: Track, deck d: Int) {
         let rate = engine.sampleRate
-        let seq: Int = locked {
+        let (seq, timeout): (Int, Double) = locked {
             loadSeq[d] += 1
             state.decks[d].loading = true
             state.decks[d].error = nil
             state.decks[d].playing = false
             engine.player(d).playing = false
-            return loadSeq[d]
+            return (loadSeq[d], max(0.5, state.prefs.loadTimeout))
         }
+        guard FileManager.default.fileExists(atPath: t.path) else {
+            failLoad(t, d, seq: seq, reason: String(localized: "Datei fehlt"), timeout: nil,
+                     text: String(localized: "Datei fehlt: \(Self.displayName(t))"))
+            return
+        }
+        let watch = LoadWatch()
+        watchLoad(t, d, seq: seq, watch, timeout: timeout)
+        let decode = decoder
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             do {
                 let t0 = Date()
-                let a = try TrackAudio.decode(url: URL(fileURLWithPath: t.path), sampleRate: rate)
+                let a = try decode(URL(fileURLWithPath: t.path), rate) { [self] frames in
+                    watch.progress(frames)
+                    return !watch.cancelled && locked { seq == loadSeq[d] }
+                }
                 if Self.debug {
                     print(String(format: "[load] deck %d: %.2f s, %.0f MB", d, Date().timeIntervalSince(t0), Double(a.frames) * 8 / 1e6))
                 }
+                watch.progress(Int.max)
                 finishLoad(t, a, d, seq: seq)
+            } catch TrackAudio.DecodeError.cancelled {
+                // abgebrochen: Zeitüberschreitung (schon gemeldet) oder ein anderer Track gewählt
             } catch {
-                locked {
-                    guard seq == loadSeq[d] else { return }   // inzwischen ein anderer Track gewählt
-                    state.decks[d].loading = false
-                    state.decks[d].error = "Laden fehlgeschlagen: \(error.localizedDescription)"
-                }
+                watch.progress(Int.max)
+                failLoad(t, d, seq: seq, reason: Self.reason(error), timeout: nil)
             }
         }
     }
+
+    /// Fortschritt eines Ladevorgangs (Dekoder-Thread schreibt, Wächter liest)
+    private final class LoadWatch: @unchecked Sendable {
+        private let lock = NSLock()
+        private var last = DispatchTime.now()
+        private var done = false
+        private var stop = false
+        var cancelled: Bool { lock.withLock { stop } }
+        /// Frames gelesen; Int.max = Lesen fertig (danach rechnet nur noch die Analyse)
+        func progress(_ frames: Int) { lock.withLock { last = .now(); if frames == .max { done = true } } }
+        /// Sekunden ohne neue Daten (nil = fertig gelesen)
+        func stalled() -> Double? {
+            lock.withLock { done ? nil : Double(DispatchTime.now().uptimeNanoseconds - last.uptimeNanoseconds) / 1e9 }
+        }
+        func cancel() { lock.withLock { stop = true } }
+    }
+
+    /// Wächter: kommen `timeout` Sekunden keine Audiodaten, wird der Ladevorgang abgebrochen (das Ergebnis verworfen)
+    private func watchLoad(_ t: Track, _ d: Int, seq: Int, _ w: LoadWatch, timeout: Double) {
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + min(0.25, timeout / 4)) { [self] in
+            guard locked({ seq == loadSeq[d] }), let idle = w.stalled() else { return }
+            if idle >= timeout {
+                w.cancel()
+                failLoad(t, d, seq: seq, reason: String(localized: "keine Audiodaten (Cloud-Datei nicht geladen, Lesen hängt?)"), timeout: timeout)
+            } else {
+                watchLoad(t, d, seq: seq, w, timeout: timeout)
+            }
+        }
+    }
+
+    /// Laden fehlgeschlagen: Deck leer, Fehler am Deck, Meldung in der Statusleiste. Gilt nur für den aktuellen Ladevorgang
+    private func failLoad(_ t: Track, _ d: Int, seq: Int, reason: String, timeout: Double?, text: String? = nil) {
+        let r: (TrackAudio?, UInt32)? = locked {
+            guard seq == loadSeq[d] else { return nil }
+            loadSeq[d] += 1   // ein später fertiger Dekoder darf das Deck nicht mehr belegen
+            let old = audio[d]
+            audio[d] = nil
+            var s = state.decks[d]
+            s.track = nil; s.grid = nil; s.duration = 0; s.hotcues = [:]; s.cuePoint = 0
+            s.phraseTarget = nil; s.loopActive = false; s.loopIn = nil; s.reverse = false; s.flux = false
+            s.loading = false; s.playing = false
+            s.error = String(localized: "Nicht ladbar: \(reason)")
+            state.decks[d] = s
+            playedTime[d] = 0; playedLogged[d] = false; playStart[d] = nil
+            engine.setLoop(d, active: false, start: 0, end: 0)
+            return (old, engine.attach(nil, deck: d, startAt: 0))
+        }
+        guard let (old, gen) = r else { return }
+        releaseWhenFree(old, deck: d, gen: gen)
+        let name = Self.displayName(t)
+        let text = text ?? timeout.map { String(localized: "Track nicht ladbar (\(Int($0.rounded())) s): \(name) · \(reason)") }
+            ?? String(localized: "Track nicht ladbar: \(name) · \(reason)")
+        onNotice?(EngineNotice(.error, key: "load.\(d)", text, detail: t.path))
+        if Self.debug { print("[load] deck \(d): \(text)"); fflush(stdout) }
+    }
+
+    static func displayName(_ t: Track) -> String {
+        let a = t.artist.trimmingCharacters(in: .whitespaces), ti = t.title.trimmingCharacters(in: .whitespaces)
+        if a.isEmpty && ti.isEmpty { return URL(fileURLWithPath: t.path).lastPathComponent }
+        return a.isEmpty ? ti : (ti.isEmpty ? a : "\(a) – \(ti)")
+    }
+
+    private static func reason(_ e: Error) -> String {
+        if case TrackAudio.DecodeError.format = e { return String(localized: "Format nicht lesbar") }
+        if case let TrackAudio.DecodeError.convert(m) = e { return String(localized: "Umwandlung: \(m)") }
+        let ns = e as NSError
+        return ns.localizedFailureReason ?? ns.localizedDescription
+    }
+
+    static func deckLetter(_ d: Int) -> String { ["A", "B", "C", "D"][max(0, min(3, d))] }
 
     /// MIX741_DEBUG=1: Lade-, Hänger- und Controller-Protokoll
     public static let debug = ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1"
@@ -383,6 +493,7 @@ public final class MixController: @unchecked Sendable {
         }
         guard let (old, gen) = r else { return }   // `a` wird hier freigegeben, der Kern hat es nie gesehen
         releaseWhenFree(old, deck: d, gen: gen)
+        onNotice?(EngineNotice(.info, key: "load.\(d)", String(localized: "Deck \(Self.deckLetter(d)): \(Self.displayName(t))")))
         analyzePhrase(d, a)
     }
 
@@ -404,6 +515,12 @@ public final class MixController: @unchecked Sendable {
                     state.decks[d].phraseConfidence = r.confidence
                 }
                 return true
+            }
+            if applied {
+                let shift = String(format: "%+d", r.shiftBeats)
+                onNotice?(EngineNotice(.info, key: "phrase.\(d)", mode == .auto
+                    ? String(localized: "Deck \(Self.deckLetter(d)): Grid-Anker auf Phrasenanfang verschoben (\(shift) Beats)")
+                    : String(localized: "Deck \(Self.deckLetter(d)): Phrasen-Anker vorgeschlagen (\(shift) Beats)")))
             }
             if applied, ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1" {
                 print(String(format: "[phrase] deck %d: %@ %+d beats (conf %.2f)", d, mode == .auto ? "anchor" : "suggest",
@@ -445,14 +562,14 @@ public final class MixController: @unchecked Sendable {
             let p = engine.player(d)
             if p.playing {
                 p.playing = false
-                engine.seek(d, seconds: state.decks[d].cuePoint)
+                jump(d, to: state.decks[d].cuePoint, "cue")
             } else if abs(position(d) - state.decks[d].cuePoint) < 0.02 {
                 semiAlignStart(d)   // Cue-Vorhören startet ebenfalls in Phase; CUE loslassen springt zurück zum Cue
                 p.playing = true
                 state.decks[d].cueHeld = true
             } else {
                 state.decks[d].cuePoint = snapped(d, position(d))
-                engine.seek(d, seconds: state.decks[d].cuePoint)
+                jump(d, to: state.decks[d].cuePoint, "cue set")
             }
             state.decks[d].playing = p.playing
             applyRate(d)
@@ -463,7 +580,7 @@ public final class MixController: @unchecked Sendable {
         locked {
             guard state.decks[d].cueHeld else { return }
             engine.player(d).playing = false
-            engine.seek(d, seconds: state.decks[d].cuePoint)
+            jump(d, to: state.decks[d].cuePoint, "cue release")
             state.decks[d].cueHeld = false
             state.decks[d].playing = false
             applyRate(d)
@@ -473,7 +590,7 @@ public final class MixController: @unchecked Sendable {
     public func cup(_ d: Int) {
         locked {
             guard audio[d] != nil else { return }
-            engine.seek(d, seconds: state.decks[d].cuePoint)
+            jump(d, to: state.decks[d].cuePoint, "cup")
             semiAlignStart(d)   // vom Cue aus in Phase zum Master starten
             engine.player(d).playing = true
             state.decks[d].playing = true
@@ -488,7 +605,7 @@ public final class MixController: @unchecked Sendable {
     /// Von Hand verschoben (Wellenform ziehen, Touchstrip): im Fix-Sync bleibt die neue Phase
     public func seek(_ d: Int, seconds: Double) {
         locked {
-            engine.seek(d, seconds: seconds)
+            jump(d, to: seconds, "seek")
             if state.prefs.syncMode == .fixed, state.decks[d].sync, let g = state.decks[d].grid, let mb = masterBeat() {
                 phaseOffset[d] = BeatGrid.phaseError(own: g.beatPosition(at: seconds), master: mb)
                 bigError[d] = 0
@@ -500,7 +617,7 @@ public final class MixController: @unchecked Sendable {
         locked {
             state.decks[d].reverse = on
             engine.player(d).reverse = on
-            if !on, state.decks[d].flux { engine.seek(d, seconds: engine.fluxPosition(d)) }
+            if !on, state.decks[d].flux { jump(d, to: engine.fluxPosition(d), "flux return") }
         }
     }
 
@@ -524,7 +641,7 @@ public final class MixController: @unchecked Sendable {
                 state.decks[d].reverse = true; p.reverse = true
             } else {
                 state.decks[d].reverse = false; p.reverse = false
-                engine.seek(d, seconds: engine.fluxPosition(d))
+                jump(d, to: engine.fluxPosition(d), "flux reverse return")
                 let r = fluxReverseRestore[d] ?? false
                 state.decks[d].flux = r; p.flux = r
                 fluxReverseRestore[d] = nil
@@ -543,7 +660,7 @@ public final class MixController: @unchecked Sendable {
                 if state.prefs.quantize, state.prefs.hotcueKeepsPhase, state.decks[d].playing, let g = state.decks[d].grid {
                     target += position(d) - g.beatFloor(position(d))
                 }
-                engine.seek(d, seconds: target)
+                jump(d, to: target, "hotcue \(n + 1)")
                 if c.kind == .loop, c.lengthMs > 0 {
                     engine.setLoop(d, active: true, start: c.startMs / 1000, end: (c.startMs + c.lengthMs) / 1000)
                     state.decks[d].loopActive = true
@@ -563,10 +680,56 @@ public final class MixController: @unchecked Sendable {
 
     private func beatLength(_ d: Int) -> Double { state.decks[d].grid?.beat ?? 0.5 }
 
+    /// jeder Sprung des Kerns läuft hier durch; MIX741_DEBUG=1: `[jump] deck A: von → nach (Grund)`
+    private func jump(_ d: Int, to t: Double, _ reason: @autoclosure () -> String) {
+        let from = Self.debug ? position(d) : 0
+        engine.seek(d, seconds: t)
+        guard Self.debug else { return }
+        let deck = String(UnicodeScalar(UInt8(65 + d)))
+        let beats = state.decks[d].grid.map { String(format: ", %+.2f beats", (max(0, t) - from) / $0.beat) } ?? ""
+        print(String(format: "[jump] deck %@: %.3f → %.3f s (%@%@)", deck, from, max(0, t), reason(), beats))
+        fflush(stdout)
+    }
+
     /// Snap: Cue-/Loop-Punkte auf den nächsten Beat
     private func snapped(_ d: Int, _ t: Double) -> Double {
         guard state.prefs.snap, let g = state.decks[d].grid else { return t }
         return g.nearestBeat(to: t)
+    }
+
+    /// Beats je Snap-Phrase: 4 Takte, gezählt ab dem Grid-Anker
+    private static let snapPhraseBeats = 16.0
+
+    /// Loop-Snap: gespeicherter Loop-Cue (Hotcue oder Memory-Cue), der kurz vor der Position beginnt
+    /// oder gerade überspielt wird (Position noch im Loop). Der nächstgelegene gewinnt.
+    private func nearbyLoopCue(_ d: Int) -> (start: Double, end: Double)? {
+        let p = state.prefs
+        guard p.snap, p.loopSnapCues, !state.decks[d].reverse, let g = state.decks[d].grid else { return nil }
+        let pos = position(d), w = p.loopSnapCueBeats * g.beat
+        let memory = state.decks[d].track?.cues.filter { $0.hotcue < 0 } ?? []
+        return (Array(state.decks[d].hotcues.values) + memory)
+            .filter { $0.kind == .loop && $0.lengthMs > 0 }
+            .map { (start: $0.startMs / 1000, end: ($0.startMs + $0.lengthMs) / 1000) }
+            .filter { $0.start <= pos + w && $0.start >= pos - w && pos < $0.end }
+            .min { abs($0.start - pos) < abs($1.start - pos) }
+    }
+
+    /// Loop-Snap: 4-Takt-Grenze (ab dem Grid-Anker) innerhalb der Toleranz um die Position
+    private func nearbyPhraseStart(_ d: Int) -> Double? {
+        let p = state.prefs
+        guard p.snap, p.loopSnapPhrase, !state.decks[d].reverse, let g = state.decks[d].grid else { return nil }
+        let b = g.beatPosition(at: position(d))
+        let n = (b / Self.snapPhraseBeats).rounded() * Self.snapPhraseBeats
+        guard abs(b - n) <= p.loopSnapPhraseBeats + 1e-9 else { return nil }
+        return g.time(ofBeat: n)
+    }
+
+    /// Loop-Cue als Loop übernehmen, ohne Sprung (die Position läuft hinein bzw. ist schon drin)
+    private func activateLoopCue(_ d: Int, _ c: (start: Double, end: Double)) {
+        engine.setLoop(d, active: true, start: c.start, end: c.end)
+        state.decks[d].loopActive = true
+        let beats = (c.end - c.start) / beatLength(d)
+        if let s = BeatSizes.loop.first(where: { abs($0 - beats) < 0.01 }) { state.decks[d].loopSize = s }
     }
 
     public func autoLoop(_ d: Int, size: Double? = nil) {
@@ -574,8 +737,15 @@ public final class MixController: @unchecked Sendable {
             guard audio[d] != nil else { return }
             let s = size ?? state.decks[d].loopSize
             if state.decks[d].loopActive, size == nil || s == state.decks[d].loopSize { exitLoop(d); return }
+            if !state.decks[d].loopActive, let c = nearbyLoopCue(d) { activateLoopCue(d, c); return }
             state.decks[d].loopSize = s
             let pos = position(d)
+            // 4-Takt-Grenze: Loop beginnt dort, die Position läuft hinein oder ist schon drin (sonst normaler Snap)
+            if !state.decks[d].loopActive, let start = nearbyPhraseStart(d), pos < start + s * beatLength(d) {
+                engine.setLoop(d, active: true, start: start, end: start + s * beatLength(d))
+                state.decks[d].loopActive = true
+                return
+            }
             var start = state.decks[d].loopActive ? engine.loop(d).start : pos
             if !state.decks[d].loopActive, state.prefs.quantize, let g = state.decks[d].grid {
                 let unit = min(1, s)
@@ -591,7 +761,7 @@ public final class MixController: @unchecked Sendable {
             let l = engine.loop(d)
             engine.setLoop(d, active: false, start: l.start, end: l.end)
             state.decks[d].loopActive = false
-            if state.decks[d].flux { engine.seek(d, seconds: engine.fluxPosition(d)) }
+            if state.decks[d].flux { jump(d, to: engine.fluxPosition(d), "flux return") }
         }
     }
 
@@ -601,7 +771,7 @@ public final class MixController: @unchecked Sendable {
             guard l.end > l.start else { return }
             if state.decks[d].loopActive { exitLoop(d); return }
             engine.setLoop(d, active: true, start: l.start, end: l.end)
-            if position(d) > l.end || position(d) < l.start { engine.seek(d, seconds: l.start) }
+            if position(d) > l.end || position(d) < l.start { jump(d, to: l.start, "reloop") }
             state.decks[d].loopActive = true
         }
     }
@@ -620,7 +790,16 @@ public final class MixController: @unchecked Sendable {
 
     public func setLoopSize(_ d: Int, _ s: Double) { locked { state.decks[d].loopSize = s } }
 
-    public func setLoopIn(_ d: Int) { locked { state.decks[d].loopIn = snapped(d, position(d)) } }
+    public func setLoopIn(_ d: Int) {
+        locked {
+            if !state.decks[d].loopActive, let c = nearbyLoopCue(d) {
+                state.decks[d].loopIn = c.start
+                activateLoopCue(d, c)
+                return
+            }
+            state.decks[d].loopIn = nearbyPhraseStart(d) ?? snapped(d, position(d))
+        }
+    }
 
     public func setLoopOut(_ d: Int) {
         locked {
@@ -628,7 +807,7 @@ public final class MixController: @unchecked Sendable {
             let b = snapped(d, position(d))
             guard b > a + 0.01 else { return }
             engine.setLoop(d, active: true, start: a, end: b)
-            engine.seek(d, seconds: a)
+            jump(d, to: a, "loop out")
             state.decks[d].loopActive = true
         }
     }
@@ -641,22 +820,26 @@ public final class MixController: @unchecked Sendable {
                 let l = engine.loop(d)
                 engine.setLoop(d, active: true, start: l.start + delta, end: l.end + delta)
             }
-            engine.seek(d, seconds: max(0, position(d) + delta))
+            jump(d, to: max(0, position(d) + delta), String(format: "beatjump %+g", beats))
         }
     }
 
     /// genau einen Takt springen; im Loop bleibt der Loop stehen und die Position läuft darin um
     /// (so landen beide Tracks auf derselben Takt-Eins im 4/4)
-    public func barJump(_ d: Int, bars: Int) {
+    public func barJump(_ d: Int, bars: Int) { stepJump(d, beats: bars * 4, reason: "bar jump \(bars > 0 ? "+" : "")\(bars)") }
+
+    /// um ganze Beats springen (Controller: Sync + Pad 3/4 = ein Beat); im Loop bleibt der Loop stehen
+    /// und die Position läuft darin um
+    public func stepJump(_ d: Int, beats: Int, reason: String? = nil) {
         locked {
             guard audio[d] != nil else { return }
-            var t = position(d) + Double(bars * 4) * beatLength(d)
+            var t = position(d) + Double(beats) * beatLength(d)
             if state.decks[d].loopActive {
                 let l = engine.loop(d)
                 let len = l.end - l.start
                 if len > 0 { t = l.start + (t - l.start).truncatingRemainder(dividingBy: len); if t < l.start { t += len } }
             }
-            engine.seek(d, seconds: max(0, t))
+            jump(d, to: max(0, t), reason ?? "step \(beats > 0 ? "+" : "")\(beats)")
         }
     }
 
@@ -729,7 +912,7 @@ public final class MixController: @unchecked Sendable {
         phaseOffset[d] = 0
         applyRate(d)
         if hard, let e = phaseErrorLocked(d) {
-            engine.seek(d, seconds: position(d) - e * g.beat)
+            jump(d, to: position(d) - e * g.beat, "sync align")
         }
     }
 
@@ -741,7 +924,7 @@ public final class MixController: @unchecked Sendable {
         if !state.clockMaster { guard let m = state.effectiveMaster, m != d, state.decks[m].playing else { return } }
         guard let e = rawPhaseError(d) else { return }
         let t = position(d) - e * g.beat
-        engine.seek(d, seconds: t < 0 ? t + g.beat : t)   // vor dem Trackanfang: einen Beat später
+        jump(d, to: t < 0 ? t + g.beat : t, "semi start")   // vor dem Trackanfang: einen Beat später
     }
 
     // MARK: Beatgrid bearbeiten
@@ -990,15 +1173,14 @@ public final class MixController: @unchecked Sendable {
     private var pushKnobsOnActivate = [Bool](repeating: false, count: MixEngine.fxUnitCount)
     private let pluginQueue = DispatchQueue(label: "minos741.plugins", qos: .userInitiated)
     private let pluginEvents = DispatchQueue(label: "minos741.plugin-events", qos: .userInitiated)
-    private let listLock = NSLock()
-    private var pluginCache: [PluginInfo]?
-
-    /// installierte Effekt-Plugins (einmal eingelesen, `refresh` liest neu)
-    public func pluginList(refresh: Bool = false) -> [PluginInfo] {
-        listLock.lock(); defer { listLock.unlock() }
-        if refresh || pluginCache == nil { pluginCache = PluginHost.installed() }
-        return pluginCache ?? []
+    /// Plugin-Liste, Einstellungen, Absturz-Markierung (die App setzt vor dem ersten Laden eine gespeicherte ein)
+    public var pluginCatalog = PluginCatalog(directory: nil) {
+        didSet { observeInvalidation() }
     }
+    private var invalidationObserver: NSObjectProtocol?
+
+    /// Effekt-Plugins fürs FX-Menü: eingeschaltet und nicht blockiert (einmal eingelesen, `refresh` liest neu)
+    public func pluginList(refresh: Bool = false) -> [PluginInfo] { pluginCatalog.menuList(refresh: refresh) }
 
     /// Namen der Plugin-Parameter auf den 3 Reglern
     public func pluginParamNames(_ u: Int) -> [String] { locked { state.pluginParams[u] } }
@@ -1029,12 +1211,13 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
-    /// Fenster zu: Zuhören beenden, Zustand für die Sitzung merken
+    /// Fenster zu: Zuhören beenden, Zustand für die Sitzung merken (VST3: Zustand auf dem UI-Thread, außerhalb der Sperre)
     public func endPluginEdit(_ u: Int, _ inst: PluginInstance) {
         inst.stopObserving()
+        let st = inst.state
         locked {
             guard plugins[u].contains(where: { $0 === inst }) else { return }
-            if let st = inst.state { state.fx[u].pluginState = st }
+            if let st { state.fx[u].pluginState = st }
         }
     }
 
@@ -1066,27 +1249,42 @@ public final class MixController: @unchecked Sendable {
         if !loaded {
             knobsLive[u] = false
             guard pluginLoading[u] != want, pluginFailed[u] != want else { return }
+            // blockiert (Absturz) oder abgeschaltet: nicht laden, auch nicht aus einer gespeicherten Sitzung
+            if let why = pluginCatalog.unusableReason(want) {
+                pluginFailed[u] = want
+                state.pluginErrors[u] = why
+                onNotice?(EngineNotice(.warning, key: "plugin.\(u)", String(localized: "FX \(u + 1): Plugin nicht geladen · \(why)")))
+                return
+            }
             pluginGen[u] += 1
             let gen = pluginGen[u], saved = fx.pluginState, rate = engine.sampleRate
             pluginLoading[u] = want
-            let info = pluginList().first { $0.id == want } ?? PluginHost.codes(want).map {
-                PluginInfo(id: want, name: PluginHost.fourCC($0.1), manufacturer: PluginHost.fourCC($0.2), type: $0.0, subtype: $0.1, manu: $0.2)
-            }
+            let catalog = pluginCatalog
             pluginQueue.async { [self] in
                 do {
-                    guard let info else { throw NSError(domain: "minos741.plugin", code: 2, userInfo: [NSLocalizedDescriptionKey: want]) }
+                    // Liste ggf. erst hier einlesen (außerhalb der Sperre)
+                    guard let info = catalog.info(want) ?? PluginHost.codes(want).map({
+                        PluginInfo(id: want, name: PluginHost.fourCC($0.1), manufacturer: PluginHost.fourCC($0.2), type: $0.0, subtype: $0.1, manu: $0.2)
+                    }) else { throw NSError(domain: "minos741.plugin", code: 2, userInfo: [NSLocalizedDescriptionKey: want]) }
+                    let isolated = catalog.isolated(want)
+                    // Absturz-Markierung: stürzt MINOS-741 beim Öffnen ab, ist das Plugin beim nächsten Start blockiert
+                    catalog.beginOpen(key: want, name: info.name)
+                    defer { catalog.endOpen() }
                     let insts = try (0..<MixEngine.deckCount).map { _ -> PluginInstance in
-                        let p = try PluginInstance(info, sampleRate: rate)
+                        let p = try PluginInstance(info, sampleRate: rate, outOfProcess: isolated)
                         if let saved { p.state = saved }
                         _ = p.parameters
                         return p
                     }
-                    finishPluginLoad(u, gen, insts, restored: saved != nil)
+                    // Zustand hier lesen, nicht unter der Sperre (VST3 fragt den UI-Thread)
+                    finishPluginLoad(u, gen, insts, restored: saved != nil, initialState: saved ?? insts[0].state)
                 } catch {
                     locked {
                         guard gen == pluginGen[u] else { return }
                         pluginLoading[u] = nil; pluginFailed[u] = want
                         state.pluginErrors[u] = error.localizedDescription
+                        onNotice?(EngineNotice(.error, key: "plugin.\(u)",
+                                               String(localized: "FX \(u + 1): Plugin nicht ladbar · \(error.localizedDescription)")))
                     }
                 }
             }
@@ -1110,7 +1308,7 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
-    private func finishPluginLoad(_ u: Int, _ gen: Int, _ insts: [PluginInstance], restored: Bool) {
+    private func finishPluginLoad(_ u: Int, _ gen: Int, _ insts: [PluginInstance], restored: Bool, initialState: Data?) {
         locked {
             // inzwischen anderes Plugin gewählt: die neuen Instanzen waren nie im Kern → einfach verwerfen
             guard gen == pluginGen[u], state.fx[u].pluginID == insts[0].info.id else { return }
@@ -1119,7 +1317,7 @@ public final class MixController: @unchecked Sendable {
             state.pluginParams[u] = insts[0].parameters.prefix(3).map { Self.shortName($0.name) }
             knobsLive[u] = false
             pushKnobsOnActivate[u] = restored
-            if state.fx[u].pluginState == nil { state.fx[u].pluginState = insts[0].state }
+            if state.fx[u].pluginState == nil { state.fx[u].pluginState = initialState }
             applyFX(u)
         }
     }
@@ -1136,6 +1334,51 @@ public final class MixController: @unchecked Sendable {
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { [self] in
             if engine.pluginReleased(unit: u, deck: d, old) || !engine.running { return }
             retirePlugin(old, unit: u, deck: d)
+        }
+    }
+
+    /// NaN im Deck (Kern hat das Deck geheilt): Plugin zurücksetzen, solange rechnet der Kern es nicht. Unter der Sperre
+    private var pluginsResetting = Set<Int>()
+    private func healPlugins() {
+        for u in plugins.indices {
+            for d in plugins[u].indices where engine.pluginNeedsReset(unit: u, deck: d) {
+                let key = u * 16 + d
+                guard !pluginsResetting.contains(key) else { continue }
+                guard let p = plugins[u][d] else { engine.pluginResetDone(unit: u, deck: d); continue }
+                pluginsResetting.insert(key)
+                p.reset { [weak self] in
+                    guard let self else { return }
+                    self.engine.pluginResetDone(unit: u, deck: d)
+                    self.locked { _ = self.pluginsResetting.remove(key) }
+                }
+            }
+        }
+    }
+
+    /// isoliertes Plugin abgestürzt (der Systemdienst ist weg, MINOS-741 läuft weiter): Instanzen heraus, Plugin blockieren
+    private func observeInvalidation() {
+        if invalidationObserver != nil { return }
+        let name = NSNotification.Name(kAudioComponentInstanceInvalidationNotification as String)
+        invalidationObserver = NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { [weak self] n in
+            guard let self, let v = n.userInfo?["audioUnit"] as? NSValue, let raw = v.pointerValue else { return }
+            self.pluginInvalidated(OpaquePointer(raw))
+        }
+    }
+
+    private func pluginInvalidated(_ au: OpaquePointer) {
+        locked {
+            for u in plugins.indices {
+                guard let hit = plugins[u].compactMap({ $0 }).first(where: { OpaquePointer($0.audioUnit) == au }) else { continue }
+                let id = hit.info.id
+                pluginCatalog.block(id, reason: String(localized: "abgestürzt (isoliert, MINOS-741 lief weiter)"))
+                pluginGen[u] += 1; pluginLoading[u] = nil; pluginFailed[u] = id
+                for d in plugins[u].indices { installPlugin(nil, unit: u, deck: d) }
+                state.pluginParams[u] = []
+                state.pluginErrors[u] = String(format: String(localized: "%@ abgestürzt – blockiert"), hit.info.name)
+                onNotice?(EngineNotice(.error, key: "plugin.\(u)", "FX \(u + 1): " + (state.pluginErrors[u] ?? "")))
+                knobsLive[u] = false
+                applyFX(u)
+            }
         }
     }
 
@@ -1174,7 +1417,7 @@ public final class MixController: @unchecked Sendable {
                     // harter Sprung nur, wenn der Fehler groß ist und > 100 ms anhält – sonst weich nachziehen
                     bigError[d] = abs(e) > 0.25 ? bigError[d] + 1 : 0
                     if bigError[d] >= 20 {
-                        engine.seek(d, seconds: position(d) - e * g.beat)
+                        jump(d, to: position(d) - e * g.beat, "phase lock")
                         state.decks[d].nudge = 0
                         bigError[d] = 0
                     } else {
@@ -1216,6 +1459,7 @@ public final class MixController: @unchecked Sendable {
             }
             if !played.isEmpty, let cb = onPlayed { DispatchQueue.global().async { for p in played { cb(p.0, p.1, p.2) } } }
             tickCount += 1
+            if tickCount % 4 == 0 { healPlugins() }
             // beat-synchrones Delay folgt dem Tempo
             if tickCount % 50 == 0, state.fx.contains(where: { $0.slots[1].on }) { applyAllFX() }
             return tickCount % 6 == 0 ? tickHandlers : []

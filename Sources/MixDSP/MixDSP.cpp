@@ -1,7 +1,8 @@
 // MixDSP – Echtzeitkern. Regeln für alles, was in render() läuft:
 // keine Sperren, kein new/delete, keine Systemaufrufe, nur vorab angelegter Speicher.
 #include "MixDSP.h"
-#include "MixDSPAUHost.h"
+#include "MixDSPPlugin.h"
+#include "PluginBackend.h"
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -20,8 +21,7 @@ namespace {
 constexpr int kMaxFrames = MDSP_MAX_FRAMES;
 constexpr int kMaxIn = kMaxFrames * 5;   // Eingang je Block bei Tempo bis 4× (+Reserve)
 constexpr double kPi = 3.14159265358979323846;
-constexpr float kReverbRef = 0.0175f;     // Hall-Eingangsgewicht bei Pegel 1 (Abgleich: siehe Reverb::run)
-constexpr double kReverbLowCut = 200;     // Hz, Hochpass vor dem Hall
+constexpr float kReverbRef = 0.42f;       // Hall-Eingangsgewicht bei Pegel 1 (Abgleich: siehe Reverb::run)
 
 inline float dbToLin(float db) { return db <= -95.f ? 0.f : std::pow(10.f, db / 20.f); }
 
@@ -129,140 +129,234 @@ struct Delay {
     }
 };
 
-// ---------- Reverb (Freeverb-Struktur, weich abgestimmt) ----------
-// gegen metallischen Klang: Eingangs-Diffusion, gedämpfte Kammfilter, Lesepunkt der Kammfilter schwankt langsam
-// um wenige Samples (keine stehenden Resonanzen), sanfter Tiefpass am Ausgang
-struct Comb {
-    std::vector<float> b; int i = 0; float store = 0;
-    float phase = 0, step = 0, mod = 0;   // LFO (Bogenmaß je Sample), aktueller Wert -1…1
-    void lfo(int n) { mod = std::sin(phase); phase += step * n; if (phase > 2 * float(kPi)) phase -= 2 * float(kPi); }
-    inline float tick(float x, float fb, float damp, float depth) {
-        int n = int(b.size());
-        // Leseposition vor dem Schreibzeiger: Verzögerung n-1-m, m = 0…depth Samples, gebrochen gelesen
-        float rp = float(i) + 1 + depth * (0.5f + 0.5f * mod);
-        if (rp >= n) rp -= n;
-        int r0 = int(rp), r1 = r0 + 1; if (r1 >= n) r1 = 0;
-        float f = rp - float(r0);
-        float y = b[r0] + (b[r1] - b[r0]) * f;
-        store = y * (1 - damp) + store * damp;
-        b[i] = x + store * fb;
-        if (++i >= n) i = 0;
-        return y;
-    }
-};
-struct Allpass {
-    std::vector<float> b; int i = 0;
-    inline float tick(float x) {
-        float bo = b[i], y = -x + bo;
-        b[i] = x + bo * 0.5f;
-        if (++i >= int(b.size())) i = 0;
-        return y;
-    }
-};
+// ---------- Reverb (Diffusor + FDN mit 16 Leitungen) ----------
+// Eingang stereo -> Diffusor (4 Stufen × 8 Kanäle, Hadamard-Mischung, ohne Rückkopplung: dicht ab der ersten ms)
+// -> Rückkopplungsnetz aus 16 Verzögerungsleitungen (Primzahl-Längen 30 … 110 ms, Hadamard-Matrix, je Leitung
+// Hochregal-Dämpfung: Höhen klingen schneller ab, bleiben aber hörbar), Leselänge jeder Leitung schwankt langsam
+// (Allpass-Interpolation, verlustfrei) -> keine stehenden Resonanzen. L/R aus orthogonalen Summen der Leitungen.
+// Nachhall 0,4 s … 25 s (Größe 0,9) … 200 s (Größe 1, fast eingefroren).
+constexpr int kRvLines = 16, kRvDiffCh = 8, kRvDiffSteps = 4;
+constexpr int kRvTank[kRvLines] = {1721, 4447, 1871, 1571, 2887, 3739, 3137, 1447, 2039, 4861, 2221, 1321, 3433, 2647, 4079, 2423};   // Samples bei 44,1 kHz
+constexpr int kRvDiff[kRvDiffSteps][kRvDiffCh] = {{1229, 499, 709, 449, 1117, 211, 1693, 1531}, {607, 863, 17, 359, 991, 199, 467, 683},
+                                                   {19, 149, 61, 457, 251, 307, 409, 241}, {197, 7, 193, 89, 59, 127, 37, 157}};
+constexpr float kRvRates[kRvLines] = {0.28f, 0.58f, 0.43f, 0.78f, 0.33f, 0.68f, 0.47f, 0.93f, 0.72f, 0.18f, 1.02f, 0.53f, 0.83f, 0.38f, 0.62f, 0.22f};   // Hz
+constexpr double kRvModMs = 0.35;          // Schwankung der Leselänge ± ms
+constexpr double kRvDampHz = 3000;         // Eckfrequenz der Höhen-Dämpfung in den Leitungen
+constexpr double kRvBuildS = 2.5;          // Pegelabgleich: gleiche Lautheit nach so langem Einspielen, unabhängig von der Größe
+
+/// Nachhallzeit (s) aus der Größe 0…1
+inline double reverbT60(double size) {
+    size = std::clamp(size, 0.0, 1.0);
+    if (size <= 0.9) return 0.4 * std::pow(25.0 / 0.4, size / 0.9);
+    return 25.0 * std::pow(8.0, (size - 0.9) / 0.1);
+}
+
+/// Hadamard-Mischung (ungewichtet, schnelle Walsh-Transformation)
+template <int N> inline void hadamard(float *v) {
+    for (int h = 1; h < N; h *= 2)
+        for (int i = 0; i < N; i += 2 * h)
+            for (int j = i; j < i + h; j++) { float a = v[j], b = v[j + h]; v[j] = a + b; v[j + h] = a - b; }
+}
+
 struct Reverb {
-    Comb cL[8], cR[8]; Allpass aL[4], aR[4], inA[2];
+    // Verzögerungen hintereinander in einem Puffer, je Leitung die nächste Zweierpotenz (Maske), ein gemeinsamer
+    // Schreibzähler. Zwischen den Leitungen kRvPad Abstand: sonst fallen alle Zugriffe in dieselben Cache-Sätze (Rechenzeit ×3)
+    static constexpr int kRvPad = 160;
+    std::vector<float> tank; int tOff[kRvLines] = {}, tMask[kRvLines] = {};
+    std::vector<float> diff; int dOff[kRvDiffSteps][kRvDiffCh] = {}, dMask[kRvDiffSteps][kRvDiffCh] = {}, diffD[kRvDiffSteps][kRvDiffCh] = {};
+    unsigned wpos = 0;                                    // Schreibzähler (läuft über, Masken schneiden zu)
+    float base[kRvLines] = {}, depth = 0;                 // Leselänge in Samples, Schwankung ± Samples
+    float phase[kRvLines] = {}, step[kRvLines] = {}, mod[kRvLines] = {};   // LFO je Leitung
+    float apY[kRvLines] = {};                             // Zustand der Allpass-Interpolation
+    float shX[kRvLines] = {}, shY[kRvLines] = {};         // Zustand der Dämpfung
+    float b0[kRvLines] = {}, b1[kRvLines] = {}, a1 = 0;   // Dämpfung je Leitung (Gleichanteil-Verstärkung eingerechnet)
+    float inGain = 0;                                     // Pegelabgleich über die Größe
     Biquad hp1, hp2, lp;     // nur dieser Frequenzbereich geht in den Hall
-    Biquad lowCut;           // fester Hochpass vor dem Hall: Bass/Kick bauen sich in den Kammfiltern sonst stark auf (laut, mulmig)
-    std::vector<float> pre; int preW = 0;    // Vorverzögerung (mono, vor der Diffusion), Platz für 200 ms
-    float preSm = -1;                        // geglättete Vorverzögerung in Samples (Regler springt nicht hörbar)
-    float lastHP = -1, lastLP = -1, lastBright = -1;
+    Biquad lowCut;           // Hochpass vor dem Hall (150 … 400 Hz mit der Helligkeit): Bass/Kick machen die Fahne sonst mulmig
+    Biquad tilt;             // Höhenregal am Ausgang (Luft): -4 … +6 dB ab 7 kHz mit der Helligkeit
+    std::vector<float> preL, preR; int preW = 0;          // Vorverzögerung (stereo, vor dem Diffusor), Platz für 200 ms
+    float preSm = -1;                                     // geglättete Vorverzögerung in Samples (Regler springt nicht hörbar)
+    float lastHP = -1, lastLP = -1, lastBright = -1, lastSize = -1;
+    bool hpOn = false, lpOn = false;
     float send = 0, tail = 0;
-    float damp = 0.4f;                       // Dämpfung in den Kammfiltern (aus der Helligkeit)
-    float outL = 0, outR = 0, out2L = 0, out2R = 0, outA = 0.5f;   // Ausgangs-Tiefpass (zwei Einpole hintereinander, 12 dB/Okt)
+    double fs = 44100;
     bool active() const { return send > 0.0005f || tail > 1e-5f; }
-    void init(double fs) {
-        pre.assign(size_t(fs * 0.2) + 1, 0); preW = 0;
-        lowCut.highpass(kReverbLowCut, 0.707, fs);
-        const int ct[8] = {1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617}, at[4] = {556, 441, 341, 225}, it[2] = {113, 79};
-        const float rates[8] = {0.31f, 0.47f, 0.59f, 0.73f, 0.41f, 0.53f, 0.67f, 0.83f};   // Hz, je Kammfilter anders
+    void init(double rate) {
+        fs = rate;
         double k = fs / 44100.0;
-        for (int j = 0; j < 8; j++) {
-            cL[j].b.assign(size_t(ct[j] * k), 0); cR[j].b.assign(size_t((ct[j] + 23) * k), 0);
-            cL[j].step = float(2 * kPi * rates[j] / fs); cR[j].step = float(2 * kPi * rates[j] * 1.13 / fs);
-            cL[j].phase = j * 0.7f; cR[j].phase = j * 0.7f + 1.9f;
+        preL.assign(size_t(fs * 0.2) + 1, 0); preR.assign(preL.size(), 0); preW = 0;
+        depth = float(kRvModMs * 0.001 * fs);
+        auto pow2 = [](int n) { int p = 1; while (p < n) p *= 2; return p; };
+        int total = 0;
+        for (int i = 0; i < kRvLines; i++) {
+            base[i] = float(std::round(kRvTank[i] * k));
+            int len = pow2(int(base[i] + depth) + 4);
+            tOff[i] = total; tMask[i] = len - 1; total += len + kRvPad;
+            step[i] = float(2 * kPi * kRvRates[i] / fs); phase[i] = float(i) * 0.9f; mod[i] = std::sin(phase[i]);
         }
-        for (int j = 0; j < 4; j++) { aL[j].b.assign(size_t(at[j] * k), 0); aR[j].b.assign(size_t((at[j] + 23) * k), 0); }
-        for (int j = 0; j < 2; j++) inA[j].b.assign(size_t(it[j] * k), 0);
-        lastBright = -1;
+        tank.assign(size_t(total), 0);
+        total = 0;
+        for (int s = 0; s < kRvDiffSteps; s++)
+            for (int c = 0; c < kRvDiffCh; c++) {
+                diffD[s][c] = std::max(1, int(std::round(kRvDiff[s][c] * k)));
+                int len = pow2(diffD[s][c] + 1);
+                dOff[s][c] = total; dMask[s][c] = len - 1; total += len + kRvPad;
+            }
+        diff.assign(size_t(total), 0);
+        wpos = 0;
+        lastBright = lastSize = -1;
     }
     void clear() {
-        std::fill(pre.begin(), pre.end(), 0);
-        for (auto &c : cL) { std::fill(c.b.begin(), c.b.end(), 0); c.store = 0; }
-        for (auto &c : cR) { std::fill(c.b.begin(), c.b.end(), 0); c.store = 0; }
-        for (auto &a : aL) std::fill(a.b.begin(), a.b.end(), 0);
-        for (auto &a : aR) std::fill(a.b.begin(), a.b.end(), 0);
-        for (auto &a : inA) std::fill(a.b.begin(), a.b.end(), 0);
-        send = tail = 0; outL = outR = out2L = out2R = 0;
+        std::fill(preL.begin(), preL.end(), 0); std::fill(preR.begin(), preR.end(), 0);
+        std::fill(tank.begin(), tank.end(), 0); std::fill(diff.begin(), diff.end(), 0);
+        for (int i = 0; i < kRvLines; i++) apY[i] = shX[i] = shY[i] = 0;
+        send = tail = 0;
+    }
+    /// Dämpfung und Pegel aus Größe und Helligkeit (nur bei Änderung)
+    void tune(float size, float bright) {
+        double t60 = reverbT60(size);
+        double hfRatio = 0.35 + 0.55 * bright;            // Nachhall der Höhen ÷ Nachhall gesamt: dunkel 0,35 … hell 0,9
+        double K = std::tan(kPi * Biquad::safeF(kRvDampHz, fs) / fs);
+        a1 = float((K - 1) / (K + 1));
+        for (int i = 0; i < kRvLines; i++) {
+            double sec = base[i] / fs;
+            double gLo = std::pow(10.0, -3 * sec / t60), gHi = std::pow(10.0, -3 * sec / (t60 * hfRatio));
+            double r = gHi / gLo;
+            b0[i] = float(gLo * (K + r) / (K + 1)); b1[i] = float(gLo * (K - r) / (K + 1));
+        }
+        // Energie nach kRvBuildS Einspielen ∝ T60/13,8 · (1 − e^(−13,8 · t / T60)) -> Eingang mit 1/√ davon
+        double tau = t60 / 13.8, eff = tau * (1 - std::exp(-kRvBuildS / tau));
+        inGain = float(1 / std::sqrt(eff));
     }
     /// Send-Effekt: das trockene Signal bleibt unverändert, der Hall kommt dazu.
     /// `level` = wie viel hineingeht (aus = Eingang zu, Hall klingt aus), `wet` = Hall-Anteil am Ausgang.
     /// hpP/lpP 0…1: Hochpass 20 Hz…8 kHz (24 dB), Tiefpass 500 Hz…20 kHz – so entsteht z. B. ein heller Swipe aus den Höhen.
     /// `gain` = Hall-Pegel linear (Einstellung), `bright` 0…1 = Helligkeit, `preS` = Vorverzögerung in Sekunden.
     void run(float *L, float *R, int n, float size, float level, float wet, float hpP, float lpP,
-             float gain, float bright, float preS, double fs, bool on, bool loud) {
+             float gain, float bright, float preS, bool on, bool loud) {
         if (hpP != lastHP) {
             lastHP = hpP;
-            if (hpP < 0.01f) { hp1.setIdentity(); hp2.setIdentity(); }
+            hpOn = hpP >= 0.01f;
+            if (!hpOn) { hp1.setIdentity(); hp2.setIdentity(); hp1.clearState(); hp2.clearState(); }
             else { double f = std::min(20 * std::pow(400.0, double(hpP)), fs * 0.45); hp1.highpass(f, 0.54, fs); hp2.highpass(f, 1.31, fs); }
         }
         if (lpP != lastLP) {
             lastLP = lpP;
-            if (lpP > 0.99f) lp.setIdentity(); else lp.lowpass(std::min(500 * std::pow(40.0, double(lpP)), fs * 0.45), 0.707, fs);
+            lpOn = lpP <= 0.99f;
+            if (!lpOn) { lp.setIdentity(); lp.clearState(); } else lp.lowpass(std::min(500 * std::pow(40.0, double(lpP)), fs * 0.45), 0.707, fs);
         }
+        bright = std::clamp(bright, 0.f, 1.f); size = std::clamp(size, 0.f, 1.f);
         if (bright != lastBright) {
-            lastBright = bright;
-            float b = std::clamp(bright, 0.f, 1.f);
-            damp = 0.6f - 0.45f * b;                                            // dunkel 0,6 … hell 0,15
-            outA = float(1 - std::exp(-2 * kPi * 2500 * std::pow(4.8, double(b)) / fs));   // Tiefpass 2,5 … 12 kHz
+            lowCut.highpass(150 * std::pow(400.0 / 150, double(bright)), 0.707, fs);
+            tilt.shelf(false, 7000, -4 + 10 * double(bright), fs);
         }
-        float fb = 0.75f + 0.235f * size;                    // Nachhall ~1 s … ~20 s
-        float depth = 3.f;                                   // Modulation ±1,5 Samples
-        // gleiche Lautheit über Größe: was die kürzere Fahne weniger aufbaut, kommt als Pegel zurück.
-        // kReverbRef: gain 1 -> Hall allein ≈ 4 dB unter dem Track, mit Hall ≈ 1,2× so laut wie trocken
-        // (rosa Rauschen, volles D/W, gemessen in EngineTests; vorher Single +12 dB, Gruppe +3 dB)
-        float g = kReverbRef * std::sqrt((1 - fb) / 0.15f) * gain;
-        // Single-Modus: was der Hochpass wegnimmt, kommt als Pegel zurück (Swipe aus den Höhen), max. +35 dB
-        if (loud) g *= std::pow(10.f, std::min(35.f, 34 * hpP + std::max(0.f, hpP - 0.7f) * 30) / 20);
-        int preLen = int(pre.size());
-        float preT = std::clamp(float(preS * fs), 0.f, float(preLen - 2));
+        if (bright != lastBright || std::fabs(size - lastSize) > 1e-4f) { lastBright = bright; lastSize = size; tune(size, bright); }
+        // kReverbRef: gain 1 -> Hall allein ≈ 4 dB unter dem Track, mit Hall ≈ 1,2× so laut wie trocken (rosa Rauschen, volles D/W)
+        float g = kReverbRef * inGain * gain;
+        // Single-Modus: was der Hochpass wegnimmt, kommt als Pegel zurück (Swipe aus den Höhen), max. +30 dB.
+        // Abgleich an zwei Techno-Tracks: volles D/W gesamt ÷ trocken 1,02 … 1,45 über HP 0 … 0,9 (vorher bis 2,33)
+        if (loud) g *= std::pow(10.f, std::min(30.f, 16 * hpP + std::max(0.f, hpP - 0.5f) * 6) / 20);
+        int preLen = int(preL.size());
+        // ganze Samples als Ziel: ein gebrochener Lesepunkt mittelt zwei Samples (bei 15 ms: -8 dB bei 16 kHz)
+        float preT = std::clamp(std::round(float(preS * fs)), 0.f, float(preLen - 2));
         if (preSm < 0) preSm = preT;
+        // LFO: Wert am Blockende, dazwischen linear
+        float dmod[kRvLines];
+        for (int j = 0; j < kRvLines; j++) {
+            phase[j] += step[j] * n; if (phase[j] > 2 * float(kPi)) phase[j] -= 2 * float(kPi);
+            dmod[j] = (std::sin(phase[j]) - mod[j]) / float(n);
+        }
         float target = on ? level : 0.f, peak = 0;
-        for (int j = 0; j < 8; j++) { cL[j].lfo(n); cR[j].lfo(n); }
+        const float hd = 0.25f, he = 0.35355339f;   // 1/√16, 1/√8
         for (int i = 0; i < n; i++) {
             send += (target - send) * 0.002f;
-            float x = (L[i] + R[i]) * 0.5f;
-            x = lowCut.tick(0, lp.tick(0, hp2.tick(0, hp1.tick(0, x))));
-            pre[preW] = x;                                   // Vorverzögerung: erst schreiben, dann preSm Samples zurück lesen (0 = direkt)
+            float xl = L[i], xr = R[i];
+            if (hpOn) { xl = hp2.tick(0, hp1.tick(0, xl)); xr = hp2.tick(1, hp1.tick(1, xr)); }
+            if (lpOn) { xl = lp.tick(0, xl); xr = lp.tick(1, xr); }
+            xl = lowCut.tick(0, xl); xr = lowCut.tick(1, xr);
+            preL[preW] = xl; preR[preW] = xr;               // Vorverzögerung: erst schreiben, dann preSm Samples zurück lesen (0 = direkt)
             preSm += (preT - preSm) * 0.0005f;
             int d0 = int(preSm); float f = preSm - float(d0);
             int r0 = preW - d0; if (r0 < 0) r0 += preLen;
             int r1 = r0 - 1; if (r1 < 0) r1 += preLen;
-            x = pre[r0] + (pre[r1] - pre[r0]) * f;
+            xl = preL[r0] + (preL[r1] - preL[r0]) * f; xr = preR[r0] + (preR[r1] - preR[r0]) * f;
             if (++preW >= preLen) preW = 0;
-            float in = inA[1].tick(inA[0].tick(x * g * send)), ol = 0, orr = 0;
-            for (int j = 0; j < 8; j++) { ol += cL[j].tick(in, fb, damp, depth); orr += cR[j].tick(in, fb, damp, depth); }
-            for (int j = 0; j < 4; j++) { ol = aL[j].tick(ol); orr = aR[j].tick(orr); }
-            outL += outA * (ol - outL); outR += outA * (orr - outR);
-            out2L += outA * (outL - out2L); out2R += outA * (outR - out2R);
-            L[i] += out2L * wet; R[i] += out2R * wet;
-            peak = std::max(peak, std::max(std::fabs(out2L), std::fabs(out2R)));
+            // Diffusor: je Stufe verzögern, Kanäle tauschen/umpolen, Hadamard
+            float gs = g * send * 0.5f;
+            float v[kRvDiffCh];
+            for (int c = 0; c < kRvDiffCh; c++) v[c] = (c & 1 ? xr : xl) * gs;
+            for (int s = 0; s < kRvDiffSteps; s++) {
+                float u[kRvDiffCh];
+                for (int c = 0; c < kRvDiffCh; c++) {
+                    float *b = diff.data() + dOff[s][c];
+                    b[wpos & unsigned(dMask[s][c])] = v[c];
+                    u[c] = b[(wpos - unsigned(diffD[s][c])) & unsigned(dMask[s][c])];
+                }
+                for (int c = 0; c < kRvDiffCh; c++) v[c] = ((c + s) & 1 ? -u[(c + 3) & 7] : u[(c + 3) & 7]);
+                hadamard<kRvDiffCh>(v);
+                for (int c = 0; c < kRvDiffCh; c++) v[c] *= he;
+            }
+            // Leitungen lesen (Allpass-Interpolation, Bruchteil 0,5 … 1,5), dämpfen, mischen, zurückschreiben.
+            // Getrennte Schleifen: Lesen/Schreiben einzeln, der Rest läuft vektorisiert über alle 16 Leitungen
+            float y[kRvLines], m[kRvLines], u0[kRvLines], u1[kRvLines], eta[kRvLines];
+            int M[kRvLines];
+            for (int j = 0; j < kRvLines; j++) {
+                mod[j] += dmod[j];
+                float D = base[j] + depth * mod[j];
+                M[j] = int(D - 0.5f);
+                float fr = D - float(M[j]);
+                eta[j] = (1 - fr) / (1 + fr);
+            }
+            for (int j = 0; j < kRvLines; j++) {
+                const float *b = tank.data() + tOff[j];
+                unsigned mk = unsigned(tMask[j]), r = wpos - unsigned(M[j]);
+                u0[j] = b[r & mk]; u1[j] = b[(r - 1) & mk];
+            }
+            for (int j = 0; j < kRvLines; j++) {
+                float out = eta[j] * (u0[j] - apY[j]) + u1[j];
+                apY[j] = out; y[j] = out;
+                float sh = b0[j] * out + b1[j] * shX[j] - a1 * shY[j];
+                shX[j] = out; shY[j] = sh; m[j] = sh * hd;
+            }
+            hadamard<kRvLines>(m);
+            for (int j = 0; j < 8; j++) m[j] += v[j];
+            for (int j = 8; j < kRvLines; j++) m[j] += (j & 1) ? -v[(j + 3) & 7] : v[(j + 3) & 7];
+            for (int j = 0; j < kRvLines; j++) tank[size_t(tOff[j]) + (wpos & unsigned(tMask[j]))] = m[j];
+            wpos++;
+            // Ausgang: orthogonale Summen (L/R unkorreliert) + Diffusor-Ausgang als frühe Dichte
+            float ol = 0, orr = 0;
+            for (int j = 0; j < kRvLines; j++) { ol += y[j]; orr += (j & 1) ? -y[j] : y[j]; }
+            float el = 0, er = 0;
+            for (int c = 0; c < kRvDiffCh; c++) { el += v[c]; er += (c & 2) ? -v[c] : v[c]; }
+            ol = (ol * hd + el * he * 0.5f); orr = (orr * hd + er * he * 0.5f);
+            ol = tilt.tick(0, ol); orr = tilt.tick(1, orr);
+            L[i] += ol * wet; R[i] += orr * wet;
+            peak = std::max(peak, std::max(std::fabs(ol), std::fabs(orr)));
         }
+        for (int j = 0; j < kRvLines; j++) mod[j] = std::sin(phase[j]);   // Rundungsfehler der Rampe nicht aufsummieren
         tail = peak;
         if (!on && !active()) clear();
     }
 };
 
-// ---------- Plugin (Audio Unit o. ä., über MixDSPAUHost.h) ----------
-// wie Delay/Reverb: aus = Eingang zu, Ausgang klingt aus; erst nach 1 s unter -100 dB wird nicht mehr gerechnet
+// ---------- Plugin (Audio Unit, VST3 – MixDSPPlugin.h) ----------
+// wie Delay/Reverb: aus = Eingang zu, Ausgang klingt aus; gerechnet wird, bis es 1 s (oder die vom Plugin gemeldete
+// Nachklingzeit, höchstens 30 s) unter -100 dB war
 struct PluginSlot {
     std::atomic<MDPlugin *> plugin{nullptr};
     std::atomic<uint64_t> releaseAt{0};   // Render-Zähler, ab dem das vorherige Plugin frei ist
+    /// NaN im Deck (healDeck): Plugin bis zum Zurücksetzen durch den Steuer-Thread nicht rechnen
+    std::atomic<bool> resetPending{false};
     // nur Audio-Thread
     MDPlugin *last = nullptr;
     float send = 0;
     int quiet = 0x7fffffff;   // Samples in Folge unter der Schwelle
     std::vector<float> dryL, dryR;
-    bool tail(double fs) const { return last && quiet < int(fs); }
+    int quietLimit(double fs) const {
+        double t = last ? double(last->tailFrames.load(std::memory_order_relaxed)) : 0;
+        return int(std::clamp(t, fs, 30 * fs));
+    }
+    bool tail(double fs) const { return last && quiet < quietLimit(fs); }
     bool active(double fs) const { return send > 0.0005f || tail(fs); }
     /// out = dry·(1 − dw·send) + wet·dw – an: klassisches Dry/Wet, aus: trocken + ausklingende Fahne
     void run(MDPlugin *p, float *L, float *R, int n, float dw, bool on, double fs) {
@@ -418,7 +512,8 @@ static void healDeck(Deck &d) {
     for (Biquad *b : {&d.eqL, &d.eqM, &d.eqH, &d.chanFilter.bq}) b->clearState();
     for (auto &c : d.fx) {
         c.filter.bq.clearState(); c.delay.clear(); c.reverb.clear();
-        for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp, &c.reverb.lowCut}) b->clearState();   // Reverb::clear() lässt die Filter stehen
+        for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp, &c.reverb.lowCut, &c.reverb.tilt}) b->clearState();   // Reverb::clear() lässt die Filter stehen
+        if (c.plug.last) c.plug.resetPending.store(true);   // Plugin zurücksetzen lassen (Steuer-Thread), bis dahin trocken
     }
     d.stretch.reset();
     d.wasStretching = false; d.latSm = 0; d.inAcc = 0;
@@ -553,12 +648,16 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
             c.reverb.run(L, R, n, fp[MDFX_REVERB_SIZE].load(), dwSend ? dw : 1.f, dwSend ? amt : amt * dw,
                          fp[MDFX_REVERB_HP].load(), fp[MDFX_REVERB_LP].load(),
                          fp[MDFX_REVERB_LEVEL].load(), fp[MDFX_REVERB_BRIGHT].load(), fp[MDFX_REVERB_PREDELAY].load(),
-                         e->fs, reverbOn, dwSend);
+                         reverbOn, dwSend);
         }
         MDPlugin *pl = c.plug.plugin.load(std::memory_order_acquire);
         bool plugOn = pl && fp[MDFX_PLUGIN_ON].load() > 0.5f;
         if (pl != c.plug.last) { c.plug.last = pl; c.plug.send = 0; c.plug.quiet = 0x7fffffff; }   // neues Plugin: ohne Fahne
-        if (pl && (plugOn || c.plug.active(e->fs))) c.plug.run(pl, L, R, n, dw, plugOn, e->fs);
+        if (pl && !c.plug.resetPending.load(std::memory_order_acquire) && (plugOn || c.plug.active(e->fs))) {
+            pl->tempo = e->clock.bpm.load(std::memory_order_relaxed);
+            pl->beat = e->clock.beat;
+            c.plug.run(pl, L, R, n, dw, plugOn, e->fs);
+        }
     }
 
     // Lautstärke + Ausgangspaar
@@ -615,7 +714,7 @@ MDEngine *mdsp_create(double sampleRate) {
         e->fxp[u][MDFX_DELAY_FEEDBACK].store(0.45f); e->fxp[u][MDFX_REVERB_SIZE].store(0.6f);
         e->fxp[u][MDFX_FILTER_RES].store(0.4f);
         e->fxp[u][MDFX_REVERB_HP].store(0); e->fxp[u][MDFX_REVERB_LP].store(1); e->fxp[u][MDFX_REVERB_DWSEND].store(0);
-        e->fxp[u][MDFX_REVERB_LEVEL].store(1); e->fxp[u][MDFX_REVERB_BRIGHT].store(0.4f); e->fxp[u][MDFX_REVERB_PREDELAY].store(0.015f);
+        e->fxp[u][MDFX_REVERB_LEVEL].store(1); e->fxp[u][MDFX_REVERB_BRIGHT].store(0.6f); e->fxp[u][MDFX_REVERB_PREDELAY].store(0.015f);
         for (auto p : {MDFX_FILTER_AMOUNT, MDFX_DELAY_AMOUNT, MDFX_REVERB_AMOUNT}) e->fxp[u][p].store(0.5f);
     }
     return e;
@@ -657,6 +756,14 @@ bool mdsp_fx_plugin_released(MDEngine *e, int unit, int deck, MDPlugin *old) {
     if (!old) return true;
     if (s.plugin.load() == old) return false;
     return e->renders.load() >= s.releaseAt.load();
+}
+
+bool mdsp_fx_plugin_needs_reset(MDEngine *e, int unit, int deck) {
+    return e->decks[deck].fx[unit].plug.resetPending.load(std::memory_order_acquire);
+}
+
+void mdsp_fx_plugin_reset_done(MDEngine *e, int unit, int deck) {
+    e->decks[deck].fx[unit].plug.resetPending.store(false, std::memory_order_release);
 }
 void mdsp_seek(MDEngine *e, int deck, double s) { e->decks[deck].pendingSeek.store(s); }
 
@@ -752,6 +859,7 @@ bool mdsp_clock_stamp(MDEngine *e, double *beat, uint64_t *hostTime) {
 void mdsp_clock_set_bpm(MDEngine *e, double bpm) { e->clock.bpm.store(std::clamp(bpm, 20.0, 300.0)); }
 void mdsp_clock_set_beat(MDEngine *e, double beat) { e->clock.setBeat.store(beat); e->clock.beatOut.store(beat); }
 double mdsp_clock_beat(MDEngine *e) { return e->clock.beatOut.load(); }
+double mdsp_keylock_latency(MDEngine *e) { return e->decks[0].stretch.outputLatency() / e->fs; }
 void mdsp_metronome(MDEngine *e, bool on, float volume, int ch) {
     e->clock.metroOn.store(on); e->clock.metroVol.store(volume); e->clock.metroCh.store(ch);
 }

@@ -155,6 +155,8 @@ private final class Core {
 /// Hall-Pegel: Single-Modus, volles D/W, rosa Rauschen (Spektrum ähnlich wie Musik) – mit Hall soll der Ausgang
 /// kaum lauter sein als trocken (Selbsttest-Zeile „Pegel A … Reverb“ misst dasselbe Verhältnis an einem Track).
 /// Vorher (fester +10-dB-Zuschlag): gesamt/trocken 4,19, Hall allein 4,08 (+12,2 dB), über 4 kHz 0,054.
+/// Kammfilter-Hall (0.x, Tiefpass ~4,7 kHz): gesamt/trocken 1,17, über 4 kHz 0,042. FDN-Hall: Fahne soll rauschen
+/// (Höhen bleiben), aber nicht heller sein als der Track selbst; gesamt/trocken bis 1,25.
 @Test func reverbLevelMatchesDry() {
     func run(reverb: Bool, bright: Float? = nil) -> [Float] {
         let c = Core()
@@ -188,9 +190,14 @@ private final class Core {
     print(String(format: "[reverb] level single D/W 1: gesamt/trocken %.3f · hall allein %.3f (%+.1f dB) · hall >4 kHz %.3f (dunkel %.3f · hell %.3f)",
                  rms(wet) / max(rms(dry), 1e-9), w.level, 20 * log10(w.level), w.hf, dark, bright))
     let total = rms(wet) / max(rms(dry), 1e-9)
-    #expect(total > 0.6 && total < 1.2)
+    var dryHF: Float = 0, dryAll: Float = 0, dlp: Float = 0
+    for x in dry { dlp += a * (x - dlp); let h = x - dlp; dryHF += h * h; dryAll += x * x }
+    #expect(total > 0.6 && total < 1.25)
     #expect(w.level > 0.4 && w.level < 0.9)   // Hall allein: einige dB unter dem Track
-    #expect(w.hf < 0.05)                  // weich: Standard-Helligkeit lässt weniger Höhen durch als vorher (0,054)
+    #expect(w.hf > 0.1)                       // Luft: Höhen bleiben in der Fahne (Kammfilter-Hall: 0,042)
+    let hfRatio = w.hf * w.level * w.level / (dryHF / dryAll)   // Hall-Energie über 4 kHz ÷ Track-Energie über 4 kHz
+    print(String(format: "[reverb] trocken >4 kHz %.3f · hall ÷ trocken über 4 kHz %.2f", dryHF / dryAll, hfRatio))
+    #expect(hfRatio < 1)                      // nicht schärfer als der Track
     #expect(dark < w.hf && w.hf < bright)  // Helligkeit wirkt in die richtige Richtung
 }
 

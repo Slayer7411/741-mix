@@ -5,7 +5,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 ## ◆ LAYOUT
 
 * window resizable, min 720 × 520, default 820 × 640
-* sidebar left: DECKS · MIXER & FX · DISPLAY · AUDIO · CONTROLLER · TAGS, active section with red bar
+* sidebar left: DECKS · MIXER & FX · PLUGINS · DISPLAY · AUDIO · CONTROLLER · TAGS · CLOUD · KEYBOARD, active section with red bar
 * page right, scrolls: `◆ SECTION` heading with hairline, rows with fixed label column left, control right
 * toggles as squares (red = on), sliders with value + unit (s, ms, pt), hints in small mono
 * controller: one block per unit (left / right deck, browser pane, fx unit, blink)
@@ -21,6 +21,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * phase lock while synced, sync mode: dynamic / fixed / tempo only, pitch bend amount
 * metronome output pair
 * default loop size and beatjump size
+* loop snap (only with snap on): to loop cues (on, window 1-8 beats, default 4) and to the 4-bar grid (on, tolerance 1-8 beats, default 1)
 * align grid anchor to phrases: off / suggest (default) / automatic -> on load the anchor is checked against the track's 8-bar structure, see manual 05
 * history: played after x seconds audible, optional copy into the collection's history folder
 * show 4 decks, preview start position in the browser
@@ -34,21 +35,40 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * crossfader curve: smooth / sharp cut
 * channel filter resonance
 * show fx units, 2 or 4 units, delay feedback, fx filter resonance
-* reverb level (dB, 0 = reverb ~4 dB below the track at full d/w), reverb brightness (dark -> bright, 2.5 … 12 kHz), reverb pre-delay (ms)
+* reverb level (dB, 0 = reverb ~4 dB below the track at full d/w), reverb brightness (dark -> airy: high decay 35 … 90 %, low cut 150 … 400 Hz, high shelf −4 … +6 dB, default 0.6), reverb pre-delay (ms)
+
+## ◆ PLUGINS
+
+saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in the user defaults.
+
+* load third-party plugins isolated (on): separate system service for audio units, apple plugins and VST3 always in-process
+* folders: system and user audio unit folders + AUv3 + system and user VST3 folders (always), own folders (add / remove), install plugin … (`.component` and `.vst3`), rescan
+* list with search: per plugin use in MINOS-741 (on / off), status, PRÜFEN (auval / VST3 self-check), click -> path, load default / isolated / in-process (audio units), `läuft im prozess` (VST3), unblock, last log
+* ALLE PRÜFEN with progress and cancel, results kept per plugin + version
+* crash marker `plugin-opening.json` next to it, a leftover marker blocks that plugin on the next start -> [manual](MANUAL.md#-08--fx)
+* offscreen image of this tab without audio: `MIX741_SELFTEST=1 MIX741_SHOT=plugins:<folder>` (optional `MIX741_SHOT_PLUGINS=<plugin folder>`)
 
 ## ◆ DISPLAY
 
-* waveform style: 3-band layers / spectrum / mono
-* palette: 741 bone, orange, blue / white, classic
+* waveform style: 3-band layers / spectrum fine (6 bands) / spectrum fine, no high layer / spectrum (3 bands) / mono
+* palette: 741 bone, orange, blue / white, classic (not for spectrum fine, it has fixed band colors -> [manual](MANUAL.md#-05--waveform--grid))
+* high emphasis (spectrum fine): 0-2, default 1
 * zoom (seconds per side), minimum height (grows with the window), dim the played part
 * beatgrid: on / off, colorful (phrases, bars, beats), phrase length 16 / 32 / 64 / 128 beats, bar numbers
 * cue colors: start cue red, cues white, loops green, 1-2 bar loops magenta
 * magenta markers every 8 / 16 / 32 bars
 * tag separator for comment 2, empty = space
 * browser layout, hide the tree while decks are visible
+* cover: in the deck header (on), preview of the selected track below the browser tree (on). the browser column `Cover` is switched via right click on the list header
 * music folders for MUSIC FOLDERS: add / remove, empty = automatic (the folder holding 90 % of the collection's files)
 * write browser edits into the collection file (off): backup at most once per hour into `Backup MINOS-741`, not while the library software runs -> [manual](MANUAL.md#-09--browser)
+* browser preview: full row, two lines (default) / own column / behind the title / off
+* preview colors: spectrum red / green / blue (default) / like the waveform
+* compute previews in the background: always, throttled while a deck plays (default) / only while no deck plays / off -> [manual](MANUAL.md#preview)
+* collection check: check on start (off), scan the music folders for files without a collection entry (on) -> [manual](MANUAL.md#check-the-collection)
 * language: system / english / german (after restart)
+* status bar: load meters DSP · latency · dropouts · memory · cpu (on) -> [manual](MANUAL.md#status-bar)
+* cancel loading after x s without audio data (4 s, 2-15)
 
 ## ◆ AUDIO
 
@@ -58,6 +78,16 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * mode: internal (mixer in the app) or external (mixing desk)
 * internal: which pair the master goes to
 * external: one pair per deck, default a 1/2 · b 3/4 · c 5/6 · d 7/8
+
+## ◆ CLOUD
+
+library in a cloud folder -> [library · cloud libraries](library.md#-cloud-libraries)
+
+* state: local · online only · missing, time and duration of the last check, CHECK NOW
+* keep local while MINOS-741 runs: off / preparation + open playlists + decks (default) / whole library. open playlists = playlists and smartlists in the browser panes up to 1000 tracks
+* parallel downloads 1-4 (2), keep at least 5 / 10 / 20 / 50 gb free (10)
+* on quit hand open downloads to the provider (on)
+* library folder, available offline (pinned / not / unknown, all local), SHOW IN FINDER, CHECK. pinning is done in the finder: right click -> make available offline
 
 ## ◆ KEYBOARD
 
@@ -72,7 +102,8 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 
 * controllers: decks per unit (left / right), browser pane and fx unit per unit, blink to identify
 * cue action: flux reverse / cue / reverse
-* flux tap toggles flux mode, beatjump size for flux + hotcue 3 / 4
+* flux button: switch pad layer (hotcues 5-8, default; shift + flux = flux mode) / flux mode (tap toggles flux mode if enabled)
+* flux held + pads: hotcues 5-8 or beatjump on pads 3 / 4, beatjump size for flux + hotcue 3 / 4
 * touch strip: bend or seek, sensitivity
 * browse step with shift
 * led brightness on / off, cue and loop pad colors

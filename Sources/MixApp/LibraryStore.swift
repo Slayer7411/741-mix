@@ -1,6 +1,8 @@
 import AppKit
+import SwiftUI
 import Observation
 import MixCore
+import MixEngine
 
 /// Hält die geladene Collection; alle Browser-Bereiche lesen daraus.
 @MainActor @Observable
@@ -35,10 +37,14 @@ final class LibraryStore {
     private(set) var runningRevision = 0
     var status = "Lade Collection …"
     var sourceURL: URL?
-    private(set) var byKey: [String: Track] = [:]
+    /// nicht beobachtet: ändert sich nur zusammen mit `tracks` (Setzen eines beobachteten Wörterbuchs vergleicht alt
+    /// mit neu – 14k Einträge, ~30 ms Hauptthread je Laden)
+    @ObservationIgnored private(set) var byKey: [String: Track] = [:]
     /// Roh-Einträge der collection.nml (für NML-Exporte: History, Preparation)
     @ObservationIgnored private(set) var entryIndex = NMLEntryIndex()
     private var smartCache: [UUID: [Track]] = [:]
+    /// Playlist-Knoten nach ID (aktueller Baum)
+    @ObservationIgnored private var nodes: [UUID: PlaylistNode] = [:]
     @ObservationIgnored private var customCache: [UUID: (query: String, tracks: [Track])] = [:]
 
     /// Eigene Smartlists (Smartlist-Regel-Syntax), gespeichert in UserDefaults
@@ -81,12 +87,20 @@ final class LibraryStore {
     @ObservationIgnored private var writeTask: Task<Void, Never>?
     @ObservationIgnored private var writing = false
 
+    /// Laden/Neu-Laden: alles Teure im Hintergrund (Parsen, Datei-Check, eigene Änderungen, Indizes, Sortierung
+    /// der sichtbaren Listen), auf dem Hauptthread nur noch eine Übergabe. Vorher hingen ↻ und ⌘O im Set
+    /// 1–2 s (zwei Bereiche à ~540 ms lokalisiertes Sortieren von 14k Tracks plus Indizes und Freigabe der alten Liste).
     func load(_ url: URL = LibraryStore.defaultNML) {
         status = "Lade \(url.lastPathComponent) …"
+        StatusCenter.post(.info, String(localized: "Collection wird geladen: \(url.lastPathComponent)"), detail: url.path, key: "collection")
         let meta = meta
-        Task.detached(priority: .userInitiated) {
+        let first = tracks.isEmpty
+        loadGeneration += 1
+        let generation = loadGeneration
+        // erster Start mit Vorrang, Neu-Laden im Set nachrangig (Decks laden und dekodieren zuerst)
+        Task.detached(priority: first ? .userInitiated : .utility) {
             do {
-                let start = Date()
+                let start = CACurrentMediaTime()
                 var c = try NMLParser.parse(url: url)
                 // Datei-Existenz einmal parallel prüfen (statt pro Tabellenzeile)
                 let paths = c.tracks.map(\.path)
@@ -110,26 +124,174 @@ final class LibraryStore {
                 // MUSIC FOLDERS: Pfad-Index und Standard-Ordner einmal je Collection
                 let folderIndex = MusicFolder.pathIndex(c.tracks)
                 let folderRoot = MusicFolder.defaultRoot(paths: c.tracks.filter(\.fileExists).map(\.path))
+                let parsedByKey = Dictionary(c.tracks.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
                 let base = collectionBase
-                let secs = Date().timeIntervalSince(start)
+                let parsedRoot = c.root
+                let parsed = CACurrentMediaTime()
+                // erster Start: Playlists und Sitzung (Quellen, Sortierung der Bereiche) vorab, damit gleich die
+                // richtigen Listen vorsortiert werden; Neu-Laden: nur nachsehen, was die Bereiche gerade zeigen
+                let (targets, old, oldByKey, previous, oldRoot): ([PresortKey], [Track], [String: Track], [PresortKey: [Track]], PlaylistNode) = await MainActor.run {
+                    if first {
+                        self.root = parsedRoot
+                        self.byKey = parsedByKey
+                        self.entryIndex = index
+                        self.onLoaded?()
+                        return (self.presortTargets(), [], [:], [:], parsedRoot)
+                    }
+                    return (self.presortTargets(), self.tracks, self.byKey, self.presorted, self.root)
+                }
+                var tracks = c.tracks, byKey = parsedByKey, root = parsedRoot
+                // Neu-Laden: unveränderte Tracks als dieselben Werte übernehmen (gleicher Speicher). SwiftUI vergleicht
+                // die alte mit der neuen Liste – mit geteilten Texten ist das ein Zeigervergleich statt 14k Textvergleichen
+                if !oldByKey.isEmpty {
+                    var same = 0
+                    for i in tracks.indices {
+                        if let o = oldByKey[tracks[i].key], o == tracks[i] { tracks[i] = o; same += 1 }
+                    }
+                    if same == tracks.count, tracks == old { tracks = old }
+                    byKey = Dictionary(tracks.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+                }
+                // Playlist-Baum: gleiche Knoten behalten ihre ID, unveränderter Baum bleibt derselbe (Baum-Liste ohne Neuaufbau)
+                if !first {
+                    root.adoptIDs(from: oldRoot)
+                    if root.sameTree(oldRoot) { root = oldRoot }
+                }
+                var nodes: [UUID: PlaylistNode] = [:]
+                root.index(into: &nodes)
+                let position = Dictionary(tracks.indices.map { (tracks[$0].key, $0) }, uniquingKeysWith: { a, _ in a })
+                let pre = Self.presort(targets, tracks: tracks, byKey: byKey, nodes: nodes, previous: previous)
+                let sorted = CACurrentMediaTime()
+                let newTracks = tracks, newByKey = byKey, newRoot = root, newNodes = nodes
                 await MainActor.run {
-                    self.tracks = c.tracks
-                    self.byKey = Dictionary(c.tracks.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
-                    self.position = Dictionary(c.tracks.indices.map { (c.tracks[$0].key, $0) }, uniquingKeysWith: { a, _ in a })
+                    guard generation == self.loadGeneration else { return }   // inzwischen neuer Ladevorgang
+                    let t0 = CACurrentMediaTime()
+                    // alte Liste und Indizes nicht hier freigeben (14k Tracks freigeben kostet den Hauptthread ~50 ms)
+                    Self.releaseLater((self.tracks, self.byKey, self.position, self.collectionBase, self.entryIndex,
+                                       self.smartCache, self.customCache, self.presorted))
+                    self.tracks = newTracks
+                    self.byKey = newByKey
+                    self.position = position
                     self.collectionBase = base
                     self.entryIndex = index
+                    self.smartCache = pre.smart
+                    self.customCache = pre.custom
+                    self.presorted = pre.lists
+                    self.presortRevision = self.revision
                     self.folders.collectionLoaded(index: folderIndex, defaultRoot: folderRoot)
-                    self.onLoaded?()
-                    self.root = c.root
-                    self.smartCache = [:]
-                    self.customCache = [:]
+                    self.onLoaded?()   // einmal je Start (prüft selbst)
+                    if first, !Session.isSelfTest, AppPrefs.load().ui.checkOnStart { ConsistencyWindow.show(store: self) }
+                    if self.root !== newRoot { self.root = newRoot }
+                    self.nodes = newNodes
                     self.sourceURL = url
-                    self.status = "\(c.tracks.count) Tracks · \(url.lastPathComponent) · \(String(format: "%.1f", secs)) s"
+                    self.status = "\(newTracks.count) Tracks · \(url.lastPathComponent) · \(String(format: "%.1f", parsed - start)) s"
+                    StatusCenter.post(.ok, String(localized: "Collection geladen: \(newTracks.count) Tracks"), detail: url.path, key: "collection")
+                    if Self.debug {
+                        print(String(format: "[load] %d tracks · parsen+indizes %.0f ms · vorsortieren %d listen %.0f ms (hintergrund) · übergabe %.1f ms (hauptthread)",
+                                     newTracks.count, (parsed - start) * 1000, pre.lists.count, (sorted - parsed) * 1000, (CACurrentMediaTime() - t0) * 1000))
+                        fflush(stdout)
+                    }
                 }
             } catch {
-                await MainActor.run { self.status = "Fehler beim Laden: \(error)" }
+                await MainActor.run {
+                    self.status = "Fehler beim Laden: \(error)"
+                    StatusCenter.post(.error, String(localized: "Collection nicht geladen: \(error.localizedDescription)"), detail: url.path, key: "collection")
+                }
             }
         }
+    }
+
+    nonisolated static let debug = ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1" || ProcessInfo.processInfo.environment["MIX741_BENCH"] != nil
+    @ObservationIgnored private var loadGeneration = 0
+
+    /// Quelle + Sortierung einer vorsortierten Liste
+    struct PresortKey: Hashable, @unchecked Sendable {
+        var source: BrowserSource
+        var order: [KeyPathComparator<Track>]
+    }
+    /// Browser-Zustand (für die Ziele des Vorsortierens)
+    @ObservationIgnored weak var browser: BrowserState?
+    /// im Hintergrund sortierte Listen der Bereiche; gültig nur für `presortRevision`
+    @ObservationIgnored private var presorted: [PresortKey: [Track]] = [:]
+    @ObservationIgnored private var presortRevision = -1
+
+    /// vorsortierte Liste für einen Bereich (nil = selbst sortieren)
+    func presorted(_ source: BrowserSource, order: [KeyPathComparator<Track>]) -> [Track]? {
+        guard presortRevision == revision else { return nil }
+        return presorted[PresortKey(source: source, order: order)]
+    }
+
+    private func presortTargets() -> [PresortKey] {
+        guard let b = browser else { return [PresortKey(source: .collection, order: [KeyPathComparator(\Track.artist)])] }
+        return Array(Set([b.paneA, b.paneB].map { PresortKey(source: $0.source, order: $0.sortOrder) }))
+    }
+
+    /// Basisliste einer Quelle ohne Hauptthread (nur Quellen, die allein aus der Collection kommen)
+    nonisolated private static func baseTracks(_ s: BrowserSource, tracks: [Track], byKey: [String: Track],
+                                               nodes: [UUID: PlaylistNode]) -> [Track]? {
+        let none = SmartQuery.compare(field: "TITLE", op: .eq, value: .text("\u{0}"))
+        switch s {
+        case .collection: return tracks
+        case let .custom(sl):
+            let q = (try? SmartQuery.parse(sl.query)) ?? none
+            return tracks.filter { q.matches($0) }
+        case let .node(old):
+            let n = nodes[old.id] ?? old
+            switch n.kind {
+            case .folder: return nil
+            case .playlist: return n.trackKeys.compactMap { byKey[$0] }
+            case .smartlist:
+                let q = (try? SmartQuery.parse(n.query)) ?? none
+                return tracks.filter { q.matches($0) }
+            }
+        default: return nil
+        }
+    }
+
+    private struct Presorted: @unchecked Sendable {
+        var lists: [PresortKey: [Track]] = [:]
+        var smart: [UUID: [Track]] = [:]
+        var custom: [UUID: (query: String, tracks: [Track])] = [:]
+    }
+
+    /// Listen der Bereiche parallel sortieren (gleiches `sorted(using:)` wie im Bereich, nur nicht auf dem Hauptthread)
+    /// Gleiche Liste wie beim letzten Laden -> derselbe Speicher: die Tabelle sieht keine Änderung und baut nichts neu.
+    nonisolated private static func presort(_ targets: [PresortKey], tracks: [Track], byKey: [String: Track],
+                                            nodes: [UUID: PlaylistNode], previous: [PresortKey: [Track]]) -> Presorted {
+        var out = Presorted()
+        var results = [[Track]?](repeating: nil, count: targets.count)
+        var bases = [[Track]?](repeating: nil, count: targets.count)
+        results.withUnsafeMutableBufferPointer { r in
+            bases.withUnsafeMutableBufferPointer { b in
+                let r = r, b = b
+                DispatchQueue.concurrentPerform(iterations: targets.count) { i in
+                    guard let base = baseTracks(targets[i].source, tracks: tracks, byKey: byKey, nodes: nodes) else { return }
+                    b[i] = base
+                    let list = base.sorted(using: targets[i].order)
+                    if let prev = previous[targets[i]], prev == list { r[i] = prev } else { r[i] = list }
+                }
+            }
+        }
+        for (i, t) in targets.enumerated() {
+            guard let list = results[i], let base = bases[i] else { continue }
+            out.lists[t] = list
+            switch t.source {
+            case let .custom(sl): out.custom[sl.id] = (sl.query, base)
+            case let .node(n) where n.kind == .smartlist: out.smart[n.id] = base
+            default: break
+            }
+        }
+        return out
+    }
+
+    /// letzte Referenz im Hintergrund abgeben: das Freigeben großer Listen kostet sonst den Hauptthread
+    nonisolated private static func releaseLater(_ old: Any) {
+        let box = OldBox(old)
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1) { box.drop() }
+    }
+    private final class OldBox: @unchecked Sendable {
+        private var value: Any?
+        init(_ v: Any) { value = v }
+        func drop() { value = nil }
     }
 
     // MARK: - Metadaten bearbeiten
@@ -157,6 +319,7 @@ final class LibraryStore {
         smartCache = [:]
         customCache = [:]
         tracks = list
+        StatusCenter.post(.ok, String(localized: "Gespeichert: \(applied.count) Tracks (Metadaten)"), key: "edits")
         if writeBack { scheduleWriteBack() }
     }
 
@@ -207,6 +370,7 @@ final class LibraryStore {
         guard !pending.isEmpty else { return }
         if Self.collectionSoftwareRunning() {
             status = String(localized: "Collection-Datei nicht geschrieben: die Collection-Software läuft. Änderungen bleiben in MINOS-741.")
+            StatusCenter.post(.warning, status, key: "writeback")
             return
         }
         writing = true
@@ -227,8 +391,10 @@ final class LibraryStore {
                         msg += " · " + String(localized: "\(r.missing.count) nicht gefunden (Datei inzwischen geändert -> ↻ neu laden)")
                     }
                     self.status = msg
+                    StatusCenter.post(r.missing.isEmpty ? .ok : .warning, msg, detail: url.path, key: "writeback")
                 case let .failure(e):
                     self.status = String(localized: "Collection-Datei nicht geschrieben: \(String(describing: e))")
+                    StatusCenter.post(.error, self.status, detail: url.path, key: "writeback")
                 }
             }
         }
@@ -248,7 +414,8 @@ final class LibraryStore {
             customCache[sl.id] = (sl.query, res)
             return res
         case let .folder(p): return folders.tracks(in: p, recursive: false, library: self)
-        case let .node(n):
+        case let .node(old):
+            let n = nodes[old.id] ?? old   // Bereich kann noch den Knoten vor dem Neu-Laden halten (gleiche ID)
             switch n.kind {
             case .folder: return []
             case .playlist: return n.trackKeys.compactMap { byKey[$0] }
@@ -321,7 +488,7 @@ final class BrowserState {
     var activePaneID: UUID?
     /// Wird von Controllern gesetzt, damit die Liste zur Auswahl scrollt
     var scrollRequest: (pane: UUID, track: Track.ID)?
-    @ObservationIgnored weak var store: LibraryStore?
+    @ObservationIgnored weak var store: LibraryStore? { didSet { store?.browser = self } }
     @ObservationIgnored weak var history: HistoryStore?
     @ObservationIgnored var separators: () -> String = { " " }
 
@@ -347,5 +514,126 @@ final class BrowserState {
         let next = max(0, min(rows.count - 1, current + delta))
         pane.selection = [rows[next].id]
         scrollRequest = (pane.id, rows[next].id)
+    }
+}
+
+/// Messung (MIX741_SELFTEST=1 MIX741_BENCH=reload): Collection laden und mehrmals neu laden, beide Browser-Bereiche
+/// offscreen in einem nie gezeigten Fenster. Meldet je Ladevorgang die längste Lücke des Hauptthreads (Takt 240 Hz).
+@MainActor
+enum ReloadBench {
+    nonisolated static var requested: Bool { Session.isSelfTest && ProcessInfo.processInfo.environment["MIX741_BENCH"] == "reload" }
+
+    static func run() -> Never {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        // Audio nur auf ein eingebautes Gerät (wie SettingsShot), gespeichertes Setup danach unverändert zurück
+        let d = UserDefaults.standard
+        let keys = ["mixerMode", "deviceUID", "internalPair", "deckPairs", "sampleRate", "bufferSize", "prefs.v1"]
+        let saved = keys.map { ($0, d.object(forKey: $0)) }
+        d.setVolatileDomain(["deviceUID": "BuiltInSpeakerDevice", "mixerMode": "Intern", "sampleRate": 0.0, "bufferSize": 0],
+                            forName: UserDefaults.argumentDomain)
+        let mix = MixModel()
+        mix.engine.setMasterVolume(0)
+        d.removeVolatileDomain(forName: UserDefaults.argumentDomain)
+        for (k, v) in saved { if let v { d.set(v, forKey: k) } else { d.removeObject(forKey: k) } }
+        let store = LibraryStore(), browser = BrowserState(), history = HistoryStore()
+        browser.store = store
+        browser.history = history
+        let root = HSplitView {
+            BrowserPane(model: browser.paneA)
+            BrowserPane(model: browser.paneB)
+        }
+        .environment(store).environment(mix).environment(browser)
+        .environment(ControllerStatus()).environment(WaveformCache()).environment(history)
+        let host = NSHostingView(rootView: root)
+        let rect = NSRect(x: 0, y: 0, width: 1600, height: 700)
+        let win = NSWindow(contentRect: rect, styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        win.contentView = host
+        host.frame = rect
+        func log(_ s: String) { print("[bench] \(s)"); fflush(stdout) }
+        var last = CACurrentMediaTime(), worst = 0.0
+        let tick = Timer(timeInterval: 1.0 / 240, repeats: true) { _ in
+            let now = CACurrentMediaTime()
+            worst = max(worst, now - last)
+            if now - last > 0.03 { print(String(format: "[hitch] %.3f: %.0f ms", now, (now - last) * 1000)) }
+            last = now
+        }
+        RunLoop.main.add(tick, forMode: .common)
+        Task { @MainActor in
+            let rounds = Int(ProcessInfo.processInfo.environment["MIX741_BENCH_N"] ?? "") ?? 5
+            var gaps: [Double] = []
+            let probe = AudioProbe(core: mix.core)
+            for i in 0...rounds {
+                let rev = store.revision
+                try? await Task.sleep(for: .milliseconds(300))
+                if i == 1, let t = store.tracks.first(where: { $0.bpm > 0 && $0.fileExists && $0.duration > 120 }) {
+                    // ab dem ersten Neu-Laden spielt Deck A (stumm): Audio und Steuer-Thread dürfen nicht hängen
+                    mix.core.load(t, deck: 0)
+                    while mix.core.trackAudio(0) == nil { try? await Task.sleep(for: .milliseconds(50)) }
+                    mix.core.togglePlay(0)
+                    try? await Task.sleep(for: .milliseconds(300))
+                    probe.start()
+                }
+                probe.reset()
+                worst = 0
+                let t0 = CACurrentMediaTime()
+                // MIX741_BENCH_ALT=<nml>: abwechselnd eine geänderte Kopie laden (Neu-Laden mit echten Änderungen)
+                let alt = ProcessInfo.processInfo.environment["MIX741_BENCH_ALT"].map { URL(fileURLWithPath: $0) }
+                store.load(i % 2 == 1 ? alt ?? LibraryStore.defaultNML : LibraryStore.defaultNML)
+                while store.revision == rev { try? await Task.sleep(for: .milliseconds(5)) }
+                try? await Task.sleep(for: .milliseconds(800))
+                let gap = worst * 1000
+                if i > 0 { gaps.append(gap) }
+                log(String(format: "%@ %d: %d tracks, fertig nach %.2f s, längste Lücke Hauptthread %.0f ms%@",
+                           i == 0 ? "laden" : "neu laden", i, store.tracks.count, CACurrentMediaTime() - t0 - 0.8, gap,
+                           i == 0 ? "" : probe.report()))
+            }
+            let s = gaps.sorted()
+            log(String(format: "→ neu laden: median %.0f ms, max %.0f ms (n=%d)", s[s.count / 2], s.last ?? 0, s.count))
+            mix.core.togglePlay(0)
+            exit(0)
+        }
+        app.run()
+        exit(0)
+    }
+}
+
+/// Messung: Steuer-Queue (Rundlauf eines leeren Blocks) und Wiedergabe-Position von Deck A neben der Uhr, alle 5 ms
+/// auf einem eigenen Thread – beides darf beim Laden der Collection nicht stehen bleiben.
+final class AudioProbe: @unchecked Sendable {
+    private let core: MixController
+    private let lock = NSLock()
+    private var maxControl = 0.0, maxDrift = 0.0, running = false
+
+    init(core: MixController) { self.core = core }
+
+    func start() {
+        guard !running else { return }
+        running = true
+        Thread.detachNewThread { [self] in
+            var lastPos = core.position(0), lastT = CACurrentMediaTime()
+            while true {
+                Thread.sleep(forTimeInterval: 0.005)
+                let t0 = CACurrentMediaTime()
+                core.controlQueue.sync {}
+                let t1 = CACurrentMediaTime()
+                let pos = core.position(0)
+                // Abweichung der Position von der Uhr (Tempo 0 %: 1 s Audio je Sekunde); Puffergröße als Rauschen
+                let drift = abs((pos - lastPos) - (t1 - lastT))
+                lastPos = pos; lastT = t1
+                lock.lock()
+                maxControl = max(maxControl, t1 - t0)
+                maxDrift = max(maxDrift, drift)
+                lock.unlock()
+            }
+        }
+    }
+
+    func reset() { lock.lock(); maxControl = 0; maxDrift = 0; lock.unlock() }
+
+    func report() -> String {
+        lock.lock(); defer { lock.unlock() }
+        guard running else { return "" }
+        return String(format: " · steuer-queue max %.1f ms · audio-position max %.1f ms neben der uhr", maxControl * 1000, maxDrift * 1000)
     }
 }

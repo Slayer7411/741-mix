@@ -77,7 +77,7 @@ tracks without an analysis in the collection play, but have no grid -> no sync.
 ├ deck A ───────────────────────┬ deck B ────────────────────────────┤
 ├ deck C ───────────────────────┼ deck D ────────────────────────────┤
 ├ browser pane 1 ───────────────┼ browser pane 2 ────────────────────┤
-└ status: tracks · collection · load time ── device · mode · routing ┘
+└ status: message · detail ─ device · routing · prep ─ DSP LAT DROP RAM CPU ┘
 ```
 
 * MIXER -> internal mixer on / off (⌥⌘M)
@@ -88,16 +88,37 @@ tracks without an analysis in the collection play, but have no grid -> no sync.
 * the line between decks and browser can be dragged, the height is saved
 * fullscreen -> toolbar hides, comes back with the mouse at the top
 
+### status bar
+
+* left: current message, second line = path / reason or progress (`42/120`, ✕ = cancel). idle: tracks · collection · load time
+* colors: red = error, gold = warning, purple = info, bone = done
+* info 4 s, done 3 s, warning 8 s, error stays until clicked or replaced. `+n` = more active messages
+* click -> last 50 messages with time
+* messages: track load failed / timed out, track loaded, phrase anchor found, plugin not loaded / blocked, collection loaded, collection file written / not written, metadata saved, export progress / done, played state reset
+* middle: device · mode · routing · rate, ↻ reconnect, preparation count, preview progress
+* right (⌘, -> DISPLAY -> status bar):
+
+| meter | shows |
+|---|---|
+| DSP | render time of one audio block ÷ block duration, bar = average, tick = peak (held 1.5 s), red above 70 % |
+| LATENCY | output latency in ms (buffer + device + safety offset + stream), buffer frames · device rate |
+| DROPOUTS | blocks over 100 % of their budget + overload reports from the device, since start. red = one in the last minute, click = reset |
+| RAM | memory of the process (physical footprint) |
+| CPU | process cpu, 100 % = one core |
+
+click on the meters -> details (keylock lookahead, own vs device overloads).
+
 ## ◆ 04 · DECKS
 
 ### header
 
 ```
-A  title                 FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
-   artist                            33.2  +0.00%  ◆ CODE
+A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
+    artist                           33.2  +0.00%  ◆ CODE
 ```
 
 * deck letter turns red while playing
+* ▣ cover of the loaded track (embedded in the file, else `cover` / `folder` / `front` .jpg / .png in its folder), `◆` = no cover. off: ⌘, -> DISPLAY -> cover
 * FX1 / FX2 (… FX4) -> deck on that fx unit
 * code readout: bar of the track in its phrase (`5/16`, phrase start = grid anchor, length = waveform phrase, ⌘, -> DISPLAY) against the bar counter. purple `◆ CODE` -> same bar and beat as the counter, red `+2 BARS` / `−3 BEATS` -> the deck is that far ahead / behind (wrapped to half a phrase), grey -> deck stopped or no counter
 * remaining time, bpm, tempo offset, key readout: open key of the track (e.g. `11m`), next to it the audible key in red as soon as it deviates (`11m → 6m`), below the deviation in semitones (`+0.60`). keylock off -> the tempo detunes, keylock on -> only the key shift counts
@@ -134,6 +155,11 @@ A  title                 FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 * hotcues come from the collection. colors: start cue red, cues white, loops green, short loops magenta (⌘, -> DISPLAY)
 * edits are saved in an own file. the collection stays untouched
 * SNAP -> cues and loop points lock to the beat
+* loop snap (with SNAP, LOOP / LOOP IN from deck, keyboard or controller):
+  1. a stored loop cue (hotcue or memory cue) starting up to 1 bar ahead or just passed (playhead still inside it) -> exactly that loop, start and length
+  2. otherwise within 1 beat of a 4-bar boundary (counted from the grid anchor) -> the loop starts on that boundary
+  3. otherwise the normal beat snap
+  * no jump: the playhead runs into the loop or is already inside. both rules and windows under ⌘, -> DECKS -> loops & beatjump
 * QUANT -> jumps keep the beat phase
 
 ### tempo
@@ -149,14 +175,34 @@ A  title                 FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 * jumps to load cue / grid, track start or hotcue 1 (⌘, -> DECKS)
 * first load: keylock on (setting)
 * track end warning: remaining time blinks red x seconds before the end (0 = off)
+* file missing -> fails at once. no audio data for 4 s (cloud file not downloaded, read stuck, setting 2-15 s) -> load cancelled. unreadable format -> fails with the reason
+* failed load: deck empty, reason in red in the header, skull in the waveform for 5 s, message in the status bar. other decks are never touched
+* empty deck -> lobster in the waveform
 
 ## ◆ 05 · WAVEFORM + GRID
 
 * rendered as bitmap tiles in screen resolution (background thread) -> sharp at any zoom, no load on the render server
 * height = real file level, full height = 0 dBFS, no normalizing -> loud masters look loud
-* styles: 3-band layers / spectrum / mono, palettes: 741 bone / orange / blue / classic
+* styles: 3-band layers / spectrum fine (6 bands, default for spectrum) / spectrum fine, no high layer / spectrum (3 bands) / mono, palettes (not for spectrum fine): 741 bone / orange / blue / classic
 * drag the waveform = scrub, click the overview = jump
 * played part can be dimmed
+
+spectrum fine, colors:
+
+| color | band | what it shows |
+|---|---|---|
+| orange | sub 20-60 Hz | sub bass, kick tail |
+| red | bass 60-250 Hz | kick body, bass line |
+| green | low mids 250 Hz-1 kHz | synths, vocals, chords |
+| yellow-green | high mids 1-4 kHz | leads, snare / clap body |
+| blue | highs 4-10 kHz, short | closed hats, shakers |
+| light blue, brighter | highs + air, held | open hats, ride, noise, risers |
+
+* each block (3.3 ms) takes the color of the band that is loudest against its own level in this track -> a kick reads red / orange, the hat between two kicks blue, an open hat light blue
+* highs also run as a layer in the middle (height = how strong the highs are) -> hats stay visible on top of kick and bass, also zoomed out. `spectrum fine, no high layer` = color only
+* closed vs open: share of a ~150 ms window in which the highs stay within 8 dB of their peak. short spikes = closed, held = open
+* `high emphasis` (⌘, -> DISPLAY): 0 = neutral, 1 = default (+5 dB for highs in the mix), 2 = strong
+* analysis runs while the track loads, parallel to the waveform blocks: ~0.1 s cpu per 8-minute track on a second core, ~0.03 s longer load. 8 bytes per block, ~1.4 mb per 10 minutes
 
 beatgrid:
 
@@ -249,8 +295,10 @@ the status bar shows device, mode and routing.
 * GRP -> group mode: FILTER · DELAY · REVERB at once, D/W + one knob + ON each
 * SNGL -> single mode: one effect, 3 parameters
 * delay time in beats (`1 ▾`), beat synced to the deck tempo
-* ROOM -> reverb size
+* ROOM -> reverb size: 0 small room (0.3 s) · 0.5 hall (3.6 s) · 0.6 default (5.6 s) · 0.9 huge (22 s) · 1 near freeze (~3 min)
 * reverb level, brightness, pre-delay -> ⌘, -> MIXER & FX. level 0 dB: full d/w adds the reverb ~4 dB below the track, same in group and single mode
+* brightness -> how long the highs ring: 0 dark, 0.6 default (airy hiss in the tail), 1 bright. below ~150-400 Hz nothing goes into the reverb
+* washes / exits: size 0.8-1, reverb on, reverb off or deck stop -> the tail keeps ringing (spillover)
 * deck assign: FX1 … FX4 in the deck header or the mixer
 * default: FX1 -> A / C, FX2 -> B / D
 
@@ -258,16 +306,48 @@ effects so far: filter, delay, reverb, PLUGIN. more -> [roadmap](roadmap.md).
 
 ### PLUGIN
 
-any installed audio unit effect (apple or third-party, v2 and v3) in the single mode, e.g. AUMatrixReverb or AUReverb2 instead of the built-in reverb.
+any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect in the single mode, e.g. AUMatrixReverb or AUReverb2 instead of the built-in reverb.
 
-* SNGL -> effect menu -> PLUGIN -> the menu below lists every installed effect (`name · manufacturer`)
+* SNGL -> effect menu -> PLUGIN -> the menu below lists every installed effect (`name · manufacturer`, VST3 with a small `VST3` behind)
 * knobs 1-3 -> the first three parameters of the plugin, labels from the plugin
 * D/W -> dry / wet of the unit (on top of the plugin's own mix)
 * ON -> on / off. off = spillover: the plugin gets no new audio and rings out
 * EDIT -> window with the plugin's own view (or a generic one) · changes go to every deck on that unit
 * one instance per deck · loads in the background, the deck plays on dry meanwhile
 * plugin and its settings are saved with the session
-* newly installed plugins -> menu -> rescan plugin list
+* newly installed plugins -> menu -> rescan plugin list (the PLUGINS tab rescans on its own)
+* the menu lists only plugins that are enabled and not blocked -> ⌘, -> PLUGINS
+
+### manage plugins (⌘, -> PLUGINS)
+
+* list of every effect plugin: name, manufacturer, version, AUv2 / AUv3 / VST3, source (system / user / own folder / app), status, search field
+* square left = use in MINOS-741. off -> not in the fx menu (a loaded one keeps playing until you pick another)
+* PRÜFEN / ALLE PRÜFEN -> audio units: apple's `auval`, VST3: self-check (load, 1 s of noise, state read + written back, unload). both in their own process, pass / fail + the last lines of the log (click the row). cached per plugin and version, cancel any time
+* status: ok · ungeprüft (not validated) · prüfung fehlgeschlagen (failed) · blockiert (crashed before) · nicht ladbar (with the reason in the row)
+* folders always scanned: `/Library/Audio/Plug-Ins/Components`, `~/Library/Audio/Plug-Ins/Components`, AUv3 from apps (system registry), `/Library/Audio/Plug-Ins/VST3`, `~/Library/Audio/Plug-Ins/VST3`
+* ORDNER HINZUFÜGEN … -> own folders. `.component` bundles in there (subfolders too) are loaded into MINOS-741 and registered for this app only, `.vst3` bundles are loaded from where they are, nothing is installed. folder changes trigger a rescan
+* PLUGIN INSTALLIEREN … -> pick `.component` / `.vst3` bundles, folders or a `.zip` -> `.component` copied to `~/Library/Audio/Plug-Ins/Components`, `.vst3` to `~/Library/Audio/Plug-Ins/VST3` (created if missing, never `/Library`). an installed bundle with another version -> asks before replacing
+* downloads carry a quarantine flag. gatekeeper may block unsigned or unnotarized plugins -> MINOS-741 asks before removing the flag, only say yes for sources you trust
+
+#### VST3
+
+* every effect class of a `.vst3` bundle (category audio effect, sub category Fx) is an own entry. the classes come from `Contents/Resources/moduleinfo.json` without loading code, otherwise the bundle is loaded once (with crash marker)
+* runs in-process, `läuft im prozess` in the list. isolation is audio unit only -> a crashing VST3 takes MINOS-741 down, the crash marker blocks it on the next start
+* stereo in / out (a mono plugin gets the mid signal), 32-bit float, blocks up to 4096 frames, the sample rate of the audio device
+* knobs 1-3 -> the first three plugin parameters, bypass, program change, read-only and hidden ones skipped
+* the plugin gets the tempo of the master clock (tempo-synced delays follow)
+* latency reported by the plugin is not compensated (same as audio units)
+* tail: rendered until 1 s below -100 dB, or as long as the plugin's own tail time (max 30 s)
+* EDIT -> the plugin's own view (resizable if the plugin allows it), else one slider per parameter
+* state of processor + controller is saved with the session
+* VST is a registered trademark of Steinberg Media Technologies GmbH. hosting via the VST 3 SDK (MIT) -> [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)
+
+#### crash safety
+
+* isolated loading: third-party plugins run in a separate system service (default on, ⌘, -> PLUGINS -> load third-party plugins isolated, per plugin: default / isolated / in-process). a crash there kills only the service -> the unit goes dry, the plugin gets blocked, the set plays on
+* apple plugins, plugins from own folders and VST3 always load in-process
+* cost of isolation, AUMatrixReverb, 512 frames at 48 kHz (budget 10.7 ms): no added latency, ~0.04 ms -> ~0.05 ms per block on the audio thread (mean), p99 0.06-0.16 ms -> 0.08-0.27 ms
+* crash marker: before an in-process plugin (or its window, or a bundle from an own folder) opens, MINOS-741 notes it. if the app dies right there, the next start blocks that plugin and shows it in the PLUGINS tab. a blocked plugin never loads, also not from a saved session -> BLOCK AUFHEBEN to try again
 
 ## ◆ 09 · BROWSER
 
@@ -287,6 +367,38 @@ any installed audio unit effect (apple or third-party, v2 and v3) in the single 
 * played column ▶: ✓ = played since the last reset. reset: right click a track or TRACK COLLECTION -> Reset Played State, or ⌥⌘P
 * the left controller drives the left pane, the right controller the right one
 * tree can hide while decks are visible (setting)
+* cover preview below the tree: cover of the selected track, `◆ KEIN COVER` (`◆ NO COVER`) = none (setting)
+* cover column (hidden by default): right click on the header -> Cover. thumbnails load only for visible rows, in the background
+* cloud column ☁ (library in a cloud folder): ● local · ☁ online only · ↓ downloading · ✕ missing
+* right click tracks or a source in the tree -> `Bereitmachen (herunterladen)`, progress + ✕ in the status bar
+* ● LOKAL in the header -> local tracks only. SET-CHECK -> preparation + this list: what is not local, `ALLE HOLEN`
+* details: [library · cloud libraries](library.md#-cloud-libraries)
+
+### preview
+
+a mini overview of the whole track per row. modes (⌘, -> DISPLAY -> browser preview):
+
+* `Ganze Zeile (zweizeilig)` (default): rows twice as high, text on top, the overview as a band across the full row width underneath, continuous over all columns. selection and inline edit work as usual (the editor sits in the text line)
+* `Eigene Spalte`: PREVIEW column after the title
+* `Hinter dem Titel`: 25 % under the title text
+* `Aus`
+
+
+* waveform, colors `Spektrum (rot/grün/blau)` (default): red = bass, green = mids / synths, blue = highs / drums, mixed per column. bands are weighted against a typical track -> a bass-heavy track is redder, a hat-heavy one bluer. height from peak and bass, scaled per track -> breaks sit clearly lower, drops jump out. thin bright line = big energy jump (drop), at most 4 per track
+* colors `wie Wellenform`: 3 bands in the palette of the waveform setting, muted
+* grid stays in the background (phrase bands, lines every 16 / 32 bars), fainter with the spectrum colors
+* phrase bands from the grid (phrase length = the waveform phrase), thin line every 16 bars, magenta every 32 bars
+* hotcues as short colored ticks, start cue as a triangle on top. own grid / phrase anchor / hotcue edits are drawn too
+* no overview yet -> grid and cues only
+* overview comes from: loading the track into a deck (free, from the deck's waveform) · right click TRACK COLLECTION, PREPARATION, a playlist, smartlist, playlist folder or music folder -> `Vorschauen berechnen` · background job (setting, `immer (gedrosselt)` by default)
+* background order: rows on screen without an overview first (last shown first), then the whole collection, newest tracks first
+* `immer (gedrosselt)`: runs while decks play: one file at a time, low priority, half the cpu time, 1 s between files. no deck playing -> full speed. `nur wenn kein Deck spielt`: waits while a deck plays. `aus`: only deck loads and right click
+* every mode: computing waits while a deck loads and 4 s after, also in the middle of a file
+* status bar: `Vorschauen 1.234 / 14.160 · gedrosselt` (tracks with overview / tracks with a file), `pausiert (Deck lädt)`, `pausiert (Deck spielt)`, ✕ = stop the background job until the next start. right click batch: `Vorschauen 12/240`, ✕ = cancel
+* files that only exist in the cloud (placeholder, not downloaded) are skipped by the background job and counted: `12 nur online – Rechtsklick lädt`. right click -> `Vorschauen berechnen` reads them (downloads the file)
+* ⌘, -> DISPLAY -> preview colors: spectrum / like the waveform
+* overviews are checked against file size and modification time -> a retagged file gets a new one
+* reload ↻ / ⌘O during a set: parsing, file check and sorting run in the background, the decks keep drawing. the lists switch in one step when everything is ready
 
 role chips `BASIS · SYNTH · DRUMS · VOLL · ATMO` -> filter on the role at the end of comment 2 (`» BASIS`). several chips = any of them.
 
@@ -315,6 +427,37 @@ off by default. ⌘, -> ANZEIGE -> browser -> `Änderungen in die Collection-Dat
 * written fields leave `metadata.json`, the file holds them now. a track whose entry changed in the file meanwhile is skipped (status bar) -> ↻ reload, edit again
 * switching the setting on writes the changes made before
 * tags inside the audio files are not touched
+
+### check the collection
+
+BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION. read only, nothing is changed.
+
+* window like an old installer: progress `n / total · % · time · ~left`, the current file ticking by, the log rattling down (`OK   …/file.mp3`, `MISS …`), counters per check
+* ABBRECHEN stops at once, the findings so far stay. a file that hangs on a cloud drive finishes in the background, its result is dropped
+* after the run: FINDINGS table, click a counter = filter. right click / double click -> show in browser (selects the track in TRACK COLLECTION), show in finder, copy path. REPORT TXT / CSV
+* while running the log shows the newest lines (redrawn at most 10× per second), afterwards the last 2000 lines to scroll back. the findings table keeps all
+* paths below the music folder show as `…/`
+
+| tag | check | |
+|---|---|---|
+| `MISS` | file not found at the collection's path | problem |
+| `PERM` | no read permission | problem |
+| `ZERO` | file is 0 bytes | problem |
+| `BAD ` | no audio header (only the header is opened, nothing is decoded) | problem |
+| `TIME` | file duration differs from the collection by more than 2 s | problem |
+| `CASE` | path differs in upper / lower case on disk | hint |
+| `NFD ` | same name, other unicode form (nfc / nfd). no effect on the mac, can break copies to other systems | hint |
+| `NAME` | file name contains neither title nor artist (case, accents, track numbers, bracket parts ignored) | hint |
+| `DUP ` | the same file twice in the collection | problem |
+| `TWIN` | same artist + title (+ mix) with another file | hint |
+| `ANLZ` | no bpm, grid, key or loudness | hint |
+| `GRID` | bpm outside 60-200, or the grid anchor after the end of the file | hint |
+| `LIST` | playlist / preparation entry without a track in the collection | problem |
+| `NEW ` | audio file in the music folders, not in the collection | hint |
+
+* 6 files at a time. 14,160 tracks on a local drive: ~5 s
+* `NEW` needs the music folder scan (setting, on by default)
+* ⌘, -> DISPLAY -> check collection: check on start (off), scan music folders (on)
 
 ## ◆ 10 · TAGS + SMARTLISTS
 
@@ -385,7 +528,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 no default, assignable: master, keylock, reloop, load selection into the focused deck, preview selection, reload collection, reconnect audio.
 ⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.
 
-controller mapping -> [controllers.md](controllers.md).
+controller mapping -> [controllers.md](controllers.md). flux on the controller = pad layer switch: tap -> pads 1-4 play hotcues 5-8 (flux led lit), tap again -> back, shift + flux = flux mode. old layout under ⌘, -> CONTROLLER -> flux button.
 
 ## ◆ 13 · FILES + FOLDERS
 
@@ -397,8 +540,10 @@ controller mapping -> [controllers.md](controllers.md).
 | settings | user defaults, key `prefs.v1` |
 | session (decks, fx, clock, browser) | `~/Library/Application Support/MINOS-741/session.json` |
 | hotcue + grid edits | `~/Library/Application Support/MINOS-741/edits.json` |
+| browser previews (track overviews) | `~/Library/Application Support/MINOS-741/overviews/overviews.bin` |
 | history | `~/Library/Application Support/MINOS-741/History` |
 | preparation archive | `~/Library/Application Support/MINOS-741/Preparation` |
+| cover thumbnails (cache, safe to delete) | `~/Library/Caches/MINOS-741/artwork` |
 
 backup = copy the `MINOS-741` folder.
 
@@ -412,7 +557,15 @@ backup = copy the `MINOS-741` folder.
 | sync won't engage | track has no grid -> analyze it in your library software once |
 | link peers but no tempo | LINK on in both apps, same network, firewall |
 | crackles | other apps on the same device, sample rate set in audio midi setup |
-| artist in red | file missing or moved -> fix the path in the collection, reload ↻ |
+| DROPOUTS counts up | DSP near or above 100 % -> bigger buffer (⌘, -> AUDIO), fewer keylock decks / plugins. DSP low but dropouts -> device or system (other audio apps, usb hub, energy saver) |
+| DSP red | single blocks over 70 %: plugins, 4 decks with keylock, small buffer. average matters, a single peak after loading is normal |
+| latency too high | buffer size in ⌘, -> AUDIO. LATENCY = buffer + device + safety offset; keylock lookahead is compensated and not audible as delay |
+| track won't load | status bar message: `Datei fehlt` = path in the collection wrong; `(4 s) keine Audiodaten` = cloud file not on disk -> the download is already requested (`Cloud-Datei wird heruntergeladen`), load again when ● shows; otherwise the format reason |
+| ☁ in the list, set-check not clean | right click -> `Bereitmachen`, or `ALLE HOLEN` in the set-check. for good: finder -> right click the library folder -> make available offline |
+| local tracks turn ☁ again | macos evicted them (optimize storage, low disk space) -> keep local in ⌘, -> CLOUD fetches them again; pin the folder, free some space |
+| downloads don't start | a deck is loading (status bar `pausiert`), or less than the free space floor left (⌘, -> CLOUD) |
+| artist in red | file missing or moved -> fix the path in the collection, reload ↻. all of them at once: BROWSER -> `Collection prüfen …` |
+| check takes long | cloud drive downloads files on first access -> ABBRECHEN keeps what was found, check again later |
 | ui hangs | audio + sync keep running. report it with the version from the title bar |
 
 self test (silent, ends by itself):
@@ -423,6 +576,10 @@ MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 
 waveform still without a window: `MIX741_SHOT=wave:/tmp/wave.png` in addition -> one deck with loop and hotcues as png, then exit.
 settings as png without a window: add `MIX741_SHOT=settings:<folder>` -> one image per section, then quit.
+status bar, failed and empty deck as png: `MIX741_SHOT=status:<folder>` (add `MIX741_SHOT_AUDIO=1` for live meters, silent on a built-in device).
+collection check without a window: add `MIX741_CHECK=1` -> counts per check and duration, `MIX741_CHECK_LIST=<n>` lists the first n findings each. `MIX741_SHOT=consistency:<png>` renders the check window mid-run and finished.
+reload stall: add `MIX741_BENCH=reload` -> loads and reloads the collection offscreen, prints the longest main-thread gap per reload (`MIX741_BENCH_N` rounds).
+cloud column + set-check as png: `MIX741_SHOT=cloud:<folder>` -> real check of the collection in the log, images with real and with set states, nothing downloaded.
 
 bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) with version, macos, device, mode, controller.
 

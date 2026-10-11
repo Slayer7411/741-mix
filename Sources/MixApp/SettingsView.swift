@@ -9,10 +9,12 @@ struct SettingsView: View {
     static let tabs: [SettingsTab] = [
         SettingsTab("DECKS") { DeckSettings() },
         SettingsTab("MIXER & FX") { MixerFXSettings() },
+        SettingsTab("PLUGINS") { PluginSettingsView() },
         SettingsTab("ANZEIGE") { WaveformSettings() },
         SettingsTab("AUDIO") { AudioSettings() },
         SettingsTab("CONTROLLER") { ControllerSettings() },
         SettingsTab("TAGS") { TagColorSettings() },
+        SettingsTab("CLOUD") { CloudSettings() },
         SettingsTab("TASTATUR") { ShortcutSettings() },
     ]
 
@@ -308,6 +310,17 @@ struct DeckSettings: View {
                 Picker("Beatjump-Größe (Standard)", selection: $mix.prefs.engine.defaultJumpSize) {
                     ForEach(BeatSizes.jump, id: \.self) { Text(BeatSizes.label($0)).tag($0) }
                 }
+                Group {
+                    Toggle("Loop-Snap auf Loop-Cues", isOn: $mix.prefs.engine.loopSnapCues)
+                    Stepper("Fenster (Beats): \(Int(mix.prefs.engine.loopSnapCueBeats))", value: $mix.prefs.engine.loopSnapCueBeats, in: 1...8, step: 1)
+                        .disabled(!mix.prefs.engine.loopSnapCues)
+                    Toggle("Loop-Snap auf 4-Bar-Raster", isOn: $mix.prefs.engine.loopSnapPhrase)
+                    Stepper("Toleranz (Beats): \(Int(mix.prefs.engine.loopSnapPhraseBeats))", value: $mix.prefs.engine.loopSnapPhraseBeats, in: 1...8, step: 1)
+                        .disabled(!mix.prefs.engine.loopSnapPhrase)
+                    Text("nur mit snap. loop, loop in: ein loop-cue, der bis zum fenster vor der position beginnt oder gerade überspielt wird, wird übernommen; sonst beginnt der loop auf der nächsten 4-takt-grenze (ab grid-anker) innerhalb der toleranz; sonst normaler snap. kein sprung: die position läuft in den loop hinein oder ist schon drin.")
+                        .settingsHint()
+                }
+                .disabled(!mix.prefs.engine.snap)
             }
             Section("History & Preparation") {
                 sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f", unit: "s")
@@ -318,6 +331,14 @@ struct DeckSettings: View {
             Section("Ansicht") {
                 Toggle("4 Decks anzeigen", isOn: $mix.prefs.ui.showFourDecks)
                 sliderRow("Vorhören im Browser ab (Anteil)", $mix.prefs.ui.previewStart, 0...0.9, format: "%.1f")
+            }
+            Section("Zeilen je Deck") {
+                ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
+                    Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui.deckRows[keyPath: row.0] },
+                                                                  set: { mix.prefs.ui.deckRows[keyPath: row.0] = $0 }))
+                }
+                Toggle("Grid-Werkzeuge", isOn: $mix.prefs.ui.showGridTools)
+                Text("auch im menü decks -> zeilen. wellenform und kopfzeile bleiben immer.").settingsHint()
             }
         }
     }
@@ -370,11 +391,30 @@ struct WaveformSettings: View {
         @Bindable var mix = mix
         Form {
             Section("Wellenform") {
-                Picker("Stil", selection: $mix.prefs.ui.waveformStyle) {
-                    ForEach(WaveformStyle.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                // Stil und Spektrum-Variante in einer Liste: 3-Band, Spektrum fein / fein ohne Ebene / 3 Bänder, Einfarbig
+                Picker("Stil", selection: Binding(
+                    get: { mix.prefs.ui.waveformStyle == .spectrum ? mix.prefs.ui.spectrumDetail.rawValue : mix.prefs.ui.waveformStyle.rawValue },
+                    set: { v in
+                        if let d = SpectrumDetail(rawValue: v) {
+                            mix.prefs.ui.waveformStyle = .spectrum
+                            mix.prefs.ui.spectrumDetail = d
+                        } else if let st = WaveformStyle(rawValue: v) {
+                            mix.prefs.ui.waveformStyle = st
+                        }
+                    })) {
+                    ForEach([WaveformStyle.threeBand.rawValue] + SpectrumDetail.allCases.map(\.rawValue) + [WaveformStyle.mono.rawValue], id: \.self) {
+                        Text(LocalizedStringKey($0)).tag($0)
+                    }
                 }
+                let fine = mix.prefs.ui.waveformStyle == .spectrum && mix.prefs.ui.spectrumDetail != .simple
                 Picker("Farben", selection: $mix.prefs.ui.waveformPalette) {
                     ForEach(WaveformPalette.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                .disabled(fine)
+                if fine {
+                    sliderRow("Höhen-Betonung", $mix.prefs.ui.waveformHighBoost, 0...2, step: 0.25, format: "%.2f")
+                    Text("Sub orange · Bass/Kick rot · Mitten grün, obere Mitten gelbgrün · kurze Höhen (geschlossene Hats) blau · gehaltene Höhen (offene Hats, Ride) hellblau. Jedes Band gegen den eigenen Track normiert, Höhe = echter Pegel.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 sliderRow("Sichtbare Sekunden je Seite (Zoom)", $mix.prefs.ui.waveformSeconds, 1...16, step: 0.5, format: "%.1f", unit: "s")
                 sliderRow("Mindesthöhe (pt, wächst mit dem Fenster)", $mix.prefs.ui.waveformHeight, 30...200, step: 5, format: "%.0f", unit: "pt")
@@ -403,6 +443,25 @@ struct WaveformSettings: View {
                 Toggle("Änderungen in die Collection-Datei schreiben (Backup davor)", isOn: $mix.prefs.ui.writeCollection)
                 Text("aus: änderungen (inline, ⌘E) liegen nur in MINOS-741 (metadata.json). an: nach ÜBERNEHMEN in die collection.nml, sicherung höchstens stündlich in „Backup MINOS-741“ neben der datei. nicht, solange die collection-software läuft.")
                     .font(Theme.mono(10)).foregroundStyle(Theme.muted)
+            }
+            PreviewSettings()
+            Section("Statusleiste") {
+                Toggle("Last-Anzeigen (DSP, Latenz, Aussetzer, Speicher, CPU)", isOn: $mix.prefs.ui.showMeters)
+                sliderRow("Laden abbrechen nach (keine Audiodaten)", $mix.prefs.engine.loadTimeout, 2...15, step: 1, format: "%.0f", unit: "s")
+                Text("dsp = rechenzeit des audio-blocks ÷ blockdauer, rot ab 70 %. aussetzer: blöcke über dem budget plus überlast-meldungen des geräts, klick setzt zurück. meldungen: klick zeigt die letzten 50.")
+                    .settingsHint()
+            }
+            Section("Cover") {
+                Toggle("Cover im Deck anzeigen", isOn: $mix.prefs.ui.showDeckCover)
+                Toggle("Cover-Vorschau im Browser", isOn: $mix.prefs.ui.showCoverPreview)
+                Text("vorschau unter dem baum (gewählter track). spalte „Cover“ in der liste: rechtsklick auf die spaltenköpfe. bild aus der datei, sonst cover / folder / front.jpg im ordner, zwischengespeichert in ~/Library/Caches/MINOS-741/artwork.")
+                    .settingsHint()
+            }
+            Section("Collection prüfen") {
+                Toggle("Beim Start prüfen", isOn: $mix.prefs.ui.checkOnStart)
+                Toggle("Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen", isOn: $mix.prefs.ui.checkMusicFolders)
+                Text("browser-menü -> collection prüfen … oder rechtsklick auf TRACK COLLECTION. nur lesen: dateien, audio-kopf, dauer, schreibweise, namen, doppelte, analyse, grid, playlist-einträge. abbrechen jederzeit.")
+                    .settingsHint()
             }
             Section("Cue-Farben (Bildschirm und Controller-Pads)") {
                 Picker("Start-Cue (Load / AutoGrid)", selection: $mix.prefs.controller.colorStartCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
@@ -553,7 +612,12 @@ struct ControllerSettings: View {
             }
             Section("Belegung") {
                 Picker("Cue-Taste", selection: $mix.prefs.controller.cueAction) { ForEach(ControllerCueAction.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
-                Toggle("Flux antippen schaltet Flux-Modus", isOn: $mix.prefs.controller.fluxTapToggles)
+                Picker("Flux-Taste", selection: $mix.prefs.controller.fluxButton) { ForEach(ControllerFluxButton.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                if mix.prefs.controller.fluxButton == .fluxMode {
+                    Toggle("Flux antippen schaltet Flux-Modus", isOn: $mix.prefs.controller.fluxTapToggles)
+                } else {
+                    Text("antippen -> pads 1–4 spielen hotcues 5–8, flux-led an; nochmal -> zurück. shift + flux = flux-modus.").settingsHint()
+                }
                 Picker("Flux halten + Pads", selection: $mix.prefs.controller.fluxPads) { ForEach(ControllerFluxPads.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
                 Picker("Beatjump-Größe (Flux + Pad 3/4)", selection: $mix.prefs.controller.fluxBeatjumpBeats) {
                     ForEach(BeatSizes.jump, id: \.self) { Text("±\(BeatSizes.label($0)) Beat").tag($0) }

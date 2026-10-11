@@ -203,7 +203,9 @@ struct TableViewFinder: NSViewRepresentable {
             if let c = cached, c.window === window, overlap(c, mine) > 0 { return c }
             var best: (NSTableView, CGFloat)?
             func walk(_ v: NSView) {
-                if let t = v as? NSTableView, !(t is NSOutlineView) {
+                // SwiftUIs Table ist intern selbst ein NSOutlineView (SwiftUIOutlineTableView) – der Baum links hat
+                // nur eine Spalte, die Track-Tabelle viele: daran unterscheiden
+                if let t = v as? NSTableView, t.tableColumns.count > 1 {
                     let o = overlap(t, mine)
                     if o > (best?.1 ?? 0) { best = (t, o) }
                 }
