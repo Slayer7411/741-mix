@@ -156,29 +156,35 @@ public struct DeckState: Equatable, Sendable {
     public var bpm: Double { (grid?.bpm ?? track?.bpm ?? 0) * (1 + tempoPct / 100) }
 }
 
-/// FX-Unit: Gruppenmodus (3 Slots Filter · Delay · Reverb, Regler = Stärke)
+/// FX-Unit: Gruppenmodus (3 Slots, Standard Filter · Delay · Reverb, Regler = Stärke)
 /// oder Single-Modus (ein Effekt, die 3 Regler = seine Parameter).
 public struct FXUnitState: Equatable, Sendable, Codable {
     public struct Slot: Equatable, Sendable, Codable {
         public var on = false
         public var amount: Double
     }
+    /// Rohwerte bleiben (Sitzung): neue Effekte hinten anhängen
     public enum Effect: Int, CaseIterable, Sendable {
-        case filter = 0, delay, reverb, plugin
-        public var name: String { ["FILTER", "DELAY", "REVERB", "PLUGIN"][rawValue] }
-        /// Beschriftung der 3 Regler im Single-Modus
-        public var params: [String] {
-            switch self {
-            case .filter: ["CUTOFF", "RES", "—"]
-            case .delay: ["FILTER", "FEEDB", "RATE"]
-            case .reverb: ["SIZE", "HP", "LP"]
-            case .plugin: ["P1", "P2", "P3"]   // echte Namen: MixState.fxControls
-            }
-        }
+        case filter = 0, delay, reverb, plugin, gater, roll, flanger, phaser
+        public var name: String { ["FILTER", "DELAY", "REVERB", "PLUGIN", "GATER", "ROLL", "FLANGER", "PHASER"][rawValue] }
+        /// Kürzel im Gruppen-Menü
+        public var short: String { ["FLT", "DLY", "REV", "PLG", "GAT", "ROL", "FLG", "PHS"][rawValue] }
+        /// Reihenfolge in Menüs und beim Weiterschalten (Controller)
+        public static let order: [Effect] = [.filter, .delay, .reverb, .gater, .roll, .flanger, .phaser, .plugin]
+        /// in einem Gruppen-Slot möglich (Plugin nur im Single-Modus)
+        public static let groupable: [Effect] = order.filter { $0 != .plugin }
+        /// nächster Effekt in `order`
+        public var next: Effect { Self.order[((Self.order.firstIndex(of: self) ?? 0) + 1) % Self.order.count] }
     }
     public static let slotNames = ["FILTER", "DELAY", "REVERB"]
+    public static let defaultSlotTypes = [Effect.filter.rawValue, Effect.delay.rawValue, Effect.reverb.rawValue]
     public var dryWet: Double = 1
     public var slots = [Slot(amount: 0.5), Slot(amount: 0.5), Slot(amount: 0.5)]
+    /// Effekt je Gruppen-Slot (Effect.rawValue, jeder höchstens einmal)
+    public var slotTypes = FXUnitState.defaultSlotTypes
+    /// Einstellungen der Beat-FX (Gater, Roll, Flanger, Phaser), "GATER.rate" → Stellung 0…1; gelten in Single und Gruppe.
+    /// Fehlt ein Wert = Standard (FXCatalog). Freeze/Mute werden nicht mit der Sitzung geladen
+    public var opts: [String: Double] = [:]
     /// Delay-Zeit (Index in MixEngine.delayBeats), Hallgröße 0–1
     public var delayIndex = 3
     public var reverbSize = 0.6
@@ -211,6 +217,10 @@ public struct FXUnitState: Equatable, Sendable, Codable {
         singleOn = try c.decodeIfPresent(Bool.self, forKey: .singleOn) ?? false
         params = try c.decodeIfPresent([Double].self, forKey: .params) ?? params
         if params.count != 3 { params = [0.5, 0.45, 0.6] }
+        slotTypes = try c.decodeIfPresent([Int].self, forKey: .slotTypes) ?? slotTypes
+        if slotTypes.count != 3 || Set(slotTypes).count != 3
+            || !slotTypes.allSatisfy({ Effect(rawValue: $0).map(Effect.groupable.contains) ?? false }) { slotTypes = Self.defaultSlotTypes }
+        opts = (try c.decodeIfPresent([String: Double].self, forKey: .opts) ?? [:]).filter { !$0.key.hasSuffix(".freeze") && !$0.key.hasSuffix(".mute") }
         pluginID = try c.decodeIfPresent(String.self, forKey: .pluginID)
         pluginState = try c.decodeIfPresent(Data.self, forKey: .pluginState)
         mapping = try c.decodeIfPresent(FXMapping.self, forKey: .mapping) ?? FXMapping()
@@ -1680,7 +1690,7 @@ public final class MixController: @unchecked Sendable {
             var info = FXControlInfo()
             let mapped = mapping[c]
             info.isDefault = mapped == nil
-            if let k = mapped ?? FXCatalog.defaultTarget(c, effect: key, params: list), let i = paramIndex[u][k] {
+            if let k = mapped ?? FXCatalog.defaultTarget(c, effect: key, params: list, fx: state.fx[u]), let i = paramIndex[u][k] {
                 let p = list[i]
                 info.param = p
                 info.value = fxValue(u, p)

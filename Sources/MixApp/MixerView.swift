@@ -142,7 +142,31 @@ struct FXUnitView: View {
     }
 
     @ViewBuilder private func group(_ fx: FXUnitState) -> some View {
+        // Effekt je Slot: Kürzel der 3 Slots, Menü je Slot (schon belegter Effekt tauscht den Platz)
+        Menu {
+            ForEach(0..<3, id: \.self) { i in
+                Section("Slot \(i + 1)") {
+                    ForEach(FXUnitState.Effect.groupable, id: \.self) { e in
+                        Toggle(e.name, isOn: Binding(get: { fx.slotTypes[i] == e.rawValue }, set: { _ in mix.updateFX(u) { $0.setSlot(i, e) } }))
+                    }
+                }
+            }
+        } label: {
+            Text(verbatim: fx.slotTypes.compactMap { FXUnitState.Effect(rawValue: $0)?.short }.joined(separator: "·"))
+        }
+        .menuStyle(.borderlessButton).controlSize(zoomed: .regular)
+        .font(Theme.label(9.z, .bold))
+        .fixedSize()
+        .help("Effekte der 3 Slots")
         controls
+        if fx.slot(of: .delay) != nil { delayTime(fx) }
+        if fx.slot(of: .reverb) != nil {
+            Knob(value: Binding(get: { unit.state.reverbSize }, set: { v in mix.updateFX(u) { $0.reverbSize = v } }),
+                 range: 0...1, defaultValue: 0.6, label: "ROOM", color: Theme.state, size: 20)
+        }
+    }
+
+    @ViewBuilder private func delayTime(_ fx: FXUnitState) -> some View {
         Menu(BeatSizes.label(MixEngine.delayBeats[fx.delayIndex])) {
             ForEach(MixEngine.delayBeats.indices, id: \.self) { i in
                 Button("Delay \(BeatSizes.label(MixEngine.delayBeats[i])) Beat") { mix.updateFX(u) { $0.delayIndex = i } }
@@ -152,15 +176,13 @@ struct FXUnitView: View {
         .font(Theme.label(10.z, .bold))
         .fixedSize()
         .help("Delay-Zeit in Beats")
-        Knob(value: Binding(get: { unit.state.reverbSize }, set: { v in mix.updateFX(u) { $0.reverbSize = v } }),
-             range: 0...1, defaultValue: 0.6, label: "ROOM", color: Theme.state, size: 20)
     }
 
     @ViewBuilder private func single(_ fx: FXUnitState) -> some View {
         let effect = FXUnitState.Effect(rawValue: fx.singleType) ?? .delay
         VStack(spacing: 2.z) {
             Menu(effect.name) {
-                ForEach(FXUnitState.Effect.allCases, id: \.self) { e in
+                ForEach(FXUnitState.Effect.order, id: \.self) { e in
                     Button(e.name) { mix.updateFX(u) { $0.singleType = e.rawValue } }
                 }
             }
@@ -292,7 +314,7 @@ struct FXAssignMenu: View {
         let unit = mix.fxUnits[u]
         let mapped = unit.state.mapping[c]
         let params = unit.params
-        let def = FXCatalog.defaultTarget(c, effect: unit.state.effectKey, params: params).flatMap { k in params.first { $0.id == k } }
+        let def = FXCatalog.defaultTarget(c, effect: unit.state.effectKey, params: params, fx: unit.state).flatMap { k in params.first { $0.id == k } }
         let list = filter.isEmpty ? params : params.filter {
             $0.name.localizedCaseInsensitiveContains(filter) || $0.group.localizedCaseInsensitiveContains(filter)
         }

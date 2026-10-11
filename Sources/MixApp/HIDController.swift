@@ -312,7 +312,7 @@ final class ControllerManager: @unchecked Sendable {
             core.updateFX(fu) { fx in
                 if fx.single {
                     // Single: Mode = Effekt an/aus (Echo/Hall klingt aus), Shift + Mode = nächster Effekt
-                    if shift { fx.singleType = (fx.singleType + 1) % FXUnitState.Effect.allCases.count } else { fx.singleOn.toggle() }
+                    if shift { fx.singleType = (FXUnitState.Effect(rawValue: fx.singleType) ?? .delay).next.rawValue } else { fx.singleOn.toggle() }
                     return
                 }
                 // Gruppe: Mode = an/aus (merkt sich, welche Slots an waren), Shift + Mode = Delay-Zeit weiter

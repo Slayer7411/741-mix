@@ -252,3 +252,67 @@ private func catalog(_ dir: URL, vst3: URL? = nil) -> PluginCatalog {
     #expect(core.snapshot().fx[0].reverbFreeze && control(core.snapshot(), 0, .button3).label == "FRZ")
     #expect(core.snapshot().prefs.reverbType == .classic)
 }
+
+/// Beat-FX im Single-Modus: Standardbelegung, Stufen, Flanger frei = Regler 1 auf Hz; Freeze/Mute nicht aus der Sitzung
+@Test func fxBeatEffectsSingleMapping() throws {
+    let core = MixController()
+    func single(_ e: FXUnitState.Effect) -> MixState { core.updateFX(1) { $0.single = true; $0.singleType = e.rawValue }; return core.snapshot() }
+    var s = single(.gater)
+    #expect(s.fxControls[1].map(\.label) == ["D/W", "RATE", "SHAPE", "WIDTH", "ON", "MUTE", "TRIP"])
+    #expect(control(s, 1, .knob1).param?.text(control(s, 1, .knob1).value) == "1/4")
+    core.setFXControl(1, .knob1, 0.4)
+    core.pressFXButton(1, 1)
+    s = core.snapshot()
+    #expect(control(s, 1, .knob1).param?.text(s.fx[1].opts["GATER.rate"] ?? 0) == "1/8" && s.fx[1].opts["GATER.mute"] == 1)
+    s = single(.roll)
+    #expect(s.fxControls[1].map(\.label) == ["D/W", "LEN", "FILTER", "DECAY", "ON", "REV", "—"])
+    #expect(control(s, 1, .knob1).param?.valueNames == ["1/32", "1/16", "1/8", "1/4", "1/2", "1"])
+    s = single(.flanger)
+    #expect(s.fxControls[1].map(\.label) == ["D/W", "RATE", "DEPTH", "FEEDB", "ON", "FRZ", "SYNC"])
+    #expect(control(s, 1, .knob1).param?.text(control(s, 1, .knob1).value) == "4" && control(s, 1, .button3).active)
+    core.pressFXButton(1, 2)   // SYNC aus: Regler 1 = Rate in Hz
+    core.pressFXButton(1, 1)   // LFO-Freeze
+    s = core.snapshot()
+    #expect(control(s, 1, .knob1).label == "HZ" && control(s, 1, .knob1).param?.text(0.5) == "0.28 Hz")
+    s = single(.phaser)
+    #expect(s.fxControls[1].map(\.label) == ["D/W", "RATE", "DEPTH", "FEEDB", "ON", "FRZ", "STAGE"])
+    core.pressFXButton(1, 2)
+    #expect(control(core.snapshot(), 1, .button3).param?.text(1) == "8" && core.snapshot().fx[1].opts["PHASER.stages"] == 1)
+    // Sitzung: Einstellungen bleiben, Freeze/Mute nicht
+    let again = try JSONDecoder().decode(FXUnitState.self, from: JSONEncoder().encode(core.snapshot().fx[1]))
+    #expect(again.opts["FLANGER.sync"] == 0 && again.opts["PHASER.stages"] == 1 && again.opts["GATER.rate"] != nil)
+    #expect(again.opts["FLANGER.freeze"] == nil && again.opts["GATER.mute"] == nil)
+    // Weiterschalten (Controller: Shift + Mode): Reihenfolge der Menüs, Plugin zuletzt
+    #expect(FXUnitState.Effect.reverb.next == .gater && FXUnitState.Effect.phaser.next == .plugin && FXUnitState.Effect.plugin.next == .filter)
+}
+
+/// Gruppe: Effekt je Slot wählbar, Regler = Stärke (Roll: Länge), Taste = an/aus; Belegung je Slot-Kombination gemerkt
+@Test func fxGroupSlotTypes() throws {
+    let core = MixController()
+    core.updateFX(0) { $0.setSlot(0, .gater); $0.setSlot(2, .roll) }
+    var s = core.snapshot()
+    #expect(s.fx[0].effectKey == "GROUP:GATER/DELAY/ROLL")
+    #expect(s.fxControls[0].map(\.label) == ["D/W", "GATER", "DELAY", "ROLL", "ON", "ON", "ON"])
+    #expect(s.fxParams[0].map(\.id).contains("gater.rate") && !s.fxParams[0].contains { $0.id.hasPrefix("filter") })
+    core.setFXControl(0, .knob1, 0.7)
+    core.setFXControl(0, .knob3, 0.0)
+    core.pressFXButton(0, 0)
+    s = core.snapshot()
+    #expect(s.fx[0].slots[0].amount == 0.7 && s.fx[0].slots[0].on && s.fx[0].opts["ROLL.len"] == 0)
+    #expect(control(s, 0, .knob3).param?.text(control(s, 0, .knob3).value) == "1/32")
+    // Gruppen-Teiler = dieselbe Einstellung wie im Single-Modus
+    core.setFXMapping(0, .button2, "gater.rate")
+    core.pressFXButton(0, 1)
+    s = core.snapshot()
+    #expect(s.prefs.fxMappings["GROUP:GATER/DELAY/ROLL"]?[.button2] == "gater.rate" && s.fx[0].opts["GATER.rate"] == 1)
+    core.updateFX(0) { $0.single = true; $0.singleType = FXUnitState.Effect.gater.rawValue }
+    #expect(control(core.snapshot(), 0, .knob1).param?.text(control(core.snapshot(), 0, .knob1).value) == "1/2")
+    core.updateFX(0) { $0.single = false }
+    // schon belegter Effekt: Slots tauschen (mit Stärke und an/aus)
+    core.updateFX(0) { $0.setSlot(1, .gater) }
+    s = core.snapshot()
+    #expect(s.fx[0].slotTypes == [1, 4, 5] && s.fx[0].slots[1].amount == 0.7 && s.fx[0].slots[1].on)
+    // alte Sitzung ohne Slots / kaputte Slots: Filter · Delay · Reverb
+    let old = try JSONDecoder().decode(FXUnitState.self, from: Data(#"{"dryWet":1,"slotTypes":[4,4,2]}"#.utf8))
+    #expect(old.slotTypes == FXUnitState.defaultSlotTypes && old.effectKey == "GROUP")
+}

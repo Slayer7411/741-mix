@@ -152,7 +152,7 @@ public struct FXParam: Equatable, Sendable, Identifiable {
         let num = abs(v) >= 100 ? String(format: "%.0f", v) : abs(v) >= 10 ? String(format: "%.1f", v) : String(format: "%.2f", v)
         switch unit {
         case "%": return String(format: "%.0f %%", v)
-        case "Hz": return abs(v) >= 1000 ? String(format: "%.2f kHz", v / 1000) : String(format: "%.0f Hz", v)
+        case "Hz": return abs(v) >= 1000 ? String(format: "%.2f kHz", v / 1000) : abs(v) < 10 ? String(format: "%.2f Hz", v) : String(format: "%.0f Hz", v)
         case "dB": return String(format: "%+.1f dB", v)
         case "s": return abs(v) < 1 ? String(format: "%.0f ms", v * 1000) : String(format: "%.2f s", v)
         case "ms": return String(format: "%.0f ms", v)
@@ -197,16 +197,20 @@ public struct FXControlInfo: Equatable, Sendable {
 
 // MARK: - Eigene Effekte
 
-/// Parameter, Standardbelegung und Felder der eigenen Effekte (Gruppe, Filter, Delay, Reverb)
+/// Parameter, Standardbelegung und Felder der eigenen Effekte (Gruppe, Filter, Delay, Reverb, Gater, Roll, Flanger, Phaser)
 public enum FXCatalog {
     public static let groupKey = "GROUP"
+    public typealias Effect = FXUnitState.Effect
 
-    /// Delay-Zeiten als Text ("1/4", "3/2")
-    static let beatNames = MixEngine.delayBeats.map { b -> String in
-        if b >= 1, b == b.rounded() { return String(Int(b)) }
-        for d in [2, 4, 8] where (b * Double(d)) == (b * Double(d)).rounded() { return "\(Int(b * Double(d)))/\(d)" }
-        return String(format: "%.2f", b)
+    /// Beat-Teiler als Text ("1/4", "3/2", "8")
+    static func beatNames(_ list: [Double]) -> [String] {
+        list.map { b in
+            if b >= 1, b == b.rounded() { return String(Int(b)) }
+            for d in [2, 4, 8, 16, 32] where (b * Double(d)) == (b * Double(d)).rounded() { return "\(Int(b * Double(d)))/\(d)" }
+            return String(format: "%.2f", b)
+        }
     }
+    static let beatNames = beatNames(MixEngine.delayBeats)
 
     static let dw = FXParam(id: "dw", name: "Dry/Wet", short: "D/W", unit: "%", max: 100, defaultValue: 1)
     static let on = FXParam(id: "on", name: "Effekt an/aus", short: "ON", steps: 1)
@@ -215,24 +219,90 @@ public enum FXCatalog {
         FXParam(id: id, name: name, short: short, group: group, unit: "%", min: bipolar ? -100 : 0, max: 100, defaultValue: def, bipolar: bipolar)
     }
 
-    static func beats(_ id: String, _ name: String, _ short: String, group: String = "", def: Double) -> FXParam {
-        FXParam(id: id, name: name, short: short, group: group, steps: beatNames.count - 1, valueNames: beatNames, defaultValue: def)
+    static func beats(_ id: String, _ name: String, _ short: String, group: String = "", def: Double, list: [Double] = MixEngine.delayBeats) -> FXParam {
+        let names = beatNames(list)
+        return FXParam(id: id, name: name, short: short, group: group, steps: names.count - 1, valueNames: names, defaultValue: def)
+    }
+
+    static func toggle(_ id: String, _ name: String, _ short: String, group: String = "", def: Double = 0, names: [String] = []) -> FXParam {
+        FXParam(id: id, name: name, short: short, group: group, steps: 1, valueNames: names, defaultValue: def)
+    }
+
+    static func hz(_ id: String, _ name: String) -> FXParam {
+        var p = FXParam(id: id, name: name, short: "HZ", unit: "Hz", min: 0.02, max: 4, defaultValue: 0.5)
+        p.curve = .logarithmic
+        return p
+    }
+
+    /// Parameter der Beat-FX (ohne D/W, an/aus); Schlüssel in FXUnitState.opts = "NAME.id"
+    static func beatParams(_ e: Effect) -> [FXParam] {
+        switch e {
+        case .gater:
+            return [beats("rate", "Gater-Rate", "RATE", def: 2.0 / 3, list: MixEngine.gaterBeats), pct("shape", "Form", "SHAPE", def: 0),
+                    pct("width", "Offen", "WIDTH"), toggle("mute", "Stumm", "MUTE"), toggle("trip", "Triole", "TRIP")]
+        case .roll:
+            return [beats("len", "Roll-Länge", "LEN", def: 0.6, list: MixEngine.rollBeats), pct("filter", "Filter", "FILTER", bipolar: true),
+                    pct("decay", "Abklingen", "DECAY", def: 0), toggle("rev", "Rückwärts", "REV")]
+        case .flanger, .phaser:
+            let def = e == .flanger ? 0.5 : 2.0 / 6
+            var list = [beats("rate", "LFO-Rate (Beats)", "RATE", def: def, list: MixEngine.lfoBeats), pct("depth", "Tiefe", "DEPTH", def: 0.7),
+                        pct("feedback", "Feedback", "FEEDB", def: e == .flanger ? 0.5 : 0.4), hz("hz", "LFO-Rate (frei)"),
+                        toggle("sync", "LFO im Beat", "SYNC", def: 1), toggle("freeze", "LFO-Freeze", "FRZ")]
+            if e == .flanger { list.append(FXParam(id: "spread", name: "Stereo-Phase", short: "PHASE", unit: "°", max: 180, defaultValue: 0.5)) }
+            else { list.append(toggle("stages", "Stufen", "STAGE", names: ["4", "8"])) }
+            return list
+        default:
+            return []
+        }
+    }
+
+    public static let beatFX: [Effect] = [.gater, .roll, .flanger, .phaser]
+    static let ownDefaults: [String: Double] = Dictionary(uniqueKeysWithValues: beatFX.flatMap { e in
+        beatParams(e).map { ("\(e.name).\($0.id)", $0.defaultValue) }
+    })
+
+    /// Einstellung eines Beat-FX (Stellung 0…1), fehlt = Standard
+    public static func opt(_ fx: FXUnitState, _ e: Effect, _ id: String) -> Double {
+        fx.opts["\(e.name).\(id)"] ?? ownDefaults["\(e.name).\(id)"] ?? 0
+    }
+
+    public static func isGroup(_ key: String) -> Bool { key == groupKey || key.hasPrefix(groupKey + ":") }
+
+    /// Effekte der Gruppen-Slots aus der Kennung ("GROUP" = Filter · Delay · Reverb, "GROUP:FILTER/GATER/REVERB")
+    public static func groupTypes(_ key: String) -> [Effect] {
+        guard key.hasPrefix(groupKey + ":") else { return FXUnitState.defaultSlotTypes.compactMap(Effect.init) }
+        return key.dropFirst(groupKey.count + 1).split(separator: "/").compactMap { n in Effect.allCases.first { $0.name == n } }
+    }
+
+    /// Kennung des Parameters im Gruppenmodus ("gater", "gater.rate")
+    static func groupID(_ e: Effect) -> String { e.name.lowercased() }
+
+    /// Parameter eines Effekts in der Gruppe: Stärke (Roll: Länge) + an/aus, dazu Teiler/Schalter
+    static func groupParams(_ e: Effect) -> [FXParam] {
+        let g = e.name, id = groupID(e)
+        let onoff = FXParam(id: id + ".on", name: e.name.capitalized + " an/aus", short: e.name, group: g, steps: 1)
+        switch e {
+        case .filter: return [pct("filter", "Filter-Stärke", "FILTER", group: g, bipolar: true), onoff]
+        case .delay: return [pct("delay", "Delay-Stärke", "DELAY", group: g), onoff, beats("delay.time", "Delay-Zeit", "TIME", group: g, def: 0.6)]
+        case .reverb:
+            return [pct("reverb", "Reverb-Stärke", "REVERB", group: g), onoff, pct("reverb.size", "Raumgröße", "ROOM", group: g, def: 0.6),
+                    toggle("reverb.freeze", "Reverb-Freeze", "FRZ", group: g)]
+        case .gater, .roll, .flanger, .phaser:
+            let sub = beatParams(e).filter { ["rate", "mute", "trip", "rev", "freeze", "sync", "stages"].contains($0.id) }.map { p -> FXParam in
+                var q = p; q.id = id + "." + p.id; q.group = g; return q
+            }
+            var amount = e == .roll ? beatParams(.roll)[0] : pct(id, "", e.name, group: g, def: 0.5)
+            amount.id = id; amount.short = e == .roll ? "ROLL" : e.name; amount.group = g
+            amount.name = ["GATER": "Gater-Tiefe", "ROLL": "Roll-Länge", "FLANGER": "Flanger-Stärke", "PHASER": "Phaser-Stärke"][e.name] ?? e.name
+            return [amount, onoff] + sub
+        case .plugin: return []
+        }
     }
 
     /// eigene Parameter eines Effekts (Plugin: D/W + an/aus, dazu die Parameter des Plugins)
     public static func params(for key: String) -> [FXParam] {
+        if isGroup(key) { return [dw] + groupTypes(key).flatMap(groupParams) }
         switch key {
-        case groupKey:
-            return [dw,
-                    pct("filter", "Filter-Stärke", "FILTER", group: "FILTER", bipolar: true),
-                    FXParam(id: "filter.on", name: "Filter an/aus", short: "FILTER", group: "FILTER", steps: 1),
-                    pct("delay", "Delay-Stärke", "DELAY", group: "DELAY"),
-                    FXParam(id: "delay.on", name: "Delay an/aus", short: "DELAY", group: "DELAY", steps: 1),
-                    beats("delay.time", "Delay-Zeit", "TIME", group: "DELAY", def: 0.6),
-                    pct("reverb", "Reverb-Stärke", "REVERB", group: "REVERB"),
-                    FXParam(id: "reverb.on", name: "Reverb an/aus", short: "REVERB", group: "REVERB", steps: 1),
-                    pct("reverb.size", "Raumgröße", "ROOM", group: "REVERB", def: 0.6),
-                    FXParam(id: "reverb.freeze", name: "Reverb-Freeze", short: "FRZ", group: "REVERB", steps: 1)]
         case "FILTER":
             return [dw, on, pct("cutoff", "Cutoff", "CUTOFF", bipolar: true), pct("res", "Resonanz", "RES", def: 0.45)]
         case "DELAY":
@@ -242,45 +312,69 @@ public enum FXCatalog {
             return [dw, on, pct("size", "Größe", "SIZE"), pct("hp", "Hochpass", "HP", def: 0.45), pct("lp", "Tiefpass", "LP", def: 0.6),
                     FXParam(id: "freeze", name: "Freeze", short: "FRZ", steps: 1)]
         default:
+            if let e = beatFX.first(where: { $0.name == key }) { return [dw, on] + beatParams(e) }
             return [dw, on]
         }
     }
 
     /// Standardbelegung (wie vor der Zuweisung): Gruppe = Stärke + an/aus je Slot, Single = die 3 Parameter, Taste 1 = an/aus,
-    /// REVERB: Taste 2 = Freeze.
+    /// REVERB: Taste 2 = Freeze; GATER: Taste 2 = Stumm, 3 = Triole; ROLL: Taste 2 = rückwärts; FLANGER/PHASER: Regler 1 = Rate
+    /// (frei: Hz), Taste 2 = LFO-Freeze, 3 = Sync bzw. Stufen.
     /// Plugin: Regler 1–3 = die ersten drei Parameter
-    public static func defaultTarget(_ c: FXControl, effect key: String, params: [FXParam]) -> String? {
+    public static func defaultTarget(_ c: FXControl, effect key: String, params: [FXParam], fx: FXUnitState? = nil) -> String? {
         if c == .dryWet { return "dw" }
-        let knobs: [String?]
+        if isGroup(key) {
+            let types = groupTypes(key)
+            let i = c.isButton ? c.slot - 4 : c.slot - 1
+            guard i < types.count else { return nil }
+            return groupID(types[i]) + (c.isButton ? ".on" : "")
+        }
+        let knobs: [String?], buttons: [String?]
+        let free = { (e: Effect) in fx.map { opt($0, e, "sync") < 0.5 } ?? false }
         switch key {
-        case groupKey:
-            return c.isButton ? ["filter.on", "delay.on", "reverb.on"][c.slot - 4] : ["filter", "delay", "reverb"][c.slot - 1]
-        case "FILTER": knobs = ["cutoff", "res", nil]
-        case "DELAY": knobs = ["filter", "feedback", "rate"]
-        case "REVERB": knobs = ["size", "hp", "lp"]
+        case "FILTER": knobs = ["cutoff", "res", nil]; buttons = [nil, nil]
+        case "DELAY": knobs = ["filter", "feedback", "rate"]; buttons = [nil, nil]
+        case "REVERB": knobs = ["size", "hp", "lp"]; buttons = ["freeze", nil]
+        case "GATER": knobs = ["rate", "shape", "width"]; buttons = ["mute", "trip"]
+        case "ROLL": knobs = ["len", "filter", "decay"]; buttons = ["rev", nil]
+        case "FLANGER": knobs = [free(.flanger) ? "hz" : "rate", "depth", "feedback"]; buttons = ["freeze", "sync"]
+        case "PHASER": knobs = [free(.phaser) ? "hz" : "rate", "depth", "feedback"]; buttons = ["freeze", "stages"]
         default:
             let plug = Array(params.lazy.filter { $0.pluginParam != nil }.prefix(3))
             knobs = (0..<3).map { $0 < plug.count ? plug[$0].id : nil }
+            buttons = [nil, nil]
         }
-        if c.isButton { return c == .button1 ? "on" : c == .button2 && key == "REVERB" ? "freeze" : nil }
+        if c.isButton { return c == .button1 ? "on" : buttons[c.slot - 5] }
         return knobs[c.slot - 1]
+    }
+
+    /// Gruppe: Parameter-Kennung -> Effekt und Unter-Kennung ("gater.rate" -> (.gater, "rate"), "delay" -> (.delay, ""))
+    static func groupTarget(_ id: String) -> (Effect, String)? {
+        let parts = id.split(separator: ".", maxSplits: 1).map(String.init)
+        guard let e = Effect.allCases.first(where: { groupID($0) == parts[0] }) else { return nil }
+        return (e, parts.count > 1 ? parts[1] : "")
     }
 
     /// Stellung eines eigenen Parameters
     public static func value(_ id: String, effect key: String, _ fx: FXUnitState) -> Double? {
+        if id == "dw" { return fx.dryWet }
+        if isGroup(key) {
+            guard let (e, sub) = groupTarget(id), let i = fx.slotTypes.firstIndex(of: e.rawValue) else { return nil }
+            switch (e, sub) {
+            case (_, "on"): return fx.slots[i].on ? 1 : 0
+            case (.roll, ""): return opt(fx, .roll, "len")
+            case (_, ""): return fx.slots[i].amount
+            case (.delay, "time"): return Double(fx.delayIndex) / Double(beatNames.count - 1)
+            case (.reverb, "size"): return fx.reverbSize
+            case (.reverb, "freeze"): return fx.reverbFreeze ? 1 : 0
+            case (.gater, _), (.roll, _), (.flanger, _), (.phaser, _): return opt(fx, e, sub)
+            default: return nil
+            }
+        }
+        if id == "on" { return fx.singleOn ? 1 : 0 }
+        if let e = beatFX.first(where: { $0.name == key }) { return beatParams(e).contains { $0.id == id } ? opt(fx, e, id) : nil }
         switch (key, id) {
-        case (_, "dw"): return fx.dryWet
-        case (groupKey, "filter"): return fx.slots[0].amount
-        case (groupKey, "filter.on"): return fx.slots[0].on ? 1 : 0
-        case (groupKey, "delay"): return fx.slots[1].amount
-        case (groupKey, "delay.on"): return fx.slots[1].on ? 1 : 0
-        case (groupKey, "delay.time"): return Double(fx.delayIndex) / Double(beatNames.count - 1)
-        case (groupKey, "reverb"): return fx.slots[2].amount
-        case (groupKey, "reverb.on"): return fx.slots[2].on ? 1 : 0
-        case (groupKey, "reverb.size"): return fx.reverbSize
-        case (groupKey, "reverb.freeze"), ("REVERB", "freeze"): return fx.reverbFreeze ? 1 : 0
-        case (groupKey, _): return nil
-        case (_, "on"): return fx.singleOn ? 1 : 0
+        case ("REVERB", "freeze"): return fx.reverbFreeze ? 1 : 0
         case ("FILTER", "cutoff"), ("DELAY", "filter"), ("REVERB", "size"): return fx.params[0]
         case ("FILTER", "res"), ("DELAY", "feedback"), ("REVERB", "hp"): return fx.params[1]
         case ("DELAY", "rate"), ("REVERB", "lp"): return fx.params[2]
@@ -291,19 +385,28 @@ public enum FXCatalog {
     /// eigenen Parameter setzen (Stellung 0…1)
     public static func set(_ id: String, effect key: String, _ v: Double, _ fx: inout FXUnitState) {
         let on = v >= 0.5
+        if id == "dw" { fx.dryWet = v; return }
+        if isGroup(key) {
+            guard let (e, sub) = groupTarget(id), let i = fx.slotTypes.firstIndex(of: e.rawValue) else { return }
+            switch (e, sub) {
+            case (_, "on"): fx.slots[i].on = on
+            case (.roll, ""): fx.opts["ROLL.len"] = v
+            case (_, ""): fx.slots[i].amount = v
+            case (.delay, "time"): fx.delayIndex = Int((v * Double(beatNames.count - 1)).rounded())
+            case (.reverb, "size"): fx.reverbSize = v
+            case (.reverb, "freeze"): fx.reverbFreeze = on
+            case (.gater, _), (.roll, _), (.flanger, _), (.phaser, _): fx.opts["\(e.name).\(sub)"] = v
+            default: break
+            }
+            return
+        }
+        if id == "on" { fx.singleOn = on; return }
+        if let e = beatFX.first(where: { $0.name == key }) {
+            if beatParams(e).contains(where: { $0.id == id }) { fx.opts["\(e.name).\(id)"] = v }
+            return
+        }
         switch (key, id) {
-        case (_, "dw"): fx.dryWet = v
-        case (groupKey, "filter"): fx.slots[0].amount = v
-        case (groupKey, "filter.on"): fx.slots[0].on = on
-        case (groupKey, "delay"): fx.slots[1].amount = v
-        case (groupKey, "delay.on"): fx.slots[1].on = on
-        case (groupKey, "delay.time"): fx.delayIndex = Int((v * Double(beatNames.count - 1)).rounded())
-        case (groupKey, "reverb"): fx.slots[2].amount = v
-        case (groupKey, "reverb.on"): fx.slots[2].on = on
-        case (groupKey, "reverb.size"): fx.reverbSize = v
-        case (groupKey, "reverb.freeze"), ("REVERB", "freeze"): fx.reverbFreeze = on
-        case (groupKey, _): break
-        case (_, "on"): fx.singleOn = on
+        case ("REVERB", "freeze"): fx.reverbFreeze = on
         case ("FILTER", "cutoff"), ("DELAY", "filter"), ("REVERB", "size"): fx.params[0] = v
         case ("FILTER", "res"), ("DELAY", "feedback"), ("REVERB", "hp"): fx.params[1] = v
         case ("DELAY", "rate"), ("REVERB", "lp"): fx.params[2] = v
@@ -313,12 +416,29 @@ public enum FXCatalog {
 }
 
 extension FXUnitState {
-    /// Kennung des geladenen Effekts für die Zuweisung: GROUP, FILTER, DELAY, REVERB oder die Plugin-ID
+    /// Kennung des geladenen Effekts für die Zuweisung: GROUP (Standard-Slots) bzw. GROUP:FILTER/GATER/REVERB,
+    /// FILTER, DELAY, REVERB, GATER, ROLL, FLANGER, PHASER oder die Plugin-ID
     public var effectKey: String {
-        guard single else { return FXCatalog.groupKey }
+        guard single else {
+            if slotTypes == Self.defaultSlotTypes { return FXCatalog.groupKey }
+            return FXCatalog.groupKey + ":" + slotTypes.compactMap { Effect(rawValue: $0)?.name }.joined(separator: "/")
+        }
         let e = Effect(rawValue: singleType) ?? .delay
         return e == .plugin ? (pluginID ?? e.name) : e.name
     }
 
     public var pluginActive: Bool { single && singleType == Effect.plugin.rawValue }
+
+    /// Gruppen-Slot auf einen Effekt setzen; ist er schon in einem anderen Slot, tauschen beide (jeder höchstens einmal)
+    public mutating func setSlot(_ i: Int, _ e: Effect) {
+        guard slotTypes.indices.contains(i), Effect.groupable.contains(e) else { return }
+        if let j = slotTypes.firstIndex(of: e.rawValue), j != i {
+            slotTypes.swapAt(i, j); slots.swapAt(i, j)
+        } else if slotTypes[i] != e.rawValue {
+            slotTypes[i] = e.rawValue; slots[i].on = false
+        }
+    }
+
+    /// Slot des Effekts in der Gruppe
+    public func slot(of e: Effect) -> Int? { slotTypes.firstIndex(of: e.rawValue) }
 }

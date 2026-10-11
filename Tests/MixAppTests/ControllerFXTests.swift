@@ -43,3 +43,26 @@ import MixCore
     manager.handle(.fxButton(1, 2, true), unit: u)   // Taste 2: in Single standardmäßig frei
     #expect(!fx(1).singleOn && fx(1).params == core.snapshot().fx[1].params)
 }
+
+/// Beat-FX über den Controller: Gruppe mit Gater/Flanger, Single-Phaser, Shift + Mode schaltet in Menü-Reihenfolge weiter
+@MainActor @Test func controllerBeatFX() {
+    let core = MixController()
+    let manager = ControllerManager(core: core, status: ControllerStatus())
+    let u = ControllerUnit(device: nil, info: .init(id: "FX", location: 0, left: 0, right: 1), manager: manager)
+    func fx(_ i: Int) -> FXUnitState { core.snapshot().fx[i] }
+    core.updateFX(0) { $0.setSlot(0, .gater); $0.setSlot(1, .flanger) }
+    manager.handle(.fxKnob(0, 1, 0.9), unit: u)
+    manager.handle(.fxKnob(0, 2, 0.3), unit: u)
+    manager.handle(.fxButton(0, 1, true), unit: u)
+    manager.handle(.fxButton(0, 2, true), unit: u)
+    #expect(fx(0).slots[0].amount == 0.9 && fx(0).slots[0].on && fx(0).slots[1].amount == 0.3 && fx(0).slots[1].on)
+    core.updateFX(1) { $0.single = true; $0.singleType = FXUnitState.Effect.phaser.rawValue }
+    manager.handle(.fxButton(1, 1, true), unit: u)
+    manager.handle(.fxButton(1, 2, true), unit: u)
+    manager.handle(.fxButton(1, 3, true), unit: u)
+    #expect(fx(1).singleOn && fx(1).opts["PHASER.freeze"] == 1 && fx(1).opts["PHASER.stages"] == 1)
+    u.shift = true
+    manager.handle(.fxButton(1, 0, true), unit: u)
+    u.shift = false
+    #expect(fx(1).singleType == FXUnitState.Effect.plugin.rawValue)
+}

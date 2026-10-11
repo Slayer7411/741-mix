@@ -552,6 +552,242 @@ struct ReverbClassic {
     }
 };
 
+// ---------- Beat-FX: Gater, Roll, Flanger, Phaser ----------
+// Raster aus der Master-Clock: Beat am Anfang des Teilblocks + Beats je Sample (MDEngine::fxBeat/fxBps).
+// Anteil (AMOUNT × D/W) mit Rampe 5 ms, auch Ein/Aus. Anteil 0 = Ausgang wird nicht angefasst (bitgleich trocken).
+constexpr double kFxRampS = 0.005;
+constexpr int kLfoSeg = 64;               // LFO/Koeffizienten alle 64 Samples (≤ 1,5 ms), dazwischen linear
+
+inline float onePole(double tauS, double fs) { return float(1 - std::exp(-1 / (tauS * fs))); }
+inline double frac(double x) { return x - std::floor(x); }
+/// Rampe am Ziel: einrasten (dann ohne Rechnen je Sample), sonst true
+inline bool settle(float &v, float target) { if (std::fabs(target - v) < 1e-6f) { v = target; return false; } return true; }
+
+/// Gater: Tor je Periode (1/16 … 1/2 Beat) offen ab dem Teiler für `width` der Periode; Form 0 = Rechteck,
+/// 1 = Abklingen (quadratisch auf 0 am Ende der offenen Zeit). Flanken 0,25 ms (1-Pol) – Pegelwechsel < 1 ms nach dem Raster.
+/// Einschalten greift ab dem nächsten Teiler.
+struct Gater {
+    float mix = 0, env = 1, kMix = 0, kEdge = 0, lastPh = 0;
+    bool armed = false, wasOn = false;
+    void init(double fs) { kMix = onePole(kFxRampS, fs); kEdge = onePole(0.00025, fs); }
+    void clear() { mix = 0; env = 1; armed = wasOn = false; }
+    bool active() const { return mix > 0; }
+    void run(float *L, float *R, int n, double beat, double bps, double beats, float shape, float width, bool mute,
+             float amount, bool on) {
+        beats = std::max(beats, 1.0 / 64);
+        width = std::clamp(width, 0.05f, 0.95f); shape = std::clamp(shape, 0.f, 1.f);
+        float inv = 1 / width;
+        bool start = on && !wasOn;
+        wasOn = on;
+        double phd = frac(beat / beats), step = bps / beats;   // Phase je Sample weiterzählen (Block ab Clock-Beat)
+        for (int i = 0; i < n; i++, phd += step) {
+            if (phd >= 1) phd -= 1;
+            float ph = float(phd);
+            if (start) { start = false; armed = mix == 0; lastPh = ph < 1e-6f ? 1.f : ph; }   // klingt es noch aus: gleich weiter
+            if (armed && ph < lastPh) { armed = false; mix = amount; }     // Teiler: Tor ist offen, Anteil springt ohne Knacken
+            lastPh = ph;
+            mix += ((on && !armed ? amount : 0.f) - mix) * kMix;
+            float g = 0;
+            if (!mute && ph < width) { float d = 1 - ph * inv; g = 1 - shape * (1 - d * d); }
+            env = armed ? 1.f : env + (g - env) * kEdge;
+            float a = 1 - mix * (1 - env);
+            L[i] *= a; R[i] *= a;
+        }
+        if (!on && mix < 1e-5f) { mix = 0; env = 1; }
+    }
+};
+
+/// Roll: Puffer-Wiederholer im Raster. Einschalten wartet auf den nächsten Teiler der Länge, nimmt eine Länge
+/// (+ Überblendung) auf – dabei läuft das Live-Signal durch – und wiederholt sie. Das Deck läuft darunter weiter (wie Flux):
+/// aus = zurück zum Live-Signal dort, wo der Track inzwischen ist. Kürzere Länge im Lauf: Anfang der Aufnahme im selben
+/// Raster, längere: weiter wiederholen bis zum nächsten Teiler, dann neu aufnehmen. Jeder Sprung des Lesekopfs (Umlauf,
+/// rückwärts, Länge) wird 2 ms überblendet; der alte Lesekopf läuft weiter und wird an den Rändern der Aufnahme gespiegelt.
+struct Roll {
+    std::vector<float> bufL, bufR;   // 4 s: 1 Takt bei 60 BPM (bei 20 BPM noch 1 Beat)
+    bool play = false, wait = false;
+    double lenBeats = 0, waitBeats = 0;
+    int len = 0, take = 0, rec = 0, xfMax = 0, xf = 1;   // Länge, Frames der laufenden Aufnahme, gültige Frames im Puffer
+    int64_t t = 0;                   // Frames seit Beginn der Aufnahme
+    int p = 0, dir = 1;              // Lesekopf (zuletzt gelesen)
+    int op = 0, od = 1, ox = 0;      // alter Lesekopf, Rest der Überblendung
+    float gain = 1, gainSm = 1, mix = 0, kMix = 0, kGain = 0, lastPh = 0;
+    void init(double fs) {
+        bufL.assign(size_t(fs * 4) + 8, 0); bufR.assign(bufL.size(), 0);
+        xfMax = std::max(8, int(0.002 * fs)); kMix = onePole(kFxRampS, fs); kGain = onePole(0.001, fs);
+    }
+    void clear() { play = wait = false; mix = 0; ox = 0; take = rec = 0; gain = gainSm = 1; }   // Puffer bleibt, gelesen wird nur Aufgenommenes
+    bool active() const { return mix > 0; }
+    inline void bounce(int &q, int &d) const {
+        if (q >= rec) { q = std::max(0, 2 * rec - 2 - q); d = -1; }
+        if (q < 0) { q = std::min(rec - 1, -q); d = 1; }
+    }
+    inline void fadeFrom(int q, int d) { op = q; od = d; bounce(op, od); ox = xf; }
+    void arm(double beats) { wait = true; waitBeats = beats; lastPh = -1; }
+    void run(float *L, float *R, int n, double beat, double bps, double beats, bool reverse, float decayDbPerBeat,
+             float amount, bool on) {
+        beats = std::clamp(beats, 1.0 / 64, 4.0);
+        int cap = int(bufL.size()) - xfMax - 1;
+        auto frames = [&](double b) { return std::clamp(int(std::lround(b / bps)), 16, cap); };
+        auto repGain = [&] { return float(std::pow(10.0, -std::max(0.f, decayDbPerBeat) * lenBeats / 20)); };
+        if (on && !play && !wait) arm(beats);
+        if (on && play && beats != lenBeats) {
+            int nl = frames(beats);
+            if (nl <= take) { len = nl; lenBeats = beats; xf = std::min(xfMax, len / 4); wait = false; }   // steckt in der Aufnahme
+            else if (!wait || waitBeats != beats) arm(beats);
+        }
+        float rep = repGain();
+        for (int i = 0; i < n; i++) {
+            float xl = L[i], xr = R[i];
+            if (wait && on) {
+                float ph = float(frac((beat + i * bps) / waitBeats));
+                bool hit = lastPh < 0 ? ph < 1e-6f : ph < lastPh;
+                lastPh = ph;
+                if (hit) {   // Teiler erreicht: neu aufnehmen (läuft schon eine Wiederholung: von ihr überblenden)
+                    if (play) fadeFrom(p + dir, dir); else { rec = 0; gainSm = 1; }
+                    wait = false; play = true; lenBeats = waitBeats; len = frames(waitBeats);
+                    xf = std::min(xfMax, len / 4); t = 0; take = 0; gain = 1; rep = repGain(); p = -1; dir = 1;
+                }
+            }
+            mix += ((on ? amount : 0.f) - mix) * kMix;
+            if (!play) continue;   // wartet: Live-Signal unverändert
+            if (t < len + xf) { bufL[size_t(t)] = xl; bufR[size_t(t)] = xr; take = int(t) + 1; rec = std::max(rec, take); }
+            int ph = int(t % len);
+            if (t >= len && ph == 0) gain *= rep;
+            int q = t < len ? ph : (reverse ? len - 1 - ph : ph), qd = t < len || !reverse ? 1 : -1;
+            if (t > 0 && q != p + dir) fadeFrom(p + dir, dir);
+            p = q; dir = qd; t++;
+            gainSm += (gain - gainSm) * kGain;
+            float wl = bufL[size_t(q)], wr = bufR[size_t(q)];
+            if (ox > 0) {
+                float a = float(ox) / float(xf + 1);
+                wl += (bufL[size_t(op)] - wl) * a; wr += (bufR[size_t(op)] - wr) * a;
+                op += od; bounce(op, od); ox--;
+            }
+            if (mix > 0) { L[i] = xl + mix * (wl * gainSm - xl); R[i] = xr + mix * (wr * gainSm - xr); }
+        }
+        if (!on && mix < 1e-5f) clear();
+    }
+};
+
+/// LFO für Flanger/Phaser: beat-synchron (Phase = Beat ÷ Periode, 0 auf dem Teiler) oder frei (Hz); Freeze hält die Phase.
+/// Wert 0…1 (½ − ½·cos), je Kanal mit Versatz (Spread), am Ende jedes 64er-Abschnitts gerechnet, 10 ms geglättet
+/// (Freeze aus / Sync an springen nicht hörbar).
+struct BeatLFO {
+    double ph = 0; float sm[2] = {-1, -1}, k = 0;
+    void init(double fs) { k = onePole(0.01, fs / kLfoSeg); }
+    void reset() { sm[0] = sm[1] = -1; }
+    void step(float *v, double beatEnd, double periodBeats, double hz, int m, double fs, bool freeze, float spread) {
+        if (!freeze) ph = periodBeats > 0 ? frac(beatEnd / periodBeats) : frac(ph + hz * m / fs);
+        for (int c = 0; c < 2; c++) {
+            float x = float(0.5 - 0.5 * std::cos(2 * kPi * (ph + (c ? 0.5 * spread : 0.0))));
+            sm[c] = sm[c] < 0 ? x : sm[c] + (x - sm[c]) * k;
+            v[c] = sm[c];
+        }
+    }
+};
+
+/// Flanger: Verzögerung 0,3 … 8 ms (exponentiell um 1,55 ms, Tiefe = Anteil des Bereichs), linear gelesen, Rückkopplung
+/// bis 0,85; Ausgang ½·(x + verzögert), Rückkopplung im Pegel ausgeglichen. Eingang mit dem Anteil eingeblendet.
+struct Flanger {
+    std::vector<float> bufL, bufR; unsigned w = 0, mask = 0;
+    BeatLFO lfo; float d[2] = {0, 0}, depthSm = -1, fbSm = 0, mix = 0, kMix = 0; double fs = 44100;
+    void init(double rate) {
+        fs = rate; unsigned len = 1; while (len < unsigned(0.012 * fs) + 4) len *= 2;
+        bufL.assign(len, 0); bufR.assign(len, 0); mask = len - 1;
+        lfo.init(fs); kMix = onePole(kFxRampS, fs);
+    }
+    void clear() { std::fill(bufL.begin(), bufL.end(), 0); std::fill(bufR.begin(), bufR.end(), 0); mix = 0; d[0] = d[1] = 0; depthSm = -1; lfo.reset(); }
+    bool active() const { return mix > 0; }
+    void run(float *L, float *R, int n, double beat, double bps, double periodBeats, double hz, bool freeze, float spread,
+             float depth, float feedback, float amount, bool on) {
+        depth = std::clamp(depth, 0.f, 1.f); spread = std::clamp(spread, 0.f, 1.f);
+        float fb = std::clamp(feedback, 0.f, 1.f) * 0.85f, target = on ? amount : 0.f;
+        double dc = 0.00155 * fs, span = std::log(8.0 / 0.3) * 0.5;
+        float wf = float(w + mask + 1);   // Schreibstelle + Pufferlänge: Lesestelle bleibt positiv
+        for (int i0 = 0; i0 < n; i0 += kLfoSeg) {
+            int m = std::min(kLfoSeg, n - i0);
+            float v[2], de[2], inc[2];
+            lfo.step(v, beat + (i0 + m) * bps, periodBeats, hz, m, fs, freeze, spread);
+            depthSm = depthSm < 0 ? depth : depthSm + (depth - depthSm) * lfo.k;
+            for (int c = 0; c < 2; c++) {
+                de[c] = float(dc * std::exp(span * depthSm * (2 * v[c] - 1)));
+                if (d[c] <= 0) d[c] = de[c];
+                inc[c] = (de[c] - d[c]) / float(m);
+            }
+            bool ramp = settle(mix, target) | settle(fbSm, fb);
+            for (int i = i0; i < i0 + m; i++) {
+                if (ramp) { mix += (target - mix) * kMix; fbSm += (fb - fbSm) * kMix; }
+                float y[2];
+                const float *bs[2] = {bufL.data(), bufR.data()};
+                for (int c = 0; c < 2; c++) {
+                    d[c] += inc[c];
+                    float r = wf - d[c];
+                    unsigned r0 = unsigned(r); float f = r - float(r0);
+                    float a = bs[c][r0 & mask], bb = bs[c][(r0 + 1) & mask];
+                    y[c] = a + (bb - a) * f;
+                }
+                float xl = L[i], xr = R[i];
+                bufL[w] = xl * mix + y[0] * fbSm; bufR[w] = xr * mix + y[1] * fbSm;
+                w = (w + 1) & mask; wf = float(w + mask + 1);
+                float g = 0.5f * (1 - 0.5f * fbSm);
+                if (mix > 0) { L[i] = xl + mix * ((xl + y[0]) * g - xl); R[i] = xr + mix * ((xr + y[1]) * g - xr); }
+            }
+        }
+        if (!on && mix < 1e-5f) clear();
+    }
+};
+
+/// Phaser: 4 oder 8 Allpässe 1. Ordnung je Kanal, Eckfrequenz 130 Hz … 6,2 kHz (exponentiell um 900 Hz, Tiefe = Anteil),
+/// Rückkopplung bis 0,8; Ausgang ½·(x + Kette) -> 2 bzw. 4 Kerben. Koeffizienten alle 64 Samples, dazwischen linear.
+struct Phaser {
+    typedef float f2 __attribute__((ext_vector_type(2)));   // L/R in einem Register
+    static constexpr int kMaxStages = 8;
+    f2 st[kMaxStages] = {}, fb1 = 0, fb2 = 0;
+    float a[2] = {0, 0};
+    BeatLFO lfo; float depthSm = 0, fbSm = 0, mix = 0, kMix = 0; bool fresh = true; double fs = 44100;
+    void init(double rate) { fs = rate; lfo.init(fs); kMix = onePole(kFxRampS, fs); }
+    void clear() { for (auto &x : st) x = 0; fb1 = fb2 = 0; mix = 0; fresh = true; lfo.reset(); }
+    bool active() const { return mix > 0; }
+    /// Rückkopplung aus dem vorletzten Sample: zwei Samples laufen gleichzeitig durch die Kette
+    template <int NS> void segment(float *L, float *R, int i0, int m, const float *inc, float target, float fb) {
+        f2 ac = {a[0], a[1]}, ai = {inc[0], inc[1]};
+        bool ramp = settle(mix, target) | settle(fbSm, fb);
+        for (int i = i0; i < i0 + m; i++) {
+            if (ramp) { mix += (target - mix) * kMix; fbSm += (fb - fbSm) * kMix; }
+            ac += ai;
+            f2 x = {L[i], R[i]}, u = x + fb2 * fbSm;
+            for (int k = 0; k < NS; k++) { f2 y = ac * u + st[k]; st[k] = u - ac * y; u = y; }
+            fb2 = fb1; fb1 = u;
+            if (mix > 0) {
+                f2 o = x + mix * ((x + u) * (0.5f * (1 - 0.4f * fbSm)) - x);
+                L[i] = o.x; R[i] = o.y;
+            }
+        }
+        a[0] = ac.x; a[1] = ac.y;
+    }
+    void run(float *L, float *R, int n, double beat, double bps, double periodBeats, double hz, bool freeze, int stages,
+             float depth, float feedback, float amount, bool on) {
+        depth = std::clamp(depth, 0.f, 1.f);
+        float fb = std::clamp(feedback, 0.f, 1.f) * 0.8f, target = on ? amount : 0.f;
+        double span = std::log(6200.0 / 130.0) * 0.5;
+        for (int i0 = 0; i0 < n; i0 += kLfoSeg) {
+            int m = std::min(kLfoSeg, n - i0);
+            float v[2], inc[2];
+            lfo.step(v, beat + (i0 + m) * bps, periodBeats, hz, m, fs, freeze, 0.5f);   // L/R 90°
+            depthSm = fresh ? depth : depthSm + (depth - depthSm) * lfo.k;
+            for (int c = 0; c < 2; c++) {
+                double f = Biquad::safeF(900 * std::exp(span * depthSm * (2 * v[c] - 1)), fs), tn = std::tan(kPi * f / fs);
+                float ae = float((tn - 1) / (tn + 1));
+                if (fresh) a[c] = ae;
+                inc[c] = (ae - a[c]) / float(m);
+            }
+            fresh = false;
+            if (stages > 4) segment<8>(L, R, i0, m, inc, target, fb); else segment<4>(L, R, i0, m, inc, target, fb);
+        }
+        if (!on && mix < 1e-5f) clear();
+    }
+};
+
 // ---------- Plugin (Audio Unit, VST3 – MixDSPPlugin.h) ----------
 // wie Delay/Reverb: aus = Eingang zu, Ausgang klingt aus; gerechnet wird, bis es 1 s (oder die vom Plugin gemeldete
 // Nachklingzeit, höchstens 30 s) unter -100 dB war
@@ -600,6 +836,7 @@ struct PluginSlot {
 
 struct FXChain {   // eine FX-Unit für ein Deck
     SweepFilter filter; Delay delay; Reverb reverb; ReverbClassic classic; PluginSlot plug;
+    Gater gater; Roll roll; Flanger flanger; Phaser phaser;
 };
 
 struct TrackSlot { const float *L = nullptr, *R = nullptr; int64_t frames = 0; double rate = 44100; double start = 0; };
@@ -679,6 +916,7 @@ struct MDEngine {
     std::atomic<uint64_t> renders{0};   // fertig gerechnete Blöcke (Plugin-Übergabe)
     double blockPos[MDSP_DECKS] = {};   // hörbare Positionen am Anfang des laufenden Blocks (nur Audio-Thread)
     MDPreview preview;                  // Vorhören (Preview.cpp)
+    double fxBeat = 0, fxBps = 0;       // Clock am Anfang des Teilblocks, Beats je Sample (Beat-FX, Plugins)
 };
 
 MDPreview &mdsp_preview_of(MDEngine *e) { return e->preview; }
@@ -784,6 +1022,7 @@ static void healDeck(Deck &d) {
     for (Biquad *b : {&d.eqL, &d.eqM, &d.eqH, &d.chanFilter.bq}) b->clearState();
     for (auto &c : d.fx) {
         c.filter.bq.clearState(); c.delay.clear(); c.reverb.clear(); c.classic.clear();
+        c.gater.clear(); c.roll.clear(); c.flanger.clear(); c.phaser.clear();
         for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp, &c.reverb.lowCut, &c.reverb.tilt,
                           &c.classic.hp, &c.classic.lp, &c.classic.lowCut}) b->clearState();   // clear() lässt die Filter stehen
         if (c.plug.last) c.plug.resetPending.store(true);   // Plugin zurücksetzen lassen (Steuer-Thread), bis dahin trocken
@@ -927,10 +1166,28 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
         auto &fp = e->fxp[u];
         float dw = fp[MDFX_DRYWET].load();
         FXChain &c = d.fx[u];
+        auto on = [&](MDFXParam p) { return fp[p].load() > 0.5f; };
+        // Roll vor dem Filter: der Filter-Regler formt auch die Wiederholung
+        bool rollOn = on(MDFX_ROLL_ON);
+        if (rollOn || c.roll.active())
+            c.roll.run(L, R, n, e->fxBeat, e->fxBps, fp[MDFX_ROLL_BEATS].load(), on(MDFX_ROLL_REVERSE), fp[MDFX_ROLL_DECAY].load(),
+                       fp[MDFX_ROLL_AMOUNT].load() * dw, rollOn);
         if (fp[MDFX_FILTER_ON].load() > 0.5f) {
             c.filter.update((fp[MDFX_FILTER_AMOUNT].load() * 2 - 1) * dw, fp[MDFX_FILTER_RES].load(), e->fs);
             c.filter.run(L, R, n);
         }
+        bool gaterOn = on(MDFX_GATER_ON), flangerOn = on(MDFX_FLANGER_ON), phaserOn = on(MDFX_PHASER_ON);
+        if (gaterOn || c.gater.active())
+            c.gater.run(L, R, n, e->fxBeat, e->fxBps, fp[MDFX_GATER_BEATS].load(), fp[MDFX_GATER_SHAPE].load(), fp[MDFX_GATER_WIDTH].load(),
+                        on(MDFX_GATER_MUTE), fp[MDFX_GATER_AMOUNT].load() * dw, gaterOn);
+        if (flangerOn || c.flanger.active())
+            c.flanger.run(L, R, n, e->fxBeat, e->fxBps, fp[MDFX_FLANGER_BEATS].load(), fp[MDFX_FLANGER_HZ].load(), on(MDFX_FLANGER_FREEZE),
+                          fp[MDFX_FLANGER_SPREAD].load(), fp[MDFX_FLANGER_DEPTH].load(), fp[MDFX_FLANGER_FEEDBACK].load(),
+                          fp[MDFX_FLANGER_AMOUNT].load() * dw, flangerOn);
+        if (phaserOn || c.phaser.active())
+            c.phaser.run(L, R, n, e->fxBeat, e->fxBps, fp[MDFX_PHASER_BEATS].load(), fp[MDFX_PHASER_HZ].load(), on(MDFX_PHASER_FREEZE),
+                         int(fp[MDFX_PHASER_STAGES].load()), fp[MDFX_PHASER_DEPTH].load(), fp[MDFX_PHASER_FEEDBACK].load(),
+                         fp[MDFX_PHASER_AMOUNT].load() * dw, phaserOn);
         bool delayOn = fp[MDFX_DELAY_ON].load() > 0.5f, reverbOn = fp[MDFX_REVERB_ON].load() > 0.5f;
         if (delayOn || c.delay.active()) {
             float a = fp[MDFX_DELAY_AMOUNT].load();
@@ -951,7 +1208,7 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
         bool plugOn = pl && fp[MDFX_PLUGIN_ON].load() > 0.5f;
         if (pl && !c.plug.resetPending.load(std::memory_order_acquire) && (plugOn || c.plug.active(e->fs))) {
             pl->tempo = e->clock.bpm.load(std::memory_order_relaxed);
-            pl->beat = e->clock.beat;
+            pl->beat = e->fxBeat;
             c.plug.run(pl, L, R, n, dw, plugOn, e->fs);
         }
     }
@@ -1001,6 +1258,7 @@ MDEngine *mdsp_create(double sampleRate) {
         primeStretch(d, 1, 1.0);   // interne Puffer einmal anlegen (nicht erst im Audio-Thread)
         for (auto &c : d.fx) {
             c.delay.init(sampleRate); c.reverb.init(sampleRate); c.classic.init(sampleRate);
+            c.gater.init(sampleRate); c.roll.init(sampleRate); c.flanger.init(sampleRate); c.phaser.init(sampleRate);
             c.plug.dryL.assign(kMaxFrames, 0); c.plug.dryR.assign(kMaxFrames, 0);
         }
     }
@@ -1012,6 +1270,12 @@ MDEngine *mdsp_create(double sampleRate) {
         e->fxp[u][MDFX_REVERB_HP].store(0); e->fxp[u][MDFX_REVERB_LP].store(1); e->fxp[u][MDFX_REVERB_DWSEND].store(0);
         e->fxp[u][MDFX_REVERB_LEVEL].store(1); e->fxp[u][MDFX_REVERB_BRIGHT].store(0.6f); e->fxp[u][MDFX_REVERB_PREDELAY].store(0.015f);
         for (auto p : {MDFX_FILTER_AMOUNT, MDFX_DELAY_AMOUNT, MDFX_REVERB_AMOUNT}) e->fxp[u][p].store(0.5f);
+        for (auto p : {MDFX_GATER_AMOUNT, MDFX_ROLL_AMOUNT, MDFX_FLANGER_AMOUNT, MDFX_PHASER_AMOUNT}) e->fxp[u][p].store(1);
+        e->fxp[u][MDFX_GATER_BEATS].store(0.25f); e->fxp[u][MDFX_GATER_WIDTH].store(0.5f); e->fxp[u][MDFX_ROLL_BEATS].store(0.25f);
+        e->fxp[u][MDFX_FLANGER_BEATS].store(4); e->fxp[u][MDFX_FLANGER_HZ].store(0.25f); e->fxp[u][MDFX_FLANGER_DEPTH].store(0.7f);
+        e->fxp[u][MDFX_FLANGER_FEEDBACK].store(0.5f); e->fxp[u][MDFX_FLANGER_SPREAD].store(0.5f);
+        e->fxp[u][MDFX_PHASER_BEATS].store(2); e->fxp[u][MDFX_PHASER_HZ].store(0.5f); e->fxp[u][MDFX_PHASER_DEPTH].store(0.7f);
+        e->fxp[u][MDFX_PHASER_FEEDBACK].store(0.4f); e->fxp[u][MDFX_PHASER_STAGES].store(4);
     }
     return e;
 }
@@ -1119,21 +1383,22 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
     if (!out || channels <= 0 || frames <= 0) return;
     DenormalGuard ftz;
     for (int c = 0; c < channels; c++) std::memset(out[c], 0, sizeof(float) * frames);
-    int done = 0;
-    while (done < frames) {
-        int n = std::min(kMaxFrames, frames - done);
-        float *o[64];
-        for (int c = 0; c < channels && c < 64; c++) o[c] = out[c] + done;
-        for (int i = 0; i < MDSP_DECKS; i++) e->blockPos[i] = e->decks[i].posOut.load(std::memory_order_relaxed);
-        for (auto &d : e->decks) renderDeck(e, d, o, std::min(channels, 64), n);
-        done += n;
-    }
-    float m = e->master.load();
     Clock &k = e->clock;
     double sb = k.setBeat.exchange(NAN);
     if (!std::isnan(sb)) k.beat = sb;
     double beatStart = k.beat;
     double perSample = k.bpm.load() / 60.0 / e->fs;
+    int done = 0;
+    while (done < frames) {
+        int n = std::min(kMaxFrames, frames - done);
+        float *o[64];
+        for (int c = 0; c < channels && c < 64; c++) o[c] = out[c] + done;
+        e->fxBeat = beatStart + done * perSample; e->fxBps = perSample;
+        for (int i = 0; i < MDSP_DECKS; i++) e->blockPos[i] = e->decks[i].posOut.load(std::memory_order_relaxed);
+        for (auto &d : e->decks) renderDeck(e, d, o, std::min(channels, 64), n);
+        done += n;
+    }
+    float m = e->master.load();
     bool metro = k.metroOn.load();
     float mv = k.metroVol.load();
     int mc = std::clamp(k.metroCh.load(), 0, std::max(0, channels - 2));

@@ -416,7 +416,9 @@ final class MixModel {
     func effectName(_ key: String) -> String {
         switch key {
         case FXCatalog.groupKey: String(localized: "Gruppe")
-        case "FILTER", "DELAY", "REVERB", "PLUGIN": key
+        case _ where FXCatalog.isGroup(key):
+            String(localized: "Gruppe") + " · " + FXCatalog.groupTypes(key).map(\.name).joined(separator: " · ")
+        case _ where FXUnitState.Effect.allCases.contains { $0.name == key }: key
         default: core.pluginCatalog.knownInfo(key).map { "\($0.name) · \($0.manufacturer)" } ?? key
         }
     }
