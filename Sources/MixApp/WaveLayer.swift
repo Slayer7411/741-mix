@@ -1,4 +1,5 @@
 import AppKit
+import os
 import QuartzCore
 import SwiftUI
 import MixCore
@@ -425,9 +426,11 @@ final class WaveLayerNSView: NSView {
         }
         for i in first...last where tileLayers[i] == nil && !tilesPending.contains(i) {
             tilesPending.insert(i)
-            let gen = tileGen, pps = pps, scale = scale, chunks = wave.chunks
+            let gen = tileGen, pps = pps, scale = scale, chunks = wave.chunks, raster = wave.raster
             Self.tileQueue.async {
-                let img = Self.renderTile(i, chunks: chunks, pps: pps, h: h, tw: tw, scale: scale)
+                let t0 = CACurrentMediaTime()
+                let img = Self.renderTile(i, chunks: chunks, raster: raster, pps: pps, h: h, tw: tw, scale: scale)
+                Self.tileTime.withLock { $0.count += 1; $0.seconds += CACurrentMediaTime() - t0 }
                 DispatchQueue.main.async { [weak self] in
                     guard let self, gen == self.tileGen else { return }
                     self.tilesPending.remove(i)
@@ -445,14 +448,23 @@ final class WaveLayerNSView: NSView {
         }
     }
 
+    /// Kacheln gerechnet + Zeit dafür (Wellenform-Bild im Selbsttest)
+    static let tileTime = OSAllocatedUnfairLock(initialState: (count: 0, seconds: 0.0))
+
     /// eine Kachel in Bildschirmauflösung zeichnen (Hintergrund-Queue; Pfade und Farben sind unveränderliche CF-Objekte)
-    private static func renderTile(_ i: Int, chunks: [RenderedWaveform.Chunk], pps: Double, h: CGFloat, tw: CGFloat, scale: CGFloat) -> CGImage? {
+    private static func renderTile(_ i: Int, chunks: [RenderedWaveform.Chunk], raster: RenderedWaveform.Raster?, pps: Double, h: CGFloat,
+                                   tw: CGFloat, scale: CGFloat) -> CGImage? {
         let pw = Int(tw * scale), ph = Int(h * scale)
         guard pw > 0, ph > 0,
               let ctx = CGContext(data: nil, width: pw, height: ph, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.scaleBy(x: scale, y: scale)
         let x0 = CGFloat(i) * tw
+        // Mischung: je Gerätepixel-Spalte gerastert
+        if let raster, let data = ctx.data {
+            raster.draw(into: data, bytesPerRow: ctx.bytesPerRow, width: pw, height: ph, t0: Double(x0) / pps, dt: 1 / (pps * Double(scale)))
+            return ctx.makeImage()
+        }
+        ctx.scaleBy(x: scale, y: scale)
         let t0 = Double(x0) / pps, t1 = Double(x0 + tw) / pps
         let chunkSeconds = Double(RenderedWaveform.chunkBlocks) / TrackAudio.blocksPerSecond
         // Pfade sind um 0 gespiegelt → Ausrichtung der y-Achse spielt keine Rolle

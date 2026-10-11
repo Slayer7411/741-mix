@@ -464,7 +464,7 @@ struct WaveformSettings: View {
                             mix.prefs.ui.waveformStyle = st
                         }
                     })) {
-                    ForEach([WaveformStyle.threeBand.rawValue] + SpectrumDetail.allCases.map(\.rawValue) + [WaveformStyle.mono.rawValue], id: \.self) {
+                    ForEach([WaveformStyle.blend.rawValue, WaveformStyle.threeBand.rawValue] + SpectrumDetail.allCases.map(\.rawValue) + [WaveformStyle.mono.rawValue], id: \.self) {
                         Text(LocalizedStringKey($0)).tag($0)
                     }
                 }
@@ -475,6 +475,10 @@ struct WaveformSettings: View {
                 .disabled(fine)
                 if mix.prefs.ui.waveformStyle != .mono {
                     sliderRow("Höhen-Betonung", $mix.prefs.ui.waveformHighBoost, 0...2, step: 0.25, format: "%.2f")
+                }
+                if mix.prefs.ui.waveformStyle == .blend {
+                    Text("Je Pixelzeile gemischt: Farbe aus Bass (< 150 Hz), Mitten (um 670 Hz) und Höhen (> 3 kHz) der Samples, die die Zeile erreichen, Helligkeit nach oben weich auslaufend. Spektrum (RGB): Bass rot, Mitten grün, Höhen blau, Mischungen gelb / cyan / weiß.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if !fine, mix.prefs.ui.waveformStyle == .threeBand {
                     Text("Bass < 250 Hz hinten · Mitten 250 Hz – 4 kHz · Höhen > 4 kHz vorn, je Band eigene Amplitude. Das stärkste Band reicht bis zum echten Pegel.")

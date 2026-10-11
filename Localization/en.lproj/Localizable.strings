@@ -665,3 +665,6 @@
 "Cache dekodierter Tracks" = "Decoded track cache";
 "Belegt" = "Used";
 "datei-dienst: dateien werden in einem eigenen prozess gelesen und dekodiert. hängt eine cloud-datei, lädt das deck weiter (hinweis), abgebrochen wird erst nach der zweiten grenze. ohne datei-dienst: abbruch schon nach der ersten. cache: ~/Library/Application Support/MINOS-741/cache, älteste zuerst gelöscht, tracks in den decks bleiben." = "file service: files are read and decoded in a separate process. if a cloud file hangs, the deck keeps loading (notice), loading is cancelled only after the second limit. without the file service: cancelled after the first one. cache: ~/Library/Application Support/MINOS-741/cache, oldest removed first, tracks in the decks stay.";
+"3-Band (Mischung)" = "3-band (blend)";
+"Spektrum (RGB)" = "Spectrum (RGB)";
+"Je Pixelzeile gemischt: Farbe aus Bass (< 150 Hz), Mitten (um 670 Hz) und Höhen (> 3 kHz) der Samples, die die Zeile erreichen, Helligkeit nach oben weich auslaufend. Spektrum (RGB): Bass rot, Mitten grün, Höhen blau, Mischungen gelb / cyan / weiß." = "Blended per pixel row: color from bass (< 150 Hz), mids (around 670 Hz) and highs (> 3 kHz) of the samples that reach the row, brightness fading softly towards the top. Spectrum (RGB): bass red, mids green, highs blue, mixes yellow / cyan / white.";

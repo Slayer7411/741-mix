@@ -4,7 +4,7 @@ import MixEngine
 
 /// Darstellung der Wellenform
 enum WaveformStyle: String, CaseIterable, Codable, Identifiable {
-    case threeBand = "3-Band (Schichten)", spectrum = "Spektrum", mono = "Einfarbig"
+    case blend = "3-Band (Mischung)", threeBand = "3-Band (Schichten)", spectrum = "Spektrum", mono = "Einfarbig"
     var id: String { rawValue }
 }
 
@@ -15,7 +15,7 @@ enum SpectrumDetail: String, CaseIterable, Codable, Identifiable {
 }
 
 enum WaveformPalette: String, CaseIterable, Codable, Identifiable {
-    case bone = "741 Knochen", orange = "Orange", blue = "Blau/Weiß", classic = "Klassisch"
+    case rgb = "Spektrum (RGB)", bone = "741 Knochen", orange = "Orange", blue = "Blau/Weiß", classic = "Klassisch"
     var id: String { rawValue }
 }
 
@@ -130,8 +130,8 @@ struct UIPrefs: Codable, Equatable {
     var showFourDecks = true
     var showFXUnits = true
     var waveformSeconds = 4.0
-    var waveformStyle = WaveformStyle.threeBand
-    var waveformPalette = WaveformPalette.bone
+    var waveformStyle = WaveformStyle.blend
+    var waveformPalette = WaveformPalette.rgb
     /// Spektrum-Stil: feine 6-Band-Farben oder die alten 3 Bänder
     var spectrumDetail = SpectrumDetail.fine
     /// Höhen-Betonung (0 = neutral, 1 = Standard, 2 = stark): feines Spektrum 0…10 dB, 3-Band Höhen-Gewicht ×0,5…×2

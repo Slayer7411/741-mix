@@ -51,6 +51,7 @@ func roundTripIsBitExact(srcRate: Double, channels: UInt32, rate: Double) throws
     #expect(same(a.left, b.left, a.frames) && same(a.right, b.right, a.frames))
     #expect(same(a.peak, b.peak) && same(a.low, b.low) && same(a.mid, b.mid) && same(a.high, b.high))
     #expect(a.spectrum == b.spectrum && a.spectrum.count == a.peak.count)
+    #expect(a.blend == b.blend && a.blend.count == a.peak.count)
     #expect(m.header.key == key)
     // Abschnitte auf 16 KB ausgerichtet, Audio ab 16 KB
     for s in TrackFile.Section.allCases { #expect(m.header.range(s).offset % TrackFile.alignment == 0) }

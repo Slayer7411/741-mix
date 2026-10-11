@@ -267,8 +267,8 @@ enum SelfTest {
 /// kein Audio, keine Controller. Oben der Zoom aus den Einstellungen, unten 4× weiter heraus; Grid-Anker links im Bild,
 /// Spielkopf in einem 4-Beat-Loop, zwei Hotcues, darunter die Übersicht. Erster Track der Collection mit 120–140 BPM und Grid, wie im Selbsttest.
 /// Optional: MIX741_SHOT_TRACK (Teil von Interpret/Titel/Pfad), MIX741_SHOT_AT (Sekunden, Spielkopf, ohne Loop),
-/// MIX741_SHOT_SPAN (Sekunden je Seite), MIX741_SHOT_STYLE (Komma-Liste: 3band, spectrum, fine, fine-mix, mono →
-/// je Stil zwei Streifen untereinander, beschriftet), MIX741_SHOT_PALETTE (bone, orange, blue, classic), MIX741_SHOT_BOOST.
+/// MIX741_SHOT_SPAN (Sekunden je Seite), MIX741_SHOT_STYLE (Komma-Liste: blend, 3band, spectrum, fine, fine-mix, mono →
+/// je Stil zwei Streifen untereinander, beschriftet), MIX741_SHOT_PALETTE (rgb, bone, orange, blue, classic), MIX741_SHOT_BOOST.
 @MainActor
 enum WaveShot {
     static func run(path: String) -> Never {
@@ -287,6 +287,7 @@ enum WaveShot {
     /// Stil-Kürzel → (Stil, Spektrum-Variante, Beschriftung)
     private static func look(_ k: String, _ ui: UIPrefs) -> (WaveformStyle, SpectrumDetail, String) {
         switch k.trimmingCharacters(in: .whitespaces) {
+        case "blend": (.blend, ui.spectrumDetail, "3-band blend")
         case "3band": (.threeBand, ui.spectrumDetail, "3-band layers")
         case "spectrum": (.spectrum, .simple, "spectrum (3 bands)")
         case "fine": (.spectrum, .fine, "spectrum fine (6 bands)")
@@ -300,7 +301,7 @@ enum WaveShot {
         let env = ProcessInfo.processInfo.environment
         var ui = AppPrefs.load().ui
         if let p = env["MIX741_SHOT_PALETTE"] {
-            ui.waveformPalette = ["bone": .bone, "orange": .orange, "blue": .blue, "classic": .classic][p] ?? ui.waveformPalette
+            ui.waveformPalette = ["rgb": .rgb, "bone": .bone, "orange": .orange, "blue": .blue, "classic": .classic][p] ?? ui.waveformPalette
         }
         if let b = env["MIX741_SHOT_BOOST"].flatMap(Double.init) { ui.waveformHighBoost = b }
         if let sp = env["MIX741_SHOT_SPAN"].flatMap(Double.init) { ui.waveformSeconds = sp }
@@ -334,6 +335,7 @@ enum WaveShot {
         let tick = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in }   // hält den Run-Loop wach
         defer { tick.invalidate() }
         for (row, lk) in looks.enumerated() {
+            WaveLayerNSView.tileTime.withLock { $0 = (0, 0) }
             let tr = Date()
             let wf = RenderedWaveform.render(audio, style: lk.0, palette: ui.waveformPalette, detail: lk.1, highBoost: ui.waveformHighBoost)
             SelfTest.log(String(format: "%@: Wellenform gerechnet in %.2f s, %.0f Pfade je Abschnitt", lk.2, Date().timeIntervalSince(tr), Double(wf.chunks.reduce(0) { $0 + $1.layers.count }) / Double(max(1, wf.chunks.count))))
@@ -364,6 +366,8 @@ enum WaveShot {
                 view.layer?.render(in: ctx)
                 ctx.restoreGState()
             }
+            let tt = WaveLayerNSView.tileTime.withLock { $0 }
+            SelfTest.log(String(format: "%@: %d Kacheln, %.2f ms je Kachel", lk.2, tt.count, tt.seconds * 1000 / Double(max(1, tt.count))))
             // Übersicht (ganzer Track) darunter
             if let img = wf.overview {
                 let r = CGRect(x: 0, y: top - label - h * 2 - gap * 2 - oh, width: w, height: oh)
