@@ -208,7 +208,15 @@ public enum CollectionWriter {
         var s = block
         let nl = block.unicodeScalars.contains("\r") ? "\r\n" : "\n"
         let f6 = { (v: Double) in String(format: "%.6f", v) }
-        if let b = a.bpm, b > 0 { s = patch(entry: s, changes: [.bpm: String(format: "%.3f", b)]) }
+        // BPM mit 6 Stellen (0,0005 BPM Rundung = ~2 ms Drift über 8 Minuten)
+        if let b = a.bpm, b > 0 {
+            if let r = startTag("TEMPO", in: s) {
+                let tag = setRawAttr("BPM", f6(b), in: String(s[r]))
+                if tag != String(s[r]) { s.replaceSubrange(r, with: tag) }
+            } else {
+                s = patch(entry: s, changes: [.bpm: f6(b)])
+            }
+        }
         if let p = a.perceivedDb {
             var attrs = [(String, String)]()
             if let pk = a.peakDb { attrs.append(("PEAK_DB", f6(pk))) }

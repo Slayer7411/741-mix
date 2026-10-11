@@ -195,6 +195,8 @@ struct UIPrefs: Codable, Equatable {
     var checkMusicFolders = true
     /// Zoom des Hauptfensters (1 = 100 %, ZoomSteps)
     var zoom = 1.0
+    /// eigene Analyse: BPM-Bereich genau eine Oktave, Untergrenze (Obergrenze = 2 ×)
+    var analysisBpmLow = 100.0
 
     /// kompakte Decks: ohne Pitch-Fader, Hotcues und Grid-Werkzeuge (mehr Platz für Wellenform und Beatgrid)
     var compactDecks: Bool {

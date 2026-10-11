@@ -45,10 +45,11 @@ private func clickTrack(bpm: Double, offset: Double, seconds: Double, rate: Doub
     return (l, l)
 }
 
-private func analyze(_ s: (l: [Float], r: [Float]), rate: Double = 44100) throws -> TrackAnalyzer.Result {
+private func analyze(_ s: (l: [Float], r: [Float]), rate: Double = 44100,
+                     octave: ClosedRange<Double> = TrackAnalyzer.defaultOctave) throws -> TrackAnalyzer.Result {
     try s.l.withUnsafeBufferPointer { lp in
         try s.r.withUnsafeBufferPointer { rp in
-            try TrackAnalyzer.analyze(left: lp.baseAddress!, right: rp.baseAddress!, frames: lp.count, sampleRate: rate)
+            try TrackAnalyzer.analyze(left: lp.baseAddress!, right: rp.baseAddress!, frames: lp.count, sampleRate: rate, octave: octave)
         }
     }
 }
@@ -79,12 +80,18 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
     #expect(gridError(r.anchor, offset: offset, bpm: bpm) < 5, "anchor \(r.anchor)")
 }
 
-/// langsamer Track (96 BPM) bleibt 96, nicht 192
+/// Oktave aus der Einstellung: 96 BPM bleibt in 80–160 bei 96, in 100–200 wird es 192; 127,3 in 60–120 -> 63,65
 @Test func analyzerSlowTempo() throws {
     let bpm = 96.0, offset = 0.5
-    let r = try analyze(clickTrack(bpm: bpm, offset: offset, seconds: 90))
+    let s = clickTrack(bpm: bpm, offset: offset, seconds: 90)
+    let r = try analyze(s, octave: 80...160)
     #expect(abs(r.bpm - bpm) < 0.05, "bpm \(r.bpm)")
     #expect(gridError(r.anchor, offset: offset, bpm: bpm) < 5, "anchor \(r.anchor)")
+    let d = try analyze(s)
+    #expect(abs(d.bpm - 2 * bpm) < 0.1, "bpm \(d.bpm)")
+    let h = try analyze(clickTrack(bpm: 127.3, offset: 0.2, seconds: 60), octave: 60...120)
+    #expect(abs(h.bpm - 63.65) < 0.05, "bpm \(h.bpm)")
+    #expect(TrackAnalyzer.octaveRange(108...215) == 108...216 && TrackAnalyzer.fold(250, into: 100...200) == 125)
 }
 
 /// Akkorde: C-Dur -> 0 (1d), a-Moll -> 21 (1m), fis-Moll -> 18 (11m)
@@ -117,18 +124,18 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
     #expect(rf.keyClarity > 0)
 }
 
-/// Pegel: Sinus −20 dBFS Spitze -> Spitze −20 dB; PERCEIVED_DB ist die Verstärkung auf die Referenz (6 dB leiser = 6 dB mehr)
+/// Pegel: 1-kHz-Sinus −20 dBFS Spitze -> PEAK_DB +20 (Abstand zu 0 dBFS, wie die Collection); PERCEIVED_DB ist die Verstärkung auf die Referenz (6 dB leiser = 6 dB mehr)
 @Test func analyzerLoudness() throws {
     func sine(_ amp: Float, seconds: Double = 12, rate: Double = 44100) -> (l: [Float], r: [Float]) {
         let n = Int(seconds * rate)
-        let l = (0..<n).map { amp * Float(sin(2 * .pi * 440 * Double($0) / rate)) }
+        let l = (0..<n).map { amp * Float(sin(2 * .pi * 1000 * Double($0) / rate)) }
         return (l, l)
     }
     let a = try analyze(sine(0.1)), b = try analyze(sine(0.05))
-    #expect(abs(a.peakDb + 20) < 0.1)
-    #expect(abs(b.peakDb + 26.02) < 0.1)
+    #expect(abs(a.peakDb - 20) < 0.1)
+    #expect(abs(b.peakDb - 26.02) < 0.1)
     #expect(abs((b.perceivedDb - a.perceivedDb) - 6.02) < 0.1)
-    // RMS eines Sinus mit Spitze 0,1 = −23 dBFS; Verstärkung = Referenz − Pegel
+    // RMS eines 1-kHz-Sinus (Gewicht 0 dB) mit Spitze 0,1 = −23 dBFS; Verstärkung = Referenz − Pegel
     #expect(abs(a.perceivedDb - (TrackAnalyzer.loudnessReference + 23.01)) < 0.1)
     #expect(abs(a.analysis.perceivedDb! - a.perceivedDb) < 1e-9)
 }
@@ -202,8 +209,10 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
     let step = max(1, eligible.count / want)
     let picked = stride(from: 0, to: eligible.count, by: step).prefix(want).map { eligible[$0] }
     print("[analyze] \(all.count) tracks, \(eligible.count) local with analysis, \(picked.count) picked")
-    var bpmHits = 0, bpmOctave = 0, keyHits = 0, keyRelative = 0, gridHits = 0, n = 0
-    var loudDiff: [Double] = [], times: [Double] = []
+    let low = Double(ProcessInfo.processInfo.environment["MIX741_ANALYZE_BPMLOW"] ?? "") ?? TrackAnalyzer.defaultOctave.lowerBound
+    var bpmHits = 0, bpmOctave = 0, keyHits = 0, keyRelative = 0, gridHits = 0, n = 0, autoBpm = 0, autoHits = 0
+    var loudDiff: [Double] = [], times: [Double] = [], gridSigned: [Double] = []
+    var gridByType: [String: [Double]] = [:]
     func keyRelated(_ a: Int, _ b: Int) -> Bool {
         // gleich, relative Dur/Moll (C <-> Am), Quinte/Quarte im Quintenzirkel
         if a == b { return true }
@@ -213,7 +222,7 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
     }
     for t in picked {
         let t0 = Date()
-        guard let r = try? TrackAnalyzer.analyze(url: URL(fileURLWithPath: t.path)) else { print("[analyze] unreadable \(t.path)"); continue }
+        guard let r = try? TrackAnalyzer.analyze(url: URL(fileURLWithPath: t.path), octave: low...(2 * low)) else { print("[analyze] unreadable \(t.path)"); continue }
         let dt = Date().timeIntervalSince(t0)
         times.append(dt)
         n += 1
@@ -221,6 +230,8 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
         let bpmOk = abs(r.bpm - t.bpm) <= 0.1
         let octave = !bpmOk && (abs(ratio - 2) < 0.002 || abs(ratio - 0.5) < 0.0005)
         if bpmOk { bpmHits += 1 }
+        // ganzzahlige BPM der Collection sind meist von Hand gesetzt
+        if t.bpm != t.bpm.rounded() { autoBpm += 1; if bpmOk { autoHits += 1 } }
         if octave { bpmOctave += 1 }
         let keyOk = r.musicalKey == t.musicalKey
         if keyOk { keyHits += 1 } else if keyRelated(r.musicalKey, t.musicalKey) { keyRelative += 1 }
@@ -229,12 +240,14 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
         if r.bpm > 0, let ga = t.gridAnchorMs {
             let beat = 60 / r.bpm
             let d = (ga / 1000 - r.anchor) / beat
-            gridMs = abs(d - d.rounded()) * beat * 1000
-            if bpmOk || octave, gridMs < 20 { gridHits += 1 }
+            gridMs = (d - d.rounded()) * beat * 1000   // Collection minus eigener Anker, mod Beat
+            if bpmOk || octave, abs(gridMs) < 20 { gridHits += 1 }
+            if bpmOk, abs(gridMs) < 50 { gridSigned.append(gridMs) }
+            if bpmOk { gridByType[URL(fileURLWithPath: t.path).pathExtension.lowercased(), default: []].append(gridMs) }
         }
         let ld = r.perceivedDb - (t.perceivedDb ?? 0)
         loudDiff.append(ld)
-        print(String(format: "[analyze] %@ bpm %.3f/%.3f %@ · key %@/%@ %@ · grid %.0f ms · loud %+.2f/%+.2f · peak %.2f/%.2f · %.1f s · %@ – %@",
+        print(String(format: "[analyze] %@ bpm %.3f/%.3f %@ · key %@/%@ %@ · grid %+.0f ms · loud %+.2f/%+.2f · peak %.2f/%.2f · %.1f s · %@ – %@",
                      bpmOk ? "OK " : octave ? "OCT" : "MIS", r.bpm, t.bpm, r.tempoConfidence.formatted(.number.precision(.fractionLength(2))),
                      Track.openKey(code: max(0, r.musicalKey)), t.openKey, keyOk ? "OK" : keyRelated(r.musicalKey, t.musicalKey) ? "REL" : "MIS",
                      gridMs, r.perceivedDb, t.perceivedDb ?? 0, r.peakDb, t.peakDb ?? 0, dt, t.artist, t.title))
@@ -242,22 +255,32 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
     let sortedLoud = loudDiff.sorted()
     let median = sortedLoud.isEmpty ? 0 : sortedLoud[sortedLoud.count / 2]
     let mad = sortedLoud.isEmpty ? 0 : sortedLoud.map { abs($0 - median) }.sorted()[sortedLoud.count / 2]
-    let tSorted = times.sorted()
-    print(String(format: "[analyze] n=%d · bpm ok %d (%.0f%%) + octave %d · key ok %d (%.0f%%) + related %d · grid ≤20 ms %d · loud offset median %+.2f dB, mad %.2f dB · time median %.1f s, max %.1f s",
+    let worst = sortedLoud.map { abs($0 - median) }.max() ?? 0
+    let tSorted = times.sorted(), gSorted = gridSigned.sorted()
+    print("[analyze] bpm ok on non-integer collection bpm \(autoHits) of \(autoBpm)")
+    // Versatz je Dateityp (mp3: Decoder-Verzögerung je nach Kopf verschieden)
+    for (ext, g) in gridByType.sorted(by: { $0.key < $1.key }) {
+        let s = g.sorted()
+        print(String(format: "[analyze] grid %@: n=%d, median %+.1f ms, ≤20 ms %d", ext, s.count, s[s.count / 2], s.filter { abs($0) < 20 }.count))
+    }
+    print(String(format: "[analyze] n=%d · bpm ok %d (%.0f%%) + octave %d · key ok %d (%.0f%%) + related %d · grid ≤20 ms %d of %d, offset median %+.1f ms (n=%d within 50 ms) · loud offset median %+.2f dB, mad %.2f dB, max %.2f dB · time median %.2f s, max %.2f s",
                  n, bpmHits, 100 * Double(bpmHits) / Double(max(1, n)), bpmOctave, keyHits, 100 * Double(keyHits) / Double(max(1, n)), keyRelative,
-                 gridHits, median, mad, tSorted.isEmpty ? 0 : tSorted[tSorted.count / 2], tSorted.last ?? 0))
+                 gridHits, bpmHits + bpmOctave, gSorted.isEmpty ? 0 : gSorted[gSorted.count / 2], gSorted.count,
+                 median, mad, worst, tSorted.isEmpty ? 0 : tSorted[tSorted.count / 2], tSorted.last ?? 0))
 }
 
 /// MIX741_ANALYZE_FILE=<audio>: Zwischenstufen einer Datei drucken (Kamm-Kandidaten, Faltung, Chroma) – nur zum Nachsehen
 @Test func analyzerDebugFile() throws {
     guard let path = ProcessInfo.processInfo.environment["MIX741_ANALYZE_FILE"] else { return }
-    let d = try TrackAnalyzer.decode(url: URL(fileURLWithPath: path))
-    let loud = d.stream.loudness()
+    let st = try TrackAnalyzer.decode(url: URL(fileURLWithPath: path))
+    let d = (x: st.x, rate: st.lowRate)
+    let loud = (level: st.loud.level(), range: st.musicRange())
     print("[dbg] rate \(d.rate) samples \(d.x.count) level \(loud.level) music \(loud.range)")
     let nov = try #require(TrackAnalyzer.novelty(d.x, rate: d.rate))
     let dbg = TrackAnalyzer.tempoDebug(nov, x: d.x, rate: d.rate, music: loud.range)
     print("[dbg] comb top: " + dbg.candidates.map { String(format: "%.2f:%.3f", $0.0, $0.1) }.joined(separator: " "))
-    print("[dbg] fine \(dbg.fine) refined \(dbg.refined)")
+    print("[dbg] fine \(dbg.fine) refined \(dbg.refined) majority \(dbg.majority) share \(dbg.share)")
+    print("[dbg] local " + dbg.local.map { String(format: "%.1f", $0) }.joined(separator: " "))
     let o = TrackAnalyzer.onsets1k(d.x, rate: d.rate)
     let period = o.fs * 60 / dbg.refined
     if let f = TrackAnalyzer.fold(o, period: period, from: Int(loud.range.lowerBound * o.fs), to: min(o.v.count, Int((loud.range.lowerBound + 120) * o.fs))) {
@@ -268,7 +291,7 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
         let bins = prof.count
         print("[dbg] profile (" + String(bins) + " bins, % of max, every 8th): " + stride(from: 0, to: bins, by: 8).map { String(Int(prof[$0] / m * 100)) }.joined(separator: " "))
     }
-    if let c = TrackAnalyzer.chroma(d.x, rate: d.rate) {
+    if let c = TrackAnalyzer.chroma(st.chroma) {
         let m = c.max() ?? 1
         print("[dbg] chroma C..B: " + c.map { String(format: "%.2f", $0 / m) }.joined(separator: " "))
         let k = TrackAnalyzer.key(chroma: c)

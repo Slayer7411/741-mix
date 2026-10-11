@@ -533,6 +533,7 @@ struct OverviewHook: View {
                 let a = Analyses.shared
                 a.library = store
                 a.writeBack = { [mix] in mix.prefs.ui.writeCollection }
+                a.bpmLow = { [mix] in mix.prefs.ui.analysisBpmLow }
             }
             .onChange(of: fill, initial: true) { ov.setMode(fill) }
             .onChange(of: sig.keys, initial: true) {
