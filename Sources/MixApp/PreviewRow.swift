@@ -17,11 +17,12 @@ enum PreviewRow {
 
 /// Zelle zweizeilig: Inhalt oben, Mindesthöhe = Zeilenhöhe (die Tabelle wächst mit)
 struct PreviewRowCell: ViewModifier {
-    @Environment(MixModel.self) private var mix
+    /// optional: nicht jede Zelle der Tabelle sieht die Umgebung des Fensters (sonst Absturz beim Zeichnen)
+    @Environment(MixModel.self) private var mix: MixModel?
     let on: Bool
     func body(content: Content) -> some View {
         if on {
-            content.frame(maxWidth: .infinity, minHeight: PreviewRow.rowHeight(textSize: mix.prefs.ui.previewTextSize), maxHeight: .infinity, alignment: .topLeading)
+            content.frame(maxWidth: .infinity, minHeight: PreviewRow.rowHeight(textSize: mix?.prefs.ui.previewTextSize ?? 12), maxHeight: .infinity, alignment: .topLeading)
         } else {
             content
         }
