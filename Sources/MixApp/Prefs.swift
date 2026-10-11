@@ -95,24 +95,33 @@ struct ControllerPrefs: Codable, Equatable {
     }
 }
 
-/// Sichtbare Zeilen je Deck; alles an = bisheriges Bild
+/// Sichtbare Zeilen je Deck; alles an = bisheriges Bild. Neue Felder: gespeicherte Einstellungen ohne sie bekommen
+/// den Standard (AppPrefs.decode legt die gespeicherten Werte über die Standardwerte)
 struct DeckRows: Codable, Equatable {
     /// Kopf rechts: Zeit, BPM/Tempo, Code, Key + Phase
     var info = true
+    /// Kopf, Zeile unter dem Titel: Kommentar (gedämpft) …
+    var comment = true
+    /// … und Tags aus Kommentar 2 als Chips
+    var tags = true
     var phaseBar = true
     var overview = true
     var transport = true
+    /// Hotcues mit IN / OUT / RE
     var hotcues = true
     var loop = true
     var jump = true
     /// Pitch-Fader rechts
     var tempo = true
 
-    /// Reihenfolge für Menü und Einstellungen
-    static let all: [(WritableKeyPath<DeckRows, Bool>, String)] = [
-        (\.info, "Zusatzinfos (Zeit, BPM, Code, Key)"), (\.phaseBar, "Phasenbalken"), (\.overview, "Übersicht"),
-        (\.transport, "Transport (CUE, PLAY, SYNC …)"), (\.hotcues, "Hotcues"), (\.loop, "Loop-Größen"),
-        (\.jump, "Beatjump"), (\.tempo, "Pitch-Fader"),
+    /// Reihenfolge für Menü und Einstellungen: wie im Deck von oben nach unten, Pitch-Fader zuletzt.
+    /// Grid-Werkzeuge liegen (älter) in UIPrefs, deshalb Pfade ab UIPrefs
+    static let all: [(WritableKeyPath<UIPrefs, Bool>, String)] = [
+        (\.deckRows.info, "Zusatzinfos (Zeit, BPM, Code, Key)"), (\.deckRows.comment, "Kommentar"),
+        (\.deckRows.tags, "Tags (Kommentar 2)"), (\.deckRows.phaseBar, "Phasenbalken"), (\.deckRows.overview, "Übersicht"),
+        (\.deckRows.transport, "Transport (CUE, PLAY, SYNC …)"), (\.deckRows.hotcues, "Hotcues (mit IN / OUT / RE)"),
+        (\.deckRows.loop, "Loop-Größen"), (\.deckRows.jump, "Beatjump"), (\.showGridTools, "Grid-Werkzeuge"),
+        (\.deckRows.tempo, "Pitch-Fader"),
     ]
 }
 
@@ -186,6 +195,15 @@ struct UIPrefs: Codable, Equatable {
     var checkMusicFolders = true
     /// Zoom des Hauptfensters (1 = 100 %, ZoomSteps)
     var zoom = 1.0
+
+    /// kompakte Decks: ohne Pitch-Fader, Hotcues und Grid-Werkzeuge (mehr Platz für Wellenform und Beatgrid)
+    var compactDecks: Bool {
+        get { !deckRows.tempo && !deckRows.hotcues && !showGridTools }
+        set { deckRows.tempo = !newValue; deckRows.hotcues = !newValue; showGridTools = !newValue }
+    }
+
+    /// alle Zeilen aus DeckRows.all an
+    mutating func showAllDeckRows() { for (k, _) in DeckRows.all { self[keyPath: k] = true } }
 }
 
 /// Alle Einstellungen der App, als JSON in UserDefaults gespeichert.
@@ -229,8 +247,13 @@ struct AppPrefs: Codable, Equatable {
     }
 
     private static func loadSaved() -> AppPrefs {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              var saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let data = UserDefaults.standard.data(forKey: key) else { return AppPrefs() }
+        return decode(data)
+    }
+
+    /// gespeichertes JSON über die Standardwerte legen: fehlende (neue) Felder bekommen ihren Standard
+    static func decode(_ data: Data) -> AppPrefs {
+        guard var saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let defData = try? JSONEncoder().encode(AppPrefs()),
               let defaults = try? JSONSerialization.jsonObject(with: defData) as? [String: Any] else { return AppPrefs() }
         if let old = saved["x1"], saved["controller"] == nil { saved["controller"] = old }   // alter Schlüssel

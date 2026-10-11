@@ -3,6 +3,7 @@ import QuartzCore
 import SwiftUI
 import MixCore
 import MixEngine
+import LibraryCloud
 
 /// MIX741_DEBUG=1: Zeit vom Umschalten Browser groß/klein bis zum nächsten Display-Link-Takt (erstes neues Bild)
 @MainActor
@@ -97,10 +98,20 @@ enum ToggleBench {
             pump()
             if store.tracks.isEmpty, store.status == "Lade Collection …" { store.load() }
             while store.tracks.isEmpty { try? await Task.sleep(for: .milliseconds(100)); pump() }
-            let c = store.tracks.filter { $0.bpm > 120 && $0.bpm < 140 && $0.gridAnchorMs != nil && $0.fileExists }
-            guard c.count >= 4 else { log("zu wenige Tracks"); exit(1) }
+            // nur Dateien, die auf der Platte liegen: ein Platzhalter (Cloud, nur online) lädt im Selbsttest nie
+            let fs = SystemCloudFileSystem()
+            let c = Array(store.tracks.lazy.filter { $0.bpm > 120 && $0.bpm < 140 && $0.gridAnchorMs != nil && $0.fileExists
+                && fs.probe($0.path).state == .local }.prefix(4))
+            guard c.count >= 4 else { log("zu wenige lokale Tracks"); exit(1) }
+            // vier Ladevorgänge gleichzeitig mit niedriger Priorität (nice) brauchen länger als die 4 s des Wächters
+            var p = mix.prefs.engine
+            p.loadTimeout = 15   // nur im Kern, nicht gespeichert
+            core.setPrefs(p)
             for d in 0..<4 { mix.load(c[d], deck: d) }
-            while (0..<4).contains(where: { core.trackAudio($0) == nil }) { try? await Task.sleep(for: .milliseconds(100)); pump() }
+            while (0..<4).contains(where: { core.trackAudio($0) == nil }) {
+                if let e = core.snapshot().decks.compactMap(\.error).first { log("Laden fehlgeschlagen: \(e)"); exit(1) }
+                try? await Task.sleep(for: .milliseconds(100)); pump()
+            }
             for d in 0..<4 { core.seek(d, seconds: 60) }
             for _ in 0..<30 { try? await Task.sleep(for: .milliseconds(100)); mix.pull(); pump() }
             if mode == "state" { await StateBench.run(mix: mix, host: host, log: log); exit(0) }

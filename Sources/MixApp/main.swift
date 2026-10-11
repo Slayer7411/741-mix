@@ -297,13 +297,14 @@ struct MixApp: App {
                 Divider()
                 Menu("Zeilen") {
                     ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
-                        Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui.deckRows[keyPath: row.0] },
-                                                                      set: { mix.prefs.ui.deckRows[keyPath: row.0] = $0 }))
+                        Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui[keyPath: row.0] },
+                                                                      set: { mix.prefs.ui[keyPath: row.0] = $0 }))
                     }
-                    Toggle("Grid-Werkzeuge", isOn: Binding(get: { mix.prefs.ui.showGridTools }, set: { mix.prefs.ui.showGridTools = $0 }))
                     Divider()
-                    Button("Alle Zeilen") { mix.prefs.ui.deckRows = DeckRows(); mix.prefs.ui.showGridTools = true }
+                    Button("Alle Zeilen") { mix.prefs.ui.showAllDeckRows() }
                 }
+                Toggle("Kompakte Decks", isOn: Binding(get: { mix.prefs.ui.compactDecks }, set: { mix.prefs.ui.compactDecks = $0 }))
+                    .shortcut(keys.combo(.compactDecks))
             }
             CommandMenu("Browser") {
                 ForEach([ShortcutID.resetPlayed, .loadSelected, .previewSelected, .reloadCollection]) { a in
