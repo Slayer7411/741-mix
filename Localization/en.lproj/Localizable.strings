@@ -618,3 +618,19 @@
 "Nichts zu analysieren: Tempo, Grid, Tonart und Lautheit sind vorhanden" = "Nothing to analyze: tempo, grid, key and loudness are present";
 "analysiert von MINOS-741 (Tempo, Grid, Tonart, Lautheit ganz oder teilweise)" = "analyzed by MINOS-741 (tempo, grid, key, loudness in whole or in part)";
 "analysiert in der Collection" = "analyzed in the collection";
+
+/* EDIT-Modus: Schnitt, Grid */
+"Schnitt zu kurz (mindestens 1 s)" = "Cut too short (at least 1 s)";
+"EDIT-Modus (Fokus-Deck)" = "Edit mode (focused deck)";
+"Schnitt-Anfang hier (Fokus-Deck)" = "Cut start here (focused deck)";
+"Schnitt-Ende hier (Fokus-Deck)" = "Cut end here (focused deck)";
+"Grid: Beat 1 hier (Fokus-Deck)" = "Grid: beat 1 here (focused deck)";
+"Grid von Hand gesetzt (eigene Änderung) – RESET in der Grid-Zeile nimmt sie weg" = "Grid set by hand (own edit) – RESET in the grid row removes it";
+"EDIT-Modus: Schnitt und Grid setzen (⌥⌘E)" = "Edit mode: set the cut and the grid (⌥⌘E)";
+"Grid von Hand gesetzt – bleibt beim Laden und Analysieren, RESET nimmt es weg" = "Grid set by hand – kept on load and analysis, RESET removes it";
+"Grid aus der Library" = "Grid from the library";
+"Auf die Beats tippen: ab 4 Taps BPM des Grids" = "Tap on the beats: grid bpm from 4 taps";
+"Grid aus der Library (Collection oder eigene Analyse), eigene Änderung weg" = "Grid from the library (collection or own analysis), own edit removed";
+"Schnitt-Anfang an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier)" = "Cut start at the play position (quantize: nearest beat, ⌥-click: exact)";
+"Schnitt-Ende an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier)" = "Cut end at the play position (quantize: nearest beat, ⌥-click: exact)";
+"Schnitt entfernen: ganze Datei" = "Remove the cut: whole file";

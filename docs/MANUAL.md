@@ -138,6 +138,7 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 | − / + | key shift ±1 semitone (±12) |
 | REV | reverse |
 | FLUX | flux mode: loops, jumps and reverse continue in the background, release -> back where the track would be |
+| EDIT | edit mode: cut row instead of the loop sizes, grid row, handles in the waveform ([edit mode](#edit-mode)) |
 
 ### cues + loops
 
@@ -173,9 +174,9 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 ### load
 
 * double click = focused deck, right click -> load into deck A-D, controller LOAD = selected track of its own pane
-* jumps to load cue / grid, track start or hotcue 1 (⌘, -> DECKS)
+* jumps to load cue / grid, track start or hotcue 1 (⌘, -> DECKS), inside the cut if the track has one
 * first load: keylock on (setting)
-* track end warning: remaining time blinks red x seconds before the end (0 = off)
+* track end warning: remaining time blinks red x seconds before the end (0 = off). remaining time and warning count to the cut end
 * file missing -> fails at once. no audio data for 4 s (cloud file not downloaded, read stuck, setting 2-15 s) -> load cancelled. unreadable format -> fails with the reason
 * failed load: deck empty, reason in red in the header, skull in the waveform for 5 s, message in the status bar. other decks are never touched
 * empty deck -> lobster in the waveform
@@ -219,12 +220,39 @@ grid row (`GRID`):
 | ◂◂ ◂ ▸ ▸▸ | move the grid 10 / 1 ms |
 | BPM − / + | ±0.01 bpm |
 | ÷2 ×2 | half / double bpm |
+| TAP | tap on the beats -> bpm from 4 taps on (pause > 2 s starts over), anchor stays |
 | SET | beat 1 at the play position |
-| RESET | grid from the collection |
+| RESET | grid from the library (collection or own analysis), the own grid edit is removed |
 | ◂4 ◂1 1▸ 4▸ | anchor 1 bar / 1 beat earlier or later -> grid lines and bpm stay, only bars and phrases are renumbered |
 | PHRASE +n | (red, only with a suggestion) move the anchor by the suggested beats |
 
 narrow decks show fewer anchor buttons (◂1 1▸, then only `PHR +n`).
+
+grid edits:
+
+* every change in the grid row (also an automatic phrase anchor) is an own grid: bpm + anchor saved per track in `edits.json`, laid over collection and own analysis on every load
+* `Analysieren` / `Neu analysieren` never replace it, only RESET does
+* shown in red: `GRID` label, anchor flag `G` in the waveform, `◆` before the tempo in the header
+
+### edit mode
+
+`EDIT` in the transport row, ⌥⌘E (focused deck) or menu DECKS. per deck, saved in the settings, off by default.
+
+* the cut row takes the place of the loop sizes, the grid row is shown (in place of beatjump when the grid row is off). the waveform keeps its height, switching only swaps the rows (~10 ms)
+* cut = play only a part of the file, e.g. without the stray kick of the next track at the start or the end. the audio file is never changed (also on cloud drives)
+
+| button | action |
+|---|---|
+| IN HERE | cut start at the play position, on the nearest beat with QUANT, ⌥-click = exact |
+| OUT HERE | cut end at the play position, same snapping |
+| CLEAR CUT | whole file again |
+| `0:01.0 → 4:50.0 · 4:49.0` | start → end · length, grey = file start / end |
+
+* waveform: outside the cut dimmed, in edit mode handles `IN` / `OUT` -> drag (snaps like IN HERE, ⌥ = free). overview: same, drag a handle or click to jump
+* without a cut the handles sit at the file start and end
+* shortest cut 1 s, else message `Schnitt zu kurz`
+* playback stays inside: nothing outside is audible (3 ms ramp at a cut edge), jumps, seeks, cue, CUP, hotcues land inside, forward play stops at the cut end like at the track end, reverse stops at the cut start, a loop over the cut end is shortened to it, a beatjump past the end lands on the last whole beat before it
+* cut start / end saved per track in `edits.json` (seconds), with the grid edits. a cut is never written into the collection
 
 phrase anchor:
 
@@ -426,7 +454,7 @@ right click tracks, TRACK COLLECTION, PREPARATION, a playlist, smartlist, playli
 * `Analysieren` = only what is missing: tempo + grid, key, loudness. nothing to do -> message. `Neu analysieren` = everything again (tracks locked in the collection: only what is missing)
 * runs in the background like the previews: 2 files at a time, one file throttled while a deck plays, pause while a deck loads and 4 s after. status bar `Analyse 12/240`, `gedrosselt`, ✕ = cancel. done -> `Analysiert: 240 Tracks`, unreadable files are counted
 * results: `analysis.json` in the MINOS-741 folder, on top of the collection and the metadata edits on every load. list, columns, sorting, search, smartlists, deck, sync, key readout and auto-gain use them. purple `√` in the list = own values (hover = what)
-* right click -> `Analyse verwerfen` = back to the collection's values. `Neu analysieren` also drops an own grid edit (bpm / anchor) of the track, hotcues stay
+* right click -> `Analyse verwerfen` = back to the collection's values. a grid set by hand on the deck stays (RESET in the grid row removes it)
 * a track on a deck keeps its grid until it is loaded again
 * files from MUSIC FOLDERS without a collection entry get all four values too
 * `Änderungen in die Collection-Datei schreiben` on (⌘, -> ANZEIGE -> browser): after a batch the analyzed entries go into `collection.nml` as `TEMPO`, `LOUDNESS`, `MUSICAL_KEY` and a grid marker (`CUE_V2` type 4, an existing marker keeps its place and hotcue slot), same backup and byte-exact replacement as the metadata edits, not while the library software runs
@@ -554,6 +582,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | ⌥⌘M | mixer on / off |
 | ⌥⌘4 | 2 / 4 decks |
 | ⌥⌘B | big browser |
+| ⌥⌘E | edit mode on the focused deck |
 | ⌘+ / ⌘− / ⌘0 | zoom in / out / actual size |
 | space | big browser (not while typing in a search field) |
 | ⌘O | open collection |
@@ -562,7 +591,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | ⌘, | settings |
 | ⌘W | close window -> main window: quit (asks first) |
 
-no default, assignable: master, keylock, reloop, load selection into the focused deck, preview selection, reload collection, reconnect audio.
+no default, assignable: master, keylock, reloop, cut start here, cut end here, grid beat 1 here, load selection into the focused deck, preview selection, reload collection, reconnect audio.
 ⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.
 
 controller mapping -> [controllers.md](controllers.md). flux on the controller = pad layer switch: tap -> pads 1-4 play hotcues 5-8 (flux led lit), tap again -> back, shift + flux = flux mode. old layout under ⌘, -> CONTROLLER -> flux button.
@@ -576,7 +605,7 @@ controller mapping -> [controllers.md](controllers.md). flux on the controller =
 | track metadata edits | `~/Library/Application Support/MINOS-741/metadata.json` |
 | settings | user defaults, key `prefs.v1` |
 | session (decks, fx, clock, browser) | `~/Library/Application Support/MINOS-741/session.json` |
-| hotcue + grid edits | `~/Library/Application Support/MINOS-741/edits.json` |
+| hotcue, grid + cut edits | `~/Library/Application Support/MINOS-741/edits.json` |
 | browser previews (track overviews) | `~/Library/Application Support/MINOS-741/overviews/overviews.bin` |
 | own analysis (tempo, grid, key, loudness) | `~/Library/Application Support/MINOS-741/analysis.json` |
 | history | `~/Library/Application Support/MINOS-741/History` |
@@ -612,13 +641,13 @@ self test (silent, ends by itself):
 MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 ```
 
-waveform still without a window: `MIX741_SHOT=wave:/tmp/wave.png` in addition -> one deck with loop and hotcues as png, then exit.
+waveform still without a window: `MIX741_SHOT=wave:/tmp/wave.png` in addition -> one deck with loop and hotcues as png, then exit. `MIX741_SHOT=deck:<png>` -> deck A in two sizes, normal and in edit mode with a cut.
 settings as png without a window: add `MIX741_SHOT=settings:<folder>` -> one image per section, then quit.
 status bar, failed and empty deck as png: `MIX741_SHOT=status:<folder>` (add `MIX741_SHOT_AUDIO=1` for live meters, silent on a built-in device).
 collection check without a window: add `MIX741_CHECK=1` -> counts per check and duration, `MIX741_CHECK_LIST=<n>` lists the first n findings each. `MIX741_SHOT=consistency:<png>` renders the check window mid-run and finished.
 reload stall: add `MIX741_BENCH=reload` -> loads and reloads the collection offscreen, prints the longest main-thread gap per reload (`MIX741_BENCH_N` rounds).
 load probe on the device: add `MIX741_BENCH=load` -> 4 decks with keylock, reverb on fx 1, plugin on fx 2, buffer 64 / 128 / 256 for `MIX741_BENCH_SECS` s (8) each, prints dsp load, peak, blocks over budget and device overloads per buffer size (`[selftest] Lastprobe`). offline core numbers without a device: `MIX741_BENCH=1 swift test --filter benchRenderCPU`.
-ui cost (no selftest needed, offscreen, silent on a built-in output): `MIX741_BENCH=state` -> play, sync, loop, sizes, hotcue, tempo, keylock, clock bpm on deck A, median / p95 / max per action (`MIX741_BENCH_N`, `MIX741_BENCH_UI=live` = two browsers without mixer, `MIX741_BENCH_LAYOUT=1` layout time per hosting view, `MIX741_BENCH_ONLY=play,hotcue`). `MIX741_BENCH=play` -> 2 or 4 decks play (`MIX741_BENCH_DECKS`, `MIX741_BENCH_SECS`): main thread load, hitches, waveform steps per frame (`MIX741_BENCH_RAW=1` = playhead unsmoothed).
+ui cost (no selftest needed, offscreen, silent on a built-in output): `MIX741_BENCH=state` -> play, sync, loop, sizes, hotcue, tempo, keylock, clock bpm, edit mode on / off, cut on deck A, median / p95 / max per action (`MIX741_BENCH_N`, `MIX741_BENCH_EDIT=1` = deck A in edit mode, `MIX741_BENCH_UI=live` = two browsers without mixer, `MIX741_BENCH_LAYOUT=1` layout time per hosting view, `MIX741_BENCH_ONLY=play,hotcue`). `MIX741_BENCH=play` -> 2 or 4 decks play (`MIX741_BENCH_DECKS`, `MIX741_BENCH_SECS`): main thread load, hitches, waveform steps per frame (`MIX741_BENCH_RAW=1` = playhead unsmoothed).
 cloud column + set-check as png: `MIX741_SHOT=cloud:<folder>` -> real check of the collection in the log, images with real and with set states, nothing downloaded.
 tag chips as png: `MIX741_SHOT=tags:<folder>` -> pane with tag filter, chip click checks, filter and paging times (`MIX741_SHOT_FULLROW=1` two-line rows, `MIX741_SHOT_TEXT=<pt>` their text size, `MIX741_SHOT_PAGES=<n>`).
 

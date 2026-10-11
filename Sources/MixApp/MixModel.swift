@@ -21,6 +21,8 @@ final class DeckMirror {
     var state = DeckState()
     /// geladener Track (Schlüssel) – für RUNNING TRACKS, ohne bei jeder Deck-Änderung mitzurendern
     var trackKey = ""
+    /// EDIT-Modus: hier statt in `prefs` beobachtet – Umschalten rendert nur dieses Deck neu (gespeichert mit den Einstellungen)
+    var editing = false
 }
 
 /// FX-Unit für die Oberfläche: eigenes Observable je Unit (FXUnitView liest nur ihre Unit)
@@ -71,9 +73,16 @@ final class MixModel {
     var prefs = AppPrefs.load() {
         didSet {
             guard prefs != oldValue else { return }
-            prefs.save()
+            savePrefs()
             if prefs.engine != oldValue.engine { core.setPrefs(prefs.engine) }
         }
+    }
+
+    /// Einstellungen speichern; der EDIT-Modus kommt aus den Deck-Spiegeln (in `prefs` steht er nur beim Start)
+    private func savePrefs() {
+        var p = prefs
+        p.ui.editDecks = decks.map(\.editing)
+        p.save()
     }
 
     var outputDevices: [MixEngine.OutputDevice] = []
@@ -110,6 +119,7 @@ final class MixModel {
         }
         if let c = core.pluginCatalog.crashedLastRun { print("[plugin] beim letzten Lauf abgestürzt beim Öffnen: \(c.name) -> blockiert") }
         loadSetup()
+        for d in decks.indices { decks[d].editing = prefs.ui.editing(d) }
         core.setPrefs(prefs.engine)
         outputDevices = MixEngine.outputDevices()
         applyRouting()
@@ -281,8 +291,14 @@ final class MixModel {
     func clearTrim(_ d: Int) { run { core.clearTrim(d) } }
 
     /// EDIT-Modus je Deck (Schnitt- und Grid-Werkzeuge statt Loop / Beatjump), gemerkt in den Einstellungen
-    func editing(_ d: Int) -> Bool { prefs.ui.editing(d) }
-    func toggleEdit(_ d: Int) { prefs.ui.setEditing(d, !prefs.ui.editing(d)) }
+    func editing(_ d: Int) -> Bool { decks[d].editing }
+    func toggleEdit(_ d: Int) { setEditing(d, !decks[d].editing) }
+    /// nur das Deck beobachtet den Schalter; gespeichert wird ohne `prefs` zu ändern (das rendert sonst das ganze Fenster)
+    func setEditing(_ d: Int, _ on: Bool) {
+        guard decks.indices.contains(d), decks[d].editing != on else { return }
+        decks[d].editing = on
+        savePrefs()
+    }
     func togglePlay(_ d: Int) { run { core.togglePlay(d) } }
     func cueDown(_ d: Int) { run { core.cueDown(d) } }
     func cueUp(_ d: Int) { run { core.cueUp(d) } }

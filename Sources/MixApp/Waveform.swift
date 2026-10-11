@@ -301,7 +301,7 @@ struct WaveformView: View {
                 WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)))
             },
             cuePoint: deck.cuePoint, hasTrack: deck.track != nil, zoom: 1.z, gridEdited: deck.gridEdited,
-            trim: .init(start: deck.trim.start, end: deck.trim.end, editing: ui.editing(d)))
+            trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d)))
         Content(d: d, scene: scene, wave: wf, waiting: deck.track != nil && wf == nil).equatable()
     }
 
@@ -386,7 +386,7 @@ struct OverviewView: View {
             WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)))
         }
         Content(d: d, m: Model(duration: deck.duration, playing: deck.playing, cues: cues,
-                               trim: .init(start: deck.trim.start, end: deck.trim.end, editing: ui.editing(d))), wave: wf).equatable()
+                               trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d))), wave: wf).equatable()
     }
 
     struct Content: View, Equatable {

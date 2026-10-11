@@ -251,7 +251,7 @@ enum StateBench {
         let d = 0
         var cueSet = false, tempo = false, loopIdx = 0, jumpIdx = 0, cut = false
         // MIX741_BENCH_EDIT=1: Deck A im EDIT-Modus (Grid- und Schnitt-Zeile, Griffe in der Wellenform)
-        if env["MIX741_BENCH_EDIT"] != nil { mix.prefs.ui.setEditing(d, true); try? await Task.sleep(for: .milliseconds(300)) }
+        if env["MIX741_BENCH_EDIT"] != nil { mix.setEditing(d, true); try? await Task.sleep(for: .milliseconds(300)) }
         let actions: [(String, () -> Void)] = [
             ("play", { mix.togglePlay(d) }),
             ("sync", { mix.toggleSync(d) }),

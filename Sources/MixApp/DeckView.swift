@@ -12,7 +12,7 @@ struct DeckView: View {
 
     var body: some View {
         let rows = mix.prefs.ui.deckRows
-        let editing = mix.prefs.ui.editing(d)
+        let gridRow = mix.prefs.ui.showGridTools
         HStack(alignment: .top, spacing: 6.z) {
             VStack(alignment: .leading, spacing: 4.z) {
                 // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen), am Cover und an den Zusatzinfos
@@ -28,15 +28,14 @@ struct DeckView: View {
                 }
                 if rows.transport { row("transport", TransportRow(d: d)) }
                 if rows.hotcues { row("cues", CueRow(d: d)) }
-                if editing {
-                    // EDIT: Grid und Schnitt statt Loop und Beatjump (Wellenform behält ihre Höhe)
-                    row("grid", GridToolsRow(d: d))
-                    row("cut", CutRow(d: d))
-                } else {
-                    if rows.loop { row("loop", LoopRow(d: d)) }
-                    if rows.jump { row("jump", JumpRow(d: d)) }
-                    if mix.prefs.ui.showGridTools { row("grid", GridToolsRow(d: d)) }
+                // EDIT: Schnitt an der Stelle der Loop-Größen, Grid an der von Beatjump, falls die Grid-Zeile aus ist.
+                // Beide Zeilen liegen im selben Platz übereinander, Umschalten ändert nur die Deckkraft: keine neuen
+                // Hosting-Views, kein neues Deck-Layout. Der Schalter wird nur gelesen, wo er eine Zeile hinzufügt
+                if rows.loop || mix.editing(d) { row("loop", Slot(d: d, normal: LoopRow(d: d), edit: CutRow(d: d))) }
+                if rows.jump || (!gridRow && mix.editing(d)) {
+                    if gridRow { row("jump", JumpRow(d: d)) } else { row("jump", Slot(d: d, normal: JumpRow(d: d), edit: GridToolsRow(d: d))) }
                 }
+                if gridRow { row("grid", GridToolsRow(d: d)) }
             }
             if rows.tempo { TempoColumn(d: d) }
         }
@@ -72,6 +71,22 @@ struct DeckView: View {
     }
 
     static func same(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-9 }
+
+    /// Zeile mit zweitem Inhalt für den EDIT-Modus: beide bleiben aufgebaut, sichtbar ist einer
+    struct Slot<Normal: View, Edit: View>: View {
+        @Environment(MixModel.self) private var mix
+        let d: Int
+        let normal: Normal
+        let edit: Edit
+
+        var body: some View {
+            let on = mix.editing(d)
+            ZStack {
+                normal.opacity(on ? 0 : 1).allowsHitTesting(!on)
+                edit.opacity(on ? 1 : 0).allowsHitTesting(on)
+            }
+        }
+    }
 }
 
 /// Deck in eigener NSHostingView = Layout-Grenze. SwiftUI reicht jede Größen-Invalidierung bis zur Wurzel durch und
@@ -213,7 +228,7 @@ struct TransportRow: View {
     var body: some View {
         let s = mix.deck(d)
         Content(d: d, m: Model(playing: s.playing, cueHeld: s.cueHeld, sync: s.sync, master: mix.effectiveMaster == d,
-                               keylock: s.keylock, reverse: s.reverse, flux: s.flux, edit: mix.prefs.ui.editing(d))).equatable()
+                               keylock: s.keylock, reverse: s.reverse, flux: s.flux, edit: mix.editing(d))).equatable()
     }
 
     struct Content: View, Equatable {
@@ -268,7 +283,8 @@ struct GridToolsRow: View {
                 // rot = Grid von Hand gesetzt (eigene Änderung, gewinnt über Collection und Analyse)
                 Text("GRID").font(Theme.label(9.z, .bold)).foregroundStyle(m.edited ? Theme.state : Theme.muted)
                     .frame(width: 30.z, alignment: .leading)
-                    .help(m.edited ? "Grid von Hand gesetzt – bleibt beim Laden und Analysieren, RESET nimmt es weg" : "Grid aus der Library")
+                    .help(LocalizedStringKey(m.edited ? "Grid von Hand gesetzt – bleibt beim Laden und Analysieren, RESET nimmt es weg"
+                                                      : "Grid aus der Library"))
                 DeckButton(title: "◂◂") { mix.shiftGrid(d, ms: -10) }.stable().help("Grid 10 ms früher")
                 DeckButton(title: "◂") { mix.shiftGrid(d, ms: -1) }.stable().help("Grid 1 ms früher")
                 DeckButton(title: "▸") { mix.shiftGrid(d, ms: 1) }.stable().help("Grid 1 ms später")
@@ -703,6 +719,12 @@ enum DeckShot {
         var base = String(spec.dropFirst(5))
         if base.hasSuffix(".png") { base.removeLast(4) }
         NSApplication.shared.setActivationPolicy(.prohibited)   // kein Dock-Symbol, kein Fokuswechsel
+        // nie das Interface einer laufenden Live-Session öffnen: nur ein eingebautes 2-Kanal-Gerät, stumm (wie die Messung)
+        let devs = MixEngine.outputDevices()
+        let dev = devs.first { $0.channels == 2 && $0.name.localizedCaseInsensitiveContains("speaker") } ?? devs.first { $0.channels < 8 }
+        UserDefaults.standard.setVolatileDomain(["deviceUID": dev?.uid ?? "-", "mixerMode": MixerMode.internalMixer.rawValue,
+                                                 "sampleRate": 0.0, "bufferSize": 0, "masterVolume": 0.0],
+                                                forName: UserDefaults.argumentDomain)
         let mix = MixModel()
         mix.engine.stop()   // kein Ton, Gerät sofort wieder frei
         var t = Track(key: "shot", path: "/dev/null")
@@ -712,7 +734,7 @@ enum DeckShot {
                     Cue(name: "", kind: .loop, startMs: 60000, lengthMs: 3750, hotcue: 3)]
         var paths: [String] = []
         for (w, h, loop, edit) in [(640.0, 300.0, false, false), (480.0, 260.0, true, false), (640.0, 300.0, false, true), (480.0, 260.0, false, true)] {
-            mix.prefs.ui.setEditing(0, edit)
+            mix.setEditing(0, edit)
             mix.updateDeck(0) {
                 $0.track = t; $0.duration = 300; $0.grid = BeatGrid(anchor: 1, bpm: 128)
                 $0.phraseTarget = 1 - 60.0 / 128   // Phrasen-Vorschlag −1 (roter PHRASE-Knopf in der Grid-Zeile)
