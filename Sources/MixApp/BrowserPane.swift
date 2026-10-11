@@ -196,7 +196,7 @@ struct BrowserPane: View {
                         .help("Dateien aus allen Unterordnern zeigen")
                 }
                 Spacer(minLength: 8.z)
-                TextField("SUCHEN", text: $model.search)
+                SearchField(model: model)
                     .textFieldStyle(.plain)
                     .font(Theme.mono(11.z))
                     .padding(.horizontal, 6.z).padding(.vertical, 3.z)
@@ -237,6 +237,36 @@ struct BrowserPane: View {
         .padding(.horizontal, 8.z)
         .padding(.vertical, 5.z)
         .background(Theme.panelHeader)
+    }
+}
+
+/// Suchfeld eines Bereichs: Text sofort im Feld, in die Liste nach 0,15 s Tipp-Pause (leer und ⏎ sofort). Jede neue
+/// Suche baut die Liste neu (Collection 14k Tracks: ~0,25 s Hauptthread, die Wellenformen stehen so lange) – schnelles
+/// Tippen kostet so einen Neuaufbau statt einen je Taste
+struct SearchField: View {
+    @Bindable var model: BrowserPaneModel
+    @State private var text = ""
+    @State private var pending: DispatchWorkItem?
+
+    var body: some View {
+        TextField("SUCHEN", text: $text)
+            .onSubmit { apply(text) }
+            .onAppear { text = model.search }
+            // von außen gesetzt (Favoriten, Sitzung): ins Feld
+            .onChange(of: model.search) { _, s in if s != text { pending?.cancel(); text = s } }
+            .onChange(of: text) { _, s in
+                pending?.cancel()
+                guard s != model.search else { return }
+                if s.isEmpty { apply(s); return }
+                let w = DispatchWorkItem { MainActor.assumeIsolated { apply(s) } }
+                pending = w
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: w)
+            }
+    }
+
+    private func apply(_ s: String) {
+        pending?.cancel()
+        if model.search != s { model.search = s }
     }
 }
 
