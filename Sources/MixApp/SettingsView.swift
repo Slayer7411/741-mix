@@ -548,6 +548,7 @@ struct WaveformSettings: View {
                 }
                 Text("genau eine oktave: das tempo wird in den bereich gefaltet (z. b. 100–200: 96 -> 192). gilt für analysieren / neu analysieren.")
                     .settingsHint()
+                KeyProfileSettings()
             }
             Section("Collection prüfen") {
                 Toggle("Beim Start prüfen", isOn: $mix.prefs.ui.checkOnStart)
@@ -777,5 +778,21 @@ struct ControllerSettings: View {
 func headroomPicker(_ title: String, _ v: Binding<Double>) -> some View {
     Picker(title, selection: v) {
         ForEach([0.0, -3, -6, -9, -12], id: \.self) { Text($0 == 0 ? "0 dB" : "\(Int($0)) dB").tag($0) }
+    }
+}
+
+/// ⌘, -> Analyse: Key-Profile aus der Collection lernen / verwerfen, Stand
+private struct KeyProfileSettings: View {
+    var body: some View {
+        let a = Analyses.shared
+        HStack {
+            Button("Key-Profile lernen") { a.learnProfiles(from: a.library?.tracks ?? []) }.disabled(a.learnTotal > 0 || a.library == nil)
+            Button("Profile verwerfen") { a.discardProfiles() }.disabled(a.profiles == nil)
+        }
+        Text(a.profiles.map { Analyses.profilesText($0) + " · " + $0.learned.formatted(date: .numeric, time: .omitted) }
+             ?? String(localized: "keine gelernten Profile: Krumhansl / Temperley"))
+            .settingsHint()
+        Text("lernt aus bis zu 300 lokalen tracks mit tonart aus der collection (keine downloads), im hintergrund wie die analyse. treffer auf jedem 5. track gemessen, der nicht gelernt wird. datei: key-profiles.json im MINOS-741-ordner. gilt für die nächste analyse.")
+            .settingsHint()
     }
 }
