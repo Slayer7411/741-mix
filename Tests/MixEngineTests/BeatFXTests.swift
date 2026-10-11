@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import MixDSP
 
-/// Beat-FX offline (Gater): Raster der Clock, Ein/Aus ohne Knacken,
+/// Beat-FX offline (Gater, Roll): Raster der Clock, Wiederholung, Ein/Aus ohne Knacken,
 /// D/W 0 = trocken, NaN/Denormal bei 44,1/48/96 kHz
 private final class Rig {
     let e: OpaquePointer
@@ -42,12 +42,13 @@ private func white(_ s: UInt32) -> () -> Float {
     return { seed = seed &* 1664525 &+ 1013904223; return (Float(seed >> 8) / Float(1 << 24) - 0.5) * 0.6 }
 }
 
-private enum Effect: CaseIterable { case gater }
+private enum Effect: CaseIterable { case gater, roll }
 
 private extension Rig {
     func set(_ fx: Effect, on: Bool) {
         switch fx {
         case .gater: self.fx(MDFX_GATER_ON, on ? 1 : 0)
+        case .roll: self.fx(MDFX_ROLL_ON, on ? 1 : 0)
         }
     }
 }
@@ -75,6 +76,41 @@ func gaterFollowsBeatDivider(fs: Double) {
     }
     print(String(format: "[beatfx] gater %.0f kHz: %d Flanken, größte Abweichung vom Raster %.3f ms", fs / 1000, edges, worst))
     #expect(edges == 16 && worst <= 1)
+}
+
+/// Roll: Ausgang wiederholt genau die Länge (Autokorrelation, auch rückwärts); aus = Live-Signal dort, wo das Deck inzwischen ist
+@Test func rollRepeatsExactLength() {
+    for reverse in [false, true] {
+        let w = white(3)
+        let make: (Int) -> (Float, Float) = { _ in let v = w(); return (v, v) }
+        let r = Rig(seconds: 4, make: make)
+        let w2 = white(3)
+        let dry = Rig(seconds: 4) { _ in let v = w2(); return (v, v) }
+        r.fx(MDFX_ROLL_BEATS, 0.25); r.fx(MDFX_ROLL_REVERSE, reverse ? 1 : 0)
+        r.play(true); dry.play(true)
+        _ = r.capture(0.5); _ = dry.capture(0.5)
+        r.fx(MDFX_ROLL_ON, 1)
+        let (a, _) = r.capture(1.5)
+        _ = dry.capture(1.5)
+        let len = Int((0.25 * 60 / 125 * r.fs).rounded())   // 5292
+        let seg = Array(a[Int(0.5 * r.fs)..<Int(0.5 * r.fs) + 3 * len])
+        func corr(_ lag: Int) -> Double {
+            var xy = 0.0, xx = 0.0, yy = 0.0
+            for i in 0..<(seg.count - lag) { let x = Double(seg[i]), y = Double(seg[i + lag]); xy += x * y; xx += x * x; yy += y * y }
+            return xy / max(1e-12, (xx * yy).squareRoot())
+        }
+        var best = 0, bestC = -1.0
+        for lag in (len - 300)...(len + 300) { let c = corr(lag); if c > bestC { bestC = c; best = lag } }
+        let half = corr(len / 2), off = corr(len + 301)
+        print(String(format: "[beatfx] roll%@ 1/4 Beat: beste Wiederholung %d Frames (Soll %d), Korrelation %.4f, bei ½ Länge %.3f, Länge + 301 %.3f",
+                     reverse ? " rückwärts" : "", best, len, bestC, half, off))
+        #expect(best == len && bestC > 0.97 && abs(half) < 0.2 && abs(off) < 0.2)
+        // aus: nach der Rampe bitgleich mit einem Deck ohne Roll (gleiche Position)
+        r.fx(MDFX_ROLL_ON, 0)
+        _ = r.capture(0.2); _ = dry.capture(0.2)
+        let (x, _) = r.capture(0.2), (y, _) = dry.capture(0.2)
+        #expect(x == y)
+    }
 }
 
 /// Ein/Aus mit Sinus 220 Hz: kein Sprung (zweite Differenz < −40 dBFS) in den 20 ms nach dem Schalten

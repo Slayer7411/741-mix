@@ -551,7 +551,7 @@ struct ReverbClassic {
     }
 };
 
-// ---------- Beat-FX: Gater ----------
+// ---------- Beat-FX: Gater, Roll ----------
 // Raster aus der Master-Clock: Beat am Anfang des Teilblocks + Beats je Sample (MDEngine::fxBeat/fxBps).
 // Anteil (AMOUNT × D/W) mit Rampe 5 ms, auch Ein/Aus. Anteil 0 = Ausgang wird nicht angefasst (bitgleich trocken).
 constexpr double kFxRampS = 0.005;
@@ -593,6 +593,78 @@ struct Gater {
             L[i] *= a; R[i] *= a;
         }
         if (!on && mix < 1e-5f) { mix = 0; env = 1; }
+    }
+};
+
+/// Roll: Puffer-Wiederholer im Raster. Einschalten wartet auf den nächsten Teiler der Länge, nimmt eine Länge
+/// (+ Überblendung) auf – dabei läuft das Live-Signal durch – und wiederholt sie. Das Deck läuft darunter weiter (wie Flux):
+/// aus = zurück zum Live-Signal dort, wo der Track inzwischen ist. Kürzere Länge im Lauf: Anfang der Aufnahme im selben
+/// Raster, längere: weiter wiederholen bis zum nächsten Teiler, dann neu aufnehmen. Jeder Sprung des Lesekopfs (Umlauf,
+/// rückwärts, Länge) wird 2 ms überblendet; der alte Lesekopf läuft weiter und wird an den Rändern der Aufnahme gespiegelt.
+struct Roll {
+    std::vector<float> bufL, bufR;   // 4 s: 1 Takt bei 60 BPM (bei 20 BPM noch 1 Beat)
+    bool play = false, wait = false;
+    double lenBeats = 0, waitBeats = 0;
+    int len = 0, take = 0, rec = 0, xfMax = 0, xf = 1;   // Länge, Frames der laufenden Aufnahme, gültige Frames im Puffer
+    int64_t t = 0;                   // Frames seit Beginn der Aufnahme
+    int p = 0, dir = 1;              // Lesekopf (zuletzt gelesen)
+    int op = 0, od = 1, ox = 0;      // alter Lesekopf, Rest der Überblendung
+    float gain = 1, gainSm = 1, mix = 0, kMix = 0, kGain = 0, lastPh = 0;
+    void init(double fs) {
+        bufL.assign(size_t(fs * 4) + 8, 0); bufR.assign(bufL.size(), 0);
+        xfMax = std::max(8, int(0.002 * fs)); kMix = onePole(kFxRampS, fs); kGain = onePole(0.001, fs);
+    }
+    void clear() { play = wait = false; mix = 0; ox = 0; take = rec = 0; gain = gainSm = 1; }   // Puffer bleibt, gelesen wird nur Aufgenommenes
+    bool active() const { return mix > 0; }
+    inline void bounce(int &q, int &d) const {
+        if (q >= rec) { q = std::max(0, 2 * rec - 2 - q); d = -1; }
+        if (q < 0) { q = std::min(rec - 1, -q); d = 1; }
+    }
+    inline void fadeFrom(int q, int d) { op = q; od = d; bounce(op, od); ox = xf; }
+    void arm(double beats) { wait = true; waitBeats = beats; lastPh = -1; }
+    void run(float *L, float *R, int n, double beat, double bps, double beats, bool reverse, float decayDbPerBeat,
+             float amount, bool on) {
+        beats = std::clamp(beats, 1.0 / 64, 4.0);
+        int cap = int(bufL.size()) - xfMax - 1;
+        auto frames = [&](double b) { return std::clamp(int(std::lround(b / bps)), 16, cap); };
+        auto repGain = [&] { return float(std::pow(10.0, -std::max(0.f, decayDbPerBeat) * lenBeats / 20)); };
+        if (on && !play && !wait) arm(beats);
+        if (on && play && beats != lenBeats) {
+            int nl = frames(beats);
+            if (nl <= take) { len = nl; lenBeats = beats; xf = std::min(xfMax, len / 4); wait = false; }   // steckt in der Aufnahme
+            else if (!wait || waitBeats != beats) arm(beats);
+        }
+        float rep = repGain();
+        for (int i = 0; i < n; i++) {
+            float xl = L[i], xr = R[i];
+            if (wait && on) {
+                float ph = float(frac((beat + i * bps) / waitBeats));
+                bool hit = lastPh < 0 ? ph < 1e-6f : ph < lastPh;
+                lastPh = ph;
+                if (hit) {   // Teiler erreicht: neu aufnehmen (läuft schon eine Wiederholung: von ihr überblenden)
+                    if (play) fadeFrom(p + dir, dir); else { rec = 0; gainSm = 1; }
+                    wait = false; play = true; lenBeats = waitBeats; len = frames(waitBeats);
+                    xf = std::min(xfMax, len / 4); t = 0; take = 0; gain = 1; rep = repGain(); p = -1; dir = 1;
+                }
+            }
+            mix += ((on ? amount : 0.f) - mix) * kMix;
+            if (!play) continue;   // wartet: Live-Signal unverändert
+            if (t < len + xf) { bufL[size_t(t)] = xl; bufR[size_t(t)] = xr; take = int(t) + 1; rec = std::max(rec, take); }
+            int ph = int(t % len);
+            if (t >= len && ph == 0) gain *= rep;
+            int q = t < len ? ph : (reverse ? len - 1 - ph : ph), qd = t < len || !reverse ? 1 : -1;
+            if (t > 0 && q != p + dir) fadeFrom(p + dir, dir);
+            p = q; dir = qd; t++;
+            gainSm += (gain - gainSm) * kGain;
+            float wl = bufL[size_t(q)], wr = bufR[size_t(q)];
+            if (ox > 0) {
+                float a = float(ox) / float(xf + 1);
+                wl += (bufL[size_t(op)] - wl) * a; wr += (bufR[size_t(op)] - wr) * a;
+                op += od; bounce(op, od); ox--;
+            }
+            if (mix > 0) { L[i] = xl + mix * (wl * gainSm - xl); R[i] = xr + mix * (wr * gainSm - xr); }
+        }
+        if (!on && mix < 1e-5f) clear();
     }
 };
 
@@ -644,7 +716,7 @@ struct PluginSlot {
 
 struct FXChain {   // eine FX-Unit für ein Deck
     SweepFilter filter; Delay delay; Reverb reverb; ReverbClassic classic; PluginSlot plug;
-    Gater gater;
+    Gater gater; Roll roll;
 };
 
 struct TrackSlot { const float *L = nullptr, *R = nullptr; int64_t frames = 0; double rate = 44100; double start = 0; };
@@ -825,7 +897,7 @@ static void healDeck(Deck &d) {
     for (Biquad *b : {&d.eqL, &d.eqM, &d.eqH, &d.chanFilter.bq}) b->clearState();
     for (auto &c : d.fx) {
         c.filter.bq.clearState(); c.delay.clear(); c.reverb.clear(); c.classic.clear();
-        c.gater.clear();
+        c.gater.clear(); c.roll.clear();
         for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp, &c.reverb.lowCut, &c.reverb.tilt,
                           &c.classic.hp, &c.classic.lp, &c.classic.lowCut}) b->clearState();   // clear() lässt die Filter stehen
         if (c.plug.last) c.plug.resetPending.store(true);   // Plugin zurücksetzen lassen (Steuer-Thread), bis dahin trocken
@@ -964,6 +1036,11 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
         float dw = fp[MDFX_DRYWET].load();
         FXChain &c = d.fx[u];
         auto on = [&](MDFXParam p) { return fp[p].load() > 0.5f; };
+        // Roll vor dem Filter: der Filter-Regler formt auch die Wiederholung
+        bool rollOn = on(MDFX_ROLL_ON);
+        if (rollOn || c.roll.active())
+            c.roll.run(L, R, n, e->fxBeat, e->fxBps, fp[MDFX_ROLL_BEATS].load(), on(MDFX_ROLL_REVERSE), fp[MDFX_ROLL_DECAY].load(),
+                       fp[MDFX_ROLL_AMOUNT].load() * dw, rollOn);
         if (fp[MDFX_FILTER_ON].load() > 0.5f) {
             c.filter.update((fp[MDFX_FILTER_AMOUNT].load() * 2 - 1) * dw, fp[MDFX_FILTER_RES].load(), e->fs);
             c.filter.run(L, R, n);
@@ -1042,7 +1119,7 @@ MDEngine *mdsp_create(double sampleRate) {
         primeStretch(d, 1, 1.0);   // interne Puffer einmal anlegen (nicht erst im Audio-Thread)
         for (auto &c : d.fx) {
             c.delay.init(sampleRate); c.reverb.init(sampleRate); c.classic.init(sampleRate);
-            c.gater.init(sampleRate);
+            c.gater.init(sampleRate); c.roll.init(sampleRate);
             c.plug.dryL.assign(kMaxFrames, 0); c.plug.dryR.assign(kMaxFrames, 0);
         }
     }
