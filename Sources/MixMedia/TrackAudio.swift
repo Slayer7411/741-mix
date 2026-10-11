@@ -2,34 +2,42 @@ import AVFoundation
 import MixCore
 
 /// Ein komplett dekodierter Track (Stereo, Float32, Engine-Samplerate) plus Wellenform-Zusammenfassung.
+/// Nur lesbar: entweder eigener Speicher (Dekodieren im Prozess) oder eine Sicht auf eine eingeblendete
+/// `.mtrk`-Datei (Datei-Dienst). Freigegeben (bzw. ausgeblendet) wird erst im deinit – der Kern darf den Puffer
+/// bis `mdsp_track_consumed` lesen, deshalb hält der Steuerkern die Instanz bis dahin.
 public final class TrackAudio: @unchecked Sendable {
-    public let left: UnsafeMutablePointer<Float>
-    public let right: UnsafeMutablePointer<Float>
-    public private(set) var frames: Int = 0
+    public let left: UnsafePointer<Float>
+    public let right: UnsafePointer<Float>
+    public let frames: Int
     public let sampleRate: Double
-    private let capacity: Int
 
     /// Wellenform: pro Block Spitze (0–1) und Energieanteil Bass/Mitte/Höhe (Summe 1).
     public static let blocksPerSecond = 300.0
-    public private(set) var peak: [Float] = []
-    public private(set) var low: [Float] = []
-    public private(set) var mid: [Float] = []
-    public private(set) var high: [Float] = []
+    public let peak: UnsafeBufferPointer<Float>
+    public let low: UnsafeBufferPointer<Float>
+    public let mid: UnsafeBufferPointer<Float>
+    public let high: UnsafeBufferPointer<Float>
     /// feines Spektrum je Block (6 Bänder + Höhen-Dauer), gleiche Blöcke wie `peak`
-    public private(set) var spectrum = WaveSpectrum.empty
+    public let spectrum: WaveSpectrum
+
+    /// Eigentümer des Speichers (Heap oder Abbildung); gibt ihn im eigenen deinit frei
+    private let owner: AnyObject
+    /// eingeblendete Datei (nil = eigener Speicher)
+    public var mapping: TrackFile.Mapping? { owner as? TrackFile.Mapping }
 
     public var duration: Double { Double(frames) / sampleRate }
+    /// Größe der Audiodaten (L + R)
+    public var bytes: Int { frames * 2 * MemoryLayout<Float>.size }
 
-    init(capacity: Int, sampleRate: Double) {
-        self.capacity = max(capacity, 1)
-        self.sampleRate = sampleRate
-        left = .allocate(capacity: self.capacity)
-        right = .allocate(capacity: self.capacity)
-    }
+    /// Samples je Wellenform-Block bei dieser Rate
+    public static func blockFrames(sampleRate: Double) -> Int { max(1, Int(sampleRate / blocksPerSecond)) }
 
-    deinit {
-        left.deallocate()
-        right.deallocate()
+    init(left: UnsafePointer<Float>, right: UnsafePointer<Float>, frames: Int, sampleRate: Double,
+         peak: UnsafeBufferPointer<Float>, low: UnsafeBufferPointer<Float>, mid: UnsafeBufferPointer<Float>,
+         high: UnsafeBufferPointer<Float>, spectrum: WaveSpectrum, owner: AnyObject) {
+        self.left = left; self.right = right; self.frames = frames; self.sampleRate = sampleRate
+        self.peak = peak; self.low = low; self.mid = mid; self.high = high
+        self.spectrum = spectrum; self.owner = owner
     }
 
     public enum DecodeError: Error { case format, convert(String), cancelled }
@@ -45,7 +53,7 @@ public final class TrackAudio: @unchecked Sendable {
         guard inFmt.sampleRate > 0, sampleRate > 0, inFmt.channelCount > 0 else { throw DecodeError.format }   // sonst Int(inf) beim Anlegen
         let total = max(0, Int(file.length))
         let mono = inFmt.channelCount == 1
-        let t = TrackAudio(capacity: Int(Double(total) * sampleRate / inFmt.sampleRate) + 8192, sampleRate: sampleRate)
+        let t = HeapPCM(capacity: Int(Double(total) * sampleRate / inFmt.sampleRate) + 8192)
         guard let inBuf = AVAudioPCMBuffer(pcmFormat: inFmt, frameCapacity: chunk) else { throw DecodeError.format }
 
         if inFmt.sampleRate == sampleRate, inFmt.commonFormat == .pcmFormatFloat32, !inFmt.isInterleaved {
@@ -82,37 +90,32 @@ public final class TrackAudio: @unchecked Sendable {
                 if status == .endOfStream || status == .inputRanDry { break }
             }
         }
-        t.analyze()
-        return t
+        return t.finish(sampleRate: sampleRate)
     }
 
-    /// Block an den Puffer anhängen (Mono auf beide Seiten)
-    private func append(_ b: AVAudioPCMBuffer, mono: Bool) {
-        let n = min(Int(b.frameLength), capacity - frames)
-        guard n > 0, let ch = b.floatChannelData else { return }
-        (left + frames).update(from: ch[0], count: n)
-        (right + frames).update(from: ch[mono || b.format.channelCount < 2 ? 0 : 1], count: n)
-        frames += n
+    /// Wellenform-Analyse über fertige Samples (Einpol-Filter, Schichten-Stil, Browser-Übersicht) und parallel dazu
+    /// das feine Spektrum (6 Bänder) auf einem zweiten Kern – die Ladezeit wächst nur um den Teil, der länger dauert.
+    public struct Analysis {
+        public var peak: [Float], low: [Float], mid: [Float], high: [Float]
+        public var spectrum: WaveSpectrum
+        public var blocks: Int { peak.count }
     }
 
-    /// Einfache 3-Band-Analyse mit Einpol-Filtern (Schichten-Stil, Browser-Übersicht) und parallel dazu das feine
-    /// Spektrum (6 Bänder) auf einem zweiten Kern – die Ladezeit wächst nur um den Teil, der länger dauert.
-    private func analyze() {
-        let block = max(1, Int(sampleRate / Self.blocksPerSecond))
+    public static func analyze(left: UnsafePointer<Float>, right: UnsafePointer<Float>, frames: Int, sampleRate: Double) -> Analysis {
+        let block = blockFrames(sampleRate: sampleRate)
         let count = frames / block + 1
         final class Box: @unchecked Sendable { var spectrum = WaveSpectrum.empty }
         let box = Box()
         let group = DispatchGroup()
-        let (l, r, n, rate) = (left, right, frames, sampleRate)
         DispatchQueue.global(qos: .userInitiated).async(group: group) {
-            let sa = SpectrumAnalyzer(sampleRate: rate, block: block)
-            sa.feed(left: l, right: r, count: n)
+            let sa = SpectrumAnalyzer(sampleRate: sampleRate, block: block)
+            sa.feed(left: left, right: right, count: frames)
             box.spectrum = sa.finish(blocks: count)
         }
-        peak = .init(repeating: 0, count: count)
-        low = .init(repeating: 0, count: count)
-        mid = .init(repeating: 0, count: count)
-        high = .init(repeating: 0, count: count)
+        var peak = [Float](repeating: 0, count: count)
+        var low = [Float](repeating: 0, count: count)
+        var mid = [Float](repeating: 0, count: count)
+        var high = [Float](repeating: 0, count: count)
         let aLow = Float(1 - exp(-2 * Double.pi * 250 / sampleRate))
         let aHigh = Float(1 - exp(-2 * Double.pi * 3000 / sampleRate))
         var lp1: Float = 0, lp2: Float = 0
@@ -137,6 +140,50 @@ public final class TrackAudio: @unchecked Sendable {
         // nicht normalisieren: volle Höhe = 0 dBFS der Datei
         for b in 0..<count { peak[b] = min(1, peak[b]) }
         group.wait()
-        spectrum = box.spectrum
+        return Analysis(peak: peak, low: low, mid: mid, high: high, spectrum: box.spectrum)
+    }
+}
+
+/// Dekodier-Puffer im eigenen Speicher: wächst beim Dekodieren, danach Eigentümer der fertigen `TrackAudio`
+final class HeapPCM {
+    let left: UnsafeMutablePointer<Float>
+    let right: UnsafeMutablePointer<Float>
+    private(set) var frames = 0
+    private let capacity: Int
+    /// Wellenform-Blöcke (peak, low, mid, high hintereinander)
+    private var bands: UnsafeMutableBufferPointer<Float>?
+
+    init(capacity: Int) {
+        self.capacity = max(capacity, 1)
+        left = .allocate(capacity: self.capacity)
+        right = .allocate(capacity: self.capacity)
+    }
+
+    deinit {
+        left.deallocate()
+        right.deallocate()
+        bands?.deallocate()
+    }
+
+    /// Block an den Puffer anhängen (Mono auf beide Seiten)
+    func append(_ b: AVAudioPCMBuffer, mono: Bool) {
+        let n = min(Int(b.frameLength), capacity - frames)
+        guard n > 0, let ch = b.floatChannelData else { return }
+        (left + frames).update(from: ch[0], count: n)
+        (right + frames).update(from: ch[mono || b.format.channelCount < 2 ? 0 : 1], count: n)
+        frames += n
+    }
+
+    /// Analyse rechnen und als `TrackAudio` übergeben (dieser Puffer wird ihr Eigentümer)
+    func finish(sampleRate: Double) -> TrackAudio {
+        let a = TrackAudio.analyze(left: left, right: right, frames: frames, sampleRate: sampleRate)
+        let n = a.blocks
+        let all = UnsafeMutableBufferPointer<Float>.allocate(capacity: max(1, n * 4))
+        bands = all
+        let base = all.baseAddress!
+        for (k, src) in [a.peak, a.low, a.mid, a.high].enumerated() { (base + k * n).update(from: src, count: n) }
+        let view = { (k: Int) in UnsafeBufferPointer(start: base + k * n, count: n) }
+        return TrackAudio(left: left, right: right, frames: frames, sampleRate: sampleRate,
+                          peak: view(0), low: view(1), mid: view(2), high: view(3), spectrum: a.spectrum, owner: self)
     }
 }

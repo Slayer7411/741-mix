@@ -23,7 +23,8 @@ public struct TrackOverview: Equatable, Sendable {
 
     /// aus Wellenform-Blöcken (Spitze 0–1, Bandanteile mit Summe 1) – dieselben Blöcke wie die Deck-Wellenform.
     /// Spitze = Maximum der Blöcke eines Punkts, Bänder = Mittelwert.
-    public init(peak: [Float], low: [Float], mid: [Float], high: [Float], duration: Double, points: Int = TrackOverview.points) {
+    public init<C: RandomAccessCollection<Float>>(peak: C, low: C, mid: C, high: C, duration: Double,
+                                                  points: Int = TrackOverview.points) where C.Index == Int {
         self.duration = duration
         let n = min(peak.count, low.count, mid.count, high.count)
         guard n > 0, points > 0 else { bytes = []; return }

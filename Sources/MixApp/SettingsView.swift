@@ -520,7 +520,6 @@ struct WaveformSettings: View {
             PreviewSettings()
             Section("Statusleiste") {
                 Toggle("Last-Anzeigen (DSP, Latenz, Aussetzer, Speicher, CPU)", isOn: $mix.prefs.ui.showMeters)
-                sliderRow("Laden abbrechen nach (keine Audiodaten)", $mix.prefs.engine.loadTimeout, 2...15, step: 1, format: "%.0f", unit: "s")
                 Text("dsp = rechenzeit des audio-blocks ÷ blockdauer, rot ab 70 %. aussetzer: blöcke über dem budget plus überlast-meldungen des geräts, klick setzt zurück. meldungen: klick zeigt die letzten 50.")
                     .settingsHint()
             }
@@ -613,6 +612,7 @@ struct AudioSettings: View {
                         .settingsHint()
                 }
             }
+            LoadCacheSettings()
             Section { Text(mix.engineStatus).settingsHint() }
         }
         .onAppear { mix.refreshDevices() }
@@ -623,6 +623,35 @@ struct AudioSettings: View {
             ForEach(Array(stride(from: 0, to: max(2, mix.deviceChannels - 1), by: 2)), id: \.self) { c in
                 Text("\(c + 1)/\(c + 2)").tag(c)
             }
+        }
+    }
+}
+
+/// Laden über den Datei-Dienst: Grenzen ohne Audiodaten, Cache dekodierter Tracks
+private struct LoadCacheSettings: View {
+    @Environment(MixModel.self) private var mix
+    @State private var usage: FileServiceClient.CacheUsage?
+
+    var body: some View {
+        @Bindable var mix = mix
+        let service = mix.core.fileService
+        Section("Laden & Cache") {
+            LabeledContent("Dekodieren", value: service != nil ? String(localized: "Datei-Dienst (eigener Prozess)") : String(localized: "im Programm"))
+            sliderRow("Hinweis nach (keine Audiodaten)", $mix.prefs.engine.loadTimeout, 2...15, step: 1, format: "%.0f", unit: "s")
+            sliderRow("Laden abbrechen nach (keine Audiodaten)", $mix.prefs.engine.loadAbortTimeout, 15...300, step: 5, format: "%.0f", unit: "s")
+                .disabled(service == nil)
+            sliderRow("Cache dekodierter Tracks", $mix.prefs.engine.cacheLimitGB, 1...64, step: 1, format: "%.0f", unit: "GB")
+                .disabled(service == nil)
+            if let usage {
+                LabeledContent("Belegt", value: String(format: "%.1f GB · %d Tracks", Double(usage.bytes) / 1e9, usage.files))
+            }
+            Text("datei-dienst: dateien werden in einem eigenen prozess gelesen und dekodiert. hängt eine cloud-datei, lädt das deck weiter (hinweis), abgebrochen wird erst nach der zweiten grenze. ohne datei-dienst: abbruch schon nach der ersten. cache: ~/Library/Application Support/MINOS-741/cache, älteste zuerst gelöscht, tracks in den decks bleiben.")
+                .settingsHint()
+        }
+        .task(id: mix.prefs.engine.cacheLimitGB) {
+            guard let service else { return }
+            try? await Task.sleep(for: .milliseconds(300))   // Aufräumen nach einer neuen Grenze abwarten
+            usage = await Task.detached(priority: .utility) { service.cacheUsage() }.value
         }
     }
 }

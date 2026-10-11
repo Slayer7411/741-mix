@@ -110,13 +110,23 @@ final class LibraryStore {
             do {
                 let start = CACurrentMediaTime()
                 var c = try NMLParser.parse(url: url)
-                // Datei-Existenz einmal parallel prüfen (statt pro Tabellenzeile)
+                // Datei-Existenz einmal parallel prüfen (statt pro Tabellenzeile). Mit Datei-Dienst im Helfer (hängt der
+                // Cloud-Anbieter, wird der Helfer abgeschossen, unbekannte Pfade gelten als vorhanden)
                 let paths = c.tracks.map(\.path)
                 var missing = [Bool](repeating: false, count: paths.count)
-                missing.withUnsafeMutableBufferPointer { buf in
-                    let b = buf
-                    DispatchQueue.concurrentPerform(iterations: paths.count) { i in
-                        b[i] = !FileManager.default.fileExists(atPath: paths[i])
+                if let fs = FileServiceSetup.shared, !fs.unavailable {
+                    let t0 = CACurrentMediaTime()
+                    let states = fs.check(paths: paths)
+                    for i in paths.indices { missing[i] = states[i] == .missing || states[i] == .error }   // wie fileExists: Fehler = fehlt
+                    let unknown = states.lazy.filter { $0 == nil }.count
+                    print(String(format: "[files] %d pfade geprüft (helfer): %.0f ms · fehlen %d · unbekannt %d", paths.count,
+                                 (CACurrentMediaTime() - t0) * 1000, missing.lazy.filter { $0 }.count, unknown))
+                } else {
+                    missing.withUnsafeMutableBufferPointer { buf in
+                        let b = buf
+                        DispatchQueue.concurrentPerform(iterations: paths.count) { i in
+                            b[i] = !FileManager.default.fileExists(atPath: paths[i])
+                        }
                     }
                 }
                 for i in c.tracks.indices { c.tracks[i].fileMissing = missing[i] }

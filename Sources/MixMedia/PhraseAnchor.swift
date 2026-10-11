@@ -47,7 +47,7 @@ public enum PhraseAnchor {
     // MARK: Merkmale je Beat
 
     /// Bandgrenzen (Hz), ungefähr Terzen/Oktaven: Kick, Bass, Mitten, Hats getrennt
-    static let bandEdges: [Double] = [30, 60, 100, 160, 250, 400, 630, 1000, 1600, 2500, 4000, 6300, 10000, 16000]
+    public static let bandEdges: [Double] = [30, 60, 100, 160, 250, 400, 630, 1000, 1600, 2500, 4000, 6300, 10000, 16000]
 
     struct Features {
         /// je Beat die Bandpegel in dB (Index 0 = Beat `firstBeat` relativ zum Anker)
@@ -137,7 +137,7 @@ public enum PhraseAnchor {
 
     /// Wechsel-Kurve (Abstand der mittleren Bandpegel W Beats vor/nach jedem Beat, W = 4/8/16), Spitzen über dem
     /// gleitenden Median = Strukturwechsel. Ganze Takte je Fenster: Muster innerhalb eines Taktes heben sich auf.
-    static func boundaries(_ f: [[Float]], from start: Int, to end: Int) -> [(index: Int, strength: Double)] {
+    public static func boundaries(_ f: [[Float]], from start: Int, to end: Int) -> [(index: Int, strength: Double)] {
         guard let bands = f.first?.count else { return [] }
         let count = f.count
         // Präfixsummen je Band
@@ -176,7 +176,7 @@ public enum PhraseAnchor {
 
     /// Verschiebung s (Beats) wählen, die die Wechsel-Stärke auf Phrasen-/Taktgrenzen maximiert; kleine |s| gewinnen bei
     /// Gleichstand, 0 bleibt ohne klaren Vorsprung
-    static func decide(_ bounds: [(index: Int, strength: Double)], firstBeat: Int) -> Result {
+    public static func decide(_ bounds: [(index: Int, strength: Double)], firstBeat: Int) -> Result {
         guard bounds.count >= 4 else { return Result(shiftBeats: 0, confidence: 0, boundaries: bounds.count) }
         // Gewicht je Wechsel höchstens das Doppelte des mittleren: ein einzelner großer Wechsel (Intro, Ende) entscheidet nicht allein
         let cap = 2 * median(bounds.map(\.strength))
@@ -200,7 +200,7 @@ public enum PhraseAnchor {
 
     // MARK: Helfer
 
-    static func percentile(_ a: [Float], _ p: Double) -> Float {
+    public static func percentile(_ a: [Float], _ p: Double) -> Float {
         guard !a.isEmpty else { return 0 }
         let s = a.sorted()
         return s[min(s.count - 1, Int(Double(s.count - 1) * p))]
@@ -216,13 +216,4 @@ public enum PhraseAnchor {
 /// Grid-Anker auf Phrasen ausrichten (Einstellung)
 public enum PhraseAnchorMode: String, CaseIterable, Codable, Sendable {
     case off = "Aus", suggest = "Vorschlagen", auto = "Automatisch"
-}
-
-extension DeckState {
-    /// offener Phrasen-Vorschlag in ganzen Beats relativ zum jetzigen Anker (nil = keiner / schon übernommen)
-    public var phraseSuggestion: Int? {
-        guard let t = phraseTarget, let g = grid, g.bpm > 0 else { return nil }
-        let n = Int(((t - g.anchor) / g.beat).rounded())
-        return n == 0 ? nil : n
-    }
 }

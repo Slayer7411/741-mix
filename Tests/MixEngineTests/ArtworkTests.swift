@@ -3,7 +3,8 @@ import Foundation
 import ImageIO
 import Testing
 import UniformTypeIdentifiers
-@testable import MixEngine
+@testable import MixMedia
+import MixEngine
 
 /// Testbild: einfarbig, w×h, als JPEG oder PNG
 private func picture(_ w: Int, _ h: Int, red: CGFloat, type: UTType = .jpeg) -> Data {

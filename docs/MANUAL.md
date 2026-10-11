@@ -641,7 +641,7 @@ backup = copy the `MINOS-741` folder.
 | DROPOUTS counts up | DSP near or above 100 % -> bigger buffer (⌘, -> AUDIO), fewer keylock decks / plugins. DSP low but dropouts -> device or system (other audio apps, usb hub, energy saver) |
 | DSP red | single blocks over 70 %: plugins, 4 decks with keylock, small buffer. average matters, a single peak after loading is normal |
 | latency too high | buffer size in ⌘, -> AUDIO. LATENCY = buffer + device + safety offset; keylock lookahead is compensated and not audible as delay |
-| track won't load | status bar message: `Datei fehlt` = path in the collection wrong; `(4 s) keine Audiodaten` = cloud file not on disk -> the download is already requested (`Cloud-Datei wird heruntergeladen`), load again when ● shows; otherwise the format reason |
+| track won't load | status bar message: `Datei fehlt` = path in the collection wrong; `lädt noch (4 s ohne Daten)` = the cloud provider is still delivering the file, the deck keeps loading; `(60 s) keine Audiodaten (Drive antwortet nicht)` = nothing came, the helper was stopped -> load again or take another track; otherwise the format reason. limits in ⌘, -> AUDIO -> loading & cache |
 | ☁ in the list, set-check not clean | right click -> `Bereitmachen`, or `ALLE HOLEN` in the set-check. for good: finder -> right click the library folder -> make available offline |
 | local tracks turn ☁ again | macos evicted them (optimize storage, low disk space) -> keep local in ⌘, -> CLOUD fetches them again; pin the folder, free some space |
 | downloads don't start | a deck is loading (status bar `pausiert`), or less than the free space floor left (⌘, -> CLOUD) |

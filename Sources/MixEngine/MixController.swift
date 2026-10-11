@@ -67,8 +67,12 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var historyThreshold = 30.0
     /// Grid-Anker beim Laden auf Takt-/Phrasenanfang prüfen (aus / vorschlagen / automatisch verschieben)
     public var phraseAnchor = PhraseAnchorMode.suggest
-    /// Laden abbrechen, wenn so viele Sekunden keine Audiodaten kommen (Cloud-Datei, hängendes Lesen)
+    /// so viele Sekunden keine Audiodaten: Hinweis (Datei-Dienst) bzw. Abbruch (Dekodieren im Prozess)
     public var loadTimeout = 4.0
+    /// Datei-Dienst: so viele Sekunden keine Audiodaten -> Helfer abschießen, Laden abbrechen (Drive antwortet nicht)
+    public var loadAbortTimeout = 60.0
+    /// Größe des Caches dekodierter Tracks (GB), älteste werden gelöscht
+    public var cacheLimitGB = 8.0
     public init() {}
 }
 
@@ -285,9 +289,13 @@ public final class MixController: @unchecked Sendable {
 
     /// Statusmeldungen (Ladefehler, Phrasen-Vorschlag, Plugin-Fehler); beliebiger Thread
     public var onNotice: (@Sendable (EngineNotice) -> Void)?
-    /// Dekoder: URL, Rate, Fortschritt (Frames; false = abbrechen). Tests setzen einen langsamen/hängenden ein
+    /// Dekoder im Prozess: URL, Rate, Fortschritt (Frames; false = abbrechen). Tests setzen einen langsamen/hängenden ein
     public var decoder: @Sendable (URL, Double, @escaping (Int) -> Bool) throws -> TrackAudio = {
         try TrackAudio.decode(url: $0, sampleRate: $1, progress: $2)
+    }
+    /// Datei-Dienst (eigene Prozesse); nil = im Prozess dekodieren (`decoder`, Escape-Hatch MIX741_INPROC_FILES=1)
+    public var fileService: FileServiceClient? {
+        didSet { applyCacheLimit() }
     }
 
     /// zusätzliche Aufgaben im Steuertakt (z. B. Controller-LEDs)
@@ -325,11 +333,17 @@ public final class MixController: @unchecked Sendable {
     public func setPrefs(_ p: EnginePrefs) {
         locked {
             state.prefs = p
+            applyCacheLimit()
             engine.setMetronome(on: state.metronome, volume: state.metronomeVolume, firstChannel: p.metronomeChannel)
             applyAllMixer()
             applyAllFX()
             applyMaster()
         }
+    }
+
+    private func applyCacheLimit() {
+        let gb = locked { state.prefs.cacheLimitGB }
+        if let fs = fileService, fs.cacheLimit != Int64(gb * 1e9) { fs.cacheLimit = Int64(gb * 1e9) }
     }
 
     public func setExternalMixer(_ on: Bool) { locked { state.externalMixer = on; applyAllMixer(); applyMaster() } }
@@ -368,7 +382,17 @@ public final class MixController: @unchecked Sendable {
             return (loadSeq[d], max(0.5, state.prefs.loadTimeout))
         }
         let watch = LoadWatch()
-        locked { loads.append(PendingLoad(deck: d, seq: seq, track: t, watch: watch, timeout: timeout)) }
+        let service = fileService.flatMap { $0.unavailable ? nil : $0 }
+        locked { loads.append(PendingLoad(deck: d, seq: seq, track: t, watch: watch, timeout: timeout, service: service != nil)) }
+        if let service {
+            loadViaService(service, t, d, seq: seq, rate: rate, watch: watch, trim: trim, gridEdited: gridEdited)
+            return
+        }
+        loadInProcess(t, d, seq: seq, rate: rate, watch: watch, trim: trim, gridEdited: gridEdited)
+    }
+
+    /// Dekodieren im eigenen Prozess (heutiger Weg): ein hängendes Lesen lässt sich nicht abbrechen, nur verwerfen
+    private func loadInProcess(_ t: Track, _ d: Int, seq: Int, rate: Double, watch: LoadWatch, trim: TrackTrim, gridEdited: Bool) {
         let decode = decoder
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             // Datei-Prüfung nicht auf dem aufrufenden (Haupt-)Thread: in einem Cloud-Ordner kann schon der Blick
@@ -399,15 +423,57 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
+    /// Dekodieren im Datei-Dienst: dieser Prozess berührt den Musikpfad nicht. Hängt die Datei, schießt der Client den
+    /// Helfer nach `loadAbortTimeout` ohne Daten ab; ein anderer Track für das Deck schießt ihn sofort ab
+    private func loadViaService(_ fs: FileServiceClient, _ t: Track, _ d: Int, seq: Int, rate: Double, watch: LoadWatch,
+                                trim: TrackTrim, gridEdited: Bool) {
+        let hard = locked { max(5, state.prefs.loadAbortTimeout) }
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let t0 = Date()
+            do {
+                let a = try fs.decode(path: t.path, sampleRate: rate, hardTimeout: hard, progress: { stage, frames in
+                    watch.progress(frames, fetching: stage == .fetching)
+                }, cancelled: { watch.cancelled || self.locked { seq != self.loadSeq[d] } })
+                if Self.debug {
+                    print(String(format: "[load] deck %d: %.2f s, %.0f MB (file service)", d, Date().timeIntervalSince(t0), Double(a.frames) * 8 / 1e6))
+                }
+                watch.progress(Int.max)
+                finishLoad(t, a, d, seq: seq, trim: trim, gridEdited: gridEdited)
+            } catch FileServiceClient.ServiceError.cancelled {
+                // anderer Track gewählt: Helfer schon abgeschossen
+            } catch FileServiceClient.ServiceError.unavailable {
+                // Helfer startet nicht: dieses Mal im Prozess (alter Weg, mit seiner Zeitgrenze)
+                onNotice?(EngineNotice(.warning, key: "files", String(localized: "Datei-Dienst startet nicht – Tracks werden im Programm dekodiert")))
+                locked { if let i = loads.firstIndex(where: { $0.deck == d && $0.seq == seq }) { loads[i].service = false } }
+                loadInProcess(t, d, seq: seq, rate: rate, watch: watch, trim: trim, gridEdited: gridEdited)
+            } catch FileServiceClient.ServiceError.missing {
+                watch.progress(Int.max)
+                failLoad(t, d, seq: seq, reason: String(localized: "Datei fehlt"), timeout: nil,
+                         text: String(localized: "Datei fehlt: \(Self.displayName(t))"))
+            } catch let FileServiceClient.ServiceError.stalled(s) {
+                watch.progress(Int.max)
+                failLoad(t, d, seq: seq, reason: String(localized: "keine Audiodaten (Drive antwortet nicht)"), timeout: s)
+            } catch {
+                watch.progress(Int.max)
+                failLoad(t, d, seq: seq, reason: Self.reason(error), timeout: nil)
+            }
+        }
+    }
+
     /// Fortschritt eines Ladevorgangs (Dekoder-Thread schreibt, Wächter liest)
     private final class LoadWatch: @unchecked Sendable {
         private let lock = NSLock()
         private var last = DispatchTime.now()
         private var done = false
         private var stop = false
+        private var cloud = false
         var cancelled: Bool { lock.withLock { stop } }
+        /// Datei liegt nur online, der Anbieter lädt sie
+        var fetching: Bool { lock.withLock { cloud } }
         /// Frames gelesen; Int.max = Lesen fertig (danach rechnet nur noch die Analyse)
-        func progress(_ frames: Int) { lock.withLock { last = .now(); if frames == .max { done = true } } }
+        func progress(_ frames: Int, fetching: Bool = false) {
+            lock.withLock { last = .now(); if frames == .max { done = true }; if fetching { cloud = true } }
+        }
         /// Sekunden ohne neue Daten (nil = fertig gelesen)
         func stalled() -> Double? {
             lock.withLock { done ? nil : Double(DispatchTime.now().uptimeNanoseconds - last.uptimeNanoseconds) / 1e9 }
@@ -417,22 +483,31 @@ public final class MixController: @unchecked Sendable {
 
     private struct PendingLoad {
         let deck: Int, seq: Int, track: Track, watch: LoadWatch, timeout: Double
+        /// über den Datei-Dienst: nach `timeout` nur ein Hinweis, abgebrochen wird im Client
+        var service: Bool
+        var warned = false
     }
 
     /// Wächter (Steuertakt, alle 0,25 s): kommen `timeout` Sekunden keine Audiodaten, wird der Ladevorgang abgebrochen
-    /// (das Ergebnis verworfen). Läuft im Steuertakt und nicht auf einer Hintergrund-Queue: unter CPU-Last (Analyse,
-    /// Builds) kommt eine Utility-Queue Sekunden zu spät, ein hängender Dekoder belegte dann doch noch das Deck.
-    /// Liefert die abgelaufenen Ladevorgänge; melden außerhalb der Sperre
-    private func expiredLoads() -> [PendingLoad] {
-        var expired: [PendingLoad] = []
+    /// (das Ergebnis verworfen) – bzw. im Datei-Dienst nur gemeldet. Läuft im Steuertakt und nicht auf einer
+    /// Hintergrund-Queue: unter CPU-Last (Analyse, Builds) kommt eine Utility-Queue Sekunden zu spät, ein hängender
+    /// Dekoder belegte dann doch noch das Deck. Liefert abgelaufene und langsame Ladevorgänge; melden außerhalb der Sperre
+    private func expiredLoads() -> (expired: [PendingLoad], slow: [PendingLoad]) {
+        var expired: [PendingLoad] = [], slow: [PendingLoad] = []
         loads.removeAll { l in
             guard l.seq == loadSeq[l.deck], let idle = l.watch.stalled() else { return true }   // überholt oder fertig gelesen
             guard idle >= l.timeout else { return false }
+            if l.service { return false }
             l.watch.cancel()
             expired.append(l)
             return true
         }
-        return expired
+        for i in loads.indices where loads[i].service && !loads[i].warned {
+            guard let idle = loads[i].watch.stalled(), idle >= loads[i].timeout else { continue }
+            loads[i].warned = true
+            slow.append(loads[i])
+        }
+        return (expired, slow)
     }
 
     /// Laden fehlgeschlagen: Deck leer, Fehler am Deck, Meldung in der Statusleiste. Gilt nur für den aktuellen Ladevorgang
@@ -471,6 +546,21 @@ public final class MixController: @unchecked Sendable {
     private static func reason(_ e: Error) -> String {
         if case TrackAudio.DecodeError.format = e { return String(localized: "Format nicht lesbar") }
         if case let TrackAudio.DecodeError.convert(m) = e { return String(localized: "Umwandlung: \(m)") }
+        if let s = e as? FileServiceClient.ServiceError {
+            switch s {
+            case let .failed(code, detail):
+                switch code {
+                case .format: return String(localized: "Format nicht lesbar")
+                case .convert: return String(localized: "Umwandlung: \(detail)")
+                case .cacheWrite: return String(localized: "Cache nicht beschreibbar: \(detail)")
+                default: return detail
+                }
+            case .crashed: return String(localized: "Datei-Dienst abgestürzt")
+            case .unresponsive: return String(localized: "Datei-Dienst antwortet nicht")
+            case let .invalid(m): return String(localized: "Antwort des Datei-Dienstes ungültig: \(m)")
+            default: break
+            }
+        }
         let ns = e as NSError
         return ns.localizedFailureReason ?? ns.localizedDescription
     }
@@ -1666,7 +1756,7 @@ public final class MixController: @unchecked Sendable {
     // MARK: Steuertakt (200 Hz, Steuer-Queue)
 
     private func tick() {
-        var expired: [PendingLoad] = []
+        var expired: [PendingLoad] = [], slow: [PendingLoad] = []
         let handlers: [(MixController) -> Void] = locked {
             state.autoMaster = state.effectiveMaster   // Auto-Master klebt am laufenden Deck
             let master = state.effectiveMaster
@@ -1736,11 +1826,17 @@ public final class MixController: @unchecked Sendable {
             if tickCount % 4 == 0 { healPlugins() }
             // beat-synchrones Delay folgt dem Tempo
             if tickCount % 50 == 0, state.fx.contains(where: { $0.slots[1].on }) { applyAllFX() }
-            if tickCount % 50 == 0, !loads.isEmpty { expired = expiredLoads() }
+            if tickCount % 50 == 0, !loads.isEmpty { (expired, slow) = expiredLoads() }
             return tickCount % 6 == 0 ? tickHandlers : []
         }
         for l in expired {
             failLoad(l.track, l.deck, seq: l.seq, reason: String(localized: "keine Audiodaten (Cloud-Datei nicht geladen, Lesen hängt?)"), timeout: l.timeout)
+        }
+        for l in slow {
+            let name = Self.displayName(l.track), s = Int(l.timeout.rounded()), deck = Self.deckLetter(l.deck)
+            onNotice?(EngineNotice(.warning, key: "load.\(l.deck)", l.watch.fetching
+                ? String(localized: "Deck \(deck) lädt noch (\(s) s ohne Daten): \(name) · Cloud-Datei wird geladen")
+                : String(localized: "Deck \(deck) lädt noch (\(s) s ohne Daten): \(name)"), detail: l.track.path))
         }
         for h in handlers { h(self) }
     }
