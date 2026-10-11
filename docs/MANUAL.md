@@ -327,8 +327,19 @@ per channel (order C · A · B · D):
 * own headroom and auto-gain setting, main volume off by default
 * metronome on an own pair
 
+### preview output
+
+* browser `Vorhören` plays in the audio core on an own pair of the same device, never on the macos default output
+* ⌘, -> AUDIO -> preview: `Automatisch` (default) · any pair · `Aus`
+  * external: first pair after the highest deck pair that no deck uses (12 outputs, decks on 1/2 … 7/8 -> 9/10). none free -> off. a deck pair only by hand
+  * internal: main output, added after main (main volume does not touch it)
+* on the desk: set a free channel's input to that usb pair, fader down, cue on -> preview only in the headphones
+* pair not on the device (other interface) -> silent, never another pair
+* preview volume in the same section. own volume, no eq / fx / keylock
+* loads like a deck through the file service (cache hit ~0.01 s, first load = decode time), status bar `Vorhören lädt …`, a new track cancels the running load
+
 routing is in ⌘, -> AUDIO. the device sample rate is never changed by minos.
-the status bar shows device, mode and routing.
+the status bar shows device, mode and routing, preview pair as `PRE→9/10` (`PRE→–` = off).
 
 ## ◆ 08 · FX
 
@@ -449,7 +460,7 @@ a mini overview of the whole track per row. modes (⌘, -> DISPLAY -> browser pr
 * grid stays in the background (phrase bands, lines every 16 / 32 bars), fainter with the spectrum colors
 * phrase bands from the grid (phrase length = the waveform phrase), thin line every 16 bars, magenta every 32 bars
 * hotcues as short colored ticks, start cue as a triangle on top. own grid / phrase anchor / hotcue edits are drawn too
-* cut ([edit mode](#edit-mode)): outside dimmed, edges as a line with tabs. `Vorhören`: playhead in the row, click into that band jumps (outside the cut -> cut start, or 1 s before the cut end), status bar `Vorhören −1:23 / 4:10 (Schnitt)` = left to the cut end / cut length, ✕ = stop
+* cut ([edit mode](#edit-mode)): outside dimmed, edges as a line with tabs. `Vorhören`: playhead in the row, click into that band jumps (outside the cut -> cut start, or 1 s before the cut end), status bar `Vorhören −1:23 / 4:10 (Schnitt)` = left to the cut end / cut length, ✕ = stop. output pair -> [preview output](#preview-output)
 * no overview yet -> grid and cues only
 * overview comes from: loading the track into a deck (free, from the deck's waveform) · right click TRACK COLLECTION, PREPARATION, a playlist, smartlist, playlist folder or music folder -> `Vorschauen berechnen` · background job (setting, `immer (gedrosselt)` by default)
 * background order: rows on screen without an overview first (last shown first), then the whole collection, newest tracks first

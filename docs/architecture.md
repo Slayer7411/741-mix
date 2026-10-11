@@ -30,6 +30,7 @@ one auhal output on the device with all its channels, render callback in c++.
 track (float, in memory) -> hermite varispeed | time-stretch (keylock / key shift)
   -> flux -> gain -> 3-band eq -> channel filter -> fx 1 -> fx 2 -> fader -> deck pair
 master clock -> metronome click -> own pair
+preview track -> linear varispeed -> volume -> preview pair (after main, Preview.cpp / MixDSPPreview.h)
 ```
 
 * tracks are decoded in chunks straight into the deck buffer (float, device rate) -> one copy in memory
@@ -41,6 +42,7 @@ master clock -> metronome click -> own pair
 * filter frequencies clamped below nyquist (devices at 16-32 khz)
 * a deck block with nan / inf is dropped, the deck resets its recursive state (`healDeck`) and fades back in; nan never reaches the device
 * hard clip as last stage
+* preview: own handoff generation, fades in / out on start, pause, jump and switch, no recursive state, a pair missing on the device = silent
 
 dsp load (`MixDSPCoreAudio.cpp`):
 
