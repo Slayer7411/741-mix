@@ -72,13 +72,13 @@ final class BrowserPaneModel: Identifiable {
     @ObservationIgnored private var cacheKey: [AnyHashable] = []
     @ObservationIgnored private var cachedRows: [Track] = []
 
-    /// Gefilterte + sortierte Liste. Die Quelle wird einmal sortiert (14k Tracks lokalisiert ≈ 100 ms) und bei
+    /// Gefilterte + sortierte Liste. Die Quelle wird einmal sortiert (14k Tracks ≈ 60 ms, TrackSort) und bei
     /// Suche, Tags und Rollen nur noch gefiltert – ein Tastendruck im Suchfeld kostet so ~5 ms statt der Sortierung.
     func rows(from store: LibraryStore, history: HistoryStore?, separators: String) -> [Track] {
         let baseKey: [AnyHashable] = [source, "\(sortOrder)", store.revision, store.sourceRevision(source, subfolders: subfolders), subfolders]
         if baseKey != sortedKey {
             // nach dem Laden liegt die Liste meist schon sortiert vor (im Hintergrund, siehe LibraryStore.load)
-            sortedBase = store.presorted(source, order: sortOrder) ?? base(from: store, history: history).sorted(using: sortOrder)
+            sortedBase = store.presorted(source, order: sortOrder) ?? TrackSort.sorted(base(from: store, history: history), using: sortOrder)
             sortedKey = baseKey
         }
         let key = baseKey + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0] as [AnyHashable]

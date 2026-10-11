@@ -264,7 +264,7 @@ final class LibraryStore {
         var custom: [UUID: (query: String, tracks: [Track])] = [:]
     }
 
-    /// Listen der Bereiche parallel sortieren (gleiches `sorted(using:)` wie im Bereich, nur nicht auf dem Hauptthread)
+    /// Listen der Bereiche parallel sortieren (gleiches `TrackSort` wie im Bereich, nur nicht auf dem Hauptthread)
     /// Gleiche Liste wie beim letzten Laden -> derselbe Speicher: die Tabelle sieht keine Änderung und baut nichts neu.
     nonisolated private static func presort(_ targets: [PresortKey], tracks: [Track], byKey: [String: Track],
                                             nodes: [UUID: PlaylistNode], previous: [PresortKey: [Track]]) -> Presorted {
@@ -277,7 +277,7 @@ final class LibraryStore {
                 DispatchQueue.concurrentPerform(iterations: targets.count) { i in
                     guard let base = baseTracks(targets[i].source, tracks: tracks, byKey: byKey, nodes: nodes) else { return }
                     b[i] = base
-                    let list = base.sorted(using: targets[i].order)
+                    let list = TrackSort.sorted(base, using: targets[i].order)
                     if let prev = previous[targets[i]], prev == list { r[i] = prev } else { r[i] = list }
                 }
             }
