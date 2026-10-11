@@ -73,16 +73,21 @@ private func waitLoaded(_ c: MixController, _ d: Int, max seconds: Double) async
     defer { try? FileManager.default.removeItem(at: dir) }
     var t = Track(key: "hang", path: "/tmp/minos-hang-\(UUID().uuidString).flac")
     t.artist = "A"; t.title = "Hung"
+    // Helfer vorab starten (wie die App): der Start zählt nicht zur Grenze
+    fs.warmUp()
+    let w0 = Date()
+    while fs.stats.spawns == 0, Date().timeIntervalSince(w0) < 10 { try await Task.sleep(for: .milliseconds(10)) }
+    let lag = LagProbe()
     let t0 = Date()
     c.load(t, deck: 2)
     try await Task.sleep(for: .milliseconds(2500))
     let warned = n.time(of: { $0.key == "load.2" && $0.level == .warning }).map { $0.timeIntervalSince(t0) } ?? .nan
-    #expect(warned > 0.9 && warned < 2.2)
+    #expect(warned > 0.9 && warned < 2.2 + lag.max)
     #expect(n.all.contains { $0.text.hasPrefix("Deck C lädt noch (1 s ohne Daten): A – Hung") })
     _ = try await waitLoaded(c, 2, max: 10)
     let failed = n.time(of: { $0.key == "load.2" && $0.level == .error }).map { $0.timeIntervalSince(t0) } ?? .nan
-    print(String(format: "[load] Datei-Dienst, hängende Datei: Hinweis nach %.2f s, Abbruch nach %.2f s (Grenzen 1 / 5 s)", warned, failed))
-    #expect(failed > 4.9 && failed < 7)   // Zeitstempel der Meldungen: das Abfragen im Test kommt unter Last zu spät
+    print(String(format: "[load] Datei-Dienst, hängende Datei: Hinweis nach %.2f s, Abbruch nach %.2f s (Grenzen 1 / 5 s, Verzug %.2f s)", warned, failed, lag.max))
+    #expect(failed > 4.9 && failed < 7 + lag.max)   // Zeitstempel der Meldungen: das Abfragen im Test kommt unter Last zu spät
     #expect(warned < failed)
     #expect(c.snapshot().decks[2].track == nil)
     #expect(n.all.contains { $0.text.hasPrefix("Track nicht ladbar (5 s): A – Hung · keine Audiodaten (Drive antwortet nicht)") })

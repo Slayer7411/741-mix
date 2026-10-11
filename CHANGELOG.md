@@ -90,6 +90,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ### fixed
 * file service: a killed helper was often never reaped (the exit event comes before the process can be collected, the non-blocking wait found nothing and no second event came) -> defunct processes and false zombie counts. after the exit event the wait blocks now: leak test red in 4 of 6 runs alone -> 6 / 6 green, 0 zombies
+* tests: load limits of the hanging file service / hung decoder measured from the warmed-up helper, upper bounds + the scheduling lag measured during the test (`LagProbe`), lower bounds unchanged. the hung decoder delivers right after the abort instead of after a fixed 2 s
 * browser tag chips: clicks, ⌥-click, double click and the second click next to the chips (inline edit) work again in the tag shot (were failing)
 * bench `browser`: the focus check knows the table stays the same, `MIX741_BENCH_ALL=1` also lists the gaps
 * selftest: table shot `MIX741_SHOT=table:<folder>` (images per preview mode, table metrics, `MIX741_SHOT_CHECKS=1`: sort, multi select, encoder, return = inline edit, search, role, source, context menu, column menu, zoom)
