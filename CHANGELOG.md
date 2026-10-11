@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* fx mapping: D/W, knobs 1-3 and buttons 1-3 of every unit on any parameter of the loaded effect -> built-in parameters or the full audio unit / VST3 list (unit, range, groups, list entries). right click a knob / button or ⌘, -> MIXER & FX (table per unit, search). buttons toggle switches, step lists, jump continuous ones min / max. remembered per effect / plugin id, the session keeps each unit's mapping. the controller's fx knobs and buttons use the same mapping. labels show the parameter, value with unit on hover / turn
 * deck rows on / off: readouts, phase bar, overview, transport, hotcues, loop sizes, beatjump, pitch fader, grid tools -> menu DECKS -> ROWS or ⌘, -> DECKS
 * browser preview, full row: text above the band 12 pt semibold, band dimmed; size, weight and band opacity in ⌘, -> DISPLAY -> preview
 * cloud libraries (file provider folders, e.g. google drive): column ☁ per track (● local · ☁ online only · ↓ downloading · ✕ missing), checked by file status without downloading (14k tracks ~0.1 s), again on changes in the folder (fsevents) and every 10 min
@@ -64,6 +65,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * reverb settings (⌘, -> MIXER & FX): level (−18 … +6 dB), brightness, pre-delay (0 … 120 ms, default 15 ms)
 
 ### changed
+* fx: the unit's D/W acts only while a control sits on it (default: D/W knob) -> D/W on a plugin's mix runs the unit fully wet. single delay RATE takes the nearest of the 6 beat values
 * controller: sync held + pad 3 / 4 jumps one beat (one kick) instead of one bar; inside a loop the loop stays and the position wraps
 * plugin windows stay above the MINOS windows (also in full screen) and hide while another app is active
 * browser preview: strong 3-band colors (red = bass, green = mids / synths, blue = highs / drums), weighted against a typical track and saturated -> bass-heavy, synth-heavy and hat-heavy tracks tell apart at a glance. height from peak + bass, breaks clearly lower, thin bright line at big energy jumps (drops), grid fainter behind the waveform. setting preview colors: spectrum (default) / like the waveform (old look)
