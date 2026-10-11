@@ -179,7 +179,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * waveform: rendered as bitmap tiles around the playhead on a background thread, grid and cues stay vector layers -> the render server no longer redraws thousands of path points per frame (main thread spent ~65 % waiting for it, now ~0 %)
 * decks get an explicit height -> swiftui layout per state change 190 ms -> ~50 ms with 4 decks (two flexible decks per column made every button press freeze the ui); each deck mirrors its own state -> a change on deck A no longer re-renders B, C, D
 * history and session files are written off the main thread (was a small hitch every 5 s while playing)
-* readme, docs, release notes and ui texts without third-party product names; `MIX741_NOXONE` -> `MIX741_NOEXT`, external interface = first device with 8+ outputs
+* readme, docs, release notes and ui texts without third-party product names; env `MIX741_NOEXT` (renamed), external interface = first device with 8+ outputs
 * settings: the waveform palette CLASSIC (renamed) and the history-copy toggle (renamed key) fall back to their defaults once after this update
 * `MIX741_DEBUG=1` logs main thread hitches (`[hitch]`) and load times (`[load]`)
 * browser search: ~35 ms -> ~1.5 ms per keystroke (14k tracks, prepared search text), accents ignored. the list is sorted once per source, a keystroke only filters (was: sort on every keystroke)
