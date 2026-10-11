@@ -42,7 +42,7 @@ let package = Package(
         .executableTarget(name: "MixFiles", dependencies: ["MixIPC", "MixProtocol", "MixMedia"],
                           swiftSettings: [.swiftLanguageMode(.v5)]),
         // Audio-Thread-Code arbeitet bewusst mit geteiltem Zustand → Swift-5-Modus
-        .target(name: "MixEngine", dependencies: ["MixCore", "MixMedia", "MixDSP", "LinkKit"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "MixEngine", dependencies: ["MixCore", "MixMedia", "MixDSP", "LinkKit", "MixIPC", "MixProtocol"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "MixApp", dependencies: ["MixCore", "MixEngine", "LibraryCloud"],
                           resources: [.copy("Resources")],
                           swiftSettings: [.swiftLanguageMode(.v5)],

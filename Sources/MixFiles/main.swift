@@ -14,7 +14,7 @@ guard let channel = Channel.inherited() else {
     exit(64)
 }
 let faults = Faults(ProcessInfo.processInfo.environment["MIX741_FAULT"] ?? "")
-if faults.crashStart { abort() }
+if faults.crashStart { raise(SIGKILL) }   // Absturz ohne Crash-Report
 
 do {
     try channel.send(FileProtocol.Kind.handshake.rawValue,
@@ -146,7 +146,7 @@ final class Worker: @unchecked Sendable {
                 let now = frames * 8
                 if let k = faults.slowKBps, k > 0 { Thread.sleep(forTimeInterval: Double(now - bytes) / (k * 1000)) }
                 bytes = now
-                if let c = faults.crashAfter, bytes >= c { abort() }
+                if let c = faults.crashAfter, bytes >= c { raise(SIGKILL) }
                 return true
             }
         } catch TrackAudio.DecodeError.format {
