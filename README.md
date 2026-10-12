@@ -37,14 +37,15 @@ built for my own setup. ideas -> [discussions](https://github.com/Slayer7411/MIN
 ```
 > minos --status
   core      ■ c++ realtime, lock-free, sync on its own thread
-  decks     ■ 4 track decks, classic deck set
+  decks     ■ 4 track decks, classic deck set · instant doubles · key sync · load lock
   sync      ■ master clock · link · 3 sync modes
   mixer     ■ internal + external usb mixer
-  fx        ◧ 4 units, 3 effects so far
+  fx        ◧ 4 units · filter, delay, 2 reverbs (freeze) · beat fx gater / roll / flanger / phaser
   plugins   ■ audio unit + VST3 effects in the fx single mode
-  browser   ■ dual browser · all library columns · tags · smartlists
+  browser   ■ dual browser · all library columns · tags · smartlists · harmonic matching · preview on its own pair
   hid       ■ native controllers, 2 units
-  analysis  □ bpm / key / grid come from the collection
+  analysis  ■ own bpm / key / grid / loudness, key profiles from the collection
+  files     ■ decoding in an own process, track cache · a hanging cloud file only blocks its helper
 ```
 
 work in progress, `0.x` -> things still change. missing parts: [docs/roadmap.md](docs/roadmap.md).
@@ -67,11 +68,14 @@ work in progress, `0.x` -> things still change. missing parts: [docs/roadmap.md]
 | ⌥⌘M | mixer on / off |
 | ⌥⌘4 | 4 decks |
 | ⌥⌘B | big browser |
+| ⌥⌘J | matching on / off (fits the master) |
+| ⌥⌘K | compact decks |
+| ⌥⌘E | edit mode (cut, grid) |
 | ⌥⌘P | reset played state |
 | ⌘O | open collection |
 | ⌘, | settings |
 
-all keys can be changed under ⌘, -> KEYBOARD. full table -> [MANUAL · keys](docs/MANUAL.md#-12--keys).
+key sync, instant double and `load selection (even if playing)` have no default key, assign them under ⌘, -> KEYBOARD. a playing deck takes no track (load lock): ⌥-double click forces it. all keys can be changed there. full table -> [MANUAL · keys](docs/MANUAL.md#-12--keys).
 
 ## ◆ INSTALL
 

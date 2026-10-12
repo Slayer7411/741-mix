@@ -24,6 +24,8 @@ private func controller(timeout: Double) -> (MixController, Notices) {
     return (c, n)
 }
 
+private func signalled(_ s: DispatchSemaphore, within seconds: Double) -> Bool { s.wait(timeout: .now() + seconds) == .success }
+
 private func waitLoaded(_ c: MixController, _ d: Int, max seconds: Double) async throws -> Double {
     let t0 = Date()
     while c.snapshot().decks[d].loading, Date().timeIntervalSince(t0) < seconds { try await Task.sleep(for: .milliseconds(10)) }
@@ -65,30 +67,37 @@ private func waitLoaded(_ c: MixController, _ d: Int, max seconds: Double) async
     let other = try writeWAV(rate: rate, channels: 2, seconds: 2)
     defer { try? FileManager.default.removeItem(at: hung); try? FileManager.default.removeItem(at: other) }
     let real = c.decoder
+    // hängt bis nach dem Abbruch (höchstens 10 s), liefert dann doch – auch unter Last immer erst danach
+    let aborted = DispatchSemaphore(value: 0), delivered = DispatchSemaphore(value: 0)
+    c.onNotice = { e in n.add(e); if e.key == "load.0" && e.level == .error { aborted.signal() } }
     c.decoder = { url, r, progress in
-        if url == hung { Thread.sleep(forTimeInterval: 2) }   // hängt länger als die Zeitgrenze, liefert dann doch
+        guard url == hung else { return try real(url, r, progress) }
+        _ = aborted.wait(timeout: .now() + 10)
+        defer { delivered.signal() }
         return try real(url, r, progress)
     }
     c.load(Track(key: "other", path: other.path), deck: 1)
     _ = try await waitLoaded(c, 1, max: 5)
     #expect(c.snapshot().decks[1].track?.key == "other")
     var t = Track(key: "hung", path: hung.path); t.artist = "A"; t.title = "Hung"
+    let lag = LagProbe()
     let t0 = Date()
     c.load(t, deck: 0)
     let seen = try await waitLoaded(c, 0, max: 5)
     let isError = { (e: EngineNotice) in e.key == "load.0" && e.level == .error }
     let cancelled = n.time(of: isError).map { $0.timeIntervalSince(t0) } ?? .nan
-    print(String(format: "[load] hängender Dekoder: Abbruch nach %.2f s, im Test gesehen nach %.2f s (Grenze 1 s, Dekoder liefert nach 2 s)", cancelled, seen))
-    // Abbruch nach der Grenze (+ 0,25 s Wächter-Takt), sicher bevor der Dekoder nach 2 s doch liefert
-    #expect(cancelled > 0.9 && cancelled < 1.9)
+    print(String(format: "[load] hängender Dekoder: Abbruch nach %.2f s, im Test gesehen nach %.2f s (Grenze 1 s, Verzug %.2f s)", cancelled, seen, lag.max))
+    // Abbruch nach der Grenze (+ 0,25 s Wächter-Takt)
+    #expect(cancelled > 0.9 && cancelled < 1.9 + lag.max)
     var s = c.snapshot().decks[0]
     #expect(s.track == nil)
     #expect(s.error != nil)
     #expect(c.trackAudio(0) == nil)
     let e = n.all.first(where: isError)
     #expect(e?.text.hasPrefix("Track nicht ladbar (1 s): A – Hung") == true)
-    // Dekoder wird nach 2 s doch fertig: darf das Deck nicht mehr belegen
-    try await Task.sleep(for: .milliseconds(1600))
+    // Dekoder wird nach dem Abbruch doch fertig: darf das Deck nicht mehr belegen
+    #expect(await Task.detached { signalled(delivered, within: 15) }.value)
+    try await Task.sleep(for: .milliseconds(300))
     s = c.snapshot().decks[0]
     #expect(s.track == nil)
     #expect(c.trackAudio(0) == nil)
