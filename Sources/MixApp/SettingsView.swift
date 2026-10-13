@@ -735,6 +735,12 @@ struct BrowserSettings: View {
                 bezug: hörbarer key des master-decks (mit key-shift, ohne keylock mit dem tempo), spielt kein master:                 fokus-deck. ◆ lila = gleich · ▲▼ hell = ±1 auf dem rad · ◇ hell = relativ dur/moll · grau = ±2 (energie) ·                 gedimmt = unpassend. spalte match: pitch in prozent, den der track bis zum master-tempo braucht
                 """).settingsHint()
             }
+            Section("Zeilen") {
+                sliderRow("Luft um den Text", $mix.prefs.ui.browserRowPadding, 3...16, step: 1, format: "%.0f", unit: "pt")
+                Toggle("Trennlinie zwischen den Zeilen", isOn: $mix.prefs.ui.browserRowLines)
+                Text("zeilenhöhe = schrift + luft (11 pt = bisher, 5 pt = eng). gilt für alle listen, auch mit vorschau.")
+                    .settingsHint()
+            }
             Section("Gespielte Tracks") {
                 Toggle("Gespielte Tracks dimmen", isOn: $mix.prefs.ui.dimPlayedTracks)
                 Toggle("Gespielte Tracks ausblenden", isOn: $mix.prefs.ui.hidePlayedTracks)

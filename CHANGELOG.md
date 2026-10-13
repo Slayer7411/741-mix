@@ -6,6 +6,9 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* browser: `info` column = cloud state + analysed check in one 28 pt column (saved layouts: the first of the two old columns becomes `info`, the other goes; both stay in the header menu, hidden)
+* browser rows: ⌘, -> BROWSER -> rows: space around the text 3-16 pt (11 = as before), line between rows on / off
+* `scripts/check.sh`: the mandatory check before a merge or an install (build, unit tests, self test, table checks, deck / window shots, ui test when present); `--quick` skips the unit tests
 * cut audio: ⌃ + drag in the waveform marks a range on the beat grid (⌃⌥ free), edges draggable, label bar.beat → bar.beat · beats · seconds, also in the overview. right click in the range: `remove range` / `keep range` (new file), `cut in/out from range` (trim, no file), `loop from range`, `load result into the deck` (load lock applies). edit mode: REMOVE / KEEP / → CUT / → LOOP / ✕ in the cut row. keys assignable, esc clears the range (only taken when one exists)
 * cut file: `<name> [cut].m4a` next to the original (`[cut 2]` …), apple lossless, rate and channels of the original, 16 bit from 16-bit sources else 24, 2 ms linear crossfade at the joint, 2 ms fade at a keep edge inside the track. source = the deck's decoded audio at the file rate, else the file decoded again at its own rate. own queue, progress + ✕ in the status bar, the original is never opened for writing
 * cut metadata: fields of the original, title + ` [cut]`, exact bpm, key, cover of the original. grid anchor before the range stays, else back by the removed length (keep: from the new start, whole bars). hotcues / memory cues / loops outside move along, inside dropped. tree entry CUTS + the file in MUSIC FOLDERS with these values, saved in `cuts.json`, never in the collection file
@@ -213,6 +216,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
 
 ### fixed
+* test `fxMappingDrivesAudioUnitParameterTree` expected a fixed 22050 Hz upper bound; it now takes the plugin's own range (the bound follows the plugin's sample rate)
 * deck: right click on the title (`Edit track …`) and dropping a track on a deck crashed in 42acab0 (the deck's own hosting view had no library / browser environment)
 * browser list flickering: with legacy scroll bars (mouse connected, `show scroll bars: always`) a horizontal bar appearing for columns slightly wider than the list took height, the columns were redistributed, the bar vanished, and so on, until a column was resized by hand. scroll bars of the list are overlays now, never part of the layout
 * settings window with the main window in full screen (also on another display): opened on the other display's desktop. now joins the full-screen space on the main window's screen and comes to the front

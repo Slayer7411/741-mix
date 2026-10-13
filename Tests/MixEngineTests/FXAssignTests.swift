@@ -160,7 +160,8 @@ private func catalog(_ dir: URL, vst3: URL? = nil) -> PluginCatalog {
     let inst = try #require(core.beginPluginEdit(0))
     defer { core.endPluginEdit(0, inst) }
     #expect(abs(inst.value(mix.pluginParam!) - 30) < 0.01)
-    #expect(abs(Double(inst.value(freq.pluginParam!)) - (10 * 22050).squareRoot()) < 1)
+    // logarithmisch: Regler 0,5 = geometrisches Mittel des Parameterbereichs (die Obergrenze hängt von der Rate des Plugins ab)
+    #expect(abs(Double(inst.value(freq.pluginParam!)) - (freq.min * freq.max).squareRoot()) < 1)
     s = core.snapshot()
     #expect(!s.fxControls[0].contains { $0.param?.id == "dw" })   // Unit-D/W aus dem Spiel -> voll nass
     #expect(abs(control(s, 0, .dryWet).value - 0.3) < 1e-6 && control(s, 0, .dryWet).label == "DRY/WET")

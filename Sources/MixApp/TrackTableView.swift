@@ -9,7 +9,7 @@ import MixEngine
 
 /// Spalte der Track-Tabelle. `id` = Schlüssel in der gespeicherten Anordnung (`columns.<bereich>`), Breiten bei 100 %
 struct TrackColumn {
-    enum Kind { case played, cloud, analyzed, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file }
+    enum Kind { case played, cloud, analyzed, info, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file }
     let id: String
     let title: String
     let kind: Kind
@@ -32,8 +32,9 @@ struct TrackColumn {
     /// Standard-Reihenfolge und -Sichtbarkeit (wie die SwiftUI-Tabelle vorher)
     static let all: [TrackColumn] = [
         .fixed("played", "▶", .played, 16, menu: String(localized: "▶ Gespielt")),
-        .fixed("cloud", "☁", .cloud, 16, menu: String(localized: "☁ Cloud")),
-        .fixed("analyzed", "✓", .analyzed, 16, sort: KeyPathComparator(\Track.analyzedSort), menu: String(localized: "✓ Analysiert")),
+        .fixed("info", "☁✓", .info, 28, sort: KeyPathComparator(\Track.analyzedSort), menu: String(localized: "☁✓ Info (Cloud, Analysiert)")),
+        .fixed("cloud", "☁", .cloud, 16, hidden: true, menu: String(localized: "☁ Cloud")),
+        .fixed("analyzed", "✓", .analyzed, 16, hidden: true, sort: KeyPathComparator(\Track.analyzedSort), menu: String(localized: "✓ Analysiert")),
         .fixed("color", "", .color, 6, sort: KeyPathComparator(\Track.color), menu: String(localized: "Farbe")),
         .flex("cover", "Cover", .cover, min: 22, ideal: 44, hidden: true),
         .flex("artist", "Artist", .artist, min: 80, ideal: 150, sort: KeyPathComparator(\Track.artist)),
@@ -115,7 +116,15 @@ enum ColumnLayout {
         var order = s.order.filter { TrackColumn.byID[$0] != nil }
         guard !order.isEmpty else { return TrackColumn.all.map(\.id) }
         if !order.contains("played") { order.insert("played", at: 0) }
-        if !order.contains("cloud") { order.insert("cloud", at: order.firstIndex(of: "played").map { $0 + 1 } ?? 0) }
+        // ☁ und ✓ sind seit 0.8 eine Spalte „info“: alte Anordnung -> info an der Stelle der ersten, die zweite fällt weg
+        if !order.contains("info") {
+            if let i = order.firstIndex(where: { $0 == "cloud" || $0 == "analyzed" }) {
+                order[i] = "info"
+                order.removeAll { $0 == "cloud" || $0 == "analyzed" }
+            } else {
+                order.insert("info", at: order.firstIndex(of: "played").map { $0 + 1 } ?? 0)
+            }
+        }
         if !order.contains("cover") { order.insert("cover", at: order.firstIndex(of: "color").map { $0 + 1 } ?? min(3, order.count)) }
         if !order.contains("preview") { order.insert("preview", at: order.firstIndex(of: "title").map { $0 + 1 } ?? order.count) }
         if !order.contains("harmony") { order.insert("harmony", at: order.firstIndex(of: "key").map { $0 + 1 } ?? order.count) }
@@ -147,11 +156,11 @@ enum TableStyle {
     /// Zeilenhöhe: einzeilig wie vorher (100 %: 24 pt), eigene Vorschau-Spalte 17 pt Bild + Rand, zweizeilig
     /// PreviewRow.rowHeight + 8 pt
     static func rowHeight(_ ui: UIPrefs) -> CGFloat {
-        let z = UIZoom.shared.factor
+        let z = UIZoom.shared.factor, pad = CGFloat(ui.browserRowPadding)
         switch ui.previewMode {
-        case .fullRow: return PreviewRow.rowHeight(textSize: ui.previewTextSize).z + 8
-        case .column: return max((13 * z + 11).rounded(), 17 * z + 8)
-        default: return (13 * z + 11).rounded()
+        case .fullRow: return PreviewRow.rowHeight(textSize: ui.previewTextSize).z + max(2, pad - 3)
+        case .column: return max((13 * z + pad).rounded(), 17 * z + max(2, pad - 3))
+        default: return (13 * z + pad).rounded()
         }
     }
 
@@ -187,6 +196,7 @@ final class TrackRowView: NSTableRowView, NSViewToolTipOwner {
     override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
 
     override func drawBackground(in dirtyRect: NSRect) {
+        guard let owner, owner.rowLines else { return }
         TableStyle.hairline.withAlphaComponent(0.45).setFill()
         NSRect(x: 0, y: bounds.maxY - 1, width: bounds.width, height: 1).fill()
     }
@@ -424,6 +434,8 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     private var saveWork: DispatchWorkItem?
     private var font: NSFont = TableStyle.mono(11)
     private var twoLine = false
+    /// Trennlinie unter jeder Zeile (⌘, -> BROWSER)
+    var rowLines = true
 
     var shownRows: [Track] { rows }
 
@@ -586,7 +598,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         case .importDate: t.importText
         case .bitrate: t.bitrate > 0 ? "\(t.bitrate)" : ""
         case .file: t.fileName
-        case .played, .cloud, .analyzed, .color, .cover, .preview: nil
+        case .played, .cloud, .analyzed, .info, .color, .cover, .preview: nil
         }
     }
 
@@ -630,6 +642,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             font = m.nsFont
             twoLine = l.ui.previewMode == .fullRow
             tv.rowHeight = TableStyle.rowHeight(l.ui)
+            rowLines = l.ui.browserRowLines
             if let h = tv.headerView, h.frame.height != (24.z).rounded() { h.frame.size.height = (24.z).rounded(); tv.tile() }
         }
         if styleChanged || old?.filter != l.filter { chipCache = [:] }
@@ -892,7 +905,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             f.origin.x -= origin.x
             f.origin.y -= origin.y
             let id = col.identifier.rawValue
-            if id == "cloud" || id == "analyzed" { tips.append(f) }
+            if id == "cloud" || id == "analyzed" || id == "info" { tips.append(f) }
             guard f.intersects(dirty), let d = TrackColumn.byID[id] else { continue }
             if let editing, InlineEditController.columnFields[id] == editing { continue }
             ctx.saveGState()
@@ -908,6 +921,11 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         }
     }
 
+    private static func analyzedHelp(_ t: Track) -> String? {
+        guard t.analyzed else { return nil }
+        return t.ownAnalysis ? String(localized: "analysiert von MINOS-741 (Tempo, Grid, Tonart, Lautheit ganz oder teilweise)") : String(localized: "analysiert in der Collection")
+    }
+
     func toolTip(_ rv: TrackRowView, at p: NSPoint) -> String? {
         guard let tv = table else { return nil }
         let r = tv.row(for: rv)
@@ -916,9 +934,10 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         let t = rows[r]
         switch tv.tableColumns[c].identifier.rawValue {
         case "cloud": return CloudCell.badge(t.path).help
-        case "analyzed":
-            guard t.analyzed else { return nil }
-            return t.ownAnalysis ? String(localized: "analysiert von MINOS-741 (Tempo, Grid, Tonart, Lautheit ganz oder teilweise)") : String(localized: "analysiert in der Collection")
+        case "info":
+            let parts = [CloudCell.badge(t.path).help, Self.analyzedHelp(t)].compactMap { $0 }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        case "analyzed": return Self.analyzedHelp(t)
         default: return nil
         }
     }
@@ -938,6 +957,11 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             if !b.glyph.isEmpty { draw(b.glyph, NSColor(b.color), l, ctx, font: b.glyph == "☁" ? .systemFont(ofSize: 13.z) : TableStyle.mono(11.z)) }
         case .analyzed:
             if t.analyzed { draw("✓", t.ownAnalysis ? TableStyle.secondary : TableStyle.muted, l, ctx) }
+        case .info:
+            // links Cloud-Zeichen, rechts Analyse-Haken – eine schmale Spalte statt zwei
+            let b = CloudCell.badge(t.path), half = CGRect(x: l.minX, y: l.minY, width: (l.width / 2).rounded(), height: l.height)
+            if !b.glyph.isEmpty { draw(b.glyph, NSColor(b.color), half, ctx, font: b.glyph == "☁" ? .systemFont(ofSize: 13.z) : TableStyle.mono(11.z)) }
+            if t.analyzed { draw("✓", t.ownAnalysis ? TableStyle.secondary : TableStyle.muted, half.offsetBy(dx: half.width, dy: 0), ctx) }
         case .color:
             guard t.color > 0, t.color < TableStyle.trackColors.count else { return }
             ctx.setFillColor(TableStyle.trackColors[t.color].cgColor)

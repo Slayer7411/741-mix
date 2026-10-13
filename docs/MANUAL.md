@@ -497,7 +497,7 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
 * tree can hide while decks are visible (setting)
 * cover preview below the tree: cover of the selected track, `◆ KEIN COVER` (`◆ NO COVER`) = none (setting)
 * cover column (hidden by default): right click on the header -> Cover. thumbnails load only for visible rows, in the background
-* cloud column ☁ (library in a cloud folder): ● local · ☁ online only · ↓ downloading · ✕ missing
+* info column ☁✓ = cloud state and analysed in one narrow column (the single columns `☁ Cloud` and `✓ Analysiert` stay available in the header menu). cloud (library in a cloud folder): ● local · ☁ online only · ↓ downloading · ✕ missing
 * right click tracks or a source in the tree -> `Bereitmachen (herunterladen)`, progress + ✕ in the status bar
 * ● LOKAL in the header -> local tracks only. SET-CHECK -> preparation + this list: what is not local, `ALLE HOLEN`
 * details: [library · cloud libraries](library.md#-cloud-libraries)
