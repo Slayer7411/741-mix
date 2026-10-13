@@ -24,9 +24,11 @@ public struct WaveBlend: Equatable, Sendable {
 }
 
 /// Rasterung des Mischungs-Stils: je Pixelspalte und -zeile Deckung (Anteil der Samples, die die Zeile erreichen) und
-/// Farbe aus den Band-Hüllkurven genau dieser Samples. Unten (bis zum Effektivwert) deckt jeder Block voll mit seiner
-/// mittleren Farbe, darüber fällt die Deckung linear bis zur Spitze und die Farbe geht in die des lautesten Samples
-/// über – Transienten und Höhen färben die Spitzen, der Körper bleibt beim Bass. Helligkeit = Deckung^(1/3,5).
+/// Farbe aus den Band-Hüllkurven der Samples, die diese Zeile erreichen. Die Höhe und die Deckung kommen aus den Blöcken
+/// der Spalte selbst, die Farbe aus einem Fenster von Nachbarblöcken (`Palette.window`): eine Zeile oberhalb des
+/// Körpers erreichen nur die lauten Blöcke der Umgebung (Transienten, Hats, Kick-Anschlag), deren Hüllkurven färben
+/// die Spitzen – der Körper bleibt beim Bass. Unten (bis zum Effektivwert) deckt ein Block voll, darüber fällt die
+/// Deckung linear bis zur Spitze. Helligkeit = Deckung^(1/3,5).
 public enum BlendPaint {
     public typealias RGB = (r: Float, g: Float, b: Float)
 
@@ -36,6 +38,11 @@ public enum BlendPaint {
     public static let floor: Float = 0.01
     /// Exponent auf die Bandanteile der RGB-Palette (> 1: das stärkste Band setzt sich in der Farbe durch)
     public static let saturation: Float = 1.5
+    /// Farbfenster: Nachbarblöcke je Seite (Blöcke à 1/300 s → 1 = ±3 ms, glättet Anschläge über die Nachbarspalte)
+    public static let window = 1
+    /// Band-Gewichte zur Renderzeit (Tief, Mitte, Hoch) auf die analysierten Hüllkurven: Mitten zurück (Analyse hebt den
+    /// Bandpass ×1,4 an), Höhen vor – Hats und Transienten sollen als blaue Spitzen sichtbar sein
+    public static let gain: RGB = (1, 0.55, 1.6)
 
     /// Palette: `direct` = Bandanteile direkt als Rot / Grün / Blau, sonst drei Farben (Tief, Mitte, Hoch), Höhen
     /// quadratisch (nur starke Höhen färben)
@@ -44,26 +51,51 @@ public enum BlendPaint {
         public var direct: Bool
         /// Anteil der Höhen in der Mischung (1 = voll)
         public var highShare: Float
-        public init(low: RGB, mid: RGB, high: RGB, direct: Bool = false, highShare: Float = 1) {
+        /// Exponent auf die Bandanteile (nur `direct`)
+        public var saturation: Float
+        /// Farbfenster in Blöcken je Seite
+        public var window: Int
+        /// Band-Gewichte Tief / Mitte / Hoch auf die gespeicherten Hüllkurven (1 = wie analysiert)
+        public var gain: RGB
+        public init(low: RGB, mid: RGB, high: RGB, direct: Bool = false, highShare: Float = 1,
+                    saturation: Float = BlendPaint.saturation, window: Int = BlendPaint.window, gain: RGB = BlendPaint.gain) {
             self.low = low; self.mid = mid; self.high = high; self.direct = direct; self.highShare = highShare
+            self.saturation = saturation; self.window = window; self.gain = gain
         }
         public static let rgb = Palette(low: (1, 0, 0), mid: (0, 1, 0), high: (0, 0, 1), direct: true)
+    }
+
+    /// Versuchswerte für Bilder: "sat,win,gl,gm,gh" (leere Felder = Standard)
+    public struct Tune: Sendable {
+        public var saturation: Float?, window: Int?, gain: (Float?, Float?, Float?)
+        public init?(_ spec: String) {
+            let f = spec.split(separator: ",", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+            guard !f.isEmpty else { return nil }
+            saturation = f.count > 0 ? Float(f[0]) : nil
+            window = f.count > 1 ? Int(f[1]) : nil
+            gain = (f.count > 2 ? Float(f[2]) : nil, f.count > 3 ? Float(f[3]) : nil, f.count > 4 ? Float(f[4]) : nil)
+        }
+        public func apply(to p: inout Palette) {
+            if let saturation { p.saturation = saturation }
+            if let window { p.window = window }
+            p.gain = (gain.0 ?? p.gain.r, gain.1 ?? p.gain.g, gain.2 ?? p.gain.b)
+        }
+        public var label: String {
+            "sat \(saturation.map { String(format: "%.1f", $0) } ?? "-") win \(window.map(String.init) ?? "-") gain \(gain.0 ?? 1)/\(gain.1 ?? 1)/\(gain.2 ?? 1)"
+        }
     }
 
     /// Helligkeit (Deckung 0…1 → 0…1), 1024 Stufen
     static let lift: [Float] = (0...1024).map { powf(Float($0) / 1024, gamma) }
     @inline(__always) static func brightness(_ c: Float) -> Float { lift[Int(max(0, min(1, c)) * 1024)] }
 
-    /// Farbe aus den summierten Hüllkurven (Tief, Mitte, Hoch) und der Deckungssumme der Zeile
-    @inline(__always) public static func color(_ e: RGB, weight: Float, _ p: Palette) -> RGB {
-        guard weight > 0 else { return (0, 0, 0) }
-        let l = e.r / weight, m = e.g / weight, h = e.b / weight
-        let s = 1 / (l + m + h + floor)
-        let a1 = l * s, a2 = m * s, a3 = h * s * p.highShare
+    /// Pixelfarbe aus den Bandanteilen (Tief, Mitte, Hoch, Summe ≤ 1; kleiner = leiser, dunkler)
+    @inline(__always) public static func paint(_ a: RGB, _ p: Palette) -> RGB {
+        let a1 = a.r, a2 = a.g, a3 = a.b * p.highShare
         // direkt: Anteile gespreizt und auf das stärkste Band gezogen (klare Farben, Mischungen gelb / cyan / weiß statt
         // trüb), Pegel nahe dem Grundpegel dunkler
         if p.direct {
-            let b1 = powf(a1, saturation), b2 = powf(a2, saturation), b3 = powf(a3, saturation)
+            let b1 = powf(a1, p.saturation), b2 = powf(a2, p.saturation), b3 = powf(a3, p.saturation)
             let g = min(1, a1 + a2 + a3) / max(b1, b2, b3, 1e-6)
             return (min(1, b1 * g), min(1, b2 * g), min(1, b3 * g))
         }
@@ -74,8 +106,39 @@ public enum BlendPaint {
                 min(1, p.low.b * w1 + p.mid.b * w2 + p.high.b * w3))
     }
 
+    /// Farbe aus den summierten Hüllkurven (Tief, Mitte, Hoch) und der Deckungssumme der Zeile – ohne Stapel
+    @inline(__always) public static func color(_ e: RGB, weight: Float, _ p: Palette) -> RGB {
+        guard weight > 0 else { return (0, 0, 0) }
+        let l = e.r * p.gain.r / weight, m = e.g * p.gain.g / weight, h = e.b * p.gain.b / weight
+        let s = 1 / (l + m + h + floor)
+        return paint((l * s, m * s, h * s), p)
+    }
+
+    /// Deckung eines Blocks (Spitze `pk`, Effektivwert `r`) in Zeile `y`
+    @inline(__always) static func coverage(_ y: Float, _ pk: Float, _ r: Float) -> Float {
+        y > r ? (pk - y) / (pk - r) : 1
+    }
+
+    /// Breite der Übergänge zwischen den gestapelten Bändern, Anteil der Blockspitze
+    public static let fade: Float = 0.15
+    /// Anteil der Energie-Mischung an der Farbe (Tönung des Ganzen), der Rest kommt aus dem Stapel-Abschnitt der Zeile
+    public static let base: Float = 0.35
+    /// Exponent auf die gewichteten Band-Spitzen für die Stapel-Abschnitte (< 1: leise Bänder bekommen sichtbar Höhe)
+    public static let stackCurve: Float = 0.6
+
+    /// weicher Indikator: 1 innerhalb `lo…hi`, linear auf 0 über `f` außerhalb
+    @inline(__always) static func inside(_ y: Float, _ lo: Float, _ hi: Float, _ f: Float) -> Float {
+        max(0, min(1, (y - lo + f) / f)) * max(0, min(1, (hi - y + f) / f))
+    }
+
     /// eine Spalte aus den Blöcken `from..<to` rastern: `half` Zeilen von der Mitte nach außen, Zeile j bei Amplitude
     /// (j + 0,5) / half (volle Höhe = 0 dBFS). Schreibt RGBA (vormultipliziert) je Zeile über `put(j, r, g, b, a)`.
+    ///
+    /// Farbe je Zeile: die drei Bänder eines Blocks werden nach ihrer Spitze gestapelt – das stärkste Band bildet den
+    /// Körper von der Mitte aus, das schwächste liegt außen an den Spitzen (Bass-Körper rot, Hats blau außen);
+    /// jedes Band hat zusätzlich einen Grundanteil in allen Zeilen, damit ein mittenlastiger Abschnitt als Ganzes
+    /// gelb / grün wird. Deckung und damit Helligkeit kommen nur aus den Blöcken der Spalte selbst, die Farbe aus dem
+    /// Fenster `Palette.window` um die Spalte.
     @inline(__always)
     public static func column(peak: UnsafeBufferPointer<Float>, blend: UnsafeBufferPointer<UInt8>, from: Int, to: Int,
                               half: Int, palette p: Palette, put: (Int, UInt8, UInt8, UInt8, UInt8) -> Void) {
@@ -87,26 +150,65 @@ public enum BlendPaint {
         for k in lo..<hi { top = max(top, peak[k]) }
         let rows = min(half, Int((top * Float(half)).rounded(.up)))
         guard rows > 0 else { return }
-        let count = Float(hi - lo), inv = 1 / Float(half)
-        for j in 0..<rows {
+        let wlo = max(0, lo - p.window), whi = min(n, hi + p.window)
+        let count = Float(hi - lo), inv = 1 / Float(half), rest = 1 - base
+            for j in 0..<rows {
             let y = (Float(j) + 0.5) * inv
-            var c: Float = 0, er: Float = 0, eg: Float = 0, eb: Float = 0
-            for k in lo..<hi {
+            var c: Float = 0, wc: Float = 0, er: Float = 0, eg: Float = 0, eb: Float = 0
+            for k in wlo..<whi {
                 let pk = peak[k]
                 guard y < pk else { continue }
                 let o = k * WaveBlend.stride
                 let r = min(amp[Int(blend[o])], pk * 0.98)
-                var cov: Float = 1, s: Float = 0
-                if y > r { cov = (pk - y) / (pk - r); s = 1 - cov }
-                let m = o + WaveBlend.meanSlot, t = o + WaveBlend.peakSlot
-                er += cov * (amp[Int(blend[m])] * (1 - s) + amp[Int(blend[t])] * s)
-                eg += cov * (amp[Int(blend[m + 1])] * (1 - s) + amp[Int(blend[t + 1])] * s)
-                eb += cov * (amp[Int(blend[m + 2])] * (1 - s) + amp[Int(blend[t + 2])] * s)
-                c += cov
+                let cov = coverage(y, pk, r)
+                if k >= lo, k < hi { c += cov }
+                // Band-Spitzen (gewichtet und roh) am lautesten Sample des Blocks
+                let t = o + WaveBlend.peakSlot
+                let el = amp[Int(blend[t])], em = amp[Int(blend[t + 1])], eh = amp[Int(blend[t + 2])]
+                // Stapel-Anteile aus den gewichteten Spitzen (Analyse-Gewicht × Palette-Gewicht), gestaucht
+                let pl = powf(el * p.gain.r, stackCurve), pm = powf(em * p.gain.g, stackCurve), ph = powf(eh * p.gain.b, stackCurve)
+                let sum = pl + pm + ph
+                guard sum > 0 else { continue }
+                // Stapel: größtes Band unten (Mitte), kleinstes oben (Spitze); Abschnitte auf die Blockspitze skaliert
+                let scale = pk / sum, f = fade * pk
+                var gl: Float = 0, gm: Float = 0, gh: Float = 0
+                if pl >= pm, pl >= ph {
+                    if pm >= ph {   // L M H
+                        gl = inside(y, 0, pl * scale, f); gm = inside(y, pl * scale, (pl + pm) * scale, f)
+                        gh = inside(y, (pl + pm) * scale, pk, f)
+                    } else {        // L H M
+                        gl = inside(y, 0, pl * scale, f); gh = inside(y, pl * scale, (pl + ph) * scale, f)
+                        gm = inside(y, (pl + ph) * scale, pk, f)
+                    }
+                } else if pm >= pl, pm >= ph {
+                    if pl >= ph {   // M L H
+                        gm = inside(y, 0, pm * scale, f); gl = inside(y, pm * scale, (pm + pl) * scale, f)
+                        gh = inside(y, (pm + pl) * scale, pk, f)
+                    } else {        // M H L
+                        gm = inside(y, 0, pm * scale, f); gh = inside(y, pm * scale, (pm + ph) * scale, f)
+                        gl = inside(y, (pm + ph) * scale, pk, f)
+                    }
+                } else {
+                    if pl >= pm {   // H L M
+                        gh = inside(y, 0, ph * scale, f); gl = inside(y, ph * scale, (ph + pl) * scale, f)
+                        gm = inside(y, (ph + pl) * scale, pk, f)
+                    } else {        // H M L
+                        gh = inside(y, 0, ph * scale, f); gm = inside(y, ph * scale, (ph + pm) * scale, f)
+                        gl = inside(y, (ph + pm) * scale, pk, f)
+                    }
+                }
+                // Anteile: Stapel-Abschnitt (klare Trennung) + Grundanteil aus der Energie-Mischung (Tönung); leise
+                // Blöcke (Summe nahe dem Grundpegel) dunkler
+                let gsum = gl + gm + gh, msum = el * p.gain.r + em * p.gain.g + eh * p.gain.b
+                let q = msum / (msum + floor), mi = base / (msum + 1e-9), si = rest / gsum
+                er += cov * q * (el * p.gain.r * mi + gl * si)
+                eg += cov * q * (em * p.gain.g * mi + gm * si)
+                eb += cov * q * (eh * p.gain.b * mi + gh * si)
+                wc += cov
             }
             guard c > 0 else { continue }
             let L = brightness(c / count)
-            let rgb = color((er, eg, eb), weight: c, p)
+            let rgb = paint((er / wc, eg / wc, eb / wc), p)
             put(j, UInt8(rgb.r * L * 255), UInt8(rgb.g * L * 255), UInt8(rgb.b * L * 255), UInt8(L * 255))
         }
     }

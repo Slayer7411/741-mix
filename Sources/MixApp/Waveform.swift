@@ -264,10 +264,11 @@ final class RenderedWaveform: @unchecked Sendable {
     }
 
     static func render(_ a: TrackAudio, style: WaveformStyle, palette: WaveformPalette,
-                       detail: SpectrumDetail = .fine, highBoost: Double = 1) -> RenderedWaveform {
+                       detail: SpectrumDetail = .fine, highBoost: Double = 1,
+                       tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
         let colors = Colors.of(palette)
         if style == .blend, a.blend.count >= a.peak.count, !a.peak.isEmpty {
-            return blend(a, palette: palette, highBoost: highBoost)
+            return blend(a, palette: palette, highBoost: highBoost, tune: tune)
         }
         let env = envelope(a)
         let fine = style == .spectrum && detail != .simple && a.spectrum.count >= a.peak.count && !a.peak.isEmpty
@@ -326,17 +327,22 @@ final class RenderedWaveform: @unchecked Sendable {
 extension RenderedWaveform {
     /// Palette der Mischung: RGB = Bandanteile direkt, sonst die drei Palettenfarben
     static func blendPalette(_ p: WaveformPalette, highBoost: Double) -> BlendPaint.Palette {
-        let k = Float(pow(2, highBoost - 1))
-        if p == .rgb { var r = BlendPaint.Palette.rgb; r.highShare = k; return r }
-        let c = Colors.of(p)
-        let f = { (v: RGB) in (r: Float(v.r), g: Float(v.g), b: Float(v.b)) }
-        return BlendPaint.Palette(low: f(c.low), mid: f(c.mid), high: f(c.high), highShare: k)
+        let k = Float(pow(2, highBoost - 1))   // Höhen-Betonung: Gewicht der Höhen ×0,5…×2 (Farbe und Stapelhöhe)
+        var pal: BlendPaint.Palette
+        if p == .rgb { pal = .rgb } else {
+            let c = Colors.of(p)
+            let f = { (v: RGB) in (r: Float(v.r), g: Float(v.g), b: Float(v.b)) }
+            pal = BlendPaint.Palette(low: f(c.low), mid: f(c.mid), high: f(c.high))
+        }
+        pal.gain.b *= k
+        return pal
     }
 
     /// 3-Band Mischung: keine Pfade, die Kacheln rastern aus den Blöcken; Übersicht gleich gerastert
-    static func blend(_ a: TrackAudio, palette: WaveformPalette, highBoost: Double) -> RenderedWaveform {
-        let raster = Raster(peak: Array(a.peak), blend: Array(a.blend.data.prefix(a.peak.count * WaveBlend.stride)),
-                            palette: blendPalette(palette, highBoost: highBoost))
+    static func blend(_ a: TrackAudio, palette: WaveformPalette, highBoost: Double, tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
+        var pal = blendPalette(palette, highBoost: highBoost)
+        tune?.apply(to: &pal)   // Versuchswerte, nur im Selbsttest-Bild
+        let raster = Raster(peak: Array(a.peak), blend: Array(a.blend.data.prefix(a.peak.count * WaveBlend.stride)), palette: pal)
         let ow = 1600, oh = 60
         var overview: CGImage?
         if let ctx = CGContext(data: nil, width: ow, height: oh, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
