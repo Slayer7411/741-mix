@@ -50,6 +50,8 @@ public enum BlendPaint {
         public var low: RGB, mid: RGB, high: RGB
         /// Farbe gehaltener Höhen (offene Hats, Ride): hellblau statt blau; Anteil je Block aus der Höhen-Dauer des Spektrums
         public var highOpen: RGB
+        /// Farbe gehaltener Tiefen (Bassline, Sub-Ausklang): orange statt rot; Anteil je Block aus `warmth`
+        public var lowWarm: RGB
         public var direct: Bool
         /// Anteil der Höhen in der Mischung (1 = voll)
         public var highShare: Float
@@ -59,13 +61,16 @@ public enum BlendPaint {
         public var window: Int
         /// Band-Gewichte Tief / Mitte / Hoch auf die gespeicherten Hüllkurven (1 = wie analysiert)
         public var gain: RGB
-        public init(low: RGB, mid: RGB, high: RGB, highOpen: RGB? = nil, direct: Bool = false, highShare: Float = 1,
+        public init(low: RGB, mid: RGB, high: RGB, highOpen: RGB? = nil, lowWarm: RGB? = nil, direct: Bool = false, highShare: Float = 1,
                     saturation: Float = BlendPaint.saturation, window: Int = BlendPaint.window, gain: RGB = BlendPaint.gain) {
             self.low = low; self.mid = mid; self.high = high; self.direct = direct; self.highShare = highShare
             self.highOpen = highOpen ?? (high.r + (1 - high.r) * 0.5, high.g + (1 - high.g) * 0.5, high.b + (1 - high.b) * 0.5)
+            let o = BlendPaint.warmOrange
+            self.lowWarm = lowWarm ?? (low.r + (o.r - low.r) * 0.5, low.g + (o.g - low.g) * 0.5, low.b + (o.b - low.b) * 0.5)
             self.saturation = saturation; self.window = window; self.gain = gain
         }
-        public static let rgb = Palette(low: (1, 0, 0), mid: (0, 1, 0), high: (0, 0, 1), highOpen: BlendPaint.openBlue, direct: true)
+        public static let rgb = Palette(low: (1, 0, 0), mid: (0, 1, 0), high: (0, 0, 1), highOpen: BlendPaint.openBlue,
+                                        lowWarm: BlendPaint.warmOrange, direct: true)
     }
 
     /// Versuchswerte für Bilder: "sat,win,gl,gm,gh" (leere Felder = Standard)
@@ -94,26 +99,59 @@ public enum BlendPaint {
 
     /// hellblau gehaltener Höhen in der RGB-Palette (wie `SpectrumColors.open`)
     public static let openBlue: RGB = (0.62, 0.93, 1.0)
+    /// orange gehaltener Tiefen in der RGB-Palette (wie `SpectrumColors.sub`)
+    public static let warmOrange: RGB = (1.0, 0.5, 0.04)
+    /// Fenster des laufenden Minimums für `warmth` (Blöcke à 1/300 s → 300 ms): so lang bleibt ein Kick über dem Pegel
+    /// vor seinem Anschlag und damit rot; sein Ausklingen geht in orange über
+    public static let warmWindow = 90
+
+    /// Anteil gehaltener Tiefen je Block (0…255): laufendes Minimum der Tief-Spitze über die letzten `window` Blöcke,
+    /// geteilt durch die aktuelle Spitze. Ein Kick-Anschlag ragt über das Minimum (Anteil klein → rot), eine Bassline
+    /// und der Sub-Ausklang des Kicks liegen darauf (Anteil nahe 1 → orange). Setzt der Kick aus, fehlen die roten
+    /// Anschläge. Kick allein: 300 ms rot (ausklingend Richtung orange), dann orange bis zum nächsten Kick.
+    public static func warmth(blend: [UInt8], count: Int, window: Int = warmWindow) -> [UInt8] {
+        let n = min(count, blend.count / WaveBlend.stride)
+        var out = [UInt8](repeating: 0, count: n)
+        guard n > 0 else { return out }
+        let amp = WaveBlend.amplitude
+        @inline(__always) func low(_ i: Int) -> Float { amp[Int(blend[i * WaveBlend.stride + WaveBlend.peakSlot])] }
+        var dq: [Int] = []   // Indizes mit steigenden Werten (monotone Schlange), `head` = ältester gültiger
+        dq.reserveCapacity(n)
+        var head = 0
+        for i in 0..<n {
+            let v = low(i)
+            while dq.count > head, low(dq[dq.count - 1]) >= v { dq.removeLast() }
+            dq.append(i)
+            if dq[head] <= i - window { head += 1 }
+            let m = low(dq[head])
+            out[i] = v > 0 ? UInt8(min(255, (m / v * 255).rounded())) : 0
+        }
+        return out
+    }
 
     /// Pixelfarbe aus den Bandanteilen (Tief, Mitte, Hoch, Summe ≤ 1; kleiner = leiser, dunkler); `open` = Anteil der
-    /// Höhen, der gehalten ist (0 = kurze Hats, blau; 1 = offene Hats / Ride, hellblau)
-    @inline(__always) public static func paint(_ a: RGB, _ p: Palette, open: Float = 0) -> RGB {
+    /// Höhen, der gehalten ist (0 = kurze Hats, blau; 1 = offene Hats / Ride, hellblau), `warm` = Anteil der Tiefen, der
+    /// gehalten ist (0 = Kick-Anschlag, rot; 1 = Bassline / Sub-Ausklang, orange)
+    @inline(__always) public static func paint(_ a: RGB, _ p: Palette, open: Float = 0, warm: Float = 0) -> RGB {
         let a1 = a.r, a2 = a.g, a3 = a.b * p.highShare
         // direkt: Anteile gespreizt und auf das stärkste Band gezogen (klare Farben, Mischungen gelb / cyan / weiß statt
-        // trüb), Pegel nahe dem Grundpegel dunkler; gehaltene Höhen ziehen das Blau Richtung hellblau
+        // trüb), Pegel nahe dem Grundpegel dunkler; gehaltene Höhen ziehen das Blau Richtung hellblau, gehaltene Tiefen
+        // das Rot Richtung orange
         if p.direct {
             let b1 = powf(a1, p.saturation), b2 = powf(a2, p.saturation), b3 = powf(a3, p.saturation)
             let g = min(1, a1 + a2 + a3) / max(b1, b2, b3, 1e-6)
-            let hb = b3 * g * open
-            return (min(1, b1 * g + hb * p.highOpen.r), min(1, b2 * g + hb * p.highOpen.g), min(1, b3 * g))
+            let hb = b3 * g * open, lw = b1 * g * warm
+            return (min(1, b1 * g + hb * p.highOpen.r), min(1, b2 * g + hb * p.highOpen.g + lw * p.lowWarm.g), min(1, b3 * g + lw * p.lowWarm.b))
         }
         let k = 1 / (a1 + a2 + floor)
         let w1 = a1 * k, w2 = a2 * k, w3 = a3 * a3
         let hr = p.high.r + (p.highOpen.r - p.high.r) * open, hg = p.high.g + (p.highOpen.g - p.high.g) * open
         let hb = p.high.b + (p.highOpen.b - p.high.b) * open
-        return (min(1, p.low.r * w1 + p.mid.r * w2 + hr * w3),
-                min(1, p.low.g * w1 + p.mid.g * w2 + hg * w3),
-                min(1, p.low.b * w1 + p.mid.b * w2 + hb * w3))
+        let lr = p.low.r + (p.lowWarm.r - p.low.r) * warm, lg = p.low.g + (p.lowWarm.g - p.low.g) * warm
+        let lb = p.low.b + (p.lowWarm.b - p.low.b) * warm
+        return (min(1, lr * w1 + p.mid.r * w2 + hr * w3),
+                min(1, lg * w1 + p.mid.g * w2 + hg * w3),
+                min(1, lb * w1 + p.mid.b * w2 + hb * w3))
     }
 
     /// Farbe aus den summierten Hüllkurven (Tief, Mitte, Hoch) und der Deckungssumme der Zeile – ohne Stapel
@@ -150,8 +188,10 @@ public enum BlendPaint {
     /// gelb / grün wird. Deckung und damit Helligkeit kommen nur aus den Blöcken der Spalte selbst, die Farbe aus dem
     /// Fenster `Palette.window` um die Spalte.
     @inline(__always)
-    /// `open`: je Block 0…255 = Anteil gehaltener Höhen (aus der Höhen-Dauer des Spektrums), nil = alle kurz
+    /// `open`: je Block 0…255 = Anteil gehaltener Höhen (aus der Höhen-Dauer des Spektrums), nil = alle kurz;
+    /// `warm`: je Block 0…255 = Anteil gehaltener Tiefen (`warmth`), nil = alles Anschlag
     public static func column(peak: UnsafeBufferPointer<Float>, blend: UnsafeBufferPointer<UInt8>, open: UnsafeBufferPointer<UInt8>? = nil,
+                              warm: UnsafeBufferPointer<UInt8>? = nil,
                               from: Int, to: Int, half: Int, palette p: Palette, put: (Int, UInt8, UInt8, UInt8, UInt8) -> Void) {
         let n = min(peak.count, blend.count / WaveBlend.stride)
         let lo = max(0, min(n - 1, from)), hi = max(lo + 1, min(n, to))
@@ -165,7 +205,7 @@ public enum BlendPaint {
         let count = Float(hi - lo), inv = 1 / Float(half), rest = 1 - base
             for j in 0..<rows {
             let y = (Float(j) + 0.5) * inv
-            var c: Float = 0, wc: Float = 0, er: Float = 0, eg: Float = 0, eb: Float = 0, eo: Float = 0
+            var c: Float = 0, wc: Float = 0, er: Float = 0, eg: Float = 0, eb: Float = 0, eo: Float = 0, ew: Float = 0
             for k in wlo..<whi {
                 let pk = peak[k]
                 guard y < pk else { continue }
@@ -212,7 +252,9 @@ public enum BlendPaint {
                 // Blöcke (Summe nahe dem Grundpegel) dunkler
                 let gsum = gl + gm + gh, msum = el * p.gain.r + em * p.gain.g + eh * p.gain.b
                 let q = msum / (msum + floor), mi = base / (msum + 1e-9), si = rest / gsum
-                er += cov * q * (el * p.gain.r * mi + gl * si)
+                let lr = cov * q * (el * p.gain.r * mi + gl * si)
+                er += lr
+                if let warm, k < warm.count { ew += lr * Float(warm[k]) * (1 / 255) }
                 eg += cov * q * (em * p.gain.g * mi + gm * si)
                 let hb = cov * q * (eh * p.gain.b * mi + gh * si)
                 eb += hb
@@ -221,7 +263,7 @@ public enum BlendPaint {
             }
             guard c > 0 else { continue }
             let L = brightness(c / count)
-            let rgb = paint((er / wc, eg / wc, eb / wc), p, open: eb > 0 ? eo / eb : 0)
+            let rgb = paint((er / wc, eg / wc, eb / wc), p, open: eb > 0 ? eo / eb : 0, warm: er > 0 ? ew / er : 0)
             put(j, UInt8(rgb.r * L * 255), UInt8(rgb.g * L * 255), UInt8(rgb.b * L * 255), UInt8(L * 255))
         }
     }

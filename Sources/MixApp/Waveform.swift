@@ -17,6 +17,8 @@ final class RenderedWaveform: @unchecked Sendable {
         let blend: [UInt8]
         /// je Block Anteil gehaltener Höhen 0…255 (offene Hats hellblau), leer ohne Spektrum
         let open: [UInt8]
+        /// je Block Anteil gehaltener Tiefen 0…255 (Bassline / Sub-Ausklang orange, Kick-Anschlag rot)
+        let warm: [UInt8]
         let palette: BlendPaint.Palette
 
         /// Spalten `x0..<x0+width` (Pixel) in ein RGBA-Bild (vormultipliziert): Spalte x deckt die Zeit
@@ -27,17 +29,20 @@ final class RenderedWaveform: @unchecked Sendable {
             peak.withUnsafeBufferPointer { pk in
                 blend.withUnsafeBufferPointer { bl in
                   open.withUnsafeBufferPointer { op in
+                   warm.withUnsafeBufferPointer { wm in
                     for x in 0..<width {
                         let a = t0 + Double(x) * dt
                         let from = Int((a * bps).rounded(.down)), to = Int(((a + dt) * bps).rounded(.up))
                         guard to > 0, from < pk.count else { continue }
-                        BlendPaint.column(peak: pk, blend: bl, open: op.isEmpty ? nil : op, from: max(0, from), to: max(from + 1, to), half: half, palette: palette) {
+                        BlendPaint.column(peak: pk, blend: bl, open: op.isEmpty ? nil : op, warm: wm.isEmpty ? nil : wm,
+                                          from: max(0, from), to: max(from + 1, to), half: half, palette: palette) {
                             j, r, g, b, al in
                             let o = (half - 1 - j) * bytesPerRow + x * 4, u = (height - half + j) * bytesPerRow + x * 4
                             px[o] = r; px[o + 1] = g; px[o + 2] = b; px[o + 3] = al
                             px[u] = r; px[u + 1] = g; px[u + 2] = b; px[u + 3] = al
                         }
                     }
+                   }
                   }
                 }
             }
@@ -303,7 +308,10 @@ extension RenderedWaveform {
         // Anteil gehaltener Höhen je Block aus der Höhen-Dauer des Spektrums (geschlossene Hats blau, offene hellblau)
         let n = a.peak.count
         let open: [UInt8] = a.spectrum.count >= n ? (0..<n).map { UInt8((SpectrumColors.openness(a.spectrum.sustain($0)) * 255).rounded()) } : []
-        let raster = Raster(peak: Array(a.peak), blend: Array(a.blend.data.prefix(n * WaveBlend.stride)), open: open, palette: pal)
+        let blendData = Array(a.blend.data.prefix(n * WaveBlend.stride))
+        // gehaltene Tiefen (Bassline, Sub-Ausklang) orange, Kick-Anschläge rot: laufendes Minimum der Tief-Spitze
+        let warm = BlendPaint.warmth(blend: blendData, count: n)
+        let raster = Raster(peak: Array(a.peak), blend: blendData, open: open, warm: warm, palette: pal)
         let ow = 1600, oh = 60
         var overview: CGImage?
         if let ctx = CGContext(data: nil, width: ow, height: oh, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),

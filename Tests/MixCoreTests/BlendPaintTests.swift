@@ -94,3 +94,25 @@ import Testing
     #expect(closed.2 > 200 && closed.0 < 40 && closed.1 < 40)
     #expect(held.2 > 200 && held.0 > 100 && held.1 > 150)
 }
+
+/// gehaltene Tiefen: ein Kick-Anschlag ragt über das laufende Minimum (rot), eine Bassline liegt darauf (orange)
+@Test func heldLowsTurnOrange() {
+    // 100 Blöcke: Bassline bei 0,3, ab Block 50 Kick-Anschlag auf 0,8, der über 30 Blöcke abklingt
+    var blend = [UInt8](repeating: 0, count: WaveBlend.stride * 100)
+    for i in 0..<100 {
+        let o = i * WaveBlend.stride
+        let v: Float = i >= 50 && i < 80 ? 0.8 - Float(i - 50) / 30 * 0.5 : 0.3
+        blend[o + WaveBlend.rmsSlot] = WaveBlend.byte(amplitude: v * 0.5)
+        blend[o + WaveBlend.peakSlot] = WaveBlend.byte(amplitude: v)
+        blend[o + WaveBlend.peakSlot + 1] = WaveBlend.byte(amplitude: 0.01)
+        blend[o + WaveBlend.peakSlot + 2] = WaveBlend.byte(amplitude: 0.01)
+    }
+    let warm = BlendPaint.warmth(blend: blend, count: 100)
+    #expect(warm[45] == 255)            // Bassline: gehalten
+    #expect(warm[52] < 110)             // Anschlag: weit über dem Minimum (0,3 / 0,8)
+    #expect(warm[99] > 200)             // nach dem Fenster wieder gehalten
+    let body = BlendPaint.paint((0.95, 0.03, 0.02), .rgb, warm: 1)
+    let hit = BlendPaint.paint((0.95, 0.03, 0.02), .rgb, warm: 0)
+    #expect(body.r > 0.9 && body.g > 0.4 && body.g < 0.6)   // orange
+    #expect(hit.r > 0.9 && hit.g < 0.1)                     // rot
+}
