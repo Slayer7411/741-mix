@@ -16,7 +16,7 @@ struct DeckView: View {
         HStack(alignment: .top, spacing: 6.z) {
             VStack(alignment: .leading, spacing: 4.z) {
                 // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen), am Cover und an den Zusatzinfos
-                row("header", DeckHeader(d: d),
+                row("header", DeckHeader(d: d).modifier(DeckDropTarget(d: d)),
                     key: [mix.prefs.ui.showMixer ? 0 : mix.prefs.ui.fxUnitCount, mix.prefs.ui.showDeckCover ? 1 : 0, rows.info ? 1 : 0])
                 if rows.comment || rows.tags { row("meta", DeckMetaRow(d: d)).padding(.top, -2.z) }
                 WaveformView(d: d)
@@ -148,6 +148,52 @@ struct DeckTrackMenu: View {
     }
 }
 
+/// Track per Maus vom Deck ziehen: auf ein anderes Deck (laden, Lade-Schutz gilt, ⌥ erzwingt) oder auf PREPARATION
+enum TrackDrag {
+    static let prefix = "minos741-track:"
+
+    static func provider(_ key: String?) -> NSItemProvider {
+        NSItemProvider(object: (key.map { prefix + $0 } ?? "") as NSString)
+    }
+
+    /// Schlüssel aus den Providern (nur eigene Tracks), auf dem Hauptthread
+    @discardableResult
+    static func keys(_ providers: [NSItemProvider], _ done: @escaping @MainActor ([String]) -> Void) -> Bool {
+        let own = providers.filter { $0.canLoadObject(ofClass: NSString.self) }
+        guard !own.isEmpty else { return false }
+        var keys: [String] = []
+        let group = DispatchGroup()
+        for p in own {
+            group.enter()
+            p.loadObject(ofClass: NSString.self) { obj, _ in
+                if let s = obj as? String, s.hasPrefix(prefix) { keys.append(String(s.dropFirst(prefix.count))) }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { MainActor.assumeIsolated { if !keys.isEmpty { done(keys) } } }
+        return true
+    }
+}
+
+/// Deck als Ziel: Track aus einem anderen Deck (oder dem Browser) fallen lassen -> laden
+struct DeckDropTarget: ViewModifier {
+    @Environment(MixModel.self) private var mix
+    @Environment(LibraryStore.self) private var store
+    let d: Int
+    @State private var targeted = false
+
+    func body(content: Content) -> some View {
+        content
+            .onDrop(of: [.text], isTargeted: $targeted) { providers in
+                TrackDrag.keys(providers) { keys in
+                    guard let k = keys.first, let t = store.track(k) ?? mix.decks.compactMap({ $0.state.track }).first(where: { $0.key == k }) else { return }
+                    if !mix.load(t, deck: d) { StatusCenter.post(.warning, String(localized: "Deck \(deckLetters[d]) spielt · Laden gesperrt (⌥ erzwingt)"), key: "load.\(d)") }
+                }
+            }
+            .overlay { if targeted { Rectangle().stroke(Theme.state, lineWidth: 2) } }
+    }
+}
+
 struct DeckHeader: View {
     @Environment(MixModel.self) private var mix
     let d: Int
@@ -199,6 +245,7 @@ struct DeckHeader: View {
                 }
                 .contentShape(Rectangle())
                 .contextMenu { DeckTrackMenu(d: d) }
+                .onDrag { TrackDrag.provider(mix.deck(d).track?.key) }
                 Spacer(minLength: 4.z)
                 if m.showFX {
                     // ohne Mixer-Ansicht: FX-Zuweisung direkt am Deck

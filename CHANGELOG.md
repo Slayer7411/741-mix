@@ -6,6 +6,9 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* browser: played tracks dimmed (whole row, ⌘, -> BROWSER), `hide played tracks` for collection, playlists and folders (history and running tracks keep them; also in the right-click menu of the collection), `reset played on start`
+* deck: drag the loaded track by its title to another deck (load, load lock applies, ⌥ forces) or onto PREPARATION in the browser tree (appended)
+* `MIX741_DEBUG_TABLE=1`: logs browser table reloads / redraws with the reason (flicker diagnosis)
 * controller: shift + flux = tap on the beats (from 4 taps the grid bpm, like the factory mapping), ⌘, -> CONTROLLER -> `Shift + Flux`: tap or flux mode
 * deck: right click on title / artist -> `Edit track …`, the browser's edit window for the loaded track (PREV / NEXT through the active list when the track is in it)
 * browser: double click on a column divider sizes the column to its longest text (candidates by character count, the longest 8 measured, header title fits too, tags measured as chips, key with the harmony slot)
@@ -197,6 +200,9 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
 
 ### fixed
+* browser list flickering: with legacy scroll bars (mouse connected, `show scroll bars: always`) a horizontal bar appearing for columns slightly wider than the list took height, the columns were redistributed, the bar vanished, and so on, until a column was resized by hand. scroll bars of the list are overlays now, never part of the layout
+* settings window with the main window in full screen (also on another display): opened on the other display's desktop. now joins the full-screen space on the main window's screen and comes to the front
+* link / metronome half a bar off: in AUTO mode the master clock followed the master deck at beat level only (phase error modulo 1 beat), so its bar one could sit 1-3 beats off the deck's bar one, and link hands that bar (quantum 4) to the peers. now aligned within the bar: beat phase at once, a bar offset once it stays for 0.5 s (a loop shorter than a bar does not jump the clock)
 * controller: touch strip right half (deck B/D) never reacted and the left half only covered 44 %: the strip reports 1-0x1C0 for the left half, 0x240-0x400 for the right, a dead zone between, not 0-2047 split at 1024
 * file service: a killed helper was often never reaped (the exit event comes before the process can be collected, the non-blocking wait found nothing and no second event came) -> defunct processes and false zombie counts. after the exit event the wait blocks now: leak test red in 4 of 6 runs alone -> 6 / 6 green, 0 zombies
 * tests: load limits of the hanging file service / hung decoder measured from the warmed-up helper, upper bounds + the scheduling lag measured during the test (`LagProbe`), lower bounds unchanged. the hung decoder delivers right after the abort instead of after a fixed 2 s

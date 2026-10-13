@@ -783,6 +783,12 @@
 "BROWSER" = "BROWSER";
 "Harmonie zum Master" = "Harmony to the master";
 "Key-Spalte färben" = "Color the key column";
+"Gespielte Tracks" = "Played tracks";
+"Gespielte Tracks dimmen" = "Dim played tracks";
+"Gespielte Tracks ausblenden" = "Hide played tracks";
+"Gespielt beim Start zurücksetzen" = "Reset played on start";
+"gespielt = in der history (ab der schwelle unter decks). ausblenden gilt für collection, playlists und ordner; history und running tracks zeigen sie weiter. zurücksetzen jederzeit: rechtsklick auf track collection -> reset played state" = "played = in the history (from the threshold under decks). hiding applies to collection, playlists and folders; history and running tracks still show them. reset any time: right click track collection -> reset played state";
+"Deck %@ spielt · Laden gesperrt (⌥ erzwingt)" = "Deck %@ playing · load locked (⌥ forces)";
 "bezug: hörbarer key des master-decks (mit key-shift, ohne keylock mit dem tempo), spielt kein master: fokus-deck. ◆ lila = gleich · ▲▼ hell = ±1 auf dem rad · ◇ hell = relativ dur/moll · grau = ±2 (energie) · gedimmt = unpassend. spalte match: pitch in prozent, den der track bis zum master-tempo braucht" = "reference: audible key of the master deck (with key shift, without keylock with the tempo), no master playing: focused deck. ◆ purple = same · ▲▼ light = ±1 on the wheel · ◇ light = relative major/minor · grey = ±2 (energy) · dimmed = clash. column match: pitch in percent the track needs to reach the master tempo";
 "◆ PASST (Matching)" = "◆ MATCH (matching)";
 "±1 auf dem Rad (▲▼)" = "±1 on the wheel (▲▼)";

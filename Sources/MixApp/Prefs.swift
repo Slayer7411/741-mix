@@ -224,6 +224,12 @@ struct UIPrefs: Codable, Equatable {
     var harmonyColors = true
     /// Browser-Filter „passt zum Master“ (◆ PASST, ⌘, -> BROWSER)
     var match = MatchRule()
+    /// gespielte Tracks (History dieser Sitzung bzw. seit dem letzten Reset) im Browser dimmen
+    var dimPlayedTracks = true
+    /// gespielte Tracks aus Collection, Playlists und Ordnern ausblenden (History und RUNNING zeigen sie weiter)
+    var hidePlayedTracks = false
+    /// Gespielt-Markierungen beim Start der App zurücksetzen
+    var resetPlayedOnStart = false
 
     /// kompakte Decks: ohne Pitch-Fader, Hotcues und Grid-Werkzeuge (mehr Platz für Wellenform und Beatgrid)
     var compactDecks: Bool {

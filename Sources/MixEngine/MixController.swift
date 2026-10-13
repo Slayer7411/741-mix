@@ -1467,6 +1467,8 @@ public final class MixController: @unchecked Sendable {
     /// Link – MINOS gibt Tempo und Takt vor
     public let link = LinkSession()
     private var linkTicks = 0
+    /// Takt-Versatz der Clock zum Master-Deck: Zähler gleicher Werte (Ticks à 5 ms) und letzter Wert
+    private var clockBarTicks = 0, clockBarLast = 0.0
 
     // MARK: Bar-Zähler (läuft ab dem ersten Play durch, bleibt beim Master-Wechsel auf dem Beat)
 
@@ -2043,8 +2045,18 @@ public final class MixController: @unchecked Sendable {
             if !state.clockMaster, let m = master, let g = state.decks[m].grid, state.decks[m].playing {
                 let bpm = state.decks[m].bpm
                 if abs(bpm - state.clockBPM) > 0.005 { state.clockBPM = bpm; engine.setClockBPM(bpm) }
+                // Beat-Phase sofort; Takt-Lage (Takt-Eins der Clock = Takt-Eins des Decks, sonst läuft Link um 1–3 Beats
+                // versetzt) erst, wenn der Versatz 0,5 s gleich bleibt – ein Loop kürzer als ein Takt darf die Clock
+                // nicht bei jedem Durchlauf springen lassen
                 let want = g.beatPosition(at: position(m))
-                if abs(BeatGrid.phaseError(own: engine.clockBeat, master: want)) > 0.02 { jumpClock(to: want) }
+                let bar = BeatGrid.barPhaseError(own: engine.clockBeat, master: want)
+                if abs(BeatGrid.phaseError(own: engine.clockBeat, master: want)) > 0.02 {
+                    jumpClock(to: want); clockBarTicks = 0
+                } else if abs(bar) > 0.02, abs(bar - clockBarLast) < 0.05 {
+                    clockBarTicks += 1
+                    if clockBarTicks >= 100 { jumpClock(to: want); clockBarTicks = 0 }
+                } else { clockBarTicks = 0 }
+                clockBarLast = bar
             }
             // Link: Tempo und Beat der Clock vorgeben, Teilnehmer zählen
             if state.linkEnabled {

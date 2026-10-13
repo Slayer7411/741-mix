@@ -16,6 +16,8 @@ final class HistoryStore {
     private(set) var live: [HistoryEntry] = []
     /// schon gespielte Tracks (Haken im Browser), bis „Reset Played State“
     private(set) var played: Set<String> = []
+    /// zählt bei jeder Änderung der Gespielt-Markierungen hoch (Listen-Schlüssel beim Ausblenden)
+    @ObservationIgnored private(set) var playedRevision = 0
     static let playedURL = baseDir.appendingPathComponent("played.json")
     let sessionStart = Date()
     private(set) var archive: [HistorySession] = []
@@ -36,6 +38,7 @@ final class HistoryStore {
         try? FileManager.default.createDirectory(at: Self.prepDir, withIntermediateDirectories: true)
         if !Session.isSelfTest, let d = try? Data(contentsOf: Self.playedURL), let k = try? JSONDecoder().decode([String].self, from: d) {
             played = Set(k)
+            if AppPrefs.load().ui.resetPlayedOnStart, !played.isEmpty { played = []; savePlayed() }   // ⌘, -> BROWSER
         }
         let day = HistorySession.dayString(sessionStart)
         let used = ((try? FileManager.default.contentsOfDirectory(atPath: Self.historyDir.path)) ?? []).filter { $0.hasPrefix("history_\(day)-") }.count
@@ -67,6 +70,7 @@ final class HistoryStore {
 
     func resetPlayed() {
         played = []
+        playedRevision += 1
         savePlayed()
         StatusCenter.post(.ok, String(localized: "Gespielt-Markierungen zurückgesetzt"), key: "played")
     }
@@ -77,7 +81,7 @@ final class HistoryStore {
     }
 
     func record(deck: Int, track t: Track, start: Date) {
-        if played.insert(t.key).inserted { savePlayed() }
+        if played.insert(t.key).inserted { playedRevision += 1; savePlayed() }
         live.append(HistoryEntry(key: t.key, title: t.title, artist: t.artist, bpm: t.bpm, keyText: t.openKey,
                                  deck: deck, start: start, duration: mix?.core.playedSeconds(deck) ?? 0))
         save()

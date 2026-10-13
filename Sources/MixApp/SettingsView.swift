@@ -241,7 +241,17 @@ private struct ResizableWindow: NSViewRepresentable {
     final class Probe: NSView {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            window?.styleMask.insert(.resizable)
+            guard let w = window else { return }
+            w.styleMask.insert(.resizable)
+            // Hauptfenster im Vollbild (auch auf einem anderen Bildschirm): Einstellungen in dessen Space und auf
+            // dessen Bildschirm, nicht auf dem Schreibtisch nebenan
+            w.collectionBehavior.insert([.fullScreenAuxiliary, .moveToActiveSpace])
+            if let main = NSApp.windows.first(where: { $0.styleMask.contains(.fullScreen) || $0.isMainWindow }),
+               main !== w, let screen = main.screen, w.screen !== screen {
+                let f = screen.visibleFrame, size = w.frame.size
+                w.setFrameOrigin(NSPoint(x: f.midX - size.width / 2, y: f.midY - size.height / 2))
+            }
+            DispatchQueue.main.async { w.makeKeyAndOrderFront(nil) }
         }
     }
 }
@@ -734,6 +744,12 @@ struct BrowserSettings: View {
                 Text("""
                 bezug: hörbarer key des master-decks (mit key-shift, ohne keylock mit dem tempo), spielt kein master:                 fokus-deck. ◆ lila = gleich · ▲▼ hell = ±1 auf dem rad · ◇ hell = relativ dur/moll · grau = ±2 (energie) ·                 gedimmt = unpassend. spalte match: pitch in prozent, den der track bis zum master-tempo braucht
                 """).settingsHint()
+            }
+            Section("Gespielte Tracks") {
+                Toggle("Gespielte Tracks dimmen", isOn: $mix.prefs.ui.dimPlayedTracks)
+                Toggle("Gespielte Tracks ausblenden", isOn: $mix.prefs.ui.hidePlayedTracks)
+                Toggle("Gespielt beim Start zurücksetzen", isOn: $mix.prefs.ui.resetPlayedOnStart)
+                Text("gespielt = in der history (ab der schwelle unter decks). ausblenden gilt für collection, playlists und ordner; history und running tracks zeigen sie weiter. zurücksetzen jederzeit: rechtsklick auf track collection -> reset played state").settingsHint()
             }
             Section("◆ PASST (Matching)") {
                 Toggle("±1 auf dem Rad (▲▼)", isOn: $mix.prefs.ui.match.adjacent)

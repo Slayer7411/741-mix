@@ -67,6 +67,11 @@ let sampleNML = """
     #expect(g.beatFloor(2.99) == 2.5)
     #expect(g.barBeat(at: 2.5) == (2, 1))
     #expect(abs(BeatGrid.phaseError(own: 3.9, master: 7.1) - (-0.2)) < 1e-9)
+    // Takt-Phase: 2 Beats daneben ist ein halber Takt, nicht 0
+    #expect(abs(BeatGrid.phaseError(own: 6, master: 4)) < 1e-9)
+    #expect(abs(abs(BeatGrid.barPhaseError(own: 6, master: 4)) - 2) < 1e-9)   // genau ein halber Takt: ±2
+    #expect(abs(BeatGrid.barPhaseError(own: 4.1, master: 8) - 0.1) < 1e-9)
+    #expect(abs(BeatGrid.barPhaseError(own: 7.9, master: 4) - (-0.1)) < 1e-9)
     #expect(BeatSizes.label(0.25) == "1/4")
     #expect(BeatSizes.label(16) == "16")
 }

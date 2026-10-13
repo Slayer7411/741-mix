@@ -463,6 +463,12 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         sv.hasVerticalScroller = true
         sv.hasHorizontalScroller = true
         sv.autohidesScrollers = true
+        // Rollbalken als Overlay, nie im Layout: ein Balken, der Platz braucht, lässt die Spalten (automatische Breite)
+        // neu verteilen, danach verschwindet er wieder – die Liste flimmert, bis jemand eine Spalte von Hand ändert
+        sv.scrollerStyle = .overlay
+        NotificationCenter.default.addObserver(forName: NSScroller.preferredScrollerStyleDidChangeNotification, object: nil, queue: .main) { [weak sv] _ in
+            MainActor.assumeIsolated { sv?.scrollerStyle = .overlay }
+        }
         sv.drawsBackground = true
         sv.backgroundColor = TableStyle.void
         sv.borderType = .noBorder
@@ -514,7 +520,16 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     }
 
     func tableViewColumnDidMove(_ n: Notification) { redrawVisible(); scheduleSave() }
-    func tableViewColumnDidResize(_ n: Notification) { redrawVisible(); if !applying { scheduleSave() } }
+    func tableViewColumnDidResize(_ n: Notification) { Self.trace("columnDidResize"); redrawVisible(); if !applying { scheduleSave() } }
+
+    /// MIX741_DEBUG_TABLE=1: Neuaufbau / Neuzeichnen der Tabelle protokollieren (Flimmer-Suche)
+    static let tracing = ProcessInfo.processInfo.environment["MIX741_DEBUG_TABLE"] == "1"
+    nonisolated(unsafe) static var traceCounts: [String: Int] = [:]
+    static func trace(_ what: String) {
+        guard tracing else { return }
+        traceCounts[what, default: 0] += 1
+        if traceCounts[what]! <= 5 || traceCounts[what]! % 100 == 0 { print("[table] \(what) #\(traceCounts[what]!)") }
+    }
 
     /// Spalte auf den längsten Text der Liste (Doppelklick auf den Trenner): Kandidaten nach Zeichenzahl (Plex Mono
     /// ist dicktengleich), die längsten 8 genau gemessen; Titel der Kopfzeile muss auch passen
@@ -620,6 +635,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         if styleChanged || old?.filter != l.filter { chipCache = [:] }
         let same = rows.count == newRows.count && rows.withUnsafeBufferPointer { a in newRows.withUnsafeBufferPointer { a.baseAddress == $0.baseAddress } }
         if !same || styleChanged {
+            Self.trace(styleChanged ? "reload(style: ui \(old?.ui != l.ui) zoom \(old?.zoom != l.zoom))" : "reload(rows)")
             BrowserPaneModel.dropLater(rows)
             rows = newRows
             applying = true
@@ -633,7 +649,10 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             // nur der Tag-Filter anders und die gefilterte Liste unterwegs: mit ihr neu zeichnen, nicht zweimal
             var o = old
             o?.filter = l.filter
-            if !(model.listPending && o == l) { redrawVisible() }
+            if !(model.listPending && o == l) {
+                Self.trace("redraw(look: tick \(old?.tick != l.tick) cloud \(old?.cloud != l.cloud) played \(old?.played != l.played) preview \(old?.preview != l.preview) filter \(old?.filter != l.filter) inline \(old?.inline != l.inline))")
+                redrawVisible()
+            }
         }
         generation = gen
         if model.selection != shownSelection { applySelection(model.selection) }
@@ -866,6 +885,8 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         let editing = model?.inline.flatMap { $0.key == t.key ? $0.field : nil }
         var tips: [NSRect] = []
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+        // gespielt: ganze Zeile gedimmt (⌘, -> BROWSER), nicht in der History-Tabelle (eigene Ansicht)
+        let dimmed = look?.ui.dimPlayedTracks == true && history?.played.contains(t.key) == true
         for (i, col) in tv.tableColumns.enumerated() where !col.isHidden {
             var f = tv.frameOfCell(atColumn: i, row: r)
             f.origin.x -= origin.x
@@ -876,6 +897,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             if let editing, InlineEditController.columnFields[id] == editing { continue }
             ctx.saveGState()
             ctx.clip(to: f)
+            if dimmed { ctx.setAlpha(0.42) }
             drawCell(d, t, row: r, in: f, ctx)
             ctx.restoreGState()
         }

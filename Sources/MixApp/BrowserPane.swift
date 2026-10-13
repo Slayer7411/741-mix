@@ -100,10 +100,18 @@ final class BrowserPaneModel: Identifiable {
     /// zuletzt angezeigte Liste (Tabelle, Browse-Encoder) – nie neu sortiert
     var shown: [Track] { cachedRows }
 
-    private func keys(_ store: LibraryStore, _ separators: String, _ h: HarmonyInput?) -> (base: [AnyHashable], all: [AnyHashable]) {
+    /// gespielte Tracks ausblenden (⌘, -> BROWSER): nicht in History und RUNNING, dort stehen sie gerade deshalb
+    private func excluded(_ history: HistoryStore?, _ hidePlayed: Bool) -> Set<String>? {
+        guard hidePlayed, !source.isHistory, source != .running, let history, !history.played.isEmpty else { return nil }
+        return history.played
+    }
+
+    private func keys(_ store: LibraryStore, _ separators: String, _ h: HarmonyInput?, excl: Set<String>? = nil,
+                      history: HistoryStore? = nil) -> (base: [AnyHashable], all: [AnyHashable]) {
         var base: [AnyHashable] = [source, "\(sortOrder)", store.revision, store.sourceRevision(source, subfolders: subfolders), subfolders]
         if harmonySorted, let h { base += [h.ref, h.rule.halfDouble] as [AnyHashable] }
-        var all = base + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0] as [AnyHashable]
+        var all = base + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0,
+                          excl != nil, excl != nil ? history?.playedRevision ?? 0 : 0] as [AnyHashable]
         if matching, let h { all += [h.ref, h.rule] as [AnyHashable] }
         return (base, all)
     }
@@ -113,9 +121,10 @@ final class BrowserPaneModel: Identifiable {
 
     /// Gefilterte + sortierte Liste, sofort (Selbsttest, Messung). Die Quelle wird einmal sortiert (14k Tracks ≈ 80 ms,
     /// TrackSort) und bei Suche, Tags und Rollen nur noch gefiltert.
-    func rows(from store: LibraryStore, history: HistoryStore?, separators: String) -> [Track] {
+    func rows(from store: LibraryStore, history: HistoryStore?, separators: String, hidePlayed: Bool = false) -> [Track] {
         let h = harmony()
-        let (baseKey, key) = keys(store, separators, h)
+        let excl = excluded(history, hidePlayed)
+        let (baseKey, key) = keys(store, separators, h, excl: excl, history: history)
         if baseKey != sortedKey {
             // nach dem Laden liegt die Liste meist schon sortiert vor (im Hintergrund, siehe LibraryStore.load)
             Self.dropLater(sortedBase)
@@ -123,7 +132,7 @@ final class BrowserPaneModel: Identifiable {
             sortedKey = baseKey
         }
         if key == cacheKey { return cachedRows }
-        let list = Self.filtered(sortedBase, criteria(separators, h), index: Self.tagIndex)
+        let list = Self.filtered(sortedBase, criteria(separators, h, excl), index: Self.tagIndex)
         apply(localOnly ? Self.local(list) : list, key: key)
         return cachedRows
     }
@@ -131,9 +140,10 @@ final class BrowserPaneModel: Identifiable {
     /// Liste für die Tabelle: Sortieren und Filtern im Hintergrund (Collection sortieren ~80 ms, Rollen filtern
     /// ~18 ms), bis dahin bleibt die angezeigte Liste stehen. Auch kleine Listen: die neue Liste kommt so in einem
     /// eigenen Durchlauf an, nicht zusammen mit Kopf, Baum und Favoriten (je Durchlauf < 1 Bild). Nur die erste sofort
-    func list(from store: LibraryStore, history: HistoryStore?, separators: String) -> [Track] {
+    func list(from store: LibraryStore, history: HistoryStore?, separators: String, hidePlayed: Bool = false) -> [Track] {
         let h = harmony()
-        let (baseKey, key) = keys(store, separators, h)
+        let excl = excluded(history, hidePlayed)
+        let (baseKey, key) = keys(store, separators, h, excl: excl, history: history)
         if key == cacheKey || key == jobKey { return cachedRows }
         if baseKey != sortedKey, let pre = presorted(store) {
             Self.dropLater(sortedBase)
@@ -146,7 +156,7 @@ final class BrowserPaneModel: Identifiable {
         jobSerial += 1
         jobKey = key
         let serial = jobSerial
-        let job = ListJob(base: base, order: sorted ? nil : sortOrder, criteria: criteria(separators, h), rank: Self.rank(h))
+        let job = ListJob(base: base, order: sorted ? nil : sortOrder, criteria: criteria(separators, h, excl), rank: Self.rank(h))
         Task.detached(priority: .userInitiated) {
             let done = job.run()
             await MainActor.run { self.deliver(done, serial: serial, baseKey: baseKey, key: key) }
@@ -215,12 +225,14 @@ final class BrowserPaneModel: Identifiable {
         var words: [[UInt8]] = []
         var separators = ""
         var match: (ref: HarmonyRef, rule: MatchRule)?
-        var isEmpty: Bool { roles.isEmpty && tags.isEmpty && words.isEmpty && match == nil }
+        /// gespielte Tracks (Schlüssel), die nicht in der Liste stehen sollen
+        var exclude: Set<String>?
+        var isEmpty: Bool { roles.isEmpty && tags.isEmpty && words.isEmpty && match == nil && exclude == nil }
     }
 
-    private func criteria(_ separators: String, _ h: HarmonyInput?) -> Criteria {
+    private func criteria(_ separators: String, _ h: HarmonyInput?, _ excl: Set<String>? = nil) -> Criteria {
         Criteria(roles: roles, tags: tagFilter, words: search.split(separator: " ").map { Track.fold(String($0)) }, separators: separators,
-                 match: matching ? h.flatMap { h in h.ref.map { ($0, h.rule) } } : nil)
+                 match: matching ? h.flatMap { h in h.ref.map { ($0, h.rule) } } : nil, exclude: excl)
     }
 
     /// Sortierwert „Harmonie“ (nur mit Bezug)
@@ -261,6 +273,7 @@ final class BrowserPaneModel: Identifiable {
         }
         if !c.words.isEmpty { list = list.filter { $0.matches(words: c.words) } }
         if let m = c.match { list = list.filter { m.rule.matches($0, m.ref) } }
+        if let x = c.exclude { list = list.filter { !x.contains($0.key) } }
         return list
     }
 
@@ -339,7 +352,7 @@ struct RowCount: View {
     var body: some View {
         let _ = model.listRevision
         let n = model.source.isHistory ? BrowserPane.historyEntries(model.source, history).count
-            : model.list(from: store, history: history, separators: decks.prefs.ui.tagSeparators).count
+            : model.list(from: store, history: history, separators: decks.prefs.ui.tagSeparators, hidePlayed: decks.prefs.ui.hidePlayedTracks).count
         Text("\(n)").font(Theme.mono(11.z)).foregroundStyle(Theme.muted).fixedSize()
     }
 }
@@ -549,6 +562,7 @@ struct SourceTree: View {
 struct SourceTreeFixed: View, SourceMenus {
     @Environment(LibraryStore.self) var store
     @Environment(HistoryStore.self) var history
+    @Environment(MixModel.self) private var decks
     @Binding var editing: CustomSmartlist?
 
     var body: some View {
@@ -558,6 +572,7 @@ struct SourceTreeFixed: View, SourceMenus {
                 exportMenu(.collection)
                 Button("Collection prüfen …") { ConsistencyWindow.show(store: store) }
                 Button("Reset Played State") { history.resetPlayed() }
+                Toggle("Gespielte Tracks ausblenden", isOn: Binding(get: { decks.prefs.ui.hidePlayedTracks }, set: { decks.prefs.ui.hidePlayedTracks = $0 }))
                 OverviewMenuButton { store.tracks }
                 AnalysisMenuButtons { store.tracks }
                 KeyProfileMenuButtons { store.tracks }
@@ -567,6 +582,11 @@ struct SourceTreeFixed: View, SourceMenus {
             .favoriteDrag { BrowserFavorite.source(.running, store: store) }
         row("▤", "PREPARATION").tag(BrowserSource.preparation)
             .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
+            .onDrop(of: [.text], isTargeted: nil) { providers in
+                TrackDrag.keys(providers) { keys in
+                    for k in keys where store.track(k) != nil && !store.preparation.contains(k) { store.preparation.append(k) }
+                }
+            }
             .contextMenu {
                 exportMenu(.preparation)
                 OverviewMenuButton { store.tracks(for: .preparation) }
@@ -782,7 +802,7 @@ struct TrackTable: View {
     var body: some View {
         let ui = decks.prefs.ui
         // stößt die Liste an (Hintergrund); die Tabelle zeigt immer `model.shown`, neue Listen kommen über `onList`
-        let _ = rows == nil ? model.list(from: store, history: history, separators: ui.tagSeparators) : []
+        let _ = rows == nil ? model.list(from: store, history: history, separators: ui.tagSeparators, hidePlayed: ui.hidePlayedTracks) : []
         // Vorschau-Bilder in Zellen hängen am Übersichten-Zähler, das Band (ganze Zeile) zeichnet PreviewRowLayer
         let tick = ui.previewMode == .column || ui.previewMode == .behindTitle ? Overviews.shared.tick : 0
         let look = TrackTableController.Look(ui: ui, zoom: UIZoom.shared.factor, filter: model.tagFilter, inline: model.inline,

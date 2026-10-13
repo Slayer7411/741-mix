@@ -45,6 +45,14 @@ public struct BeatGrid: Hashable, Sendable {
         return d
     }
 
+    /// Phasendifferenz innerhalb eines Takts (−2 … 2 Beats bei 4/4): für die Master-Clock, deren Takt (Metronom-Eins,
+    /// Link-Quantum) mit dem Takt des Master-Decks zusammenfallen muss, nicht nur der Beat
+    public static func barPhaseError(own: Double, master: Double, beatsPerBar q: Double = beatsPerBar) -> Double {
+        var d = own - master
+        d -= (d / q).rounded() * q
+        return d
+    }
+
     /// Beats in einem Takt (4/4)
     public static let beatsPerBar = 4.0
 
