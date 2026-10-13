@@ -32,7 +32,8 @@ default layout:
 my custom mappings:
 * cue held = flux reverse (shift + cue = normal cue)
 * flux tap = pad layer switch: pads 1-4 play hotcue 5-8 (set / jump, shift = delete), pads show the colors of hotcues 5-8 and the flux led stays lit; tap again = back to hotcue 1-4. per side, the layer stays when the pads are used
-* shift + flux = flux mode on / off (flux led half bright while only flux mode is on)
+* shift + flux = tap: tap on the beats, from 4 taps the grid bpm from the mean interval (setting: flux mode on / off instead, flux led half bright while only flux mode is on)
+* shift + sync = this deck becomes the tempo master
 * flux held + pad 1-4 = hotcue 5-8 only while held (setting: beatjump -1 / +1 on pads 3 / 4 instead), a tap with a pad in between does not switch the layer
 * setting "flux button" -> flux mode: old layout, flux tap = flux mode on / off, held = layer as above
 * sync held + hotcue 3 / 4 = exactly one beat (one kick, 1/4 bar) back / forward, also with flux held or the pad layer on. inside a loop the loop stays and the position wraps (sync toggles on release if no pad was hit). `MIX741_DEBUG=1` logs each jump: `[jump] deck A: from → to s (reason, ±beats)`
@@ -54,7 +55,7 @@ input report `0x01` (offsets include the report id):
 | 0x15 | right deck: 0x80-0x10 hotcue 1-4, 0x08 flux, 0x04 sync, 0x02 cue, 0x01 play |
 | 0x16 | left deck: same |
 | 0x17 | 0x02 browse push, 0x01 left loop push |
-| 0x1B-0x1C | touch strip position (11 bit, 0 = no touch) |
+| 0x1B-0x1C | touch strip, first finger (11 bit): 0 = no touch, 1-0x1C0 left half (deck A/C), 0x1C0-0x240 dead zone in the middle, 0x240-0x400 right half (deck B/D); second finger at 0x1D-0x1E (unused) |
 
 output report `0x80` (leds, 0-127 brightness):
 

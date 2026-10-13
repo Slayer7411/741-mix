@@ -270,7 +270,11 @@
 "Flux-Taste" = "Flux button";
 "Pad-Ebene umschalten (Hotcues 5–8)" = "Switch pad layer (hotcues 5–8)";
 "Flux-Modus" = "Flux mode";
-"antippen -> pads 1–4 spielen hotcues 5–8, flux-led an; nochmal -> zurück. shift + flux = flux-modus." = "tap -> pads 1–4 play hotcues 5–8, flux led on; tap again -> back. shift + flux = flux mode.";
+"Shift + Flux" = "Shift + flux";
+"Tap (Grid einklopfen)" = "Tap (tap in the grid)";
+"auf die beats tippen: ab 4 taps bpm des grids aus dem mittleren abstand, pause > 2 s beginnt neu; ohne grid entsteht eines mit beat 1 am letzten tap." = "tap on the beats: from 4 taps the grid bpm from the mean interval, a pause > 2 s starts over; without a grid one is created with beat 1 at the last tap.";
+"Track bearbeiten …" = "Edit track …";
+"antippen -> pads 1–4 spielen hotcues 5–8, flux-led an; nochmal -> zurück." = "tap -> pads 1–4 play hotcues 5–8, flux led on; tap again -> back. shift + flux = flux mode.";
 "Loop-Snap auf Loop-Cues" = "Loop snap to loop cues";
 "Fenster (Beats): %lld" = "Window (beats): %lld";
 "Loop-Snap auf 4-Bar-Raster" = "Loop snap to 4-bar grid";

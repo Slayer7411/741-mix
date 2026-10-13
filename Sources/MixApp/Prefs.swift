@@ -31,6 +31,12 @@ enum ControllerFluxButton: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Shift + Flux am Controller: Grid einklopfen (wie die Werks-Belegung) oder Flux-Modus
+enum ControllerShiftFlux: String, CaseIterable, Codable, Identifiable {
+    case tap = "Tap (Grid einklopfen)", fluxMode = "Flux-Modus"
+    var id: String { rawValue }
+}
+
 /// Flux gehalten + Pads: zweite Hotcue-Reihe oder Beatjump auf Pad 3/4
 enum ControllerFluxPads: String, CaseIterable, Codable, Identifiable {
     case hotcues = "Hotcues 5–8", beatjump = "Beatjump (Pads 3/4)"
@@ -71,6 +77,8 @@ enum ControllerShiftLoad: String, CaseIterable, Codable, Identifiable {
 struct ControllerPrefs: Codable, Equatable {
     var cueAction = ControllerCueAction.fluxReverse
     var fluxButton = ControllerFluxButton.padLayer
+    /// Shift + Flux: Tap auf die Beats (ab 4 Taps BPM des Grids) oder Flux-Modus
+    var shiftFlux = ControllerShiftFlux.tap
     /// nur im Flux-Modus: Flux antippen schaltet Flux-Modus (gehalten = Pad-Ebene)
     var fluxTapToggles = true
     var fluxBeatjumpBeats = 1.0

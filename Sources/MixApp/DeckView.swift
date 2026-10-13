@@ -129,6 +129,25 @@ struct DeckHost: NSViewRepresentable {
 }
 
 /// Kopf: Buchstabe, Titel/Artist, FX-Zuweisung, Zeit, BPM, Code, Key, Phase
+/// Rechtsklick auf Titel / Artist im Deck: Bearbeiten-Fenster des geladenen Tracks (wie ⌘E im Browser, PREV / NEXT durch die
+/// Liste des aktiven Browser-Bereichs, falls der Track dort steht)
+struct DeckTrackMenu: View {
+    @Environment(MixModel.self) private var mix
+    @Environment(LibraryStore.self) private var store
+    @Environment(BrowserState.self) private var browserState
+    let d: Int
+
+    var body: some View {
+        if let t = mix.deck(d).track {
+            Button("Track bearbeiten …") {
+                let pane = browserState.activePane
+                let rows = pane.shown.contains(where: { $0.key == t.key }) ? pane.shown : [store.track(t.key) ?? t]
+                pane.openEditor([t.key], rows: rows, store: store)
+            }
+        }
+    }
+}
+
 struct DeckHeader: View {
     @Environment(MixModel.self) private var mix
     let d: Int
@@ -178,6 +197,8 @@ struct DeckHeader: View {
                     Text(m.subtitle)
                         .font(Theme.mono(11.z)).foregroundStyle(m.isError ? Color.red : Color.secondary).lineLimit(1)
                 }
+                .contentShape(Rectangle())
+                .contextMenu { DeckTrackMenu(d: d) }
                 Spacer(minLength: 4.z)
                 if m.showFX {
                     // ohne Mixer-Ansicht: FX-Zuweisung direkt am Deck

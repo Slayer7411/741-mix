@@ -232,10 +232,16 @@ final class ControllerManager: @unchecked Sendable {
                 unit.syncHeld[s] = false
             }
         case let .flux(s, down):
-            // Pad-Ebene: antippen = Hotcues 5–8 an/aus (bleibt), Shift + Flux = Flux-Modus;
-            // Flux-Modus: antippen = Flux-Modus. In beiden gehalten = Pad-Ebene nur solange gedrückt
+            // Pad-Ebene: antippen = Hotcues 5–8 an/aus (bleibt); Flux-Modus: antippen = Flux-Modus. In beiden gehalten =
+            // Pad-Ebene nur solange gedrückt. Shift + Flux nach Einstellung (Tap oder Flux-Modus)
             if down {
-                if p.fluxButton == .padLayer, unit.shift { core.toggleFlux(deck(s)); return }
+                if unit.shift {   // Shift + Flux: Tap (Grid einklopfen, wie die Werks-Belegung) oder Flux-Modus
+                    switch p.shiftFlux {
+                    case .tap: core.tapGrid(deck(s))
+                    case .fluxMode: core.toggleFlux(deck(s))
+                    }
+                    return
+                }
                 unit.fluxHeld[s] = true
                 unit.fluxComboUsed[s] = false
             } else if unit.fluxHeld[s] == true {
@@ -441,17 +447,28 @@ final class ControllerUnit {
                 if abs(v - pv) > 8 { out.append(.fxKnob(u, k, Double(v & 0x0FFF) / 4095)) }
             }
         }
-        // Touchstrip: Position 0–2047; links = linke Seite, rechts = rechte Seite
+        // Touchstrip (erster Finger, 11 Bit): 0 = nicht berührt, 1…0x1C0 linke Hälfte (Deck A/C), 0x1C0…0x240 Totzone
+        // in der Mitte, 0x240…0x400 rechte Hälfte (Deck B/D). Zweiter Finger liegt bei 0x1D, wird nicht genutzt
         let pos = Int(r[0x1B]) | (Int(r[0x1C] & 0x07) << 8)
         let ppos = Int(prev[0x1B]) | (Int(prev[0x1C] & 0x07) << 8)
-        if pos != ppos {
-            let touching = pos > 0
-            let p = touching ? pos : ppos
-            let side: Side = p < 1024 ? .left : .right
-            let frac = side == .left ? Double(p) / 1023 : Double(p - 1024) / 1023
-            out.append(.strip(side, max(0, min(1, frac)), touching))
-        }
+        if pos != ppos, let e = Self.strip(pos, previous: ppos) { out.append(e) }
         return out
+    }
+
+    static let stripLeftMax = 0x1C0, stripRightMin = 0x240, stripMax = 0x400
+
+    /// Strip-Wert → Ereignis (Seite, Anteil 0…1 von links nach rechts in der Hälfte, berührt); nil in der Totzone
+    static func strip(_ pos: Int, previous: Int) -> Event? {
+        let touching = pos > 0
+        let p = touching ? pos : previous
+        guard p > 0 else { return nil }
+        if p <= stripLeftMax {
+            return .strip(.left, max(0, min(1, Double(p - 1) / Double(stripLeftMax - 1))), touching)
+        }
+        if p >= stripRightMin {
+            return .strip(.right, max(0, min(1, Double(p - stripRightMin) / Double(stripMax - stripRightMin))), touching)
+        }
+        return nil
     }
 
     /// Pad-Ebene 5–8 eingerastet (nur mit Flux-Taste = Pad-Ebene)

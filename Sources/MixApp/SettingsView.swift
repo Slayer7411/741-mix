@@ -809,7 +809,11 @@ struct ControllerSettings: View {
                 if mix.prefs.controller.fluxButton == .fluxMode {
                     Toggle("Flux antippen schaltet Flux-Modus", isOn: $mix.prefs.controller.fluxTapToggles)
                 } else {
-                    Text("antippen -> pads 1–4 spielen hotcues 5–8, flux-led an; nochmal -> zurück. shift + flux = flux-modus.").settingsHint()
+                    Text("antippen -> pads 1–4 spielen hotcues 5–8, flux-led an; nochmal -> zurück.").settingsHint()
+                }
+                Picker("Shift + Flux", selection: $mix.prefs.controller.shiftFlux) { ForEach(ControllerShiftFlux.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                if mix.prefs.controller.shiftFlux == .tap {
+                    Text("auf die beats tippen: ab 4 taps bpm des grids aus dem mittleren abstand, pause > 2 s beginnt neu; ohne grid entsteht eines mit beat 1 am letzten tap.").settingsHint()
                 }
                 Picker("Flux halten + Pads", selection: $mix.prefs.controller.fluxPads) { ForEach(ControllerFluxPads.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
                 Picker("Beatjump-Größe (Flux + Pad 3/4)", selection: $mix.prefs.controller.fluxBeatjumpBeats) {

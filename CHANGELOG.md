@@ -6,6 +6,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* controller: shift + flux = tap on the beats (from 4 taps the grid bpm, like the factory mapping), ⌘, -> CONTROLLER -> `Shift + Flux`: tap or flux mode
+* deck: right click on title / artist -> `Edit track …`, the browser's edit window for the loaded track (PREV / NEXT through the active list when the track is in it)
 * browser: double click on a column divider sizes the column to its longest text (candidates by character count, the longest 8 measured, header title fits too, tags measured as chips, key with the harmony slot)
 * load lock: a playing deck (also cue held) takes no track from double click, keys or controller load -> `Deck B spielt · Laden gesperrt` in the status bar. ⌥-double click, shift + load and the new key `load selection (even if playing)` force it. ⌘, -> DECKS, on by default
 * key sync: `KEY SYNC` in the deck header and an assignable key. key shift so the audible key fits the master's audible key (same, relative or neighbour on the open key wheel, smallest shift, at most ±6), keylock off -> on, result in the status bar
@@ -195,6 +197,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
 
 ### fixed
+* controller: touch strip right half (deck B/D) never reacted and the left half only covered 44 %: the strip reports 1-0x1C0 for the left half, 0x240-0x400 for the right, a dead zone between, not 0-2047 split at 1024
 * file service: a killed helper was often never reaped (the exit event comes before the process can be collected, the non-blocking wait found nothing and no second event came) -> defunct processes and false zombie counts. after the exit event the wait blocks now: leak test red in 4 of 6 runs alone -> 6 / 6 green, 0 zombies
 * tests: load limits of the hanging file service / hung decoder measured from the warmed-up helper, upper bounds + the scheduling lag measured during the test (`LagProbe`), lower bounds unchanged. the hung decoder delivers right after the abort instead of after a fixed 2 s
 * browser tag chips: clicks, ⌥-click, double click and the second click next to the chips (inline edit) work again in the tag shot (were failing)
