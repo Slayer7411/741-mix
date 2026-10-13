@@ -143,7 +143,7 @@ struct ContentView: View {
 
     private var deckArea: some View {
         VStack(spacing: 6.z) {
-            TopBar()
+            TopBarHost()
             // Decks mit fester Höhe: zwei flexible Decks übereinander ließen SwiftUI jede Zustandsänderung
             // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks); jedes Deck in eigener
             // Hosting-View (DeckHost), damit eine Deck-Änderung nicht das ganze Fenster neu misst

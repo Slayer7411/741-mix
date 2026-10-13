@@ -19,8 +19,7 @@ struct DeckView: View {
             VStack(alignment: .leading, spacing: 4.z) {
                 // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen), am Cover und an den Zusatzinfos
                 row("header", DeckHeader(d: d).modifier(DeckDropTarget(d: d)),
-                    key: [mix.prefs.ui.showMixer ? 0 : mix.prefs.ui.fxUnitCount, mix.prefs.ui.showDeckCover ? 1 : 0, rows.info ? 1 : 0])
-                if rows.comment || rows.tags { row("meta", DeckMetaRow(d: d)).padding(.top, -2.z) }
+                    key: [mix.prefs.ui.showMixer ? 0 : mix.prefs.ui.fxUnitCount, mix.prefs.ui.showDeckCover ? 1 : 0, rows.info ? 1 : 0, rows.comment || rows.tags ? 1 : 0])
                 WaveformView(d: d)
                     .overlay { DeckIdleView(d: d) }   // leer: Lobster, nach Ladefehler 5 s Totenkopf
                     .frame(minHeight: mix.prefs.ui.waveformHeight.z, maxHeight: .infinity)
@@ -216,7 +215,7 @@ struct DeckHeader: View {
 
     struct Model: Equatable {
         var playing = false, title = "", subtitle = "", isError = false
-        var showFX = false, fxUnits = 2, fxAssign: [Bool] = [], info = true
+        var showFX = false, fxUnits = 2, fxAssign: [Bool] = [], info = true, meta = true
         var bpm = 0.0, tempoPct = 0.0, gridEdited = false
         var time = TimeReadout.Model(), code = CodeReadout.Model(), key = KeyReadout.Model(), phaseActive = false
     }
@@ -232,6 +231,7 @@ struct DeckHeader: View {
         m.fxUnits = ui.fxUnitCount
         m.fxAssign = s.fxAssign
         m.info = ui.deckRows.info
+        m.meta = ui.deckRows.comment || ui.deckRows.tags
         m.bpm = s.bpm
         m.tempoPct = s.tempoPct
         m.gridEdited = s.gridEdited
@@ -262,7 +262,9 @@ struct DeckHeader: View {
                 .contentShape(Rectangle())
                 .contextMenu { DeckTrackMenu(d: d) }
                 .onDrag { TrackDrag.provider(mix.deck(d).track?.key) }
-                Spacer(minLength: 4.z)
+                .layoutPriority(1)   // Titel vor den Tags
+                // Kommentar und Tags in der freien Mitte des Kopfs statt in einer eigenen Zeile
+                if m.meta { DeckMetaRow(d: d, inline: true) } else { Spacer(minLength: 4.z) }
                 if m.showFX {
                     // ohne Mixer-Ansicht: FX-Zuweisung direkt am Deck
                     // FX-Zuweisung am Kanal: 1 2 (3 4)
@@ -309,6 +311,8 @@ struct DeckHeader: View {
 struct DeckMetaRow: View {
     @Environment(MixModel.self) private var mix
     let d: Int
+    /// in der Mitte des Deck-Kopfs (zwei Zeilen, nimmt die freie Breite) statt als eigene Zeile
+    var inline = false
 
     struct Model: Equatable { var cover = true, comment = "", tags: [String] = [], tagHighlight = true, tagColors: [String: String] = [:] }
 
@@ -324,15 +328,27 @@ struct DeckMetaRow: View {
                 m.tagColors = ui.tagColors
             }
         }
-        return Content(d: d, m: m).equatable()
+        return Content(d: d, m: m, inline: inline).equatable()
     }
 
     struct Content: View, Equatable {
         let d: Int
         let m: Model
-        static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.m == b.m }
+        var inline = false
+        static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.m == b.m && a.inline == b.inline }
 
         var body: some View {
+            if inline {
+                Text(text).font(Theme.mono(10.z)).lineLimit(2).truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: 26.z)
+                    .padding(.horizontal, 4.z)
+            } else {
+                row
+            }
+        }
+
+        private var row: some View {
             HStack(spacing: 6.z) {
                 // so breit wie Buchstabe und Cover im Kopf
                 Text(deckLetters[d]).font(Theme.label(22.z, .bold)).hidden().frame(height: 0)

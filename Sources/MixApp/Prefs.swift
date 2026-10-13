@@ -151,6 +151,8 @@ struct UIPrefs: Codable, Equatable {
     var showMixer = true
     var showFourDecks = true
     var showFXUnits = true
+    /// Maßstab der oberen Leiste (FX, Clock): 0,6…1,3, Griff unter der Leiste
+    var topBarScale = 1.0
     var waveformSeconds = 4.0
     var waveformStyle = WaveformStyle.blend
     var waveformPalette = WaveformPalette.rgb

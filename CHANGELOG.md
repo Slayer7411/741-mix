@@ -6,6 +6,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* deck: comment and tags sit in the free middle of the deck header (two lines, the title keeps its width) instead of their own row
+* top bar: drag the grip below it to scale it 60-130 % (double click = 100 %, saved), fx units 10 pt flatter; bar counter's big number counts within the phrase and starts over; time of day and a session stopwatch next to it (runs from the first play, click = restart)
 * browser: `info` column = cloud state + analysed check in one 28 pt column (saved layouts: the first of the two old columns becomes `info`, the other goes; both stay in the header menu, hidden)
 * browser rows: ⌘, -> BROWSER -> rows: space around the text 3-16 pt (11 = as before), line between rows on / off
 * `scripts/check.sh`: the mandatory check before a merge or an install (build, unit tests, self test, table checks, deck / window shots, ui test when present); `--quick` skips the unit tests

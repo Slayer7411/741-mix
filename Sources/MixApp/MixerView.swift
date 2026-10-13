@@ -114,9 +114,9 @@ struct FXUnitView: View {
 
     var body: some View {
         let fx = unit.state
-        HStack(spacing: 8.z) {
+        HStack(spacing: 6.z) {
             VStack(spacing: 2.z) {
-                Text("FX \(u + 1)").font(Theme.label(11.z, .heavy)).foregroundStyle(fx.anyOn ? Theme.state : Theme.muted)
+                Text("FX \(u + 1)").font(Theme.label(10.z, .heavy)).foregroundStyle(fx.anyOn ? Theme.state : Theme.muted)
                 DeckButton(title: fx.single ? "SNGL" : "GRP", active: fx.single, color: Theme.secondary, width: 32) {
                     mix.updateFX(u) { $0.single.toggle() }
                 }
@@ -125,8 +125,8 @@ struct FXUnitView: View {
             FXKnob(u: u, c: .dryWet)
             if fx.single { single(fx) } else { group(fx) }
         }
-        .padding(.horizontal, 8.z)
-        .padding(.vertical, 4.z)
+        .padding(.horizontal, 6.z)
+        .padding(.vertical, 2.z)
         .background(Rectangle().fill(Theme.deck))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
     }
@@ -134,7 +134,7 @@ struct FXUnitView: View {
     /// Regler 1–3 mit Taste darunter
     private var controls: some View {
         ForEach(0..<3, id: \.self) { i in
-            VStack(spacing: 2.z) {
+            VStack(spacing: 1.z) {
                 FXKnob(u: u, c: .knob(i))
                 FXButton(u: u, i: i)
             }
@@ -162,7 +162,7 @@ struct FXUnitView: View {
         if fx.slot(of: .delay) != nil { delayTime(fx) }
         if fx.slot(of: .reverb) != nil {
             Knob(value: Binding(get: { unit.state.reverbSize }, set: { v in mix.updateFX(u) { $0.reverbSize = v } }),
-                 range: 0...1, defaultValue: 0.6, label: "ROOM", color: Theme.state, size: 20)
+                 range: 0...1, defaultValue: 0.6, label: "ROOM", color: Theme.state, size: 18)
         }
     }
 
@@ -233,17 +233,17 @@ struct FXKnob: View {
     var body: some View {
         let info = mix.fxUnits[u].controls[c.slot]
         let showValue = info.param != nil && (hover || flash)
-        VStack(spacing: 1.z) {
+        VStack(spacing: 0) {
             Knob(value: Binding(get: { mix.fxUnits[u].controls[c.slot].value }, set: { mix.setFXControl(u, c, $0) }),
                  range: 0...1, defaultValue: info.param?.defaultValue ?? 0, bipolar: info.param?.bipolar ?? false,
-                 color: Theme.state, size: 24)
+                 color: Theme.state, size: 20)
                 .opacity(info.param == nil ? 0.35 : 1)
             Text(verbatim: showValue ? mix.fxText(u, info) : info.label)
-                .font(showValue ? Theme.mono(8.z) : Theme.label(8.z, .semibold))
+                .font(showValue ? Theme.mono(7.z) : Theme.label(7.z, .semibold))
                 .foregroundStyle(showValue || !info.isDefault ? Theme.bone : Theme.muted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-                .frame(width: 34.z)
+                .frame(width: 32.z)
         }
         .onHover { hover = $0 }
         .onChange(of: info.value) {
@@ -386,6 +386,46 @@ struct FXAssignMenu: View {
     }
 }
 
+/// Obere Leiste in einstellbarer Höhe: der Griff darunter skaliert sie (60…130 %, gespeichert); die Leiste bekommt
+/// die Breite des Fensters geteilt durch den Maßstab, damit sie skaliert wieder die volle Breite füllt
+struct TopBarHost: View {
+    @Environment(MixModel.self) private var mix
+    @State private var natural: CGFloat = 0
+    @State private var start: Double?
+
+    var body: some View {
+        let s = CGFloat(mix.prefs.ui.topBarScale)
+        VStack(spacing: 0) {
+            GeometryReader { geo in
+                TopBar()
+                    .fixedSize(horizontal: false, vertical: true)   // ideale Höhe, unabhängig vom Vorschlag (sonst Rückkopplung)
+                    .frame(width: geo.size.width / s)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { natural = $0 }
+                    .scaleEffect(s, anchor: .topLeading)
+            }
+            .frame(height: natural > 0 ? (natural * s).rounded() : nil)
+            .clipped()
+            Rectangle().fill(Theme.hairline).frame(height: 1)
+                .padding(.top, 2.z)
+                .overlay {
+                    Color.clear.frame(height: 9.z)
+                        .contentShape(Rectangle())
+                        .onHover { inside in if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
+                        .gesture(DragGesture(minimumDistance: 1)
+                            .onChanged { g in
+                                if start == nil { start = mix.prefs.ui.topBarScale }
+                                guard natural > 0 else { return }
+                                let v = (start ?? 1) + Double(g.translation.height / natural)
+                                mix.prefs.ui.topBarScale = max(0.6, min(1.3, (v * 100).rounded() / 100))
+                            }
+                            .onEnded { _ in start = nil })
+                }
+                .help("Ziehen: obere Leiste größer / kleiner · Doppelklick = 100 %")
+                .onTapGesture(count: 2) { mix.prefs.ui.topBarScale = 1 }
+        }
+    }
+}
+
 /// Obere Leiste: FX 1 · Master-Clock · FX 2
 struct TopBar: View {
     @Environment(MixModel.self) private var mix
@@ -399,6 +439,7 @@ struct TopBar: View {
             Spacer(minLength: 4.z)
             MasterClockPanel()
             BarCounter()
+            SessionClockView()
             Button { mix.core.resetSession() } label: {
                 Text("↺").font(Theme.mono(14.z)).foregroundStyle(Theme.bone).frame(width: 22.z, height: 42.z)
             }
@@ -501,7 +542,48 @@ struct MasterClockPanel: View {
     }
 }
 
-/// Bar-Zähler neben der Master-Clock: läuft ab dem ersten Play, zeigt die Lage im 4/8/16-Takt-Raster.
+/// Stoppuhr der Sitzung: läuft ab dem ersten Play (oder dem Neustart), neben der Uhrzeit
+@MainActor @Observable
+final class SessionStopwatch {
+    static let shared = SessionStopwatch()
+    var start: Date?
+    func reset() { start = Date() }
+}
+
+/// Uhrzeit oben, Stoppuhr unten (mm:ss, ab 1 h h:mm:ss); Klick auf die Stoppuhr = neu ab 0
+struct SessionClockView: View {
+    @Environment(MixModel.self) private var mix
+    @State private var now = Date()
+    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private var watch: SessionStopwatch { SessionStopwatch.shared }
+
+    var body: some View {
+        VStack(spacing: 1.z) {
+            Text(now.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute()))
+                .font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
+            Text(verbatim: elapsed)
+                .font(Theme.mono(13.z, .semibold)).foregroundStyle(watch.start == nil ? Theme.muted : Theme.bone)
+        }
+        .frame(width: 58.z, height: 42.z)
+        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+        .contentShape(Rectangle())
+        .onTapGesture { watch.reset() }
+        .help("Stoppuhr: läuft ab dem ersten Play · Klick = neu ab 0 · darüber die Uhrzeit")
+        .onReceive(tick) { t in
+            now = t
+            if watch.start == nil, mix.core.sessionBeat != nil { watch.start = t }
+        }
+    }
+
+    private var elapsed: String {
+        guard let s = watch.start else { return "0:00" }
+        let t = Int(max(0, now.timeIntervalSince(s)))
+        return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, t / 60 % 60, t % 60) : String(format: "%d:%02d", t / 60, t % 60)
+    }
+}
+
+/// Bar-Zähler neben der Master-Clock: läuft ab dem ersten Play, zeigt die Lage im 4/8/16-Takt-Raster; die große Zahl
+/// zählt innerhalb der Phrase (⌘, -> Anzeige, Standard 16 Takte) und fängt danach wieder bei 1 an.
 /// Doppelklick = neu auf Takt 1.
 struct BarCounter: View {
     @Environment(MixModel.self) private var mix
@@ -520,7 +602,8 @@ struct BarCounter: View {
             let bar = Int(beat / 4), inBar = Int(beat) % 4
             let frac = beat - beat.rounded(.down)
             let pulse = CGFloat(max(0, 1 - frac * 2.5))
-            CG.text("\(bar + 1).\(inBar + 1)", size: 15, weight: "SemiBold", color: CG.boneNS, rightAt: 46, y: 4)
+            let phraseBars = max(1, mix.prefs.ui.phraseBeats / 4)
+            CG.text("\(bar % phraseBars + 1).\(inBar + 1)", size: 15, weight: "SemiBold", color: CG.boneNS, rightAt: 46, y: 4)
             let toNext16 = 16 - bar % 16
             CG.text("16 ▸ \(toNext16)", size: 9, weight: "Regular", color: toNext16 == 1 ? CG.stateNS : CG.mutedNS, rightAt: 46, y: 26)
             let x0: CGFloat = 66, w = size.width - x0 - 4
@@ -552,6 +635,6 @@ struct BarCounter: View {
         .frame(width: 300.z, height: 42.z)
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
         .onTapGesture(count: 2) { mix.core.resetSession() }
-        .help("Bar-Zähler: läuft ab dem ersten Play · Doppelklick = neu auf Takt 1")
+        .help("Bar-Zähler: läuft ab dem ersten Play, die große Zahl zählt innerhalb der Phrase · Doppelklick = neu auf Takt 1")
     }
 }

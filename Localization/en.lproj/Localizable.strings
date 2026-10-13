@@ -832,3 +832,7 @@
 "Schnitt IN/OUT aus Bereich (keine neue Datei)" = "Cut IN/OUT from range (no new file)";
 "Bereich aufheben (Esc)" = "Clear range (Esc)";
 "Geschnittene Dateien (Wellenform: ⌃ + Ziehen markiert, Rechtsklick schneidet)" = "Cut files (waveform: ⌃ + drag marks a range, right click cuts)";
+
+"Stoppuhr: läuft ab dem ersten Play · Klick = neu ab 0 · darüber die Uhrzeit" = "Stopwatch: runs from the first play · click = restart at 0 · the time of day above";
+"Bar-Zähler: läuft ab dem ersten Play, die große Zahl zählt innerhalb der Phrase · Doppelklick = neu auf Takt 1" = "Bar counter: runs from the first play, the big number counts within the phrase · double click = back to bar 1";
+"Ziehen: obere Leiste größer / kleiner · Doppelklick = 100 %" = "Drag: top bar bigger / smaller · double click = 100 %";

@@ -335,7 +335,7 @@ link (network tempo sync):
 * link beat is time stamped in the audio callback -> no drift
 * offset setting for latency between the two apps
 
-bar counter (top right): runs from the first play, 4 / 8 / 16 bars, double click or ↺ = back to bar 1. bar 1 of the counter = bar 1 of a phrase (the code). each deck header shows `◆ CODE` or how far the deck is off (`+2 BARS`) -> a beatjump of that size the other way brings it back in.
+bar counter (top right): runs from the first play, 4 / 8 / 16 bars, the big number counts within the phrase (⌘, -> DISPLAY, default 16 bars) and starts over, double click or ↺ = back to bar 1. next to it the time of day and a stopwatch (from the first play, click = restart at 0). the whole top bar scales 60-130 % by dragging the grip below it (double click = 100 %), fx units sit 10 pt flatter. bar 1 of the counter = bar 1 of a phrase (the code). each deck header shows `◆ CODE` or how far the deck is off (`+2 BARS`) -> a beatjump of that size the other way brings it back in.
 
 ## ◆ 07 · MIXER + AUDIO
 
