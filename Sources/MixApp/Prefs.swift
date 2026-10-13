@@ -4,13 +4,7 @@ import MixEngine
 
 /// Darstellung der Wellenform
 enum WaveformStyle: String, CaseIterable, Codable, Identifiable {
-    case blend = "3-Band (Mischung)", threeBand = "3-Band (Schichten)", spectrum = "Spektrum", mono = "Einfarbig"
-    var id: String { rawValue }
-}
-
-/// Spektrum-Stil: fein (6 Bänder, eigene Farben, Höhen zusätzlich als Ebene darüber), fein nur gemischt, oder einfach (3 Bänder, Palette)
-enum SpectrumDetail: String, CaseIterable, Codable, Identifiable {
-    case fine = "Spektrum fein (6 Bänder)", fineMix = "Spektrum fein, ohne Höhen-Ebene", simple = "Spektrum (3 Bänder)"
+    case blend = "3-Band (Mischung)", spectrum = "Spektrum (6 Bänder)", mono = "Einfarbig"
     var id: String { rawValue }
 }
 
@@ -160,9 +154,7 @@ struct UIPrefs: Codable, Equatable {
     var waveformSeconds = 4.0
     var waveformStyle = WaveformStyle.blend
     var waveformPalette = WaveformPalette.rgb
-    /// Spektrum-Stil: feine 6-Band-Farben oder die alten 3 Bänder
-    var spectrumDetail = SpectrumDetail.fine
-    /// Höhen-Betonung (0 = neutral, 1 = Standard, 2 = stark): feines Spektrum 0…10 dB, 3-Band Höhen-Gewicht ×0,5…×2
+    /// Höhen-Betonung (0 = neutral, 1 = Standard, 3 = sehr stark): Spektrum 0…15 dB, 3-Band Höhen-Gewicht ×0,5…×4
     var waveformHighBoost = 1.0
     var showBeatgrid = true
     var showBarNumbers = true

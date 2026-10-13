@@ -475,35 +475,19 @@ struct WaveformSettings: View {
         @Bindable var mix = mix
         Form {
             Section("Wellenform") {
-                // Stil und Spektrum-Variante in einer Liste: 3-Band, Spektrum fein / fein ohne Ebene / 3 Bänder, Einfarbig
-                Picker("Stil", selection: Binding(
-                    get: { mix.prefs.ui.waveformStyle == .spectrum ? mix.prefs.ui.spectrumDetail.rawValue : mix.prefs.ui.waveformStyle.rawValue },
-                    set: { v in
-                        if let d = SpectrumDetail(rawValue: v) {
-                            mix.prefs.ui.waveformStyle = .spectrum
-                            mix.prefs.ui.spectrumDetail = d
-                        } else if let st = WaveformStyle(rawValue: v) {
-                            mix.prefs.ui.waveformStyle = st
-                        }
-                    })) {
-                    ForEach([WaveformStyle.blend.rawValue, WaveformStyle.threeBand.rawValue] + SpectrumDetail.allCases.map(\.rawValue) + [WaveformStyle.mono.rawValue], id: \.self) {
-                        Text(LocalizedStringKey($0)).tag($0)
-                    }
+                Picker("Stil", selection: $mix.prefs.ui.waveformStyle) {
+                    ForEach(WaveformStyle.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
-                let fine = mix.prefs.ui.waveformStyle == .spectrum && mix.prefs.ui.spectrumDetail != .simple
+                let fine = mix.prefs.ui.waveformStyle == .spectrum
                 Picker("Farben", selection: $mix.prefs.ui.waveformPalette) {
                     ForEach(WaveformPalette.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 .disabled(fine)
                 if mix.prefs.ui.waveformStyle != .mono {
-                    sliderRow("Höhen-Betonung", $mix.prefs.ui.waveformHighBoost, 0...2, step: 0.25, format: "%.2f")
+                    sliderRow("Höhen-Betonung", $mix.prefs.ui.waveformHighBoost, 0...3, step: 0.25, format: "%.2f")
                 }
                 if mix.prefs.ui.waveformStyle == .blend {
-                    Text("Je Pixelzeile gemischt: Farbe aus Bass (< 150 Hz), Mitten (um 670 Hz) und Höhen (> 3 kHz) der Samples, die die Zeile erreichen, Helligkeit nach oben weich auslaufend. Spektrum (RGB): Bass rot, Mitten grün, Höhen blau, Mischungen gelb / cyan / weiß.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if !fine, mix.prefs.ui.waveformStyle == .threeBand {
-                    Text("Bass < 250 Hz hinten · Mitten 250 Hz – 4 kHz · Höhen > 4 kHz vorn, je Band eigene Amplitude. Das stärkste Band reicht bis zum echten Pegel.")
+                    Text("Je Pixelzeile gemischt: Bass (< 150 Hz) als Körper von der Mitte, Mitten (um 670 Hz) als Ring, Höhen (> 3 kHz) außen an den Spitzen, Helligkeit nach oben weich auslaufend. Spektrum (RGB): Bass rot, Mitten grün, kurze Höhen (geschlossene Hats) blau, gehaltene Höhen (offene Hats, Ride) hellblau. Höhen-Betonung 1 = Standard, 3 = Höhen ×4.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if fine {

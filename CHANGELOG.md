@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* waveform 3-band blend: held highs light blue, short highs blue (closed vs open hats, from the held share of the spectrum analysis; 741 palettes: high color half way to white). `high emphasis` goes to 3 (highs ×4)
 * status bar `always` / `automatic` / `off` (⌘, -> DISPLAY -> status bar, also in the view menu). automatic: the bar slides up over the browser when the mouse sits at the bottom edge of the window (6 pt zone, clicks pass through) or a warning / error arrives (6 s), and goes away when the mouse leaves it
 * layout: gap between decks and browser 3 pt instead of 13 (grip stays 9 pt, it reaches into the deck margin), browser header 4 pt lower, deck area without bottom margin
 * settings: AUDIO is the first section
@@ -137,6 +138,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * reverb settings (⌘, -> MIXER & FX): level (−18 … +6 dB), brightness, pre-delay (0 … 120 ms, default 15 ms)
 
 ### changed
+* waveform styles cut down to 3-band blend / spectrum (6 bands) / mono. gone: 3-band layers, spectrum (3 bands), spectrum fine without the high layer (the blend shows the bands stacked, the spectrum always runs its high layer). a saved old style falls back to the blend. `WaveBands` and its test removed, the wave shot takes `blend`, `spectrum`, `mono`
 * browser: selected rows light red (state colour, 24 % with focus, 15 % without) instead of bone grey
 * analysis: grid offset to the collection's marker on mp3 noted in the manual (troubleshooting): two clusters at ~+10 and ~+48 ms (collection later), m4a −4 ms. decoder start of the mp3 files (encoder delay, info frame), not the analysis. MINOS-741 plays with the decoder it analyzes with -> not corrected
 * browser track list on an appkit table instead of the swiftui table: no row diff, a new list = reloadData (only visible rows are built), fixed row height, each row draws its cells (one layer per row). main thread per action, 4 decks playing, 2 browsers, preview `ganze Zeile` (release, browser bench, median): search 196 -> 7 ms, role 208 -> 6.5 ms, tag 218 -> 12 ms, sort 251 -> 4 ms, source 214 -> 9.5 ms, scroll 12 -> 3.5 ms. main thread gaps > 16 ms in these phases: 119 -> 4 (18-33 ms, first tag / source switch of the run). memory (rss max, same bench) 890 -> 806 mb

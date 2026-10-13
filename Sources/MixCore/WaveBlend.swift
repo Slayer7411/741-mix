@@ -48,6 +48,8 @@ public enum BlendPaint {
     /// quadratisch (nur starke Höhen färben)
     public struct Palette: Sendable {
         public var low: RGB, mid: RGB, high: RGB
+        /// Farbe gehaltener Höhen (offene Hats, Ride): hellblau statt blau; Anteil je Block aus der Höhen-Dauer des Spektrums
+        public var highOpen: RGB
         public var direct: Bool
         /// Anteil der Höhen in der Mischung (1 = voll)
         public var highShare: Float
@@ -57,12 +59,13 @@ public enum BlendPaint {
         public var window: Int
         /// Band-Gewichte Tief / Mitte / Hoch auf die gespeicherten Hüllkurven (1 = wie analysiert)
         public var gain: RGB
-        public init(low: RGB, mid: RGB, high: RGB, direct: Bool = false, highShare: Float = 1,
+        public init(low: RGB, mid: RGB, high: RGB, highOpen: RGB? = nil, direct: Bool = false, highShare: Float = 1,
                     saturation: Float = BlendPaint.saturation, window: Int = BlendPaint.window, gain: RGB = BlendPaint.gain) {
             self.low = low; self.mid = mid; self.high = high; self.direct = direct; self.highShare = highShare
+            self.highOpen = highOpen ?? (high.r + (1 - high.r) * 0.5, high.g + (1 - high.g) * 0.5, high.b + (1 - high.b) * 0.5)
             self.saturation = saturation; self.window = window; self.gain = gain
         }
-        public static let rgb = Palette(low: (1, 0, 0), mid: (0, 1, 0), high: (0, 0, 1), direct: true)
+        public static let rgb = Palette(low: (1, 0, 0), mid: (0, 1, 0), high: (0, 0, 1), highOpen: BlendPaint.openBlue, direct: true)
     }
 
     /// Versuchswerte für Bilder: "sat,win,gl,gm,gh" (leere Felder = Standard)
@@ -89,21 +92,28 @@ public enum BlendPaint {
     static let lift: [Float] = (0...1024).map { powf(Float($0) / 1024, gamma) }
     @inline(__always) static func brightness(_ c: Float) -> Float { lift[Int(max(0, min(1, c)) * 1024)] }
 
-    /// Pixelfarbe aus den Bandanteilen (Tief, Mitte, Hoch, Summe ≤ 1; kleiner = leiser, dunkler)
-    @inline(__always) public static func paint(_ a: RGB, _ p: Palette) -> RGB {
+    /// hellblau gehaltener Höhen in der RGB-Palette (wie `SpectrumColors.open`)
+    public static let openBlue: RGB = (0.62, 0.93, 1.0)
+
+    /// Pixelfarbe aus den Bandanteilen (Tief, Mitte, Hoch, Summe ≤ 1; kleiner = leiser, dunkler); `open` = Anteil der
+    /// Höhen, der gehalten ist (0 = kurze Hats, blau; 1 = offene Hats / Ride, hellblau)
+    @inline(__always) public static func paint(_ a: RGB, _ p: Palette, open: Float = 0) -> RGB {
         let a1 = a.r, a2 = a.g, a3 = a.b * p.highShare
         // direkt: Anteile gespreizt und auf das stärkste Band gezogen (klare Farben, Mischungen gelb / cyan / weiß statt
-        // trüb), Pegel nahe dem Grundpegel dunkler
+        // trüb), Pegel nahe dem Grundpegel dunkler; gehaltene Höhen ziehen das Blau Richtung hellblau
         if p.direct {
             let b1 = powf(a1, p.saturation), b2 = powf(a2, p.saturation), b3 = powf(a3, p.saturation)
             let g = min(1, a1 + a2 + a3) / max(b1, b2, b3, 1e-6)
-            return (min(1, b1 * g), min(1, b2 * g), min(1, b3 * g))
+            let hb = b3 * g * open
+            return (min(1, b1 * g + hb * p.highOpen.r), min(1, b2 * g + hb * p.highOpen.g), min(1, b3 * g))
         }
         let k = 1 / (a1 + a2 + floor)
         let w1 = a1 * k, w2 = a2 * k, w3 = a3 * a3
-        return (min(1, p.low.r * w1 + p.mid.r * w2 + p.high.r * w3),
-                min(1, p.low.g * w1 + p.mid.g * w2 + p.high.g * w3),
-                min(1, p.low.b * w1 + p.mid.b * w2 + p.high.b * w3))
+        let hr = p.high.r + (p.highOpen.r - p.high.r) * open, hg = p.high.g + (p.highOpen.g - p.high.g) * open
+        let hb = p.high.b + (p.highOpen.b - p.high.b) * open
+        return (min(1, p.low.r * w1 + p.mid.r * w2 + hr * w3),
+                min(1, p.low.g * w1 + p.mid.g * w2 + hg * w3),
+                min(1, p.low.b * w1 + p.mid.b * w2 + hb * w3))
     }
 
     /// Farbe aus den summierten Hüllkurven (Tief, Mitte, Hoch) und der Deckungssumme der Zeile – ohne Stapel
@@ -140,8 +150,9 @@ public enum BlendPaint {
     /// gelb / grün wird. Deckung und damit Helligkeit kommen nur aus den Blöcken der Spalte selbst, die Farbe aus dem
     /// Fenster `Palette.window` um die Spalte.
     @inline(__always)
-    public static func column(peak: UnsafeBufferPointer<Float>, blend: UnsafeBufferPointer<UInt8>, from: Int, to: Int,
-                              half: Int, palette p: Palette, put: (Int, UInt8, UInt8, UInt8, UInt8) -> Void) {
+    /// `open`: je Block 0…255 = Anteil gehaltener Höhen (aus der Höhen-Dauer des Spektrums), nil = alle kurz
+    public static func column(peak: UnsafeBufferPointer<Float>, blend: UnsafeBufferPointer<UInt8>, open: UnsafeBufferPointer<UInt8>? = nil,
+                              from: Int, to: Int, half: Int, palette p: Palette, put: (Int, UInt8, UInt8, UInt8, UInt8) -> Void) {
         let n = min(peak.count, blend.count / WaveBlend.stride)
         let lo = max(0, min(n - 1, from)), hi = max(lo + 1, min(n, to))
         guard n > 0, half > 0 else { return }
@@ -154,7 +165,7 @@ public enum BlendPaint {
         let count = Float(hi - lo), inv = 1 / Float(half), rest = 1 - base
             for j in 0..<rows {
             let y = (Float(j) + 0.5) * inv
-            var c: Float = 0, wc: Float = 0, er: Float = 0, eg: Float = 0, eb: Float = 0
+            var c: Float = 0, wc: Float = 0, er: Float = 0, eg: Float = 0, eb: Float = 0, eo: Float = 0
             for k in wlo..<whi {
                 let pk = peak[k]
                 guard y < pk else { continue }
@@ -203,12 +214,14 @@ public enum BlendPaint {
                 let q = msum / (msum + floor), mi = base / (msum + 1e-9), si = rest / gsum
                 er += cov * q * (el * p.gain.r * mi + gl * si)
                 eg += cov * q * (em * p.gain.g * mi + gm * si)
-                eb += cov * q * (eh * p.gain.b * mi + gh * si)
+                let hb = cov * q * (eh * p.gain.b * mi + gh * si)
+                eb += hb
+                if let open, k < open.count { eo += hb * Float(open[k]) * (1 / 255) }
                 wc += cov
             }
             guard c > 0 else { continue }
             let L = brightness(c / count)
-            let rgb = paint((er / wc, eg / wc, eb / wc), p)
+            let rgb = paint((er / wc, eg / wc, eb / wc), p, open: eb > 0 ? eo / eb : 0)
             put(j, UInt8(rgb.r * L * 255), UInt8(rgb.g * L * 255), UInt8(rgb.b * L * 255), UInt8(L * 255))
         }
     }

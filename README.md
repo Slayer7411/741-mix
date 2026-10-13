@@ -19,7 +19,7 @@ built for my own setup. ideas -> [discussions](https://github.com/Slayer7411/MIN
 * master clock with AUTO / MASTER, tap, metronome, snap and quant, link tempo sync over the network (minos leads)
 * bar counter from the first play (4 / 8 / 16 bars)
 * sync modes: dynamic, fixed (keeps a shifted phase), tempo only
-* gpu waveform with 3-band layers, real file level, colored beatgrid, phrase countdown, grid tools
+* gpu waveform in a 3-band blend, real file level, colored beatgrid, phrase countdown, grid tools
 * internal mixer or external mode -> every deck on its own usb pair
 * 2 or 4 fx units, group or single mode, channel assign 1-4
 * audio unit plugins (apple or third-party, v2 and v3) and VST3 effects as an effect in the fx single mode, own window per unit

@@ -52,7 +52,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 
 ## ◆ DISPLAY
 
-* waveform style: 3-band layers / spectrum fine (6 bands) / spectrum fine, no high layer / spectrum (3 bands) / mono
+* waveform style: 3-band blend (default) / spectrum (6 bands) / mono; palette (not for spectrum): spectrum (rgb, default) / 741 bone / orange / blue / classic; high emphasis 0-3
 * palette: 741 bone, orange, blue / white, classic (not for spectrum fine, it has fixed band colors -> [manual](MANUAL.md#-05--waveform--grid))
 * high emphasis (spectrum fine): 0-2, default 1
 * zoom (seconds per side), minimum height (grows with the window), dim the played part

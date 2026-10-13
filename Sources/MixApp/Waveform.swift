@@ -15,6 +15,8 @@ final class RenderedWaveform: @unchecked Sendable {
     struct Raster: Sendable {
         let peak: [Float]
         let blend: [UInt8]
+        /// je Block Anteil gehaltener Höhen 0…255 (offene Hats hellblau), leer ohne Spektrum
+        let open: [UInt8]
         let palette: BlendPaint.Palette
 
         /// Spalten `x0..<x0+width` (Pixel) in ein RGBA-Bild (vormultipliziert): Spalte x deckt die Zeit
@@ -24,17 +26,19 @@ final class RenderedWaveform: @unchecked Sendable {
             let px = data.assumingMemoryBound(to: UInt8.self)
             peak.withUnsafeBufferPointer { pk in
                 blend.withUnsafeBufferPointer { bl in
+                  open.withUnsafeBufferPointer { op in
                     for x in 0..<width {
                         let a = t0 + Double(x) * dt
                         let from = Int((a * bps).rounded(.down)), to = Int(((a + dt) * bps).rounded(.up))
                         guard to > 0, from < pk.count else { continue }
-                        BlendPaint.column(peak: pk, blend: bl, from: max(0, from), to: max(from + 1, to), half: half, palette: palette) {
+                        BlendPaint.column(peak: pk, blend: bl, open: op.isEmpty ? nil : op, from: max(0, from), to: max(from + 1, to), half: half, palette: palette) {
                             j, r, g, b, al in
                             let o = (half - 1 - j) * bytesPerRow + x * 4, u = (height - half + j) * bytesPerRow + x * 4
                             px[o] = r; px[o + 1] = g; px[o + 2] = b; px[o + 3] = al
                             px[u] = r; px[u + 1] = g; px[u + 2] = b; px[u + 3] = al
                         }
                     }
+                  }
                 }
             }
         }
@@ -67,13 +71,11 @@ final class RenderedWaveform: @unchecked Sendable {
         }
     }
 
-    /// Feines Spektrum (6 Bänder): Farben aus MixCore.SpectrumColors, optional Höhen als eigene Ebene darüber
+    /// Spektrum (6 Bänder): Farben aus MixCore.SpectrumColors, Höhen als eigene Ebene darüber
     struct Fine {
         let colors: SpectrumColors
-        let layers: Bool
-        init(_ s: WaveSpectrum, highBoost: Double, layers: Bool) {
+        init(_ s: WaveSpectrum, highBoost: Double) {
             colors = SpectrumColors(s, highBoost: highBoost)
-            self.layers = layers
         }
         static func rgb(_ c: SpectrumColors.RGB) -> RGB { RGB(r: CGFloat(c.r), g: CGFloat(c.g), b: CGFloat(c.b)) }
         func color(_ L: [Float], sustain: Float) -> (body: RGB, high: CGFloat, highColor: RGB) {
@@ -104,25 +106,6 @@ final class RenderedWaveform: @unchecked Sendable {
         let b = c.low.b * lo + c.mid.b * mi + c.high.b * hi
         let m = max(r, g, b, 0.0001)
         return RGB(r: r / m, g: g / m, b: b / m)
-    }
-
-    /// Spektrum-Farbe aus den Band-Höhen (gleiche Gewichtung wie die Schichten)
-    private static func spectrum(_ h: WaveBands.Heights, _ c: Colors) -> RGB {
-        spectrum(CGFloat(h.low * h.low), CGFloat(h.mid * h.mid), CGFloat(h.high * h.high), c)
-    }
-
-    /// Übersichts-Spalte aus den Band-Höhen: Spitze = Maximum, Bänder nach Pegel gewichtet gemittelt (das Maximum
-    /// über ~80 Blöcke träfe jede Hat und färbte alles hell)
-    private static func bandColumn(env: [Float], bands: [WaveBands.Heights], from: Int, to: Int) -> (pk: CGFloat, h: WaveBands.Heights) {
-        let n = env.count
-        let s = max(0, min(n - 1, from)), e = max(s + 1, min(n, to))
-        var pk: Float = 0, sum: Float = 0, h = WaveBands.Heights.zero
-        for i in s..<e {
-            let p = env[i], b = bands[i]
-            pk = max(pk, p); sum += p; h.low += p * b.low; h.mid += p * b.mid; h.high += p * b.high
-        }
-        guard sum > 0 else { return (0, .zero) }
-        return (CGFloat(pk), WaveBands.Heights(low: h.low / sum, mid: h.mid / sum, high: h.high / sum))
     }
 
     /// Spalte → (Spitze, Bass-, Mitten-, Höhenanteil) über mehrere Blöcke (für die Übersicht)
@@ -172,7 +155,7 @@ final class RenderedWaveform: @unchecked Sendable {
             let (key, qc) = quantized(c.body)
             if body[key] == nil { body[key] = (qc, CGMutablePath()); order.append(key) }
             body[key]!.1.addRect(CGRect(x: Double(k) * dt, y: -v, width: dt * 1.02, height: v * 2))
-            if fine.layers, c.high > 0.02 {
+            if c.high > 0.02 {
                 let (hk, hq) = quantized(c.highColor)
                 if highs[hk] == nil { highs[hk] = (hq, CGMutablePath()) }
                 let h = v * c.high
@@ -182,31 +165,24 @@ final class RenderedWaveform: @unchecked Sendable {
         return order.map { (cg(body[$0]!.0), body[$0]!.1 as CGPath) } + highs.values.map { (cg($0.0), $0.1 as CGPath) }
     }
 
-    private static func chunk(_ a: TrackAudio, env: [Float], range: Range<Int>, style: WaveformStyle, colors: Colors, fine: Fine?,
-                              bands: [WaveBands.Heights]?) -> [(CGColor, CGPath)] {
+    private static func chunk(_ a: TrackAudio, env: [Float], range: Range<Int>, style: WaveformStyle, colors: Colors, fine: Fine?) -> [(CGColor, CGPath)] {
         if let fine { return fineChunk(a, env: env, range: range, fine: fine) }
         let dt = 1 / TrackAudio.blocksPerSecond
         let pk = range.map { CGFloat(env[$0]) }
         switch style {
         case .mono:
             return [(cg(colors.mid), outline(pk, dt: dt))]
-        case .threeBand, .blend:
-            // drei eigene Amplituden übereinander: Bass hinten, Mitten, Höhen vorn
-            if let bands {
-                let b = bands[range]
-                let lo = zip(pk, b).map { $0 * CGFloat($1.low) }, mi = zip(pk, b).map { $0 * CGFloat($1.mid) }
-                let hi = zip(pk, b).map { $0 * CGFloat($1.high) }
-                return [(cg(colors.low), outline(lo, dt: dt)), (cg(colors.mid), outline(mi, dt: dt)), (cg(colors.high), outline(hi, dt: dt))]
-            }
+        case .blend:
+            // ohne Mischungsdaten (alter Cache): drei Amplituden übereinander, Bass hinten, Mitten, Höhen vorn
             let mid = (0..<range.count).map { pk[$0] * CGFloat(a.mid[range.lowerBound + $0] + a.high[range.lowerBound + $0]).squareRoot() }
             let high = (0..<range.count).map { pk[$0] * Self.highLevel(a.high[range.lowerBound + $0]) }
             return [(cg(colors.low), outline(pk, dt: dt)), (cg(colors.mid), outline(mid, dt: dt)), (cg(colors.high), outline(high, dt: dt))]
         case .spectrum:
-            // Farbe je Block auf 5 Stufen je Kanal gerundet → wenige Pfade, Blöcke als Rechtecke
+            // ohne Spektrumdaten (alter Cache): Farbe je Block aus den drei Anteilen, auf 5 Stufen je Kanal gerundet
             var paths: [Int: (RGB, CGMutablePath)] = [:]
             for k in 0..<range.count {
                 let i = range.lowerBound + k
-                var c = bands.map { spectrum($0[i], colors) } ?? spectrum(CGFloat(a.low[i]), CGFloat(a.mid[i]), CGFloat(a.high[i]), colors)
+                var c = spectrum(CGFloat(a.low[i]), CGFloat(a.mid[i]), CGFloat(a.high[i]), colors)
                 let q = { (v: CGFloat) in (v * 4).rounded() / 4 }
                 c = RGB(r: q(c.r), g: q(c.g), b: q(c.b))
                 let key = Int(c.r * 4) * 25 + Int(c.g * 4) * 5 + Int(c.b * 4)
@@ -233,7 +209,7 @@ final class RenderedWaveform: @unchecked Sendable {
             ctx.fill(CGRect(x: x, y: mid - hh, width: 1, height: hh * 2))
         }
         switch style {
-        case .threeBand, .blend:
+        case .blend:
             bar(col.pk, colors.low)
             bar(col.pk * (col.mi + col.hi).squareRoot(), colors.mid)
             bar(col.pk * highLevel(Float(col.hi)), colors.high)
@@ -263,25 +239,20 @@ final class RenderedWaveform: @unchecked Sendable {
         return (CGFloat(pk), fine.color(L, sustain: sus / c))
     }
 
-    static func render(_ a: TrackAudio, style: WaveformStyle, palette: WaveformPalette,
-                       detail: SpectrumDetail = .fine, highBoost: Double = 1,
+    static func render(_ a: TrackAudio, style: WaveformStyle, palette: WaveformPalette, highBoost: Double = 1,
                        tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
         let colors = Colors.of(palette)
         if style == .blend, a.blend.count >= a.peak.count, !a.peak.isEmpty {
             return blend(a, palette: palette, highBoost: highBoost, tune: tune)
         }
         let env = envelope(a)
-        let fine = style == .spectrum && detail != .simple && a.spectrum.count >= a.peak.count && !a.peak.isEmpty
-            ? Fine(a.spectrum, highBoost: highBoost, layers: detail == .fine) : nil
-        // Band-Höhen aus dem feinen Spektrum (3-Band, Spektrum 3 Bänder); fehlt es, die alten Anteile
-        let bands = fine == nil && style != .mono && a.spectrum.count >= a.peak.count && !a.peak.isEmpty
-            ? WaveBands.heights(a.spectrum, highBoost: highBoost) : nil
+        let fine = style == .spectrum && a.spectrum.count >= a.peak.count && !a.peak.isEmpty ? Fine(a.spectrum, highBoost: highBoost) : nil
         let dt = 1 / TrackAudio.blocksPerSecond
         var chunks: [Chunk] = []
         var b0 = 0
         while b0 < env.count {
             let r = b0..<min(env.count, b0 + chunkBlocks)
-            chunks.append(Chunk(t0: Double(b0) * dt, layers: chunk(a, env: env, range: r, style: style, colors: colors, fine: fine, bands: bands)))
+            chunks.append(Chunk(t0: Double(b0) * dt, layers: chunk(a, env: env, range: r, style: style, colors: colors, fine: fine)))
             b0 = r.upperBound
         }
         // Übersicht
@@ -296,22 +267,9 @@ final class RenderedWaveform: @unchecked Sendable {
                     let mid = CGFloat(oh) / 2
                     ctx.setFillColor(cg(c.body))
                     ctx.fill(CGRect(x: CGFloat(x), y: mid - max(0.5, pk * mid), width: 1, height: max(1, pk * mid * 2)))
-                    if fine.layers, c.high > 0.02 {
+                    if c.high > 0.02 {
                         ctx.setFillColor(cg(c.highColor))
                         ctx.fill(CGRect(x: CGFloat(x), y: mid - pk * c.high * mid, width: 1, height: pk * c.high * mid * 2))
-                    }
-                    continue
-                }
-                if let bands {
-                    let (pk, h) = bandColumn(env: env, bands: bands, from: from, to: to)
-                    let mid = CGFloat(oh) / 2
-                    let bars: [(CGFloat, RGB)] = style == .threeBand
-                        ? [(CGFloat(h.low), colors.low), (CGFloat(h.mid), colors.mid), (CGFloat(h.high), colors.high)]
-                        : [(1, spectrum(h, colors))]
-                    for (v, c) in bars {
-                        let hh = max(0.5, pk * v * mid)
-                        ctx.setFillColor(cg(c))
-                        ctx.fill(CGRect(x: CGFloat(x), y: mid - hh, width: 1, height: hh * 2))
                     }
                     continue
                 }
@@ -327,12 +285,12 @@ final class RenderedWaveform: @unchecked Sendable {
 extension RenderedWaveform {
     /// Palette der Mischung: RGB = Bandanteile direkt, sonst die drei Palettenfarben
     static func blendPalette(_ p: WaveformPalette, highBoost: Double) -> BlendPaint.Palette {
-        let k = Float(pow(2, highBoost - 1))   // Höhen-Betonung: Gewicht der Höhen ×0,5…×2 (Farbe und Stapelhöhe)
+        let k = Float(pow(2, highBoost - 1))   // Höhen-Betonung 0…3: Gewicht der Höhen ×0,5…×4 (Farbe und Stapelhöhe)
         var pal: BlendPaint.Palette
         if p == .rgb { pal = .rgb } else {
             let c = Colors.of(p)
             let f = { (v: RGB) in (r: Float(v.r), g: Float(v.g), b: Float(v.b)) }
-            pal = BlendPaint.Palette(low: f(c.low), mid: f(c.mid), high: f(c.high))
+            pal = BlendPaint.Palette(low: f(c.low), mid: f(c.mid), high: f(c.high))   // gehaltene Höhen: halb zu Weiß
         }
         pal.gain.b *= k
         return pal
@@ -342,7 +300,10 @@ extension RenderedWaveform {
     static func blend(_ a: TrackAudio, palette: WaveformPalette, highBoost: Double, tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
         var pal = blendPalette(palette, highBoost: highBoost)
         tune?.apply(to: &pal)   // Versuchswerte, nur im Selbsttest-Bild
-        let raster = Raster(peak: Array(a.peak), blend: Array(a.blend.data.prefix(a.peak.count * WaveBlend.stride)), palette: pal)
+        // Anteil gehaltener Höhen je Block aus der Höhen-Dauer des Spektrums (geschlossene Hats blau, offene hellblau)
+        let n = a.peak.count
+        let open: [UInt8] = a.spectrum.count >= n ? (0..<n).map { UInt8((SpectrumColors.openness(a.spectrum.sustain($0)) * 255).rounded()) } : []
+        let raster = Raster(peak: Array(a.peak), blend: Array(a.blend.data.prefix(n * WaveBlend.stride)), open: open, palette: pal)
         let ow = 1600, oh = 60
         var overview: CGImage?
         if let ctx = CGContext(data: nil, width: ow, height: oh, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
@@ -366,13 +327,13 @@ final class WaveformCache {
 
     func waveform(for audio: TrackAudio?, ui: UIPrefs) -> RenderedWaveform? {
         guard let audio else { return nil }
-        let style = ui.waveformStyle, palette = ui.waveformPalette, detail = ui.spectrumDetail, boost = ui.waveformHighBoost
-        let key = "\(ObjectIdentifier(audio).hashValue)-\(style.rawValue)-\(palette.rawValue)-\(detail.rawValue)-\(boost)"
+        let style = ui.waveformStyle, palette = ui.waveformPalette, boost = ui.waveformHighBoost
+        let key = "\(ObjectIdentifier(audio).hashValue)-\(style.rawValue)-\(palette.rawValue)-\(boost)"
         if let e = done[key], e.audio === audio { return e.wave }
         if !running.contains(key) {
             running.insert(key)
             Task.detached(priority: .userInitiated) {
-                let w = RenderedWaveform.render(audio, style: style, palette: palette, detail: detail, highBoost: boost)
+                let w = RenderedWaveform.render(audio, style: style, palette: palette, highBoost: boost)
                 await MainActor.run {
                     self.done.removeAll { $0.value.audio == nil }
                     self.done[key] = Entry(audio: audio, wave: w)

@@ -67,3 +67,30 @@ import Testing
     #expect(rows.count == 30)              // Höhe des eigenen Blocks (0,3), nicht des Nachbarn
     #expect(rows[5]!.2 > 0)                // der Nachbar (Höhen) färbt mit
 }
+
+/// gehaltene Höhen (offene Hats, Ride) färben hellblau, kurze Höhen bleiben blau
+@Test func heldHighsTurnLightBlue() {
+    var blend = [UInt8](repeating: 0, count: WaveBlend.stride)
+    blend[WaveBlend.rmsSlot] = WaveBlend.byte(amplitude: 0.05)
+    let bands: [Float] = [0.02, 0.02, 0.4]   // nur Höhen
+    for k in 0..<3 {
+        blend[WaveBlend.meanSlot + k] = WaveBlend.byte(amplitude: bands[k])
+        blend[WaveBlend.peakSlot + k] = WaveBlend.byte(amplitude: bands[k])
+    }
+    let peak: [Float] = [0.5]
+    func row10(open: UInt8) -> (UInt8, UInt8, UInt8) {
+        var rows: [Int: (UInt8, UInt8, UInt8)] = [:]
+        let o: [UInt8] = [open]
+        peak.withUnsafeBufferPointer { pk in
+            blend.withUnsafeBufferPointer { bl in
+                o.withUnsafeBufferPointer { op in
+                    BlendPaint.column(peak: pk, blend: bl, open: op, from: 0, to: 1, half: 100, palette: .rgb) { j, r, g, b, _ in rows[j] = (r, g, b) }
+                }
+            }
+        }
+        return rows[10]!
+    }
+    let closed = row10(open: 0), held = row10(open: 255)
+    #expect(closed.2 > 200 && closed.0 < 40 && closed.1 < 40)
+    #expect(held.2 > 200 && held.0 > 100 && held.1 > 150)
+}

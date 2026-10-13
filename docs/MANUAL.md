@@ -201,13 +201,12 @@ DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, commen
 
 * rendered as bitmap tiles in screen resolution (background thread) -> sharp at any zoom, no load on the render server
 * height = real file level, full height = 0 dBFS, no normalizing -> loud masters look loud
-* styles: 3-band blend (default) / 3-band layers / spectrum fine (6 bands, default for spectrum) / spectrum fine, no high layer / spectrum (3 bands) / mono, palettes (not for spectrum fine): spectrum (rgb, default) / 741 bone / orange / blue / classic
-* 3-band blend: each pixel row colored by the bass (< 150 Hz), mids (around 670 Hz) and highs (> 3 kHz) of the samples that reach it, brightness = share of samples reaching the row ^(1/3.5) -> body bass red, transients and hats light / blue at the top, soft upper edge. spectrum (rgb): bass red, mids green, highs blue, mixes yellow / cyan / white. 741 palettes: bass / mid color by share, highs only where strong. overview in the same style. `high emphasis` 0-2 -> high share ×0.5-×2
-* 3-band layers: bass < 250 Hz at the back, mids 250 Hz-4 kHz, highs > 4 kHz in front, each band its own amplitude (rms, mids ×1.6, highs ×1.2, curve 0.9), the strongest band reaches the real peak -> kick = wide bass, hats = bright needles. same heights in the overview and in the colors of spectrum (3 bands). `high emphasis` 0-2 -> highs ×0.5-×2
+* styles (⌘, -> DISPLAY): 3-band blend (default) / spectrum (6 bands) / mono, palettes (not for spectrum): spectrum (rgb, default) / 741 bone / orange / blue / classic
+* 3-band blend: each pixel row colored by the bass (< 150 Hz), mids (around 670 Hz) and highs (> 3 kHz) of the samples that reach it, brightness = share of samples reaching the row ^(1/3.5). the three bands of a block are stacked by their peak: the strongest is the body from the centre, the weakest sits outside at the tips -> bass red core, mids yellow / green ring, hats blue edge, soft upper edge. highs take the held share of the spectrum analysis: short highs (closed hats) blue, held highs (open hats, ride, noise) light blue (741 palettes: high color half way to white). spectrum (rgb): bass red, mids green, highs blue, mixes yellow / cyan / white. overview in the same style. `high emphasis` 0-3 -> high weight ×0.5-×4 (color and stack height)
 * drag the waveform = scrub, click the overview = jump
 * played part can be dimmed
 
-spectrum fine, colors:
+spectrum (6 bands), colors:
 
 | color | band | what it shows |
 |---|---|---|
@@ -219,9 +218,9 @@ spectrum fine, colors:
 | light blue, brighter | highs + air, held | open hats, ride, noise, risers |
 
 * each block (3.3 ms) takes the color of the band that is loudest against its own level in this track -> a kick reads red / orange, the hat between two kicks blue, an open hat light blue
-* highs also run as a layer in the middle (height = how strong the highs are) -> hats stay visible on top of kick and bass, also zoomed out. `spectrum fine, no high layer` = color only
+* highs also run as a layer in the middle (height = how strong the highs are) -> hats stay visible on top of kick and bass, also zoomed out
 * closed vs open: share of a ~150 ms window in which the highs stay within 8 dB of their peak. short spikes = closed, held = open
-* `high emphasis` (⌘, -> DISPLAY): 0 = neutral, 1 = default (+5 dB for highs in the mix), 2 = strong
+* `high emphasis` (⌘, -> DISPLAY): 0 = neutral, 1 = default (+5 dB for highs in the mix), 3 = +15 dB
 * analysis runs while the track loads, parallel to the waveform blocks: ~0.1 s cpu per 8-minute track on a second core, ~0.03 s longer load. 8 bytes per block, ~1.4 mb per 10 minutes
 
 beatgrid:

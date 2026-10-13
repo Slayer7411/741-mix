@@ -483,16 +483,13 @@ enum WaveShot {
 
     enum ShotError: Error { case noTrack, context, png }
 
-    /// Stil-Kürzel → (Stil, Spektrum-Variante, Beschriftung)
-    private static func look(_ k: String, _ ui: UIPrefs) -> (WaveformStyle, SpectrumDetail, String) {
+    /// Stil-Kürzel → (Stil, Beschriftung)
+    private static func look(_ k: String, _ ui: UIPrefs) -> (WaveformStyle, String) {
         switch k.trimmingCharacters(in: .whitespaces) {
-        case "blend": (.blend, ui.spectrumDetail, "3-band blend")
-        case "3band": (.threeBand, ui.spectrumDetail, "3-band layers")
-        case "spectrum": (.spectrum, .simple, "spectrum (3 bands)")
-        case "fine": (.spectrum, .fine, "spectrum fine (6 bands)")
-        case "fine-mix": (.spectrum, .fineMix, "spectrum fine, no high layer")
-        case "mono": (.mono, ui.spectrumDetail, "mono")
-        default: (ui.waveformStyle, ui.spectrumDetail, "settings")
+        case "blend": (.blend, "3-band blend")
+        case "spectrum", "fine": (.spectrum, "spectrum (6 bands)")
+        case "mono": (.mono, "mono")
+        default: (ui.waveformStyle, "settings")
         }
     }
 
@@ -525,7 +522,7 @@ enum WaveShot {
         var looks = (env["MIX741_SHOT_STYLE"] ?? "settings").split(separator: ",").map { look(String($0), ui) }
         // Versuchswerte der Mischung je Zeile: MIX741_SHOT_TUNE="sat,win,gl,gm,gh;…" (eine Zeile je Eintrag, Stil der ersten Zeile)
         let tunes = (env["MIX741_SHOT_TUNE"] ?? "").split(separator: ";").compactMap { BlendPaint.Tune(String($0)) }
-        if !tunes.isEmpty, let first = looks.first { looks = tunes.map { (first.0, first.1, first.2 + " · " + $0.label) } }
+        if !tunes.isEmpty, let first = looks.first { looks = tunes.map { (first.0, first.1 + " · " + $0.label) } }
         let w: CGFloat = 1200, h: CGFloat = 180, gap: CGFloat = 8, label: CGFloat = 18, scale: CGFloat = 2, oh: CGFloat = 48
         let rowH = (label + h * 2 + oh + gap * 3)
         let totalH = rowH * CGFloat(looks.count)
@@ -539,9 +536,9 @@ enum WaveShot {
         for (row, lk) in looks.enumerated() {
             WaveLayerNSView.tileTime.withLock { $0 = (0, 0) }
             let tr = Date()
-            let wf = RenderedWaveform.render(audio, style: lk.0, palette: ui.waveformPalette, detail: lk.1, highBoost: ui.waveformHighBoost,
+            let wf = RenderedWaveform.render(audio, style: lk.0, palette: ui.waveformPalette, highBoost: ui.waveformHighBoost,
                                              tune: tunes.isEmpty ? nil : tunes[row])
-            SelfTest.log(String(format: "%@: Wellenform gerechnet in %.2f s, %.0f Pfade je Abschnitt", lk.2, Date().timeIntervalSince(tr), Double(wf.chunks.reduce(0) { $0 + $1.layers.count }) / Double(max(1, wf.chunks.count))))
+            SelfTest.log(String(format: "%@: Wellenform gerechnet in %.2f s, %.0f Pfade je Abschnitt", lk.1, Date().timeIntervalSince(tr), Double(wf.chunks.reduce(0) { $0 + $1.layers.count }) / Double(max(1, wf.chunks.count))))
             let view = WaveLayerNSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
             view.position = { pos }
             view.loop = { loop }
@@ -554,7 +551,7 @@ enum WaveShot {
                                        WaveScene.Mark(t: g.time(ofBeat: 12), number: 2, color: NSColor(Theme.cueColor(.loop)))] } ?? [],
                 cuePoint: grid?.anchor ?? 0, hasTrack: true)
             let top = totalH - CGFloat(row) * rowH   // CG: y nach oben
-            let text = String(format: "%@ · %@ – %@ · %.0f s", lk.2, t.artist, t.title, pos) as NSString
+            let text = String(format: "%@ · %@ – %@ · %.0f s", lk.1, t.artist, t.title, pos) as NSString
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
             text.draw(at: NSPoint(x: 6, y: top - label + 3),
@@ -570,7 +567,7 @@ enum WaveShot {
                 ctx.restoreGState()
             }
             let tt = WaveLayerNSView.tileTime.withLock { $0 }
-            SelfTest.log(String(format: "%@: %d Kacheln, %.2f ms je Kachel", lk.2, tt.count, tt.seconds * 1000 / Double(max(1, tt.count))))
+            SelfTest.log(String(format: "%@: %d Kacheln, %.2f ms je Kachel", lk.1, tt.count, tt.seconds * 1000 / Double(max(1, tt.count))))
             // Übersicht (ganzer Track) darunter
             if let img = wf.overview {
                 let r = CGRect(x: 0, y: top - label - h * 2 - gap * 2 - oh, width: w, height: oh)

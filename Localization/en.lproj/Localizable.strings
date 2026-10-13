@@ -1,6 +1,5 @@
 /* MINOS-741 English */
 "2 Decks" = "2 Decks";
-"3-Band (Schichten)" = "3-band (layers)";
 "4 Decks anzeigen" = "Show 4 decks";
 "741 Knochen" = "741 bone";
 "ANZEIGE" = "DISPLAY";
@@ -447,12 +446,10 @@
 "selbsttest" = "self-check";
 "läuft im Prozess" = "in-process";
 "VST3 läuft im Prozess von MINOS-741 (isolieren geht nur für Audio Units)" = "VST3 runs inside the MINOS-741 process (isolation only for audio units)";
-"Spektrum fein (6 Bänder)" = "Spectrum fine (6 bands)";
-"Spektrum fein, ohne Höhen-Ebene" = "Spectrum fine, no high layer";
-"Spektrum (3 Bänder)" = "Spectrum (3 bands)";
 "Höhen-Betonung" = "High emphasis";
+"Spektrum (6 Bänder)" = "Spectrum (6 bands)";
+"Je Pixelzeile gemischt: Bass (< 150 Hz) als Körper von der Mitte, Mitten (um 670 Hz) als Ring, Höhen (> 3 kHz) außen an den Spitzen, Helligkeit nach oben weich auslaufend. Spektrum (RGB): Bass rot, Mitten grün, kurze Höhen (geschlossene Hats) blau, gehaltene Höhen (offene Hats, Ride) hellblau. Höhen-Betonung 1 = Standard, 3 = Höhen ×4." = "Mixed per pixel row: bass (< 150 Hz) as the body from the centre, mids (around 670 Hz) as a ring, highs (> 3 kHz) outside at the tips, brightness fading softly upwards. Spectrum (RGB): bass red, mids green, short highs (closed hats) blue, held highs (open hats, ride) light blue. High emphasis 1 = default, 3 = highs ×4.";
 "Sub orange · Bass/Kick rot · Mitten grün, obere Mitten gelbgrün · kurze Höhen (geschlossene Hats) blau · gehaltene Höhen (offene Hats, Ride) hellblau. Jedes Band gegen den eigenen Track normiert, Höhe = echter Pegel." = "Sub orange · bass/kick red · mids green, upper mids yellow-green · short highs (closed hats) blue · sustained highs (open hats, ride) light blue. Each band normalized against the track itself, height = real level.";
-"Bass < 250 Hz hinten · Mitten 250 Hz – 4 kHz · Höhen > 4 kHz vorn, je Band eigene Amplitude. Das stärkste Band reicht bis zum echten Pegel." = "Bass < 250 Hz at the back · mids 250 Hz – 4 kHz · highs > 4 kHz in front, each band its own amplitude. The strongest band reaches the real level.";
 "Collection prüfen" = "Check collection";
 "Collection prüfen …" = "Check collection …";
 "◆ COLLECTION PRÜFEN" = "◆ CHECK COLLECTION";
@@ -737,7 +734,6 @@
 "datei-dienst: dateien werden in einem eigenen prozess gelesen und dekodiert. hängt eine cloud-datei, lädt das deck weiter (hinweis), abgebrochen wird erst nach der zweiten grenze. ohne datei-dienst: abbruch schon nach der ersten. cache: ~/Library/Application Support/MINOS-741/cache, älteste zuerst gelöscht, tracks in den decks bleiben." = "file service: files are read and decoded in a separate process. if a cloud file hangs, the deck keeps loading (notice), loading is cancelled only after the second limit. without the file service: cancelled after the first one. cache: ~/Library/Application Support/MINOS-741/cache, oldest removed first, tracks in the decks stay.";
 "3-Band (Mischung)" = "3-band (blend)";
 "Spektrum (RGB)" = "Spectrum (RGB)";
-"Je Pixelzeile gemischt: Farbe aus Bass (< 150 Hz), Mitten (um 670 Hz) und Höhen (> 3 kHz) der Samples, die die Zeile erreichen, Helligkeit nach oben weich auslaufend. Spektrum (RGB): Bass rot, Mitten grün, Höhen blau, Mischungen gelb / cyan / weiß." = "Blended per pixel row: color from bass (< 150 Hz), mids (around 670 Hz) and highs (> 3 kHz) of the samples that reach the row, brightness fading softly towards the top. Spectrum (RGB): bass red, mids green, highs blue, mixes yellow / cyan / white.";
 
 /* Track-Tabelle: Spalten-Menü im Kopf */
 "▶ Gespielt" = "▶ Played";
