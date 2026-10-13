@@ -302,10 +302,10 @@ enum UISelfTest {
         let mix = u.mix
         // MIXER: Schalter ohne Beschriftung am Element, steht vor dem Picker „Decks“
         // ohne Fensterserver (CI-Runner) baut AppKit die Elemente der Werkzeugleiste nicht auf: dann nur melden, nicht scheitern
-        let labels = u.window.toolbar?.items.map { "\($0.label)\($0.view == nil ? "(ohne View)" : "")" } ?? []
+        let itemLabels = u.window.toolbar?.items.map { "\($0.label)\($0.view == nil ? "(ohne View)" : "")" } ?? []
         guard let items = u.window.toolbar?.items, let di = items.firstIndex(where: { $0.label == String(localized: "Decks") }), di > 0,
               let mixer = items[di - 1].view.flatMap({ u.control(in: $0) as? NSButton }) else {
-            log("werkzeugleiste nicht aufgebaut (\(labels.joined(separator: " · "))) – fall übersprungen")
+            log("werkzeugleiste nicht aufgebaut (\(itemLabels.joined(separator: " · "))) – fall übersprungen")
             return
         }
         check((mixer.state == .on) == mix.prefs.ui.showMixer, "Schalter vor „Decks“ zeigt nicht den Mixer-Zustand")
