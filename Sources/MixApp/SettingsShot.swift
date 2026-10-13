@@ -30,8 +30,8 @@ enum SettingsShot {
         store.load()
         let status = ControllerStatus()
         // zwei Beispiel-Controller, damit die Geräte-Blöcke im Bild stehen
-        status.devices = [.init(id: "SHOT-1", location: 1, left: 0, right: 1),
-                          .init(id: "SHOT-2", location: 2, left: 2, right: 3, pane: 1, fxUnit: 11)]
+        status.devices = [.init(id: "SHOT-1", location: 1, left: 0, right: 2, fxUnit: 10, name: "Controller", serial: "SHOT-1", side: .left),
+                          .init(id: "loc-14200000", location: 2, left: 1, right: 3, pane: 1, fxUnit: 11, name: "Controller", side: .right)]
         status.lastEvent = "—"
         let deadline = Date().addingTimeInterval(20)
         while store.tracks.isEmpty, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }

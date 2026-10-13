@@ -8,7 +8,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * sidebar left: DECKS · MIXER & FX · PLUGINS · DISPLAY · BROWSER · AUDIO · CONTROLLER · TAGS · CLOUD · KEYBOARD, active section with red bar
 * page right, scrolls: `◆ SECTION` heading with hairline, rows with fixed label column left, control right
 * toggles as squares (red = on), sliders with value + unit (s, ms, pt), hints in small mono
-* controller: one block per unit (left / right deck, browser pane, fx unit, blink)
+* controller: one block per unit (side, left / right deck, browser pane, fx unit, blink, startup show)
 * new section = one line in `SettingsView.tabs`
 
 ## ◆ DECKS
@@ -111,7 +111,8 @@ library in a cloud folder -> [library · cloud libraries](library.md#-cloud-libr
 
 ## ◆ CONTROLLER
 
-* controllers: decks per unit (left / right), browser pane and fx unit per unit, blink to identify
+* controllers: name, serial number, side (left a / c, right b / d, saved per device, swaps the other unit), decks per unit (left / right), browser pane and fx unit per unit, blink to identify, startup show per device
+* startup show on connect on / off (default on)
 * cue action: flux reverse / cue / reverse
 * flux button: switch pad layer (hotcues 5-8, default; shift + flux = flux mode) / flux mode (tap toggles flux mode if enabled)
 * flux held + pads: hotcues 5-8 or beatjump on pads 3 / 4, beatjump size for flux + hotcue 3 / 4

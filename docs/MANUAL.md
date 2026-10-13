@@ -63,7 +63,7 @@ settings, session and history survive updates.
 3. ⌘, -> AUDIO -> pick the output device and the mode
    * INTERNAL -> mixer in the app, master on one pair
    * EXTERNAL -> every deck on its own usb pair into your desk
-4. ⌘, -> CONTROLLER -> check which controller drives which decks, BLINK shows the unit
+4. ⌘, -> CONTROLLER -> check which controller drives which decks, BLINK shows the unit. the side (left a / c, right b / d) is saved per device serial number, the startup show displays it on connect
 5. double click a track = load into the focused deck (⌘1-4), right click -> load into deck A-D, or LOAD on the controller
 
 nothing is analyzed. bpm, key, grid, cues and loudness come from the collection.

@@ -827,3 +827,15 @@
 "Schnitt IN/OUT aus Bereich (keine neue Datei)" = "Cut IN/OUT from range (no new file)";
 "Bereich aufheben (Esc)" = "Clear range (Esc)";
 "Geschnittene Dateien (Wellenform: ⌃ + Ziehen markiert, Rechtsklick schneidet)" = "Cut files (waveform: ⌃ + drag marks a range, right click cuts)";
+"Controller links: %@ / %@" = "Controller left: %@ / %@";
+"Controller rechts: %@ / %@" = "Controller right: %@ / %@";
+"Controller: %@ / %@" = "Controller: %@ / %@";
+"ohne Seriennummer · %@" = "no serial number · %@";
+"Startsequenz" = "Startup show";
+"Lichtsequenz auf diesem Controller abspielen" = "Play the light show on this controller";
+"Seite" = "Side";
+"Links (A / C)" = "Left (A / C)";
+"Rechts (B / D)" = "Right (B / D)";
+"Fest für dieses Gerät gespeichert; der andere Controller wechselt auf die freie Seite" = "Saved for this device; the other controller moves to the free side";
+"Startsequenz beim Verbinden" = "Startup show on connect";
+"rot / weiß / lila, dann die decks der seite auf der 7-segment-anzeige, weißer blitz, bereit (3,4 s). eine eingabe bricht ab." = "red / white / purple, then the decks of the side on the 7 segment display, white flash, ready (3.4 s). any input stops it.";
