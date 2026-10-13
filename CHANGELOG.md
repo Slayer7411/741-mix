@@ -6,6 +6,10 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* status bar `always` / `automatic` / `off` (⌘, -> DISPLAY -> status bar, also in the view menu). automatic: the bar slides up over the browser when the mouse sits at the bottom edge of the window (6 pt zone, clicks pass through) or a warning / error arrives (6 s), and goes away when the mouse leaves it
+* layout: gap between decks and browser 3 pt instead of 13 (grip stays 9 pt, it reaches into the deck margin), browser header 4 pt lower, deck area without bottom margin
+* settings: AUDIO is the first section
+* `MIX741_SHOT_ROWS=phaseBar,loop` for the window shot: only these deck rows (names as in DeckRows, `grid` = grid tools), `MIX741_LAYOUT=2decks` applies to the shot too
 * browser: played tracks dimmed (whole row, ⌘, -> BROWSER), `hide played tracks` for collection, playlists and folders (history and running tracks keep them; also in the right-click menu of the collection), `reset played on start`
 * deck: drag the loaded track by its title to another deck (load, load lock applies, ⌥ forces) or onto PREPARATION in the browser tree (appended)
 * `MIX741_DEBUG_TABLE=1`: logs browser table reloads / redraws with the reason (flicker diagnosis)
@@ -200,6 +204,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
 
 ### fixed
+* deck: right click on the title (`Edit track …`) and dropping a track on a deck crashed in 42acab0 (the deck's own hosting view had no library / browser environment)
 * browser list flickering: with legacy scroll bars (mouse connected, `show scroll bars: always`) a horizontal bar appearing for columns slightly wider than the list took height, the columns were redistributed, the bar vanished, and so on, until a column was resized by hand. scroll bars of the list are overlays now, never part of the layout
 * settings window with the main window in full screen (also on another display): opened on the other display's desktop. now joins the full-screen space on the main window's screen and comes to the front
 * link / metronome half a bar off: in AUTO mode the master clock followed the master deck at beat level only (phase error modulo 1 beat), so its bar one could sit 1-3 beats off the deck's bar one, and link hands that bar (quantum 4) to the peers. now aligned within the bar: beat phase at once, a bar offset once it stays for 0.5 s (a loop shorter than a bar does not jump the clock)

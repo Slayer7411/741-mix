@@ -91,6 +91,7 @@ tracks without an analysis in the collection play, but have no grid -> no sync. 
 
 ### status bar
 
+* ⌘, -> DISPLAY -> status bar (also view menu): `always` / `automatic` / `off`. automatic: the bar slides up over the browser when the mouse sits at the bottom edge of the window or a warning / error arrives (6 s), gone when the mouse leaves it. off: no bar, no messages
 * left: current message, second line = path / reason or progress (`42/120`, ✕ = cancel). idle: tracks · collection · load time
 * colors: red = error, gold = warning, purple = info, bone = done
 * info 4 s, done 3 s, warning 8 s, error stays until clicked or replaced. `+n` = more active messages

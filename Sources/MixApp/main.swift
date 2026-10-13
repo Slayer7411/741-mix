@@ -48,8 +48,9 @@ struct ContentView: View {
                 .frame(height: big ? nil : mix.prefs.ui.browserHeight.z)
                 .frame(maxHeight: big ? .infinity : nil)
                 .layoutPriority(big ? 1 : 0)
-            statusBar
+            if mix.prefs.ui.statusBar == .always { statusBar }
         }
+        .overlay(alignment: .bottom) { if mix.prefs.ui.statusBar == .auto { AutoStatusBar() } }
         .background(Theme.background)
         .foregroundStyle(Theme.bone)
         .tint(Theme.state)
@@ -117,21 +118,25 @@ struct ContentView: View {
         }
     }
 
-    /// Ziehbarer Trenner zwischen Decks und Browser; Höhe wird gespeichert
+    /// Ziehbarer Trenner zwischen Decks und Browser; Höhe wird gespeichert. Sichtbar 3 pt (Linie + 1 pt Luft),
+    /// greifbar 9 pt: die Griff-Fläche ragt nach oben in den Deck-Rand (unten gewinnt der Browser)
     struct SplitHandle: View {
         @Binding var height: Double
         @State private var start: Double?
         var body: some View {
             Rectangle().fill(Theme.hairline).frame(height: 1)
-                .padding(.vertical, 3.z)
-                .contentShape(Rectangle())
-                .onHover { inside in if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
-                .gesture(DragGesture(minimumDistance: 1)
-                    .onChanged { g in
-                        if start == nil { start = height }
-                        height = max(120, min(900, (start ?? height) - g.translation.height / 1.z))
-                    }
-                    .onEnded { _ in start = nil })
+                .padding(.vertical, 1.z)
+                .overlay {
+                    Color.clear.frame(height: 9.z)
+                        .contentShape(Rectangle())
+                        .onHover { inside in if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
+                        .gesture(DragGesture(minimumDistance: 1)
+                            .onChanged { g in
+                                if start == nil { start = height }
+                                height = max(120, min(900, (start ?? height) - g.translation.height / 1.z))
+                            }
+                            .onEnded { _ in start = nil })
+                }
         }
     }
 
@@ -157,7 +162,8 @@ struct ContentView: View {
                 }
             }
         }
-        .padding(6.z)
+        .padding([.horizontal, .top], 6.z)
+        .padding(.bottom, 1.z)
     }
 
     @ViewBuilder private var browsers: some View {
@@ -275,6 +281,9 @@ struct MixApp: App {
                     .shortcut(keys.combo(.bigBrowser))
                 Picker("Browser-Anordnung", selection: Binding(get: { mix.prefs.ui.browserLayout }, set: { mix.prefs.ui.browserLayout = $0 })) {
                     ForEach(BrowserLayout.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                Picker("Statusleiste", selection: Binding(get: { mix.prefs.ui.statusBar }, set: { mix.prefs.ui.statusBar = $0 })) {
+                    ForEach(StatusBarMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 Divider()
                 ForEach([ShortcutID.zoomIn, .zoomOut, .zoomReset]) { a in

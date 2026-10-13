@@ -39,11 +39,21 @@ enum WindowShot {
 
         // feste Ansicht (Selbsttest speichert nichts)
         mix.prefs.ui.showMixer = false
-        mix.prefs.ui.showFourDecks = true
+        mix.prefs.ui.showFourDecks = env["MIX741_LAYOUT"]?.contains("2decks") != true
+        if env["MIX741_LAYOUT"]?.contains("mixer") == true { mix.prefs.ui.showMixer = true }
         mix.prefs.ui.browserLayout = .sideBySide
         mix.prefs.ui.browserHeight = 330
         mix.prefs.ui.hideTreeWithDecks = false
         mix.prefs.ui.showAllDeckRows()
+        // MIX741_SHOT_ROWS=phaseBar,loop: nur diese Deck-Zeilen (Namen wie in DeckRows, `grid` = Grid-Werkzeuge)
+        if let rows = env["MIX741_SHOT_ROWS"] {
+            let paths: [String: WritableKeyPath<UIPrefs, Bool>] = [
+                "info": \.deckRows.info, "comment": \.deckRows.comment, "tags": \.deckRows.tags, "phaseBar": \.deckRows.phaseBar,
+                "overview": \.deckRows.overview, "transport": \.deckRows.transport, "hotcues": \.deckRows.hotcues,
+                "loop": \.deckRows.loop, "jump": \.deckRows.jump, "tempo": \.deckRows.tempo, "grid": \.showGridTools]
+            for p in paths.values { mix.prefs.ui[keyPath: p] = false }
+            for n in rows.split(separator: ",") { if let p = paths[String(n)] { mix.prefs.ui[keyPath: p] = true } }
+        }
         mix.prefs.ui.zoom = 1
         ZoomControl.apply(1)
 

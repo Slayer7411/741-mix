@@ -7,12 +7,12 @@ import MixEngine
 /// Links die Bereiche (neuer Bereich = eine Zeile in `tabs`), rechts der Inhalt scrollbar.
 struct SettingsView: View {
     static let tabs: [SettingsTab] = [
+        SettingsTab("AUDIO") { AudioSettings() },
         SettingsTab("DECKS") { DeckSettings() },
         SettingsTab("MIXER & FX") { MixerFXSettings() },
         SettingsTab("PLUGINS") { PluginSettingsView() },
         SettingsTab("ANZEIGE") { WaveformSettings() },
         SettingsTab("BROWSER") { BrowserSettings() },
-        SettingsTab("AUDIO") { AudioSettings() },
         SettingsTab("CONTROLLER") { ControllerSettings() },
         SettingsTab("TAGS") { TagColorSettings() },
         SettingsTab("CLOUD") { CloudSettings() },
@@ -545,6 +545,9 @@ struct WaveformSettings: View {
             }
             PreviewSettings()
             Section("Statusleiste") {
+                Picker("Anzeigen", selection: $mix.prefs.ui.statusBar) { ForEach(StatusBarMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Text("automatisch: die leiste fährt hoch, wenn die maus am unteren fensterrand steht oder eine warnung kommt, und liegt dann über dem browser. aus: keine leiste, auch keine meldungen. auch im menü darstellung.")
+                    .settingsHint()
                 Toggle("Last-Anzeigen (DSP, Latenz, Aussetzer, Speicher, CPU)", isOn: $mix.prefs.ui.showMeters)
                 Text("dsp = rechenzeit des audio-blocks ÷ blockdauer, rot ab 70 %. aussetzer: blöcke über dem budget plus überlast-meldungen des geräts, klick setzt zurück. meldungen: klick zeigt die letzten 50.")
                     .settingsHint()

@@ -96,30 +96,39 @@ struct DeckView: View {
 struct DeckHost: NSViewRepresentable {
     @Environment(MixModel.self) private var mix
     @Environment(WaveformCache.self) private var cache
+    @Environment(LibraryStore.self) private var store
+    @Environment(BrowserState.self) private var browser
     let d: Int
 
+    /// eigene Hosting-View erbt keine Umgebung: alles, was das Deck liest (Menü „Track bearbeiten“, Drop-Ziel), kommt hier mit
     struct Root: View {
         let d: Int
         let mix: MixModel
         let cache: WaveformCache
+        let store: LibraryStore
+        let browser: BrowserState
         var body: some View {
             DeckView(d: d)
                 .environment(mix)
                 .environment(cache)
+                .environment(store)
+                .environment(browser)
                 .foregroundStyle(Theme.bone)
                 .tint(Theme.state)
         }
     }
 
     func makeNSView(context: Context) -> BoundaryHostingView<Root> {
-        let v = BoundaryHostingView(rootView: Root(d: d, mix: mix, cache: cache))
+        let v = BoundaryHostingView(rootView: Root(d: d, mix: mix, cache: cache, store: store, browser: browser))
         v.name = "deck " + deckLetters[d]
         v.sizingOptions = []
         return v
     }
 
     func updateNSView(_ v: BoundaryHostingView<Root>, context: Context) {
-        if v.rootView.d != d || v.rootView.mix !== mix || v.rootView.cache !== cache { v.rootView = Root(d: d, mix: mix, cache: cache) }
+        if v.rootView.d != d || v.rootView.mix !== mix || v.rootView.cache !== cache || v.rootView.store !== store || v.rootView.browser !== browser {
+            v.rootView = Root(d: d, mix: mix, cache: cache, store: store, browser: browser)
+        }
     }
 
     /// nimmt den angebotenen Platz; sonst fragt SwiftUI bei jedem äußeren Layout fittingSize ab (Auto Layout + inneres Layout)

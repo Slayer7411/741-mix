@@ -146,6 +146,13 @@ struct DeckRows: Codable, Equatable {
     ]
 }
 
+/// Statusleiste unten: immer sichtbar, automatisch (fährt hoch, wenn die Maus am unteren Rand steht oder eine
+/// Warnung kommt, liegt dann über dem Browser) oder aus
+enum StatusBarMode: String, CaseIterable, Identifiable, Codable {
+    case always = "Immer", auto = "Automatisch", hidden = "Aus"
+    var id: String { rawValue }
+}
+
 struct UIPrefs: Codable, Equatable {
     var showMixer = true
     var showFourDecks = true
@@ -212,6 +219,8 @@ struct UIPrefs: Codable, Equatable {
     var showCoverPreview = true
     /// Last-Anzeigen rechts in der Statusleiste (DSP, Latenz, Aussetzer, Speicher, CPU)
     var showMeters = true
+    /// Statusleiste: immer, automatisch (Maus am unteren Rand, Warnungen) oder aus
+    var statusBar = StatusBarMode.always
     /// Collection prüfen: beim Start nach dem Laden automatisch
     var checkOnStart = false
     /// Collection prüfen: Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen

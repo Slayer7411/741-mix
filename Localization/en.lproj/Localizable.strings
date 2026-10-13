@@ -436,6 +436,9 @@
 "CPU (alle Kerne, 100 % = ein Kern)" = "CPU (all cores, 100 % = one core)";
 "Aussetzer zurücksetzen" = "Reset dropouts";
 "Statusleiste" = "Status bar";
+"Immer" = "Always";
+"Anzeigen" = "Show";
+"automatisch: die leiste fährt hoch, wenn die maus am unteren fensterrand steht oder eine warnung kommt, und liegt dann über dem browser. aus: keine leiste, auch keine meldungen. auch im menü darstellung." = "automatic: the bar slides up when the mouse sits at the bottom edge of the window or a warning arrives, and then covers the browser. off: no bar and no messages. also in the view menu.";
 "Last-Anzeigen (DSP, Latenz, Aussetzer, Speicher, CPU)" = "Load meters (DSP, latency, dropouts, memory, CPU)";
 "Laden abbrechen nach (keine Audiodaten)" = "Cancel loading after (no audio data)";
 "dsp = rechenzeit des audio-blocks ÷ blockdauer, rot ab 70 %. aussetzer: blöcke über dem budget plus überlast-meldungen des geräts, klick setzt zurück. meldungen: klick zeigt die letzten 50." = "dsp = compute time of the audio block ÷ block duration, red above 70 %. dropouts: blocks over budget plus overload reports from the device, click resets. messages: click shows the last 50.";

@@ -353,3 +353,60 @@ struct MeterDetails: View {
         }
     }
 }
+
+/// Statusleiste „Automatisch“: liegt über dem Browser und fährt hoch, wenn die Maus am unteren Fensterrand steht
+/// (6 pt Zone, Klicks gehen durch) oder eine Warnung / ein Fehler kommt (6 s). Weg, sobald die Maus sie verlässt.
+struct AutoStatusBar: View {
+    @State private var shown = false
+    @State private var inside = false
+    @State private var hideTask: Task<Void, Never>?
+    private var center: StatusCenter { StatusCenter.shared }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            HotZone(onEnter: { show() }, onExit: { hide(after: 0.4) }).frame(height: 6)
+            StatusBar()
+                .offset(y: shown ? 0 : 34.z)
+                .opacity(shown ? 1 : 0)
+                .allowsHitTesting(shown)
+                .onHover { on in
+                    inside = on
+                    if on { hideTask?.cancel() } else { hide(after: 0.4) }
+                }
+        }
+        .animation(.easeOut(duration: 0.15), value: shown)
+        .onChange(of: center.current?.id) { _, _ in
+            if let m = center.current, m.level == .warning || m.level == .error { show(); hide(after: 6) }
+        }
+    }
+
+    private func show() { hideTask?.cancel(); shown = true }
+
+    private func hide(after s: Double) {
+        hideTask?.cancel()
+        hideTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(s))
+            if !Task.isCancelled, !inside { shown = false }
+        }
+    }
+
+    /// Mausfläche ohne Treffer: meldet Betreten / Verlassen, Klicks landen in der Ansicht darunter
+    struct HotZone: NSViewRepresentable {
+        var onEnter: () -> Void
+        var onExit: () -> Void
+        func makeNSView(context: Context) -> Zone { let v = Zone(); v.onEnter = onEnter; v.onExit = onExit; return v }
+        func updateNSView(_ v: Zone, context: Context) { v.onEnter = onEnter; v.onExit = onExit }
+        final class Zone: NSView {
+            var onEnter: () -> Void = {}
+            var onExit: () -> Void = {}
+            override func hitTest(_ point: NSPoint) -> NSView? { nil }
+            override func updateTrackingAreas() {
+                trackingAreas.forEach(removeTrackingArea)
+                addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp], owner: self))
+                super.updateTrackingAreas()
+            }
+            override func mouseEntered(with event: NSEvent) { onEnter() }
+            override func mouseExited(with event: NSEvent) { onExit() }
+        }
+    }
+}

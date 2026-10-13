@@ -418,7 +418,7 @@ struct PaneHeader: View {
             }
         }
         .padding(.horizontal, 8.z)
-        .padding(.vertical, 5.z)
+        .padding(.vertical, 3.z)
         .background(Theme.panelHeader)
     }
 }
