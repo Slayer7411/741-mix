@@ -85,6 +85,8 @@ private func waitLoaded(_ c: MixController, _ d: Int, max seconds: Double) async
     c.load(t, deck: 0)
     let seen = try await waitLoaded(c, 0, max: 5)
     let isError = { (e: EngineNotice) in e.key == "load.0" && e.level == .error }
+    // die Meldung kommt über die Haupt-Queue und darf dem Deck-Zustand etwas hinterherhinken (CI-Runner)
+    for _ in 0..<40 where n.time(of: isError) == nil { try await Task.sleep(for: .milliseconds(50)) }
     let cancelled = n.time(of: isError).map { $0.timeIntervalSince(t0) } ?? .nan
     print(String(format: "[load] hängender Dekoder: Abbruch nach %.2f s, im Test gesehen nach %.2f s (Grenze 1 s, Verzug %.2f s)", cancelled, seen, lag.max))
     // Abbruch nach der Grenze (+ 0,25 s Wächter-Takt)
