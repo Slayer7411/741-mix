@@ -206,6 +206,7 @@ enum SelfTest {
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
             await deviceProbe(core)
             await previewProbe(mix, tracks: c)
+            await cutProbe(mix, tracks: c)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -418,6 +419,64 @@ enum SelfTest {
         mix.stopPreview()
         try? await Task.sleep(for: .milliseconds(300))
         log(String(format: "Vorhören gestoppt: spielt %@ · Pegel %.4f", "\(pv.playing)", pv.level.peak))
+    }
+
+    /// Schneiden, stumm, in einen temporären Ordner (nie neben die Originale, nichts in cuts.json): auf Deck A 64 Beats
+    /// ab ~1:00 entfernen, während A spielt. Dauer, Quelle (Deck-Puffer / neu dekodiert), Länge und Rate der Datei,
+    /// verschobenes Grid, längste Lücke des Hauptthreads (Takt 240 Hz). Die Datei wird danach gelöscht
+    static func cutProbe(_ mix: MixModel, tracks c: [Track]) async {
+        // 6-Minuten-Track (5:30–7:00) auf Deck C, sonst Deck A selbst
+        var d = 0
+        if let long = c.first(where: { $0.duration >= 330 && $0.duration <= 420 }) {
+            mix.core.load(long, deck: 2)
+            for _ in 0..<1500 where mix.core.trackAudio(2) == nil && mix.core.snapshot().decks[2].error == nil {
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+            if mix.core.trackAudio(2) != nil { d = 2 }
+        }
+        mix.pull()
+        let s = mix.deck(d)
+        guard s.track != nil, let g = s.grid, g.bpm > 0, s.duration > 120 else { log("Schneiden: übersprungen (Deck ohne Grid)"); return }
+        let a = g.time(ofBeat: g.beatPosition(at: 60).rounded())
+        let r = TrackRange(a, a + 64 * g.beat)
+        mix.setRange(d, r)
+        final class Gap: @unchecked Sendable { var worst = 0.0, last = CACurrentMediaTime(), hits: [(Double, Double)] = [] }
+        let gap = Gap()
+        let tick = Timer(timeInterval: 1.0 / 240, repeats: true) { _ in
+            let now = CACurrentMediaTime()
+            gap.worst = max(gap.worst, now - gap.last)
+            if now - gap.last > 0.016 { gap.hits.append((now, now - gap.last)) }
+            gap.last = now
+        }
+        RunLoop.main.add(tick, forMode: .common)
+        try? await Task.sleep(for: .seconds(1))
+        let idle = gap.worst
+        gap.worst = 0
+        gap.hits = []
+        CutJob.lastResult = nil
+        let t0 = Date(), c0 = CACurrentMediaTime()
+        mix.cutRange(d, mode: .remove, load: false)
+        while CutJob.running, Date().timeIntervalSince(t0) < 120 { try? await Task.sleep(for: .milliseconds(20)) }
+        let c1 = CACurrentMediaTime()
+        try? await Task.sleep(for: .milliseconds(500))
+        tick.invalidate()
+        log("Schneiden: Lücken > 16 ms (s ab Start, ms): " + gap.hits.map { String(format: "%.2f/%.0f", $0.0 - c0, $0.1 * 1000) }.joined(separator: " ")
+            + String(format: " · fertig bei %.2f s", c1 - c0))
+        mix.setRange(d, nil)
+        guard let res = CutJob.lastResult else { log("Schneiden: kein Ergebnis"); return }
+        let url = URL(fileURLWithPath: res.track.path)
+        let f = try? AVAudioFile(forReading: url)
+        let secs = f.map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0
+        let want = s.duration - r.length
+        let ng = BeatGrid(track: res.track)
+        log(String(format: "Schneiden Deck %@ (%.0f s, A spielt, Bereich %.1f–%.1f s entfernt): %.2f s (%@) · Datei %.3f s, soll %.3f · %.0f Hz · %d Kanäle · Apple Lossless %@ · Grid-Anker %.3f -> %.3f s · Hotcues %@ -> %@ · Hauptthread längste Lücke %.0f ms (1 s davor ohne Schneiden %.0f ms, Abschluss %.1f ms) · %@",
+                   deckLetters[d], s.duration, r.start, r.end, res.seconds, res.fromDeck ? "Deck-Puffer" : "Datei neu dekodiert", secs, want, f?.processingFormat.sampleRate ?? 0,
+                   Int(f?.processingFormat.channelCount ?? 0),
+                   "\(f?.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatAppleLossless)", g.anchor, ng?.anchor ?? .nan,
+                   s.hotcues.values.map { String(format: "%.1f", $0.startMs / 1000) }.sorted().joined(separator: "/"),
+                   res.track.hotcues.map { String(format: "%.1f", $0.startMs / 1000) }.joined(separator: "/"),
+                   gap.worst * 1000, idle * 1000, CutJob.mainSeconds * 1000, abs(secs - want) < 0.01 ? "ok" : "LÄNGE FALSCH"))
+        try? FileManager.default.removeItem(at: url)
     }
 
     /// wird vom HistoryStore gesetzt, damit der Test genau seine eigene Datei entfernen kann

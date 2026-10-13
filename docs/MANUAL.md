@@ -281,6 +281,31 @@ grid edits:
 * cut start / end saved per track in `edits.json` (seconds), with the grid edits. a cut is never written into the collection
 * browser `Vorhören` plays only the cut (from the preview start share of the cut, stops at the cut end), a cut changed on a deck moves a running preview of the same track. browser preview: outside the cut dimmed, edges marked (not draggable)
 
+### cut audio
+
+real cut = a new audio file. the original is never changed.
+
+* ⌃ + drag in the waveform = mark a range, start and end on the nearest beat of the grid, ⌃⌥ = free. red tint, edges with tabs, label `bar.beat → bar.beat · beats B · seconds`, also in the overview
+* drag an edge = move it (same snapping, ⌥ = free). the range stays until esc, a click outside it, a new range or another track
+* right click in the range:
+
+| entry | action |
+|---|---|
+| Bereich entfernen (neue Datei) | new file without the range (breakdown out) |
+| Auf Bereich kürzen (neue Datei) | new file with only the range |
+| Ergebnis ins Deck laden | on: the new file loads into the same deck (load lock applies: a playing deck keeps its track). also in menu DECKS |
+| Schnitt IN/OUT aus Bereich | cut start / end = range, no file |
+| Loop aus Bereich | loop on the range, play head jumps in when outside |
+| Bereich aufheben | range off |
+
+* edit mode: with a range the cut row shows `REMOVE` / `KEEP` / `→ CUT` / `→ LOOP` / `✕` (narrow decks: REMOVE / KEEP / ✕)
+* keys (⌘, -> KEYBOARD, no default): remove range, keep range, cut in / out from range, loop from range. esc = clear range (only taken when a range exists)
+* file: `<name> [cut].m4a` next to the original, apple lossless, sample rate and channels of the original, 16 bit from 16-bit sources, else 24. name taken -> `[cut 2]`, `[cut 3]` …
+* 2 ms linear crossfade at the joint, 2 ms fade at an edge inside the track (keep). length = original minus range (remove) or range (keep), sample exact
+* source: decoded audio of the deck when it has the file's rate, else the file is decoded again at its own rate. runs on an own queue (not main, not audio thread), progress + ✕ in the status bar, then `Geschnitten: <file> · 5:12`
+* metadata: all fields of the original, title + ` [cut]`, bpm, key, comments, tags (comment 2), cover of the original. grid: anchor before the removed range stays, else it moves back by the removed length. keep: anchor from the new start, by whole bars behind it when it would lie before. hotcues, memory cues and loops outside the removed part move along, inside are dropped (loops over a cut edge too). a grid marker on a hotcue slot stays there on the new anchor
+* browser: tree entry CUTS (once a cut exists) with all cuts and their metadata, the file in MUSIC FOLDERS shows the same. saved in `cuts.json`, never in the collection file. `Collection prüfen` lists a cut in a music folder like any file without an entry
+
 ## ◆ 06 · SYNC / CLOCK / LINK
 
 ```
@@ -457,7 +482,7 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
 * one or two panes, side by side or stacked
 * each pane: own tree, search, sort, role chips, tags
 * favorites bar on top of each pane: 6 slots, source or filter. click = switch, right click = assign / rename / clear, drag a tree entry onto a slot, ⌃⌥1-6. details: [library · favorites](library.md#-favorites)
-* tree: TRACK COLLECTION, PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, MUSIC FOLDERS, then all playlists + smartlists of the collection
+* tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, MUSIC FOLDERS, then all playlists + smartlists of the collection
 * MUSIC FOLDERS = the music library on disk, folder by folder. click a folder -> its audio files (mp3, m4a, aac, aiff, wav, flac, ogg, opus)
   * files in the collection show bpm, key, tags, comments like everywhere else
   * files not in the collection are grey, no grid, load and preview anyway
@@ -665,8 +690,9 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | ⌥⌘J | browser: matching on / off (last used pane) |
 | ⌘, | settings |
 | ⌘W | close window -> main window: quit (asks first) |
+| esc | clear the marked range (only when one exists, not in a search field) |
 
-no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, reconnect audio.
+no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, reconnect audio.
 ⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.
 
 controller mapping -> [controllers.md](controllers.md). flux on the controller = pad layer switch: tap -> pads 1-4 play hotcues 5-8 (flux led lit), tap again -> back, shift + flux = tap (grid bpm from the taps; setting: flux mode instead), shift + sync = master. old layout under ⌘, -> CONTROLLER -> flux button.
@@ -681,6 +707,7 @@ controller mapping -> [controllers.md](controllers.md). flux on the controller =
 | settings | user defaults, key `prefs.v1` |
 | session (decks, fx, clock, browser) | `~/Library/Application Support/MINOS-741/session.json` |
 | hotcue, grid + cut edits | `~/Library/Application Support/MINOS-741/edits.json` |
+| cut files (metadata, CUTS) | `~/Library/Application Support/MINOS-741/cuts.json`, the files next to their originals |
 | browser previews (track overviews) | `~/Library/Application Support/MINOS-741/overviews/overviews.bin` |
 | own analysis (tempo, grid, key, loudness) | `~/Library/Application Support/MINOS-741/analysis.json` |
 | history | `~/Library/Application Support/MINOS-741/History` |

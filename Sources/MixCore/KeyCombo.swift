@@ -88,6 +88,8 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case hotcue1 = "deck.hotcue.1", hotcue2 = "deck.hotcue.2", hotcue3 = "deck.hotcue.3", hotcue4 = "deck.hotcue.4"
     case hotcue5 = "deck.hotcue.5", hotcue6 = "deck.hotcue.6", hotcue7 = "deck.hotcue.7", hotcue8 = "deck.hotcue.8"
     case editMode = "deck.edit", cutIn = "deck.cut.in", cutOut = "deck.cut.out", gridSet = "deck.grid.set"
+    case rangeRemove = "deck.range.remove", rangeKeep = "deck.range.keep", rangeTrim = "deck.range.trim", rangeLoop = "deck.range.loop"
+    case rangeClear = "deck.range.clear"
     case keySync = "deck.keysync", instantDouble = "deck.double"
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", loadSelectedForce = "browser.load.force"
     case previewSelected = "browser.preview"
@@ -163,11 +165,12 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .zoomOut: KeyCombo("-")
         case .zoomReset: KeyCombo("0")
         case .editMode: KeyCombo("e", [.option, .command])
+        case .rangeClear: KeyCombo("escape", [])
         case .openCollection: KeyCombo("o")
         case .settings: KeyCombo(",")
         case .closeWindow: KeyCombo("w")
         case .master, .keylock, .reloop, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .reconnectAudio,
-             .cutIn, .cutOut, .gridSet, .keySync, .instantDouble: nil
+             .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop: nil
         }
     }
 }

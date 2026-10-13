@@ -117,3 +117,17 @@ private func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-6 }
     c.tapGrid(0, at: 110)                 // Pause > 2 s: beginnt neu, ändert nichts
     #expect(abs(c.snapshot().decks[0].grid!.bpm - 127.66) < 0.01)
 }
+
+@Test func loopFromRangeJumpsInAndKeepsTrim() async throws {
+    let (c, url) = try await controller()
+    defer { try? FileManager.default.removeItem(at: url) }
+    c.seek(0, seconds: 3)
+    #expect(c.setLoop(0, start: 8, end: 12))   // 8 Beats, Position davor -> Sprung an den Anfang
+    var l = c.engine.loop(0)
+    #expect(l.active && near(l.start, 8) && near(l.end, 12) && near(c.position(0), 8))
+    #expect(c.snapshot().decks[0].loopSize == 8)
+    #expect(c.setLoop(0, start: 18, end: 22))  // über das Schnitt-Ende -> gekürzt
+    l = c.engine.loop(0)
+    #expect(near(l.start, 18) && near(l.end, 20))
+    #expect(!c.setLoop(0, start: 21, end: 23))  // ganz außerhalb des Schnitts
+}

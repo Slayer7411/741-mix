@@ -71,8 +71,44 @@ final class LibraryStore {
     /// MUSIC FOLDERS (Dateibaum der Musik-Ordner)
     let folders = MusicFolderStore()
 
-    /// Track zu einem Schlüssel: Collection oder schon angezeigte Datei aus MUSIC FOLDERS
-    func track(_ key: String) -> Track? { byKey[key] ?? folders.loose[key] }
+    /// Track zu einem Schlüssel: Collection, geschnittene Datei (CUTS) oder schon angezeigte Datei aus MUSIC FOLDERS
+    func track(_ key: String) -> Track? { byKey[key] ?? cutStore.byKey[key] ?? folders.loose[key] }
+
+    /// geschnittene Dateien (Schneiden in der Wellenform): eigene Liste mit Metadaten, nie in der Collection-Datei
+    @ObservationIgnored let cutStore = CutStore(url: Session.isSelfTest ? nil : HistoryStore.baseDir.appendingPathComponent("cuts.json"))
+    private(set) var cutsRevision = 0
+    @ObservationIgnored private var cutsChecked = false
+    var cuts: [Track] { _ = cutsRevision; return cutStore.tracks }
+
+    /// neue geschnittene Datei: in CUTS und (liegt der Ordner in MUSIC FOLDERS) im Ordner mit ihren Metadaten
+    func addCut(_ t: Track, source: Track) {
+        cutStore.add(CutEntry(track: t, source: source.key, sourcePath: source.path))
+        cutsRevision += 1
+        folders.fileAdded(t.path)
+    }
+
+    /// einmal nach dem Laden der Collection: fehlen Dateien in CUTS (im Hintergrund, Datei-Dienst wie die Collection)
+    private func checkCuts() {
+        guard !cutsChecked else { return }
+        cutsChecked = true
+        let list = cutStore.paths
+        guard !list.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            let paths = list.map(\.path)
+            var gone = Set<String>()
+            if let fs = FileServiceSetup.shared, !fs.unavailable {
+                let states = fs.check(paths: paths)
+                for (i, e) in list.enumerated() where states[i] == .missing || states[i] == .error { gone.insert(e.key) }
+            } else {
+                for e in list where !FileManager.default.fileExists(atPath: e.path) { gone.insert(e.key) }
+            }
+            let missing = gone
+            await MainActor.run {
+                self.cutStore.setMissing(missing)
+                self.cutsRevision += 1
+            }
+        }
+    }
 
     /// Änderungszähler einer Quelle zusätzlich zu `revision` (Browser-Zwischenspeicher)
     func sourceRevision(_ s: BrowserSource, subfolders: Bool = false) -> Int {
@@ -80,6 +116,7 @@ final class LibraryStore {
         case .running: runningRevision
         case .preparation: preparationRevision
         case .custom: smartlistRevision
+        case .cuts: cutsRevision
         case let .folder(p): folders.stamp(p, recursive: subfolders)
         default: 0
         }
@@ -205,6 +242,7 @@ final class LibraryStore {
                     self.presortRevision = self.revision
                     self.folders.collectionLoaded(index: folderIndex, defaultRoot: folderRoot)
                     self.onLoaded?()   // einmal je Start (prüft selbst)
+                    self.checkCuts()
                     if first, !Session.isSelfTest, AppPrefs.load().ui.checkOnStart { ConsistencyWindow.show(store: self) }
                     if self.root !== newRoot { self.root = newRoot }
                     self.nodes = newNodes
@@ -483,6 +521,7 @@ final class LibraryStore {
         case .collection: return tracks
         case .preparation: return preparation.compactMap { track($0) }
         case .running: return running
+        case .cuts: return cuts
         case .history, .historyLive: return []
         case .prepArchive: return []   // löst BrowserPaneModel über den HistoryStore auf
         case let .custom(sl):
@@ -512,6 +551,8 @@ enum BrowserSource: Hashable {
     case collection
     case preparation
     case running
+    /// geschnittene Dateien (CUTS)
+    case cuts
     case node(PlaylistNode)
     case historyLive
     case history(HistorySession)
@@ -525,6 +566,7 @@ enum BrowserSource: Hashable {
         case .collection: "Track Collection"
         case .preparation: "Preparation"
         case .running: "Running Tracks"
+        case .cuts: "Cuts"
         case let .node(n): n.name
         case .historyLive: "History"
         case let .history(s): "History " + (s.label ?? Theme.dateTimeFormat.string(from: s.date))

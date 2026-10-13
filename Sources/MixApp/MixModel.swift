@@ -22,6 +22,8 @@ final class DeckMirror {
     var trackKey = ""
     /// EDIT-Modus: hier statt in `prefs` beobachtet – Umschalten rendert nur dieses Deck neu (gespeichert mit den Einstellungen)
     var editing = false
+    /// markierter Bereich der Wellenform (⌃ + Ziehen), bis Esc, Klick daneben, neue Markierung oder anderer Track
+    var range: TrackRange?
 }
 
 /// FX-Unit für die Oberfläche: eigenes Observable je Unit (FXUnitView liest nur ihre Unit)
@@ -137,6 +139,9 @@ final class MixModel {
     /// Gerät, auf das die Engine wartet (Statuszeile)
     @ObservationIgnored private var lostDevice: String?
 
+    /// Bibliothek (Schneiden: neue Datei in CUTS), beim Start gesetzt
+    @ObservationIgnored weak var library: LibraryStore?
+
     /// Plugin-Verwaltung (⌘, → PLUGINS); teilt die Liste mit dem Kern
     @ObservationIgnored lazy var plugins = PluginManager(catalog: core.pluginCatalog)
 
@@ -240,6 +245,7 @@ final class MixModel {
                 let key = s.decks[d].track?.key ?? ""
                 if key != decks[d].trackKey {
                     decks[d].trackKey = key
+                    if decks[d].range != nil { decks[d].range = nil }
                     // Instant Double (auch vom Controller): Collection-Stand und gespeicherte Änderung vom Quell-Deck
                     if !key.isEmpty, originals[d]?.key != key, let e = originals.first(where: { $0.value.key == key })?.key {
                         originals[d] = originals[e]
@@ -383,6 +389,31 @@ final class MixModel {
         setTrimPoint(d, end: end, t)
     }
     func clearTrim(_ d: Int) { run { core.clearTrim(d) } }
+
+    // Bereich (Markierung in der Wellenform): Schneiden, Schnitt, Loop
+    func range(_ d: Int) -> TrackRange? { decks.indices.contains(d) ? decks[d].range : nil }
+    func setRange(_ d: Int, _ r: TrackRange?) { if decks.indices.contains(d), decks[d].range != r { decks[d].range = r } }
+    /// Esc: Bereich des Fokus-Decks weg, sonst alle; false = keiner da (Taste bleibt frei)
+    @discardableResult
+    func clearRange(_ d: Int? = nil) -> Bool {
+        let hit = d.flatMap { decks.indices.contains($0) && decks[$0].range != nil ? [$0] : nil } ?? decks.indices.filter { decks[$0].range != nil }
+        for i in hit { decks[i].range = nil }
+        return !hit.isEmpty
+    }
+    /// Schnitt IN / OUT auf den Bereich (nicht destruktiv)
+    func rangeToTrim(_ d: Int) {
+        guard let r = range(d) else { return }
+        var ok = false
+        run { ok = core.setTrim(d, TrackTrim(start: r.start, end: r.end)) }
+        if !ok { StatusCenter.post(.warning, String(localized: "Schnitt zu kurz (mindestens 1 s)"), key: "trim.\(d)") }
+    }
+    /// Loop auf den Bereich
+    func rangeToLoop(_ d: Int) {
+        guard let r = range(d) else { return }
+        var ok = false
+        run { ok = core.setLoop(d, start: r.start, end: r.end) }
+        if !ok { StatusCenter.post(.warning, String(localized: "Loop aus Bereich nicht möglich (außerhalb des Schnitts)"), key: "loop.\(d)") }
+    }
 
     /// EDIT-Modus je Deck (Schnitt- und Grid-Werkzeuge statt Loop / Beatjump), gemerkt in den Einstellungen
     func editing(_ d: Int) -> Bool { decks[d].editing }

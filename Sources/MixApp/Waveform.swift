@@ -411,7 +411,8 @@ struct WaveformView: View {
                                activeEnd: deck.activeLoops.contains($0.hotcue) ? ($0.startMs + $0.lengthMs) / 1000 : nil)
             },
             cuePoint: deck.cuePoint, hasTrack: deck.track != nil, zoom: 1.z, gridEdited: deck.gridEdited,
-            trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d)))
+            trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d)),
+            range: mix.range(d).map { WaveScene.Marked($0, grid: deck.grid) })
         Content(d: d, scene: scene, wave: wf, waiting: deck.track != nil && wf == nil).equatable()
     }
 
@@ -431,9 +432,6 @@ struct WaveformView: View {
         let scene: WaveScene
         let wave: RenderedWaveform?
         let waiting: Bool
-        @State private var lastDrag: CGFloat?
-        /// gezogener Griff des Schnitts (EDIT-Modus), sonst wird gescrubbt
-        @State private var handle: Int?
         static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.scene == b.scene && a.wave === b.wave && a.waiting == b.waiting }
 
         var body: some View {
@@ -441,38 +439,167 @@ struct WaveformView: View {
                           loop: { [mix, d] in mix.engine.loop(d) })
                 .overlay {
                     if waiting {
-                        Text("Wellenform wird berechnet …").font(Theme.mono(10.z)).foregroundStyle(.secondary)
+                        Text("Wellenform wird berechnet …").font(Theme.mono(10.z)).foregroundStyle(.secondary).allowsHitTesting(false)
                     }
                 }
-                .overlay {
-                    GeometryReader { geo in
-                        Color.clear.contentShape(Rectangle())
-                            .gesture(DragGesture(minimumDistance: 1)
-                                .onChanged { g in
-                                    let w = geo.size.width
-                                    if lastDrag == nil {
-                                        handle = WaveformView.trimHandle(at: g.startLocation.x, width: w, scene: scene, position: mix.position(d))
-                                    }
-                                    let dx = g.translation.width - (lastDrag ?? 0)
-                                    lastDrag = g.translation.width
-                                    let secPerPt = mix.prefs.ui.waveformSeconds * 2 / w
-                                    if let h = handle {   // Griff: Schnitt-Rand unter den Zeiger (Quantize: Beat, ⌥ = frei)
-                                        mix.dragTrim(d, end: h == 1, to: mix.position(d) + Double(g.location.x - w / 2) * secPerPt)
-                                    } else {
-                                        mix.core.seek(d, seconds: mix.position(d) - Double(dx) * secPerPt)
-                                    }
-                                }
-                                .onEnded { _ in lastDrag = nil; handle = nil })
-                            .onContinuousHover { phase in
-                                guard scene.trim.editing else { return }
-                                if case .active(let p) = phase,
-                                   WaveformView.trimHandle(at: p.x, width: geo.size.width, scene: scene, position: mix.position(d)) != nil {
-                                    NSCursor.resizeLeftRight.set()
-                                } else { NSCursor.arrow.set() }
-                            }
-                    }
-                }
+                .overlay { WaveMouse(mix: mix, d: d, scene: scene) }
         }
+    }
+}
+
+/// Maus in der Wellenform, in AppKit: ⌃-Klick ist sonst ein Rechtsklick (SwiftUI-Kontextmenü statt Ziehen).
+/// Ziehen = Scrub, im EDIT-Modus Griffe des Schnitts; ⌃ + Ziehen markiert einen Bereich (Beatgrid, ⌥ = frei),
+/// seine Ränder lassen sich nachziehen; Rechtsklick in den Bereich = Menü (schneiden, Schnitt, Loop); Klick daneben hebt ihn auf
+struct WaveMouse: NSViewRepresentable {
+    let mix: MixModel
+    let d: Int
+    let scene: WaveScene
+
+    func makeNSView(context: Context) -> WaveMouseView { WaveMouseView() }
+
+    func updateNSView(_ v: WaveMouseView, context: Context) {
+        v.mix = mix
+        v.d = d
+        v.scene = scene
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: WaveMouseView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+}
+
+final class WaveMouseView: NSView {
+    weak var mix: MixModel?
+    var d = 0
+    var scene = WaveScene()
+
+    /// Scrub (letztes x), Griff des Schnitts, Bereich vom festen Rand aus (`fresh` = neu markiert, nicht nachgezogen)
+    private enum Drag { case scrub(CGFloat), trim(end: Bool), mark(anchor: Double, fresh: Bool) }
+    private var drag: Drag?
+    private var downX: CGFloat = 0
+    private var moved = false
+    private var resizeCursor = false
+    private var tracking: NSTrackingArea?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    private var secPerPt: Double { scene.span * 2 / Double(max(1, bounds.width)) }
+    private func time(_ x: CGFloat, _ mix: MixModel) -> Double { mix.position(d) + Double(x - bounds.width / 2) * secPerPt }
+    private func xOf(_ t: Double, _ mix: MixModel) -> CGFloat { CGFloat((t - mix.position(d)) / secPerPt) + bounds.width / 2 }
+    private func point(_ e: NSEvent) -> CGFloat { convert(e.locationInWindow, from: nil).x }
+    private func snap(_ t: Double, _ e: NSEvent) -> Double {
+        TrackRange.snap(t, grid: scene.grid, free: e.modifierFlags.contains(.option), duration: scene.duration)
+    }
+
+    /// Rand des Bereichs unter x (false = Anfang, true = Ende), höchstens 6 pt entfernt
+    private func edge(at x: CGFloat, _ mix: MixModel) -> Bool? {
+        guard let r = mix.range(d) else { return nil }
+        let a = abs(xOf(r.start, mix) - x), b = abs(xOf(r.end, mix) - x)
+        guard min(a, b) <= 6 * scene.zoom else { return nil }
+        return b < a
+    }
+
+    override func mouseDown(with e: NSEvent) {
+        guard let mix else { return }
+        if mix.focusedDeck != d { mix.focusedDeck = d }
+        let x = point(e)
+        downX = x
+        moved = false
+        guard scene.hasTrack, scene.duration > 0, bounds.width > 0 else { drag = nil; return }
+        if let end = edge(at: x, mix), let r = mix.range(d) {
+            drag = .mark(anchor: end ? r.start : r.end, fresh: false)
+        } else if e.modifierFlags.contains(.control) {
+            drag = .mark(anchor: snap(time(x, mix), e), fresh: true)
+        } else if let h = WaveformView.trimHandle(at: x, width: bounds.width, scene: scene, position: mix.position(d)) {
+            drag = .trim(end: h == 1)
+        } else {
+            drag = .scrub(x)
+        }
+    }
+
+    override func mouseDragged(with e: NSEvent) {
+        guard let mix, let drag else { return }
+        let x = point(e)
+        if abs(x - downX) >= 1 { moved = true }
+        guard moved else { return }
+        switch drag {
+        case let .scrub(last):
+            mix.core.seek(d, seconds: mix.position(d) - Double(x - last) * secPerPt)
+            self.drag = .scrub(x)
+        case let .trim(end):
+            mix.dragTrim(d, end: end, to: time(x, mix))
+        case let .mark(anchor, _):
+            let t = snap(time(x, mix), e)
+            mix.setRange(d, abs(t - anchor) < 1e-6 ? nil : TrackRange(anchor, t))
+        }
+    }
+
+    override func mouseUp(with e: NSEvent) {
+        guard let mix else { return }
+        defer { drag = nil }
+        switch drag {
+        case let .mark(_, fresh) where fresh && !moved:
+            mix.setRange(d, nil)   // ⌃-Klick ohne Ziehen: Markierung weg
+        case .scrub where !moved:
+            if let r = mix.range(d), !(r.start...r.end).contains(time(point(e), mix)) { mix.setRange(d, nil) }   // Klick daneben
+        default: break
+        }
+    }
+
+    /// Rechtsklick (nicht ⌃-Klick) in den Bereich: Menü
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard event.type == .rightMouseDown, let mix, let r = mix.range(d) else { return nil }
+        let t = time(point(event), mix)
+        guard t >= r.start, t <= r.end else { return nil }
+        if mix.focusedDeck != d { mix.focusedDeck = d }
+        return WaveRangeMenu.make(mix: mix, d: d, label: WaveScene.Marked(r, grid: scene.grid).label)
+    }
+
+    // Zeiger: über einem Rand des Bereichs oder einem Griff des Schnitts ↔
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(t)
+        tracking = t
+    }
+
+    override func mouseMoved(with e: NSEvent) {
+        guard let mix else { return }
+        let x = point(e)
+        let on = edge(at: x, mix) != nil
+            || WaveformView.trimHandle(at: x, width: bounds.width, scene: scene, position: mix.position(d)) != nil
+        guard on != resizeCursor else { return }
+        resizeCursor = on
+        (on ? NSCursor.resizeLeftRight : NSCursor.arrow).set()
+    }
+
+    override func mouseExited(with e: NSEvent) {
+        if resizeCursor { resizeCursor = false; NSCursor.arrow.set() }
+    }
+}
+
+/// Menü zum markierten Bereich (Rechtsklick in der Wellenform)
+@MainActor
+enum WaveRangeMenu {
+    static func make(mix: MixModel, d: Int, label: String) -> NSMenu {
+        let m = NSMenu()
+        m.autoenablesItems = false
+        let head = NSMenuItem(title: label, action: nil, keyEquivalent: "")
+        head.isEnabled = false
+        m.addItem(head)
+        m.addItem(.separator())
+        m.addItem(ActionItem(String(localized: "Bereich entfernen (neue Datei)")) { mix.cutRange(d, mode: .remove) })
+        m.addItem(ActionItem(String(localized: "Auf Bereich kürzen (neue Datei)")) { mix.cutRange(d, mode: .keep) })
+        let load = ActionItem(String(localized: "Ergebnis ins Deck laden")) { mix.prefs.ui.cutLoadsResult.toggle() }
+        load.state = mix.prefs.ui.cutLoadsResult ? .on : .off
+        m.addItem(load)
+        m.addItem(.separator())
+        m.addItem(ActionItem(String(localized: "Schnitt IN/OUT aus Bereich")) { mix.rangeToTrim(d) })
+        m.addItem(ActionItem(String(localized: "Loop aus Bereich")) { mix.rangeToLoop(d) })
+        m.addItem(.separator())
+        m.addItem(ActionItem(String(localized: "Bereich aufheben")) { mix.clearRange(d) })
+        return m
     }
 }
 
@@ -486,6 +613,7 @@ struct OverviewView: View {
         var duration = 0.0, playing = false
         var cues: [WaveScene.Mark] = []
         var trim = WaveScene.Trim()
+        var range: TrackRange?
     }
 
     var body: some View {
@@ -496,7 +624,8 @@ struct OverviewView: View {
             WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)))
         }
         Content(d: d, m: Model(duration: deck.duration, playing: deck.playing, cues: cues,
-                               trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d))), wave: wf).equatable()
+                               trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d)), range: mix.range(d)),
+                wave: wf).equatable()
     }
 
     struct Content: View, Equatable {
@@ -532,6 +661,11 @@ struct OverviewView: View {
                         ctx.setFillColor(NSColor(Theme.state).withAlphaComponent(0.4).cgColor)
                         ctx.fill(CGRect(x: loop.start / m.duration * size.width, y: 0,
                                         width: max(2, (loop.end - loop.start) / m.duration * size.width), height: size.height))
+                    }
+                    if let r = m.range {   // markierter Bereich
+                        ctx.setFillColor(NSColor(Theme.state).withAlphaComponent(0.35).cgColor)
+                        ctx.fill(CGRect(x: r.start / m.duration * size.width, y: 0,
+                                        width: max(2, r.length / m.duration * size.width), height: size.height))
                     }
                     for c in m.cues {
                         ctx.setFillColor(c.color.cgColor)

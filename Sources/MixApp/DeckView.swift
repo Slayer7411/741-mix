@@ -476,16 +476,18 @@ struct GridToolsRow: View {
 }
 
 /// Schnitt (EDIT-Modus): IN HERE / OUT HERE an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier), CLEAR CUT,
-/// rechts Anfang → Ende · Länge des gespielten Bereichs. Die Datei bleibt unverändert
+/// rechts Anfang → Ende · Länge des gespielten Bereichs. Die Datei bleibt unverändert.
+/// Mit markiertem Bereich (Wellenform, ⌃ + Ziehen) rechts dessen Aktionen: REMOVE / KEEP schreiben eine neue Datei
 struct CutRow: View {
     @Environment(MixModel.self) private var mix
     let d: Int
 
-    struct Model: Equatable { var start: Double?, end: Double?, duration = 0.0 }
+    struct Model: Equatable { var start: Double?, end: Double?, duration = 0.0, range = false }
 
     var body: some View {
         let s = mix.deck(d)
-        Content(d: d, m: Model(start: s.trim.start, end: s.trim.end, duration: s.track != nil ? s.duration : 0)).equatable()
+        Content(d: d, m: Model(start: s.trim.start, end: s.trim.end, duration: s.track != nil ? s.duration : 0,
+                               range: mix.range(d) != nil)).equatable()
     }
 
     struct Content: View, Equatable {
@@ -508,14 +510,38 @@ struct CutRow: View {
                     .help("Schnitt-Ende an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier)")
                 DeckButton(title: "CLEAR CUT") { mix.clearTrim(d) }.stable().help("Schnitt entfernen: ganze Datei")
                 Divider().frame(height: 14.z)
-                // schmale Decks: erst nur die Länge, dann nichts
-                FirstFit {
-                    readout(full: true)
-                    readout(full: false)
-                    Text(" ")
+                if m.range {
+                    // schmale Decks: nur die neuen Dateien und ✕
+                    FirstFit {
+                        rangeButtons(full: true)
+                        rangeButtons(full: false)
+                        Text(" ")
+                    }
+                } else {
+                    // schmale Decks: erst nur die Länge, dann nichts
+                    FirstFit {
+                        readout(full: true)
+                        readout(full: false)
+                        Text(" ")
+                    }
                 }
                 Spacer(minLength: 0)
             }
+        }
+
+        private func rangeButtons(full: Bool) -> some View {
+            HStack(spacing: 3.z) {
+                DeckButton(title: "REMOVE", active: true, color: Theme.state) { mix.cutRange(d, mode: .remove) }.stable()
+                    .help("Bereich entfernen: neue Datei ohne ihn (Original bleibt)")
+                DeckButton(title: "KEEP") { mix.cutRange(d, mode: .keep) }.stable()
+                    .help("Auf Bereich kürzen: neue Datei nur mit ihm (Original bleibt)")
+                if full {
+                    DeckButton(title: "→ CUT") { mix.rangeToTrim(d) }.stable().help("Schnitt IN/OUT aus Bereich (keine neue Datei)")
+                    DeckButton(title: "→ LOOP") { mix.rangeToLoop(d) }.stable().help("Loop aus Bereich")
+                }
+                DeckButton(title: "✕") { mix.clearRange(d) }.stable().help("Bereich aufheben (Esc)")
+            }
+            .fixedSize()
         }
 
         private func readout(full: Bool) -> some View {
@@ -888,7 +914,7 @@ struct TempoColumn: View {
 /// Nur Selbsttest: MIX741_SHOT=deck:<pfad.png> rendert Deck A (Track mit Kommentar und Tags, Loop 8, Beatjump 4) ohne
 /// Fenster auf dem Bildschirm als PNG: <pfad>-640x300.png Loop aus, <pfad>-480x260.png Loop an,
 /// <pfad>-640x300-compact.png kompakt (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge), dazu im EDIT-Modus mit Schnitt und
-/// eigenem Grid (<pfad>-edit-640x300.png, <pfad>-edit-480x260.png), und beendet sich.
+/// eigenem Grid und markiertem Bereich (<pfad>-edit-640x300.png, <pfad>-edit-480x260.png), und beendet sich.
 @MainActor
 enum DeckShot {
     static func runIfRequested() {
@@ -930,6 +956,7 @@ enum DeckShot {
                 $0.trim = edit ? TrackTrim(start: 1.0, end: 290) : TrackTrim()
                 $0.gridEdited = edit
             }
+            mix.setRange(0, edit ? TrackRange(1 + 2 * 60 / 128, 1 + 6 * 60 / 128) : nil)   // markierter Bereich: Beats 3–7
             let path = "\(base)-\(edit ? "edit-" : "")\(Int(w))x\(Int(h))\(compact ? "-compact" : "").png"
             render(mix: mix, size: CGSize(width: w, height: h), to: path)
             paths.append(path)

@@ -101,6 +101,7 @@ struct ContentView: View {
                 if l.contains("2decks") { mix.prefs.ui.showFourDecks = false }
                 if l.contains("nobrowser") { mix.prefs.ui.browserLayout = .single; mix.prefs.ui.browserHeight = 120 }
             }
+            mix.library = store   // Schneiden trägt neue Dateien in CUTS ein
             SelfTest.run(store: store, mix: mix)
         }
     }
@@ -307,6 +308,12 @@ struct MixApp: App {
                 ForEach([ShortcutID.editMode, .cutIn, .cutOut, .gridSet]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
+                Divider()
+                ForEach([ShortcutID.rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop, .rangeClear]) { a in
+                    Button(a.title) { run(a) }.shortcut(keys.combo(a))
+                }
+                Toggle("Schneiden: Ergebnis ins Deck laden", isOn: Binding(get: { mix.prefs.ui.cutLoadsResult },
+                                                                            set: { mix.prefs.ui.cutLoadsResult = $0 }))
                 Divider()
                 Menu("Zeilen") {
                     ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
