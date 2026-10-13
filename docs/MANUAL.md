@@ -782,6 +782,20 @@ browser cost with 4 decks playing (offscreen, silent on a built-in output): `MIX
 cloud column + set-check as png: `MIX741_SHOT=cloud:<folder>` -> real check of the collection in the log, images with real and with set states, nothing downloaded.
 tag chips as png: `MIX741_SHOT=tags:<folder>` -> pane with tag filter, chip click checks, filter and paging times (`MIX741_SHOT_FULLROW=1` two-line rows, `MIX741_SHOT_TEXT=<pt>` their text size, `MIX741_SHOT_PAGES=<n>`).
 
+### ui test
+
+```
+MIX741_SELFTEST=1 MIX741_NOEXT=1 MIX741_UITEST=1 .build/debug/minos741
+scripts/uitest.sh [--fixture] [--only <case,…>] [--limit <s>] [--no-build]   # debug build, killed after 120 s
+```
+
+* real main window (content view, toolbar, all environments) offscreen at −30000, transparent, app never active. synthetic `NSEvent`s through `NSWindow.sendEvent` (mouse) and `NSApp.sendEvent` (keys, local monitors see them). silent on a built-in output, saves nothing
+* cases: right click on deck A's title -> `Track bearbeiten …` -> edit sheet opens and closes · track key dropped on deck A's header -> loaded · ⌃ + drag in waveform A -> range on beats, esc -> cleared · double click on the title column divider -> width of the longest title · status bar automatic: mouse at the bottom edge -> shown, away -> still shown after 0.2 s, gone by 0.8 s · play/pause key from the settings -> deck A plays / stops; a plain play key in the search field is typed, deck A stays, space does not toggle the big browser · toolbar MIXER and decks 1 / 2 / 4 by click (deck C built, deck B gone, back) · ⌘− / ⌘+ -> zoom 0.9 / 1
+* end: `UITEST OK` (exit 0), `UITEST ÜBERSPRUNGEN` (no audio device or no 3 local tracks with grid, exit 0), else the first error (exit 1). a missing environment crashes the process (exit ≠ 0)
+* `MIX741_UITEST_ONLY=zoom,drop` runs the cases starting with these names. no collection or `MIX741_UITEST_FIXTURE=1`: 3 generated wav files (20 s, kick per beat, 126 / 128 / 130 bpm, grid at 0) and an nml in `$TMPDIR/minos741-uitest-<pid>`, removed at the end
+* runtime (debug build, whole process): 11 s with the fixture, 18 s with a 14k collection
+* limits: context menus come from `menu(for:)` of the hit view and are not shown (a real right click blocks in a modal menu). drop without a dragging session (needs the window server): the pasteboard goes to the view swiftui registers for `onDrop`, the drag source is not covered. hover: enter / exit / move are handed to the tracking-area owners (synthetic moves trigger no tracking areas, tooltips left out). keys: an inactive app does not route keys to its window -> plain keys go to the window only while a text field has focus. the menu bar is not built
+
 ### live load test (interface)
 
 ```
