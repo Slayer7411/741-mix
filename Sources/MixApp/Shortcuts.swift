@@ -26,6 +26,11 @@ extension ShortcutID: Identifiable {
         case .cutIn: String(localized: "Schnitt-Anfang hier (Fokus-Deck)")
         case .cutOut: String(localized: "Schnitt-Ende hier (Fokus-Deck)")
         case .gridSet: String(localized: "Grid: Beat 1 hier (Fokus-Deck)")
+        case .rangeRemove: String(localized: "Bereich entfernen, neue Datei (Fokus-Deck)")
+        case .rangeKeep: String(localized: "Auf Bereich kürzen, neue Datei (Fokus-Deck)")
+        case .rangeTrim: String(localized: "Schnitt IN/OUT aus Bereich (Fokus-Deck)")
+        case .rangeLoop: String(localized: "Loop aus Bereich (Fokus-Deck)")
+        case .rangeClear: String(localized: "Bereich aufheben (Fokus-Deck)")
         case .keySync: String(localized: "Key Sync (Fokus-Deck)")
         case .instantDouble: String(localized: "Instant Double ins Fokus-Deck (vom Nachbardeck A↔B, C↔D)")
         case .resetPlayed: String(localized: "Reset Played State")
@@ -155,6 +160,11 @@ struct AppActions {
         case .cutIn: mix.trimHere(d, end: false)
         case .cutOut: mix.trimHere(d, end: true)
         case .gridSet: mix.setGridAnchorHere(d)
+        case .rangeRemove: mix.cutRange(d, mode: .remove)
+        case .rangeKeep: mix.cutRange(d, mode: .keep)
+        case .rangeTrim: mix.rangeToTrim(d)
+        case .rangeLoop: mix.rangeToLoop(d)
+        case .rangeClear: mix.clearRange(d)
         case .keySync: mix.keySync(d)
         case .instantDouble: mix.instantDouble(from: d ^ 1, to: d, force: false)
         case .resetPlayed: history.resetPlayed()
@@ -214,6 +224,8 @@ enum KeyMonitor {
         if a == nil, c.isPlain, c.mods == .shift { a = keys.action(for: KeyCombo(c.key, [])) }
         guard let a, a != .settings else { return false }
         if c.isPlain, NSApp.keyWindow?.firstResponder is NSText { return false }
+        // Esc: nur verbraucht, wenn ein Bereich markiert war
+        if a == .rangeClear { return actions.mix.clearRange(actions.mix.focusedDeck) }
         if a == .cue {
             if !e.isARepeat, cueKey == nil {
                 cueKey = e.keyCode

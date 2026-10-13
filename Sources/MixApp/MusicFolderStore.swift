@@ -75,6 +75,8 @@ final class MusicFolderStore {
         for f in l.files {
             if let key = index[f.match], let t = library.byKey[key] {
                 out.append(t)
+            } else if let t = library.cutStore.byMatch[f.match] {
+                out.append(t)   // geschnittene Datei: Metadaten aus CUTS
             } else {
                 // lose Datei: eigene Analyse darüber (Tempo, Grid, Tonart, Lautheit)
                 let t = library.analysis.entry(for: f.loose.key).map { $0.apply(to: f.loose) } ?? f.loose
@@ -102,6 +104,15 @@ final class MusicFolderStore {
     private func invalidate() {
         cache = [:]
         loads += 1
+        revision += 1
+    }
+
+    /// neue Datei (Schneiden): schon gelesene Ordner, die sie enthalten, neu einlesen (Cloud-Ordner melden das nicht immer)
+    func fileAdded(_ path: String) {
+        let dir = (path as NSString).deletingLastPathComponent
+        cache = [:]
+        if listings[dir] != nil { request(dir, recursive: false, force: true) }
+        for p in deep.keys where dir == p || dir.hasPrefix(p.hasSuffix("/") ? p : p + "/") { request(p, recursive: true, force: true) }
         revision += 1
     }
 

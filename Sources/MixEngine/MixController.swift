@@ -1101,6 +1101,20 @@ public final class MixController: @unchecked Sendable {
 
     public func setLoopSize(_ d: Int, _ s: Double) { locked { state.decks[d].loopSize = s } }
 
+    /// Loop auf einen Bereich (Markierung in der Wellenform), auf den Schnitt gekürzt; liegt die Position außerhalb,
+    /// springt sie an den Anfang. false = kein Track oder kein Platz
+    @discardableResult
+    public func setLoop(_ d: Int, start: Double, end: Double) -> Bool {
+        locked {
+            guard audio[d] != nil, loopOn(d, start: start, end: end) else { return false }
+            let l = engine.loop(d)
+            let beats = (l.end - l.start) / beatLength(d)
+            if let s = BeatSizes.loop.first(where: { abs($0 - beats) < 0.01 }) { state.decks[d].loopSize = s }
+            if position(d) > l.end || position(d) < l.start { jump(d, to: l.start, "loop from range") }
+            return true
+        }
+    }
+
     public func setLoopIn(_ d: Int) {
         locked {
             if !state.decks[d].loopActive, let c = nearbyLoopCue(d) {

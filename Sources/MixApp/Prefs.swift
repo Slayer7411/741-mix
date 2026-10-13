@@ -231,6 +231,8 @@ struct UIPrefs: Codable, Equatable {
     var hidePlayedTracks = false
     /// Gespielt-Markierungen beim Start der App zurücksetzen
     var resetPlayedOnStart = false
+    /// Schneiden (Bereich entfernen / auf Bereich kürzen): Ergebnis gleich ins selbe Deck laden (Lade-Schutz gilt)
+    var cutLoadsResult = false
 
     /// kompakte Decks: ohne Pitch-Fader, Hotcues und Grid-Werkzeuge (mehr Platz für Wellenform und Beatgrid)
     var compactDecks: Bool {

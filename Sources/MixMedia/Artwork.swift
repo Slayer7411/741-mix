@@ -28,6 +28,8 @@ public final class ArtworkCache: @unchecked Sendable {
     /// Ordner -> gefundenes Ordner-Cover (oder keins), damit große Ordner nicht je Track gelistet werden
     private var folderArt: [String: String?] = [:]
     private let gate = Gate(limit: 3)
+    /// geschnittene Datei -> Original: ohne eigenes Cover nimmt sie das eingebettete des Originals
+    private var aliases: [String: String] = [:]
 
     private final class Job {
         var task: Task<Void, Never>?
@@ -39,6 +41,9 @@ public final class ArtworkCache: @unchecked Sendable {
         memory.totalCostLimit = memoryLimit
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
+
+    /// Cover einer geschnittenen Datei aus dem Original (die neue Datei trägt keine Tags)
+    public func alias(_ path: String, to original: String) { lock.withLock { aliases[path] = original } }
 
     private func memKey(_ path: String, _ size: Size) -> NSString { "\(size.rawValue)|\(path)" as NSString }
 
@@ -113,6 +118,7 @@ public final class ArtworkCache: @unchecked Sendable {
     /// Rohbild eines Tracks: eingebettet, sonst Ordner-Cover
     public func find(_ path: String) async -> (Data, Source)? {
         if let d = await Self.embedded(url: URL(fileURLWithPath: path)) { return (d, .embedded) }
+        if let o = lock.withLock({ aliases[path] }), let d = await Self.embedded(url: URL(fileURLWithPath: o)) { return (d, .embedded) }
         let dir = (path as NSString).deletingLastPathComponent
         let hit: String?? = lock.withLock { folderArt[dir] }
         let cover: String? = hit ?? {

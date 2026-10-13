@@ -38,6 +38,20 @@ struct WaveScene: Equatable {
     /// Schnitt (außerhalb gedimmt) und EDIT-Modus (Griffe mit IN / OUT)
     struct Trim: Equatable { var start: Double?, end: Double?, editing = false }
     var trim = Trim()
+    /// markierter Bereich (⌃ + Ziehen): Fläche, Ränder, Beschriftung Takt.Beat → Takt.Beat · Beats · Sekunden
+    struct Marked: Equatable {
+        var start: Double, end: Double, label: String
+        init(_ r: TrackRange, grid: BeatGrid?) {
+            start = r.start; end = r.end
+            let secs = String(format: "%.1f s", r.length)
+            if let g = grid, g.bpm > 0 {
+                label = "\(TrackRange.barBeat(r.start, grid: g)) → \(TrackRange.barBeat(r.end, grid: g)) · \(r.beatsText(grid: g)) B · \(secs)"
+            } else {
+                label = "\(CutRow.Content.time(r.start)) → \(CutRow.Content.time(r.end)) · \(secs)"
+            }
+        }
+    }
+    var range: Marked?
 
     /// ändert sich das, müssen die Wellenform-Kacheln neu gerechnet werden
     var tileKey: String { "\(waveID.map { "\($0)" } ?? "-")|\(duration)|\(span)|\(hasTrack)" }
@@ -82,9 +96,11 @@ final class WaveLayerNSView: NSView {
             var a = scene, b = oldValue
             (a.cues, a.cuePoint, b.cues, b.cuePoint) = ([], 0, [], 0)
             (a.trim, b.trim) = (WaveScene.Trim(), WaveScene.Trim())
+            (a.range, b.range) = (nil, nil)
             if a == b, builtSize == bounds.size {
                 if scene.cues != oldValue.cues || scene.cuePoint != oldValue.cuePoint { rebuildCues() }
                 if scene.trim != oldValue.trim { layoutTrim() }
+                if scene.range != oldValue.range { layoutRange() }
             } else { rebuild(tiles: scene.tileKey != oldValue.tileKey) }
         }
     }
@@ -96,6 +112,8 @@ final class WaveLayerNSView: NSView {
     // Schnitt: gedimmt davor / dahinter, Ränder als Linie, im EDIT-Modus Griffe mit IN / OUT
     private let trimLayer = CALayer(), trimDimLo = CALayer(), trimDimHi = CALayer(), trimLineLo = CALayer(), trimLineHi = CALayer()
     private let trimFlagLo = CATextLayer(), trimFlagHi = CATextLayer()
+    // markierter Bereich: Fläche, Ränder mit Laschen, Beschriftung oben
+    private let rangeLayer = CALayer(), rangeFill = CALayer(), rangeEdges = CAShapeLayer(), rangeLabel = CATextLayer()
     private let dim = CALayer()
     private let playhead = CALayer()
     private let countdown = CATextLayer()
@@ -154,9 +172,22 @@ final class WaveLayerNSView: NSView {
             trimLayer.addSublayer(l)
         }
         trimLayer.isHidden = true
-        for l in [tiles, gridLayer, loopLayer, cueLayer, trimLayer] { strip.addSublayer(l) }
+        rangeFill.backgroundColor = NSColor(Theme.state).withAlphaComponent(0.16).cgColor
+        rangeEdges.fillColor = NSColor(Theme.state).cgColor
+        rangeLabel.font = Self.monoBold
+        rangeLabel.foregroundColor = NSColor(Theme.bone).cgColor
+        rangeLabel.backgroundColor = NSColor(Theme.state).cgColor
+        rangeLabel.alignmentMode = .center
+        for l in [rangeFill, rangeEdges, rangeLabel] as [CALayer] {
+            l.actions = Self.noAnimation
+            rangeLayer.addSublayer(l)
+        }
+        rangeLayer.isHidden = true
+        for l in [tiles, gridLayer, loopLayer, cueLayer, trimLayer, rangeLayer] { strip.addSublayer(l) }
         for l in [strip, dim, playhead, countdown] { content.addSublayer(l) }
-        for l in [strip, tiles, gridLayer, cueLayer, loopLayer, trimLayer, dim, playhead, countdown] as [CALayer] { l.actions = Self.noAnimation }
+        for l in [strip, tiles, gridLayer, cueLayer, loopLayer, trimLayer, rangeLayer, dim, playhead, countdown] as [CALayer] {
+            l.actions = Self.noAnimation
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -225,7 +256,40 @@ final class WaveLayerNSView: NSView {
         if scene.showGrid, let g = scene.grid, g.bpm > 0 { buildGrid(g, h: h) }
         buildCues(h: h)
         layoutTrim()
+        layoutRange()
         step()
+    }
+
+    /// markierter Bereich: nur Rahmen verschieben (beim Ziehen je Änderung)
+    private func layoutRange() {
+        guard let r = scene.range, scene.hasTrack, bounds.height > 0, scene.duration > 0 else {
+            rangeLayer.isHidden = true
+            return
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        let h = bounds.height, z = scene.zoom
+        rangeLayer.isHidden = false
+        rangeLayer.frame = strip.bounds
+        let x0 = px(r.start * pps), x1 = px(r.end * pps)
+        rangeFill.frame = CGRect(x: x0, y: ruler, width: max(1, x1 - x0), height: h - ruler)
+        // Ränder 2 pt, Laschen oben und unten nach innen (zum Nachziehen)
+        let p = CGMutablePath(), tab = 5 * z
+        for (x, dir) in [(x0, CGFloat(1)), (x1, CGFloat(-1))] {
+            let l = line(x, width: 2 * z, y: ruler, height: h - ruler)
+            p.addRect(l)
+            let tx = dir > 0 ? l.maxX : l.minX - tab
+            p.addRect(CGRect(x: tx, y: ruler, width: tab, height: tab))
+            p.addRect(CGRect(x: tx, y: h - tab, width: tab, height: tab))
+        }
+        rangeEdges.frame = strip.bounds
+        rangeEdges.path = p
+        let size = 8 * z, fh = 11 * z
+        rangeLabel.string = r.label
+        rangeLabel.fontSize = size
+        rangeLabel.contentsScale = scale
+        rangeLabel.frame = CGRect(x: x0, y: ruler + 1 * z, width: CGFloat(r.label.count) * size * 0.62 + 8 * z, height: fh)
     }
 
     /// Schnitt: nur Rahmen verschieben (beim Ziehen eines Griffs je Änderung)

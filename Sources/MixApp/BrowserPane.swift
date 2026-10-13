@@ -580,6 +580,11 @@ struct SourceTreeFixed: View, SourceMenus {
             }
         row("▶", "RUNNING TRACKS").tag(BrowserSource.running)
             .favoriteDrag { BrowserFavorite.source(.running, store: store) }
+        if !store.cuts.isEmpty {
+            row("◫", "CUTS").tag(BrowserSource.cuts)
+                .help("Geschnittene Dateien (Wellenform: ⌃ + Ziehen markiert, Rechtsklick schneidet)")
+                .contextMenu { OverviewMenuButton { store.cuts } }
+        }
         row("▤", "PREPARATION").tag(BrowserSource.preparation)
             .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
             .onDrop(of: [.text], isTargeted: nil) { providers in
