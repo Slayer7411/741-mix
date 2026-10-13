@@ -26,8 +26,10 @@ struct DeckView: View {
                     .frame(minHeight: mix.prefs.ui.waveformHeight.z, maxHeight: .infinity)
                 if rows.phaseBar { PhaseBar(d: d).frame(height: 8.z) }
                 if rows.overview {
+                    // Rahmen wie der Phasenbalken: ohne Track sähe die leere Zeile wie ein Spalt aus
                     OverviewView(d: d)
                         .frame(height: 18.z)
+                        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
                 }
                 if rows.transport { row("transport", TransportRow(d: d)) }
                 if rows.hotcues { row("cues", CueRow(d: d)) }
