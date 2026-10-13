@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* browser: double click on a column divider sizes the column to its longest text (candidates by character count, the longest 8 measured, header title fits too, tags measured as chips, key with the harmony slot)
 * load lock: a playing deck (also cue held) takes no track from double click, keys or controller load -> `Deck B spielt · Laden gesperrt` in the status bar. ⌥-double click, shift + load and the new key `load selection (even if playing)` force it. ⌘, -> DECKS, on by default
 * key sync: `KEY SYNC` in the deck header and an assignable key. key shift so the audible key fits the master's audible key (same, relative or neighbour on the open key wheel, smallest shift, at most ±6), keylock off -> on, result in the status bar
 * instant doubles: `DBL` in the transport row (neighbour deck A↔B / C↔D, right click: any deck), assignable key, controller shift + load if set under ⌘, -> CONTROLLER (default stays load despite lock). shares the decoded audio of the source (no load), copies grid, cues, cut, tempo, keylock, key shift, sync and loop, starts with the source. load lock applies. no second history entry
@@ -127,6 +128,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * reverb settings (⌘, -> MIXER & FX): level (−18 … +6 dB), brightness, pre-delay (0 … 120 ms, default 15 ms)
 
 ### changed
+* browser: selected rows light red (state colour, 24 % with focus, 15 % without) instead of bone grey
 * analysis: grid offset to the collection's marker on mp3 noted in the manual (troubleshooting): two clusters at ~+10 and ~+48 ms (collection later), m4a −4 ms. decoder start of the mp3 files (encoder delay, info frame), not the analysis. MINOS-741 plays with the decoder it analyzes with -> not corrected
 * browser track list on an appkit table instead of the swiftui table: no row diff, a new list = reloadData (only visible rows are built), fixed row height, each row draws its cells (one layer per row). main thread per action, 4 decks playing, 2 browsers, preview `ganze Zeile` (release, browser bench, median): search 196 -> 7 ms, role 208 -> 6.5 ms, tag 218 -> 12 ms, sort 251 -> 4 ms, source 214 -> 9.5 ms, scroll 12 -> 3.5 ms. main thread gaps > 16 ms in these phases: 119 -> 4 (18-33 ms, first tag / source switch of the run). memory (rss max, same bench) 890 -> 806 mb
 * browser lists are sorted and filtered off the main thread (collection sort ~80 ms, role filter ~18 ms); the table keeps the shown list until the new one arrives and takes it without a swiftui pass. browse encoder and ⌘E use the shown list

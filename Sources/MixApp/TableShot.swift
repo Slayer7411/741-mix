@@ -149,6 +149,16 @@ enum TableShot {
             // Auswahl Tabelle -> Modell (Mehrfach), Modell -> Tabelle
             tv.selectRowIndexes(IndexSet([2, 5, 9]), byExtendingSelection: false)
             check("mehrfachauswahl", pane.selection == Set([2, 5, 9].map { pane.shown[$0].key }))
+            // Doppelklick auf den Trenner: Spalte Titel auf den längsten Titel
+            if let ti = tv.tableColumns.firstIndex(where: { $0.identifier.rawValue == "title" }) {
+                let c = tv.tableColumns[ti], before = c.width
+                c.width = c.minWidth
+                (tv.headerView as? TrackHeaderView)?.onFitColumn?(ti)
+                let longest = pane.shown.map(\.title.utf16.count).max() ?? 0
+                log("spalte titel: \(before) -> \(c.width) (min \(c.minWidth), längster titel \(longest) zeichen)")
+                check("spalte auf längsten text", c.width > c.minWidth && c.width >= CGFloat(longest) * 5)
+                c.width = before
+            }
             pane.selection = [pane.shown[40].key]
             settle()
             check("auswahl aus dem modell", tv.selectedRowIndexes == IndexSet(integer: 40))

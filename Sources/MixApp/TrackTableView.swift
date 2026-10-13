@@ -140,7 +140,8 @@ enum TableStyle {
         case .clash: clash
         }
     }
-    static let selected = bone.withAlphaComponent(0.16), selectedDim = bone.withAlphaComponent(0.09)
+    /// Auswahl: leicht rot, auch ohne Fokus (dann etwas schwächer)
+    static let selected = state.withAlphaComponent(0.24), selectedDim = state.withAlphaComponent(0.15)
     static let trackColors: [NSColor] = (0...7).map { NSColor(Theme.trackColor($0)) }
 
     /// Zeilenhöhe: einzeilig wie vorher (100 %: 24 pt), eigene Vorschau-Spalte 17 pt Bild + Rand, zweizeilig
@@ -235,6 +236,25 @@ final class TrackHeaderCell: NSTableHeaderCell {
 }
 
 final class TrackHeaderView: NSTableHeaderView {
+    /// Doppelklick auf einen Spaltentrenner: Spalte auf den längsten Text (Index der Spalte)
+    var onFitColumn: ((Int) -> Void)?
+
+    override func mouseDown(with e: NSEvent) {
+        if e.clickCount == 2, let tv = tableView, let i = dividerColumn(at: convert(e.locationInWindow, from: nil), tv) {
+            onFitColumn?(i)
+            return
+        }
+        super.mouseDown(with: e)
+    }
+
+    /// Spalte, deren rechter Rand (± 4 pt) am Punkt liegt, nur verstellbare
+    private func dividerColumn(at p: NSPoint, _ tv: NSTableView) -> Int? {
+        for (i, c) in tv.tableColumns.enumerated() where !c.isHidden && c.resizingMask.contains(.userResizingMask) {
+            if abs(p.x - headerRect(ofColumn: i).maxX) <= 4 { return i }
+        }
+        return nil
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         TableStyle.chitin.setFill()
         dirtyRect.fill()
@@ -431,6 +451,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         tv.doubleAction = #selector(doubleClicked)
         tv.onReturn = { [weak self] in self?.returnKey() }
         tv.onSeek = { [weak self] e in self?.seekClick(e) ?? false }
+        (tv.headerView as? TrackHeaderView)?.onFitColumn = { [weak self] i in self?.fitColumn(i) }
         let menu = NSMenu()
         menu.delegate = self
         tv.menu = menu
@@ -494,6 +515,65 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     func tableViewColumnDidMove(_ n: Notification) { redrawVisible(); scheduleSave() }
     func tableViewColumnDidResize(_ n: Notification) { redrawVisible(); if !applying { scheduleSave() } }
+
+    /// Spalte auf den längsten Text der Liste (Doppelklick auf den Trenner): Kandidaten nach Zeichenzahl (Plex Mono
+    /// ist dicktengleich), die längsten 8 genau gemessen; Titel der Kopfzeile muss auch passen
+    func fitColumn(_ i: Int) {
+        guard let tv = table, i >= 0, i < tv.tableColumns.count else { return }
+        let c = tv.tableColumns[i]
+        guard let d = TrackColumn.byID[c.identifier.rawValue], !d.fixed else { return }
+        var best: [(Int, String)] = []   // (Zeichen, Text), die längsten
+        var seen: Set<String> = []
+        for t in rows {
+            guard let s = cellText(d, t), !s.isEmpty, seen.insert(s).inserted else { continue }
+            let n = s.utf16.count
+            if best.count < 8 { best.append((n, s)); best.sort { $0.0 > $1.0 } }
+            else if n > best[best.count - 1].0 { best[best.count - 1] = (n, s); best.sort { $0.0 > $1.0 } }
+        }
+        var w: CGFloat = 0
+        for (_, s) in best { w = Swift.max(w, textWidth(d, s)) }
+        let header = NSAttributedString(string: d.title, attributes: TableStyle.attrs(TableStyle.mono(11.z), TableStyle.bone)).size().width + 14.z
+        let want = Swift.max(w + 6.z, header, c.minWidth)
+        c.width = Swift.min(c.maxWidth, want.rounded(.up))
+        redrawVisible()
+        scheduleSave()
+    }
+
+    /// Breite eines Zellentexts in der Zeilenschrift (Tags als Chips, Key mit Platz für das Harmonie-Zeichen)
+    private func textWidth(_ d: TrackColumn, _ s: String) -> CGFloat {
+        switch d.kind {
+        case .comment2:
+            guard let c = chips(s) else { return 0 }
+            return CGFloat(CTLineGetTypographicBounds(c.line, nil, nil, nil))
+        case .key:
+            let slot = look?.ui.harmonyColors == true ? (font.pointSize * 0.95).rounded() : 0
+            return slot + NSAttributedString(string: s, attributes: ctAttrs(font, TableStyle.bone)).size().width
+        default:
+            return NSAttributedString(string: s, attributes: ctAttrs(font, TableStyle.bone)).size().width
+        }
+    }
+
+    /// Text einer Zelle wie gezeichnet (nil: Spalte ohne Text)
+    private func cellText(_ d: TrackColumn, _ t: Track) -> String? {
+        switch d.kind {
+        case .artist: t.artist
+        case .title: t.title
+        case let .field(fd): fd.value(of: t)
+        case .bpm: t.bpm > 0 ? String(format: "%.2f", t.bpm) : ""
+        case .key: t.openKey
+        case .harmony: refBPM > 0 ? "+00.0" : ""
+        case .time: Theme.time(t.duration)
+        case .gain: t.perceivedDb.map { String(format: "%+.1f", $0) } ?? ""
+        case .rating: String(repeating: "★", count: Swift.max(0, Swift.min(5, t.rating)))
+        case .comment2: t.comment2
+        case .plays: t.playsText
+        case .lastPlayed: Track.dateText(t.lastPlayed)
+        case .importDate: t.importText
+        case .bitrate: t.bitrate > 0 ? "\(t.bitrate)" : ""
+        case .file: t.fileName
+        case .played, .cloud, .analyzed, .color, .cover, .preview: nil
+        }
+    }
 
     /// Zoom: Mindest-/Höchstbreiten neu, Breiten mitskalieren (wie vorher mit der SwiftUI-Tabelle)
     private func applyZoom(from old: CGFloat, to new: CGFloat) {
