@@ -8,7 +8,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ### added
 * beatjump with an active loop jumps by the loop length (in the jump's direction) and takes the loop along: same spot inside the loop, nothing to hear
 * browser height snaps to whole table rows while dragging the divider (⌘, -> BROWSER -> rows, on by default; not with browsers stacked)
-* `scripts/coverage.sh`: line coverage per target from the unit tests and the self test; ci runs the self test after `swift test`
+* `scripts/coverage.sh`: line coverage per target from the unit tests and the self test (unit tests alone: MixApp 2 %, with the self test 38 %, overall 56 %)
 * deck: comment and tags sit in the free middle of the deck header (two lines, the title keeps its width) instead of their own row
 * top bar: drag the grip below it to scale it 60-130 % (double click = 100 %, saved), fx units 10 pt flatter; bar counter's big number counts within the phrase and starts over; time of day and a session stopwatch next to it (runs from the first play, click = restart)
 * browser: `info` column = cloud state + analysed check in one 28 pt column (saved layouts: the first of the two old columns becomes `info`, the other goes; both stay in the header menu, hidden)
@@ -158,6 +158,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * engine tests without an audio device (`swift test`): transport, seek, loop, reverse, keylock, delay tail, limiter, clock, track handoff, decode (direct, mono, rate conversion)
 * ci: build + tests on every push and pull request, badge in the readme
 * reverb settings (⌘, -> MIXER & FX): level (−18 … +6 dB), brightness, pre-delay (0 … 120 ms, default 15 ms)
+* ui test `MIX741_SELFTEST=1 MIX741_NOEXT=1 MIX741_UITEST=1` / `scripts/uitest.sh`: real main window offscreen, synthetic mouse and key events. deck title right click -> edit sheet, drop on a deck, ⌃ + drag range on beats + esc, column divider double click, automatic status bar at the bottom edge, play/pause key (not from the search field), toolbar MIXER and decks 1 / 2 / 4, ⌘− / ⌘+ zoom. without a collection on generated wav files. 11 s (fixture) / 18 s (14k collection), debug build. ci runs it with the fixture
 
 ### changed
 * waveform styles cut down to 3-band blend / spectrum (6 bands) / mono. gone: 3-band layers, spectrum (3 bands), spectrum fine without the high layer (the blend shows the bands stacked, the spectrum always runs its high layer). a saved old style falls back to the blend. `WaveBands` and its test removed, the wave shot takes `blend`, `spectrum`, `mono`

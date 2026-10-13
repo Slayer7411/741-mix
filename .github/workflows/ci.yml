@@ -13,5 +13,6 @@ jobs:
       - run: swift --version
       - run: swift build -c release
       - run: swift test
-      - name: self test (silent, built-in output)
-        run: swift build && MIX741_SELFTEST=1 MIX741_NOEXT=1 .build/debug/minos741 2>&1 | tail -40 | tee selftest.log && grep -q "SELFTEST OK" selftest.log
+      - name: ui test (offscreen, fixture collection, silent)
+        if: ${{ !cancelled() }}
+        run: scripts/uitest.sh --fixture
