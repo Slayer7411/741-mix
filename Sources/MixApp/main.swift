@@ -280,6 +280,14 @@ struct MixApp: App {
                 Button(String(localized: "Fenster schließen")) { run(.closeWindow) }
                     .shortcut(keys.combo(.closeWindow))
             }
+            // Rückgängig der App (Deck, Browser); in Textfeldern bleibt die Taste das Text-Undo (KeyMonitor)
+            CommandGroup(replacing: .undoRedo) {
+                let u = UndoStack.shared
+                Button(u.undoLabel.map { String(localized: "Rückgängig: \($0)") } ?? ShortcutID.undo.title) { run(.undo) }
+                    .shortcut(keys.combo(.undo)).disabled(u.undoLabel == nil)
+                Button(u.redoLabel.map { String(localized: "Wiederherstellen: \($0)") } ?? ShortcutID.redo.title) { run(.redo) }
+                    .shortcut(keys.combo(.redo)).disabled(u.redoLabel == nil)
+            }
             CommandGroup(before: .toolbar) {
                 Toggle("Mixer", isOn: Binding(get: { mix.prefs.ui.showMixer }, set: { mix.prefs.ui.showMixer = $0 }))
                     .shortcut(keys.combo(.toggleMixer))

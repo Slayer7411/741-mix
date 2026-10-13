@@ -209,6 +209,7 @@ enum SelfTest {
             await previewProbe(mix, tracks: c)
             await cutProbe(mix, tracks: c)
             await profileProbe(mix, browser: browser)
+            await undoProbe(mix, store: store)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -528,6 +529,59 @@ enum SelfTest {
                    res.track.hotcues.map { String(format: "%.1f", $0.startMs / 1000) }.joined(separator: "/"),
                    gap.worst * 1000, idle * 1000, CutJob.mainSeconds * 1000, abs(secs - want) < 0.01 ? "ok" : "LÄNGE FALSCH"))
         try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Rückgängig: auf Deck B (spielt, Sync) Hotcue setzen, Beatjump, Loop, Schnitt OUT, Grid-Anker verschieben, dann alles
+    /// zurück und vergleichen; Preparation und Metadaten (nur im Speicher). Kosten: Sicherung je Aktion (zwei Kopien)
+    static func undoProbe(_ mix: MixModel, store: LibraryStore) async {
+        let d = 1, u = UndoStack.shared
+        mix.pull()
+        let s = mix.deck(d)
+        guard s.track != nil, let g = s.grid, g.bpm > 0, s.duration > 60,
+              let n = (0..<8).first(where: { s.hotcues[$0] == nil }) else { log("Rückgängig: übersprungen"); return }
+        let before = mix.core.deckEdit(d), steps = u.done.count
+        var ms: [Double] = []
+        func timed(_ f: () -> Void) { let t = CACurrentMediaTime(); f(); ms.append((CACurrentMediaTime() - t) * 1000) }
+        timed { mix.hotcue(d, n) }
+        let p0 = mix.position(d)
+        timed { mix.beatjump(d, beats: 16) }
+        let jumped = mix.position(d) - p0
+        timed { mix.autoLoop(d, size: 4) }
+        timed { mix.setTrimPoint(d, end: true, s.duration - 20) }
+        timed { mix.shiftGridBeats(d, 1) }
+        let recorded = u.done.count - steps, label = u.undoLabel ?? "–"
+        let changed = mix.core.deckEdit(d)
+        for _ in 0..<3 { u.undo() }   // Grid, Schnitt, Loop
+        let p1 = mix.position(d)
+        u.undo()   // Beatjump: Position um den Sprung zurück (B läuft weiter)
+        let back = mix.position(d) - p1
+        u.undo()   // Hotcue
+        let after = mix.core.deckEdit(d)
+        let ok = recorded == 5 && changed.hotcues[n] != nil && after.hotcues == before.hotcues && after.trim == before.trim
+            && after.grid == before.grid && after.gridEdited == before.gridEdited && after.loopActive == before.loopActive
+            && abs(back + jumped) < 0.05
+        // Sicherung allein (Kopie des Bearbeitungsstands unter der Sperre)
+        let t0 = CACurrentMediaTime()
+        for _ in 0..<1000 { _ = mix.core.deckEdit(d) }
+        let snap = (CACurrentMediaTime() - t0) * 1000   // ms für 1000 = µs je Kopie
+        // Preparation und Metadaten
+        let keys = store.tracks.prefix(2).map(\.key)
+        let prep0 = store.preparation
+        store.appendToPreparation(keys)
+        let prepAdded = store.preparation.count - prep0.count
+        u.undo()
+        let prepOK = prepAdded == keys.count && store.preparation == prep0
+        var metaOK = false
+        if let k = keys.first, let c0 = store.track(k)?.comment {
+            store.applyEdits([k: [.comment: c0 + " undo"]], writeBack: false)
+            let set = store.track(k)?.comment == c0 + " undo"
+            u.undo()
+            metaOK = set && store.track(k)?.comment == c0
+        }
+        log(String(format: "Rückgängig Deck %@: %d Schritte (oben: %@), Beatjump %+.2f s -> zurück %+.2f s, Hotcues/Schnitt/Grid/Loop wie vorher %@ · Preparation %@ · Metadaten %@ · Aktion mit Sicherung %@ ms · Kopie %.1f µs",
+                   deckLetters[d], recorded, label, jumped, back, ok ? "ok" : "FALSCH", prepOK ? "ok" : "FALSCH", metaOK ? "ok" : "FALSCH",
+                   ms.map { String(format: "%.2f", $0) }.joined(separator: "/"), snap))
+        if !(ok && prepOK && metaOK) { log("RÜCKGÄNGIG FALSCH"); exit(1) }
     }
 
     /// wird vom HistoryStore gesetzt, damit der Test genau seine eigene Datei entfernen kann

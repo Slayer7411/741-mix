@@ -55,6 +55,8 @@ extension ShortcutID: Identifiable {
         case .settings: String(localized: "Einstellungen …")
         case .closeWindow: String(localized: "Fenster schließen (Hauptfenster: beenden)")
         case .reconnectAudio: String(localized: "Audio-Interface neu verbinden")
+        case .undo: String(localized: "Rückgängig")
+        case .redo: String(localized: "Wiederherstellen")
         }
     }
 }
@@ -191,6 +193,8 @@ struct AppActions {
         case .settings: break   // nur über das Menü (SettingsLink)
         case .closeWindow: MainWindow.close()
         case .reconnectAudio: mix.reconnect()
+        case .undo: UndoStack.shared.perform(redo: false)
+        case .redo: UndoStack.shared.perform(redo: true)
         }
     }
 }
@@ -228,6 +232,11 @@ enum KeyMonitor {
         if a == nil, c.isPlain, c.mods == .shift { a = keys.action(for: KeyCombo(c.key, [])) }
         guard let a, a != .settings else { return false }
         if c.isPlain, NSApp.keyWindow?.firstResponder is NSText { return false }
+        // Rückgängig im Textfeld: Text-Undo des Felds (das Menü Bearbeiten führt sonst die App-Schritte aus)
+        if a == .undo || a == .redo, NSApp.keyWindow?.firstResponder is NSText {
+            _ = NSApp.sendAction(Selector((a == .undo ? "undo:" : "redo:")), to: nil, from: nil)
+            return true
+        }
         // Esc: nur verbraucht, wenn ein Bereich markiert war
         if a == .rangeClear { return actions.mix.clearRange(actions.mix.focusedDeck) }
         if a == .cue {

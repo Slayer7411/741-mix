@@ -69,10 +69,19 @@ final class HistoryStore {
     // MARK: History
 
     func resetPlayed() {
-        played = []
+        let old = played
+        setPlayed([])
+        StatusCenter.post(.ok, String(localized: "Gespielt-Markierungen zurückgesetzt"), key: "played")
+        guard !old.isEmpty else { return }
+        UndoStack.shared.record("Reset Played State", before: old, after: Set<String>()) { [weak self] b, a, undo in
+            self?.setPlayed(undo ? b.union(self?.played ?? []) : a)   // inzwischen gespielte bleiben markiert
+        }
+    }
+
+    private func setPlayed(_ s: Set<String>) {
+        played = s
         playedRevision += 1
         savePlayed()
-        StatusCenter.post(.ok, String(localized: "Gespielt-Markierungen zurückgesetzt"), key: "played")
     }
 
     private func savePlayed() {

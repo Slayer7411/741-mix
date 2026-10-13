@@ -64,6 +64,20 @@ final class LibraryStore {
         }
     }
     private(set) var preparationRevision = 0
+    /// Preparation ändern mit Rückgängig (Anhängen, Entfernen)
+    func editPreparation(_ label: String, _ f: (inout [String]) -> Void) {
+        let old = preparation
+        var new = old
+        f(&new)
+        guard new != old else { return }
+        preparation = new
+        UndoStack.shared.record(label, before: old, after: new) { [weak self] b, a, undo in self?.preparation = undo ? b : a }
+    }
+    func appendToPreparation(_ keys: some Sequence<String>) {
+        editPreparation(String(localized: "An Preparation anhängen")) { p in
+            for k in keys where !p.contains(k) { p.append(k) }
+        }
+    }
     @ObservationIgnored var preparationArchived = false
     var preparationDate: Date { UserDefaults.standard.object(forKey: "prep.date") as? Date ?? Date() }
     /// einmal nach dem ersten Laden der Collection
@@ -362,15 +376,17 @@ final class LibraryStore {
 
     /// Änderungen übernehmen (Track-Schlüssel -> Feld -> kanonischer Wert): sofort in Liste, Suche, Sortierung;
     /// gespeichert in metadata.json; mit `writeBack` danach (gesammelt, einmal je Stapel) in die Collection-Datei.
-    func applyEdits(_ changes: [String: [TrackField: String]], writeBack: Bool) {
+    /// Rückgängig schreibt die Vorher-Werte über denselben Weg zurück (`exact`: Werte ungeprüft, wie sie waren)
+    func applyEdits(_ changes: [String: [TrackField: String]], writeBack: Bool, exact: Bool = false) {
         var list = tracks
-        var applied: [String: [TrackField: String]] = [:]
+        var applied: [String: [TrackField: String]] = [:], previous: [String: [TrackField: String]] = [:]
         for (key, fields) in changes {
             guard let i = position[key], i < list.count, list[i].key == key else { continue }
             var t = list[i]
-            let valid = fields.filter { f, v in f.isEditable(t) && f.normalize(v) == v && f.value(of: t) != v }
+            let valid = fields.filter { f, v in f.isEditable(t) && (exact || f.normalize(v) == v) && f.value(of: t) != v }
             guard !valid.isEmpty else { continue }
             if collectionBase[key] == nil { collectionBase[key] = t }
+            previous[key] = Dictionary(uniqueKeysWithValues: valid.keys.map { ($0, $0.value(of: t)) })
             for (f, v) in valid { f.set(v, on: &t) }
             t.buildSearchText()
             list[i] = t
@@ -378,6 +394,9 @@ final class LibraryStore {
             applied[key] = valid
         }
         guard !applied.isEmpty else { return }
+        UndoStack.shared.record(String(localized: "Metadaten: \(applied.count) Tracks"), before: previous, after: applied) { [weak self] b, a, undo in
+            self?.applyEdits(undo ? b : a, writeBack: writeBack, exact: true)
+        }
         meta.merge(applied, base: collectionBase)
         replaceRunning(applied.keys)
         smartCache = [:]

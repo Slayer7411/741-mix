@@ -513,7 +513,7 @@ final class WaveMouseView: NSView {
         guard moved else { return }
         switch drag {
         case let .scrub(last):
-            mix.core.seek(d, seconds: mix.position(d) - Double(x - last) * secPerPt)
+            mix.scrub(d, seconds: mix.position(d) - Double(x - last) * secPerPt)
             self.drag = .scrub(x)
         case let .trim(end):
             mix.dragTrim(d, end: end, to: time(x, mix))

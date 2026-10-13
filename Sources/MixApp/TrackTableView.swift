@@ -1228,9 +1228,11 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         menu.addItem(ActionItem(String(localized: "Neu analysieren")) { Analyses.shared.enqueue(tracks(), refresh: true) })
         if store.hasAnalysis(ids) { menu.addItem(ActionItem(String(localized: "Analyse verwerfen")) { store.discardAnalysis(Array(ids)) }) }
         menu.addItem(.separator())
-        menu.addItem(ActionItem(String(localized: "An Preparation anhängen")) { store.preparation.append(contentsOf: ids.filter { !store.preparation.contains($0) }) })
+        menu.addItem(ActionItem(String(localized: "An Preparation anhängen")) { store.appendToPreparation(ids) })
         if case .preparation = model.source {
-            menu.addItem(ActionItem(String(localized: "Aus Preparation entfernen")) { store.preparation.removeAll { ids.contains($0) } })
+            menu.addItem(ActionItem(String(localized: "Aus Preparation entfernen")) {
+                store.editPreparation(String(localized: "Aus Preparation entfernen")) { $0.removeAll { ids.contains($0) } }
+            })
         }
         menu.addItem(.separator())
         if CloudLibrary.shared.hasCloudTracks {
