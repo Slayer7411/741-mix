@@ -12,7 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift --version
       - run: swift build -c release
-      - run: swift test
+      # seriell: parallel verhungern die blockierenden Kanal- und Lade-Tests auf dem 3-Kern-Runner (Rückrufe 20-90 s spät)
+      - run: swift test --no-parallel
       - name: ui test (offscreen, fixture collection, silent)
         if: ${{ !cancelled() }}
         run: scripts/uitest.sh --fixture

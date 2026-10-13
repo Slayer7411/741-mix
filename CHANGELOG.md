@@ -229,6 +229,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
 
 ### fixed
+* ci: `swift test --no-parallel` (the runner has few cores; in parallel the blocking channel and load tests starved each other, callbacks arrived 20-90 s late and the run was red since 2026-10-11); a cut writer test now compiles within the runner's type-check limit
 * test `fxMappingDrivesAudioUnitParameterTree` expected a fixed 22050 Hz upper bound; it now takes the plugin's own range (the bound follows the plugin's sample rate)
 * deck: right click on the title (`Edit track …`) and dropping a track on a deck crashed in 42acab0 (the deck's own hosting view had no library / browser environment)
 * browser list flickering: with legacy scroll bars (mouse connected, `show scroll bars: always`) a horizontal bar appearing for columns slightly wider than the list took height, the columns were redistributed, the bar vanished, and so on, until a column was resized by hand. scroll bars of the list are overlays now, never part of the layout
