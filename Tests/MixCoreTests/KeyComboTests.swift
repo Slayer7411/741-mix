@@ -44,6 +44,8 @@ import Testing
     #expect(m.action(for: KeyCombo("y")) == .sync)
     #expect(m.combo(.favorite1)?.symbols == "⌃⌥1" && m.combo(.favorite6)?.symbols == "⌃⌥6")
     #expect(ShortcutID.favorite4.group == .browser && ShortcutID.favorite4.index == 3)
+    #expect(m.combo(.profile1)?.symbols == "⌃⌥⌘1" && m.combo(.profile4)?.symbols == "⌃⌥⌘4" && ShortcutID.profile3.index == 2)
+    #expect(m.combo(.profileNext)?.symbols == "⌃⌥⇥" && ShortcutID.profileNext.group == .view)
     #expect(m.combo(.editMode)?.symbols == "⌥⌘E" && ShortcutID.editMode.group == .decks && m.combo(.cutIn) == nil)
     #expect(m.combo(.rangeClear)?.symbols == "⎋" && m.combo(.rangeClear)?.isPlain == true && m.combo(.rangeRemove) == nil)
     // eigener Wert, Konflikt, frei, zurück auf Standard

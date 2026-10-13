@@ -84,6 +84,8 @@ final class MixModel {
             savePrefs()
             if prefs.engine != oldValue.engine { core.setPrefs(prefs.engine) }
             if prefs.ui.previewVolume != oldValue.ui.previewVolume { previewer.setVolume(prefs.ui.previewVolume) }
+            // 1 Deck: Tasten und Doppelklick laden ins sichtbare Deck A
+            if prefs.ui.deckCount <= 1, oldValue.ui.deckCount > 1, focusedDeck != 0 { focusedDeck = 0 }
         }
     }
 
@@ -286,6 +288,7 @@ final class MixModel {
     func phaseError(_ d: Int) -> Double? { core.phaseError(d) }
     var masterBPM: Double { clock.masterTempo }
     var showFourDecks: Bool { prefs.ui.showFourDecks }
+    var deckCount: Int { prefs.ui.deckCount }
 
     /// hörbare Abweichung von der Tonart des Tracks in Halbtönen: Key-Shift, ohne Keylock zusätzlich das Tempo
     /// (Kern: transpose = 2^(keyShift/12) · rate ohne Keylock)

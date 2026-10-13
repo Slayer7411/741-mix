@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Foundation
+import QuartzCore
 import UniformTypeIdentifiers
 import MixCore
 import MixEngine
@@ -12,7 +13,7 @@ enum SelfTest {
     /// aus: Messungen mit der ganzen Oberfläche (ZoomShot), die Decks bleiben, wie sie sind
     static var enabled = true
 
-    static func run(store: LibraryStore, mix: MixModel) {
+    static func run(store: LibraryStore, mix: MixModel, browser: BrowserState) {
         guard enabled, ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" else { return }
         let core = mix.core
         Task { @MainActor in
@@ -207,6 +208,7 @@ enum SelfTest {
             await deviceProbe(core)
             await previewProbe(mix, tracks: c)
             await cutProbe(mix, tracks: c)
+            await profileProbe(mix, browser: browser)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -217,6 +219,55 @@ enum SelfTest {
             fflush(stdout)
             if ProcessInfo.processInfo.environment["MIX741_STAY"] == nil { exit(0) }
         }
+    }
+
+    /// Ansichts-Profile: die zwei Standard-Profile nacheinander anwenden, Felder und sichtbare Decks prüfen,
+    /// Umschaltzeit (Felder setzen + Layout des Hauptfensters + Übergabe an Core Animation) messen, danach zurück
+    static func profileProbe(_ mix: MixModel, browser: BrowserState) async {
+        let savedUI = mix.prefs.ui, savedBig = browser.maximized, savedFocus = mix.focusedDeck
+        let root = MainWindow.window?.contentView
+        func decks() -> [Int] {
+            var out: [Int] = [], stack = root.map { [$0] } ?? []
+            while let v = stack.popLast() {
+                if let h = v as? BoundaryHostingView<DeckHost.Root>, !h.isHiddenOrHasHiddenAncestor { out.append(h.rootView.d) }
+                stack += v.subviews
+            }
+            return out.sorted()
+        }
+        var times: [Double] = []
+        for round in 0..<3 {
+            for p in LayoutProfile.defaults(from: savedUI) {
+                mix.focusedDeck = 1
+                let t0 = CACurrentMediaTime()
+                LayoutProfiles.apply(p, mix: mix, browser: browser)
+                root?.layoutSubtreeIfNeeded()
+                CATransaction.flush()
+                let dt = (CACurrentMediaTime() - t0) * 1000
+                if round > 0 { times.append(dt) }   // erste Runde: Aufwärmen
+                try? await Task.sleep(for: .milliseconds(150))
+                let ui = mix.prefs.ui, shown = decks()
+                let want = Array([0, 1, 2, 3].prefix(p.deckCount >= 4 ? 4 : p.deckCount))
+                let ok = p.matches(ui, maximized: browser.maximized) && ui.activeProfile?.id == p.id
+                    && !ui.profileModified(maximized: browser.maximized) && (root == nil || shown == want)
+                    && (p.deckCount > 1 || mix.focusedDeck == 0)   // 1 Deck: Fokus auf A
+                if round == 0 {
+                    log(String(format: "Profil %@: %d Decks (sichtbar %@), Mixer %@, Browser %@ %.0f pt, Statusleiste %@ · %.1f ms",
+                               p.name, ui.deckCount, root == nil ? "kein Fenster" : shown.map { deckLetters[$0] }.joined(),
+                               "\(ui.showMixer)", ui.browserLayout.rawValue, ui.browserHeight, ui.statusBar.rawValue, dt))
+                }
+                guard ok else { log("FEHLER Profil \(p.name): Felder oder Decks stimmen nicht (sichtbar \(shown))"); exit(1) }
+            }
+        }
+        // Änderung nach dem Umschalten -> „geändert“, Profil bleibt aktiv
+        mix.prefs.ui.showMixer.toggle()
+        let changed = mix.prefs.ui.profileModified(maximized: browser.maximized) && mix.prefs.ui.activeProfile != nil
+        mix.prefs.ui = savedUI
+        browser.maximized = savedBig
+        mix.focusedDeck = savedFocus
+        let s = times.sorted()
+        log(String(format: "Profil umschalten (Hauptthread, Felder + Layout + Übergabe): median %.1f ms, max %.1f ms (n=%d) · Änderung erkannt %@",
+                   s.isEmpty ? .nan : s[s.count / 2], s.last ?? .nan, s.count, "\(changed)"))
+        guard changed else { log("FEHLER Profil: Änderung nicht erkannt"); exit(1) }
     }
 
     /// Geräte-Pfade ohne Ziehen/Stecken: Gerät weg (eingespeist) -> warten -> dasselbe Gerät neu öffnen, Ratenwechsel

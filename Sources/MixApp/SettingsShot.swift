@@ -29,6 +29,7 @@ enum SettingsShot {
         let store = LibraryStore()
         store.load()
         let status = ControllerStatus()
+        let browser = BrowserState()
         // zwei Beispiel-Controller, damit die Geräte-Blöcke im Bild stehen
         status.devices = [.init(id: "SHOT-1", location: 1, left: 0, right: 1),
                           .init(id: "SHOT-2", location: 2, left: 2, right: 3, pane: 1, fxUnit: 11)]
@@ -39,13 +40,13 @@ enum SettingsShot {
         for (i, tab) in SettingsView.tabs.enumerated() {
             let name = String(format: "%02d-%@", i + 1, slug(tab.id))
             let window = { (w: CGFloat, h: CGFloat) in
-                AnyView(SettingsView(selection: i).environment(mix).environment(store).environment(status))
+                AnyView(SettingsView(selection: i).environment(mix).environment(store).environment(status).environment(browser))
                     .frame(width: w, height: h)
             }
             render(AnyView(window(820, 640)), to: dir.appendingPathComponent("\(name).png"))
             render(AnyView(window(720, 520)), to: dir.appendingPathComponent("\(name)-min.png"))
             // ganze Seite ohne Scrollen (prüft, dass nichts abgeschnitten ist)
-            let page = AnyView(SettingsPage { tab.content() }.environment(mix).environment(store).environment(status)
+            let page = AnyView(SettingsPage { tab.content() }.environment(mix).environment(store).environment(status).environment(browser)
                 .frame(width: 643).background(Theme.chitin).preferredColorScheme(.dark))
             render(page, to: dir.appendingPathComponent("\(name)-page.png"), fitHeight: true)
         }

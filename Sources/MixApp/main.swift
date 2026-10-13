@@ -56,16 +56,17 @@ struct ContentView: View {
         .tint(Theme.state)
         .preferredColorScheme(.dark)
         .toolbar {
+            ToolbarItem(placement: .navigation) { LayoutProfileMenu() }
             ToolbarItemGroup {
                 Toggle(isOn: Binding(get: { mix.prefs.ui.showMixer }, set: { mix.prefs.ui.showMixer = $0 })) {
                     Text("MIXER").font(Theme.label(11))
                 }
                 .help("Internen Mixer ein-/ausblenden")
-                Picker("Decks", selection: Binding(get: { mix.prefs.ui.showFourDecks }, set: { mix.prefs.ui.showFourDecks = $0 })) {
-                    Text("2 Decks").tag(false)
-                    Text("4 Decks").tag(true)
+                Picker("Decks", selection: Binding(get: { mix.prefs.ui.deckCount }, set: { mix.prefs.ui.deckCount = $0 })) {
+                    ForEach([1, 2, 4], id: \.self) { Text(verbatim: "\($0)").tag($0) }
                 }
                 .pickerStyle(.segmented)
+                .help("Sichtbare Decks: 1 / 2 / 4")
                 Picker("Browser", selection: Binding(get: { mix.prefs.ui.browserLayout }, set: { mix.prefs.ui.browserLayout = $0 })) {
                     ForEach(BrowserLayout.allCases) { Text($0.icon).help($0.rawValue).tag($0) }
                 }
@@ -95,14 +96,15 @@ struct ContentView: View {
         .onChange(of: mix.prefs.ui.musicFolders, initial: true) { _, f in store.folders.configured = f }
         .onAppear {
             if store.tracks.isEmpty { store.load() }
-            // MIX741_LAYOUT=nomixer,2decks,nobrowser: Teile der Oberfläche für Layout-Messungen abschalten (nur Selbsttest)
+            // MIX741_LAYOUT=nomixer,1deck,2decks,nobrowser: Teile der Oberfläche für Layout-Messungen abschalten (nur Selbsttest)
             if Session.isSelfTest, let l = ProcessInfo.processInfo.environment["MIX741_LAYOUT"] {
                 if l.contains("nomixer") { mix.prefs.ui.showMixer = false }
-                if l.contains("2decks") { mix.prefs.ui.showFourDecks = false }
+                if l.contains("2decks") { mix.prefs.ui.deckCount = 2 }
+                if l.contains("1deck") { mix.prefs.ui.deckCount = 1 }
                 if l.contains("nobrowser") { mix.prefs.ui.browserLayout = .single; mix.prefs.ui.browserHeight = 120 }
             }
             mix.library = store   // Schneiden trägt neue Dateien in CUTS ein
-            SelfTest.run(store: store, mix: mix)
+            SelfTest.run(store: store, mix: mix, browser: browserState)
         }
     }
 
@@ -147,18 +149,22 @@ struct ContentView: View {
             // Decks mit fester Höhe: zwei flexible Decks übereinander ließen SwiftUI jede Zustandsänderung
             // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks); jedes Deck in eigener
             // Hosting-View (DeckHost), damit eine Deck-Änderung nicht das ganze Fenster neu misst
+            // 1 Deck: nur A über die volle Breite, B–D spielen unsichtbar weiter
             GeometryReader { geo in
-                let rows: CGFloat = mix.showFourDecks ? 2 : 1
+                let n = mix.deckCount
+                let rows: CGFloat = n >= 4 ? 2 : 1
                 let deckH = max(120.z, (geo.size.height - (rows - 1) * 6.z) / rows)
                 HStack(alignment: .top, spacing: 6.z) {
                     VStack(spacing: 6.z) {
                         DeckHost(d: 0).frame(height: deckH)
-                        if mix.showFourDecks { DeckHost(d: 2).frame(height: deckH) }
+                        if n >= 4 { DeckHost(d: 2).frame(height: deckH) }
                     }
                     if mix.prefs.ui.showMixer { MixerView().fixedSize(horizontal: true, vertical: false) }
-                    VStack(spacing: 6.z) {
-                        DeckHost(d: 1).frame(height: deckH)
-                        if mix.showFourDecks { DeckHost(d: 3).frame(height: deckH) }
+                    if n >= 2 {
+                        VStack(spacing: 6.z) {
+                            DeckHost(d: 1).frame(height: deckH)
+                            if n >= 4 { DeckHost(d: 3).frame(height: deckH) }
+                        }
                     }
                 }
             }
@@ -253,6 +259,7 @@ struct MixApp: App {
             SettingsView()
                 .zoomExempt()
                 .environment(mix)
+                .environment(browser)
                 .environment(store)
                 .environment(controllerStatus)
         }
@@ -276,7 +283,12 @@ struct MixApp: App {
             CommandGroup(before: .toolbar) {
                 Toggle("Mixer", isOn: Binding(get: { mix.prefs.ui.showMixer }, set: { mix.prefs.ui.showMixer = $0 }))
                     .shortcut(keys.combo(.toggleMixer))
-                Toggle("4 Decks", isOn: Binding(get: { mix.prefs.ui.showFourDecks }, set: { mix.prefs.ui.showFourDecks = $0 }))
+                Picker("Decks", selection: Binding(get: { mix.prefs.ui.deckCount }, set: { mix.prefs.ui.deckCount = $0 })) {
+                    Text("1 Deck").tag(1)
+                    Text("2 Decks").tag(2)
+                    Text("4 Decks").tag(4)
+                }
+                Button(ShortcutID.toggleFourDecks.title) { run(.toggleFourDecks) }
                     .shortcut(keys.combo(.toggleFourDecks))
                 Toggle("Browser groß", isOn: Binding(get: { browser.maximized }, set: { browser.maximized = $0 }))
                     .shortcut(keys.combo(.bigBrowser))
@@ -285,6 +297,26 @@ struct MixApp: App {
                 }
                 Picker("Statusleiste", selection: Binding(get: { mix.prefs.ui.statusBar }, set: { mix.prefs.ui.statusBar = $0 })) {
                     ForEach(StatusBarMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                Divider()
+                Menu("Profil") {
+                    let ui = mix.prefs.ui
+                    ForEach(Array(ui.layoutProfiles.enumerated()), id: \.element.id) { i, p in
+                        Toggle(isOn: Binding(get: { p.id.uuidString == ui.activeLayoutProfile },
+                                             set: { _ in LayoutProfiles.apply(at: i, mix: mix, browser: browser, announce: false) })) {
+                            Text(verbatim: p.name)
+                        }
+                        .shortcut(i < ShortcutID.profiles.count ? keys.combo(ShortcutID.profiles[i]) : nil)
+                    }
+                    Button(ShortcutID.profileNext.title) { run(.profileNext) }
+                        .shortcut(keys.combo(.profileNext))
+                        .disabled(ui.layoutProfiles.isEmpty)
+                    Divider()
+                    Button("Aktuelle Ansicht als Profil speichern …") { LayoutProfiles.saveAsking(mix: mix, browser: browser) }
+                    Button("Profil aktualisieren") { LayoutProfiles.update(mix: mix, browser: browser) }
+                        .disabled(ui.activeProfile == nil)
+                    Button("Profil löschen …") { LayoutProfiles.deleteAsking(mix: mix) }
+                        .disabled(ui.activeProfile == nil)
                 }
                 Divider()
                 ForEach([ShortcutID.zoomIn, .zoomOut, .zoomReset]) { a in

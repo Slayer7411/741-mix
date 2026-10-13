@@ -41,9 +41,10 @@ enum ToggleProbe {
 @MainActor
 enum ToggleBench {
     /// toggle: Browser groß/klein · state: Zustandsänderungen an Deck A · play: Hauptthread-Last bei laufenden Decks ·
-    /// browser: Suche, Tippen, Filter, Sortierung, Quelle, Scrollen, Laden, Analyse-Ergebnisse bei 4 spielenden Decks
+    /// browser: Suche, Tippen, Filter, Sortierung, Quelle, Scrollen, Laden, Analyse-Ergebnisse bei 4 spielenden Decks ·
+    /// profile: Standard-Ansichts-Profile abwechselnd anwenden
     nonisolated static let mode = ProcessInfo.processInfo.environment["MIX741_BENCH"] ?? ""
-    nonisolated static let requested = ["toggle", "state", "play", "browser"].contains(mode)
+    nonisolated static let requested = ["toggle", "state", "play", "browser", "profile"].contains(mode)
 
     static func snapshot(_ v: NSView, to path: String) {
         guard let layer = v.layer else { return }
@@ -129,6 +130,56 @@ enum ToggleBench {
             if mode == "state" { await StateBench.run(mix: mix, host: host, log: log); exit(0) }
             if mode == "play" { await StateBench.play(mix: mix, log: log); exit(0) }
             if mode == "browser" { await StateBench.browser(mix: mix, store: store, browser: browser, host: host, log: log); exit(0) }
+            if mode == "profile" {
+                let profiles = LayoutProfile.defaults(from: mix.prefs.ui)
+                // MIX741_BENCH_SPLIT=1: Wechsel Feld für Feld (Musik suchen -> Default Setup und zurück), Kosten je Feld
+                if ProcessInfo.processInfo.environment["MIX741_BENCH_SPLIT"] == "1" {
+                    let steps: [(String, (inout UIPrefs, LayoutProfile) -> Void)] = [
+                        ("decks", { $0.deckCount = $1.deckCount }), ("mixer", { $0.showMixer = $1.showMixer }),
+                        ("fx", { $0.showFXUnits = $1.showFXUnits; $0.fxUnitCount = $1.fxUnitCount }),
+                        ("rows", { $0.deckRows = $1.deckRows; $0.showGridTools = $1.showGridTools }),
+                        ("browser", { $0.browserLayout = $1.browserLayout; $0.browserHeight = $1.browserHeight; $0.hideTreeWithDecks = $1.hideTreeWithDecks }),
+                        ("status", { $0.statusBar = $1.statusBar; $0.showMeters = $1.showMeters }),
+                        ("cover+preview", { $0.showDeckCover = $1.showDeckCover; $0.showCoverPreview = $1.showCoverPreview; $0.previewMode = $1.previewMode; $0.waveformHeight = $1.waveformHeight }),
+                    ]
+                    var sums: [String: [Double]] = [:]
+                    for r in 0..<6 {
+                        let target = profiles[r % 2 == 0 ? 0 : 1]
+                        LayoutProfiles.apply(profiles[r % 2 == 0 ? 1 : 0], mix: mix, browser: browser)
+                        for _ in 0..<4 { try? await Task.sleep(for: .milliseconds(100)); mix.pull(); pump() }
+                        for (name, f) in steps {
+                            let t0 = CACurrentMediaTime()
+                            f(&mix.prefs.ui, target)
+                            host.layoutSubtreeIfNeeded()
+                            CATransaction.flush()
+                            if r >= 2 { sums["\(name) -> \(target.name)", default: []].append((CACurrentMediaTime() - t0) * 1000) }
+                            for _ in 0..<3 { try? await Task.sleep(for: .milliseconds(100)); mix.pull(); pump() }
+                        }
+                    }
+                    for (k, v) in sums.sorted(by: { $0.key < $1.key }) { log(String(format: "%@: median %.1f ms", k, v.sorted()[v.count / 2])) }
+                    exit(0)
+                }
+                let rounds = Int(ProcessInfo.processInfo.environment["MIX741_BENCH_N"] ?? "") ?? 10
+                var sums: [String: [Double]] = [:]
+                for i in 0..<rounds * profiles.count {
+                    let p = profiles[i % profiles.count]
+                    let t0 = CACurrentMediaTime()
+                    LayoutProfiles.apply(p, mix: mix, browser: browser)
+                    host.layoutSubtreeIfNeeded()
+                    let t1 = CACurrentMediaTime()
+                    CATransaction.flush()
+                    let t2 = CACurrentMediaTime()
+                    if i >= profiles.count { sums[p.name, default: []].append((t2 - t0) * 1000) }   // erste Runde = Aufwärmen
+                    log(String(format: "%@: layout %.1f ms, übergeben %.1f ms", p.name, (t1 - t0) * 1000, (t2 - t1) * 1000))
+                    for _ in 0..<4 { try? await Task.sleep(for: .milliseconds(100)); mix.pull(); pump() }
+                }
+                for p in profiles {
+                    let v = sums[p.name, default: []].sorted()
+                    guard !v.isEmpty else { continue }
+                    log(String(format: "→ %@: median %.1f ms, max %.1f ms (n=%d)", p.name, v[v.count / 2], v.last!, v.count))
+                }
+                exit(0)
+            }
             let waves = { (v: NSView) -> [NSView] in
                 var out: [NSView] = [], stack = [v]
                 while let n = stack.popLast() { if n is WaveLayerNSView { out.append(n) }; stack += n.subviews }
