@@ -140,6 +140,18 @@ struct DeckRows: Codable, Equatable {
     ]
 }
 
+extension DeckRows {
+    /// fehlende Felder -> Standard (auch in Ansichts-Profilen, die AppPrefs.decode nicht zusammenführt)
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init()
+        func v(_ k: CodingKeys, _ cur: Bool) -> Bool { ((try? c.decodeIfPresent(Bool.self, forKey: k)) ?? nil) ?? cur }
+        info = v(.info, info); comment = v(.comment, comment); tags = v(.tags, tags); phaseBar = v(.phaseBar, phaseBar)
+        overview = v(.overview, overview); transport = v(.transport, transport); hotcues = v(.hotcues, hotcues)
+        loop = v(.loop, loop); jump = v(.jump, jump); tempo = v(.tempo, tempo)
+    }
+}
+
 /// Statusleiste unten: immer sichtbar, automatisch (fährt hoch, wenn die Maus am unteren Rand steht oder eine
 /// Warnung kommt, liegt dann über dem Browser) oder aus
 enum StatusBarMode: String, CaseIterable, Identifiable, Codable {
@@ -149,7 +161,9 @@ enum StatusBarMode: String, CaseIterable, Identifiable, Codable {
 
 struct UIPrefs: Codable, Equatable {
     var showMixer = true
-    var showFourDecks = true
+    /// sichtbare Decks: 1 (nur A, volle Breite), 2 (A, B) oder 4; die übrigen spielen unsichtbar weiter.
+    /// Ersetzt `showFourDecks` (alte Einstellungen: AppPrefs.decode)
+    var deckCount = 4
     var showFXUnits = true
     /// Maßstab der oberen Leiste (FX, Clock): 0,6…1,3, Griff unter der Leiste
     var topBarScale = 1.0
@@ -241,6 +255,17 @@ struct UIPrefs: Codable, Equatable {
     /// Schneiden (Bereich entfernen / auf Bereich kürzen): Ergebnis gleich ins selbe Deck laden (Lade-Schutz gilt)
     var cutLoadsResult = false
 
+    /// Ansichts-Profile (Menü Darstellung -> Profil, ⌘, -> Anzeige); fehlt das Feld, legt AppPrefs.decode zwei an
+    var layoutProfiles: [LayoutProfile] = []
+    /// zuletzt angewendetes Profil (LayoutProfile.id, "" = keins)
+    var activeLayoutProfile = ""
+
+    /// alt: 2 / 4 Decks (Kürzel ⌥⌘4, Selbsttest); von 1 Deck aus -> 4
+    var showFourDecks: Bool {
+        get { deckCount >= 4 }
+        set { deckCount = newValue ? 4 : 2 }
+    }
+
     /// kompakte Decks: ohne Pitch-Fader, Hotcues und Grid-Werkzeuge (mehr Platz für Wellenform und Beatgrid)
     var compactDecks: Bool {
         get { !deckRows.tempo && !deckRows.hotcues && !showGridTools }
@@ -302,7 +327,11 @@ struct AppPrefs: Codable, Equatable {
     }
 
     private static func loadSaved() -> AppPrefs {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return AppPrefs() }
+        guard let data = UserDefaults.standard.data(forKey: key) else {
+            var p = AppPrefs()
+            p.ui.layoutProfiles = LayoutProfile.defaults(from: p.ui)
+            return p
+        }
         return decode(data)
     }
 
@@ -312,6 +341,17 @@ struct AppPrefs: Codable, Equatable {
               let defData = try? JSONEncoder().encode(AppPrefs()),
               let defaults = try? JSONSerialization.jsonObject(with: defData) as? [String: Any] else { return AppPrefs() }
         if let old = saved["x1"], saved["controller"] == nil { saved["controller"] = old }   // alter Schlüssel
+        var ui = saved["ui"] as? [String: Any] ?? [:]
+        // alt: showFourDecks -> deckCount
+        if ui["deckCount"] == nil, let four = ui["showFourDecks"] as? Bool { ui["deckCount"] = four ? 4 : 2; saved["ui"] = ui }
+        let hadProfiles = ui["layoutProfiles"] != nil
+        var p = merged(saved, over: defaults)
+        // noch keine Profile gespeichert -> „Default Setup“ und „Musik suchen“ aus der gespeicherten Ansicht
+        if !hadProfiles { p.ui.layoutProfiles = LayoutProfile.defaults(from: p.ui) }
+        return p
+    }
+
+    private static func merged(_ saved: [String: Any], over defaults: [String: Any]) -> AppPrefs {
         func merge(_ base: [String: Any], _ over: [String: Any]) -> [String: Any] {
             var r = base
             for (k, v) in over {

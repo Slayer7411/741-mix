@@ -39,7 +39,8 @@ enum WindowShot {
 
         // feste Ansicht (Selbsttest speichert nichts)
         mix.prefs.ui.showMixer = false
-        mix.prefs.ui.showFourDecks = env["MIX741_LAYOUT"]?.contains("2decks") != true
+        let layout = env["MIX741_LAYOUT"] ?? ""
+        mix.prefs.ui.deckCount = layout.contains("1deck") ? 1 : layout.contains("2decks") ? 2 : 4
         if env["MIX741_LAYOUT"]?.contains("mixer") == true { mix.prefs.ui.showMixer = true }
         mix.prefs.ui.browserLayout = .sideBySide
         mix.prefs.ui.browserHeight = 330
@@ -61,6 +62,15 @@ enum WindowShot {
         browser.store = store
         browser.history = history
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
+        // MIX741_SHOT_PROFILE=<Name>: dieses Ansichts-Profil vor dem Bild anwenden (gespeicherte, sonst Standard-Profile)
+        if let name = env["MIX741_SHOT_PROFILE"] {
+            let list = mix.prefs.ui.layoutProfiles + LayoutProfile.defaults(from: mix.prefs.ui)
+            guard let p = list.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
+                log("kein Profil \(name): \(list.map(\.name).joined(separator: ", "))"); exit(1)
+            }
+            LayoutProfiles.apply(p, mix: mix, browser: browser)
+            log("Profil \(p.name): \(p.deckCount) Decks, Mixer \(p.showMixer), Browser \(p.browserLayout.rawValue) \(Int(p.browserHeight)) pt")
+        }
         store.load()
         spin(120, until: { !store.tracks.isEmpty })
         // nur Dateien mit Inhalt auf der Platte, mit Grid, Key und Tags; je Künstler einer. 4 Decks, 12 Preparation

@@ -24,8 +24,8 @@ private let swiftUISaved = """
 
 @Test func columnLayoutPlacesNewColumns() throws {
     let order = ColumnLayout.placed(try #require(ColumnLayout.decode(Data(swiftUISaved.utf8))))
-    // unbekannte raus, played vorne, cloud dahinter, cover neben die Farbe, preview hinter den Titel, Rest hinten
-    #expect(Array(order.prefix(9)) == ["played", "cloud", "analyzed", "color", "cover", "comment", "title", "preview", "artist"])
+    // unbekannte raus, played vorne, „analyzed“ wird zur Info-Spalte, cover neben die Farbe, preview hinter den Titel, Rest hinten
+    #expect(Array(order.prefix(8)) == ["played", "info", "color", "cover", "comment", "title", "preview", "artist"])
     #expect(!order.contains("gone"))
     #expect(Set(order) == Set(TrackColumn.all.map(\.id)))
     #expect(order.count == TrackColumn.all.count)

@@ -348,7 +348,11 @@ struct DeckSettings: View {
                     .settingsHint()
             }
             Section("Ansicht") {
-                Toggle("4 Decks anzeigen", isOn: $mix.prefs.ui.showFourDecks)
+                Picker("Decks anzeigen", selection: $mix.prefs.ui.deckCount) {
+                    Text("1 Deck").tag(1)
+                    Text("2 Decks").tag(2)
+                    Text("4 Decks").tag(4)
+                }
                 sliderRow("Vorhören im Browser ab (Anteil)", $mix.prefs.ui.previewStart, 0...0.9, format: "%.1f")
             }
             Section("Zeilen je Deck") {
@@ -474,6 +478,7 @@ struct WaveformSettings: View {
     var body: some View {
         @Bindable var mix = mix
         Form {
+            LayoutProfileSettings()
             Section("Wellenform") {
                 Picker("Stil", selection: $mix.prefs.ui.waveformStyle) {
                     ForEach(WaveformStyle.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }

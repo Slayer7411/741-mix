@@ -46,6 +46,8 @@ extension ShortcutID: Identifiable {
         case .bigBrowser: String(localized: "Browser groß")
         case .bigBrowserKey: String(localized: "Browser groß (zweite Taste, nicht im Suchfeld)")
         case .compactDecks: String(localized: "Kompakte Decks (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge)")
+        case .profile1, .profile2, .profile3, .profile4: String(localized: "Profil \((index ?? 0) + 1)")
+        case .profileNext: String(localized: "Nächstes Profil")
         case .zoomIn: String(localized: "Vergrößern")
         case .zoomOut: String(localized: "Verkleinern")
         case .zoomReset: String(localized: "Originalgröße")
@@ -179,6 +181,8 @@ struct AppActions {
         case .toggleFourDecks: mix.prefs.ui.showFourDecks.toggle()
         case .bigBrowser, .bigBrowserKey: browser.maximized.toggle()
         case .compactDecks: mix.prefs.ui.compactDecks.toggle()
+        case .profile1, .profile2, .profile3, .profile4: LayoutProfiles.apply(at: a.index ?? 0, mix: mix, browser: browser)
+        case .profileNext: LayoutProfiles.next(mix: mix, browser: browser)
         case .zoomIn, .zoomOut, .zoomReset: ZoomControl.step(a, mix: mix)
         case .openCollection:
             let panel = NSOpenPanel()

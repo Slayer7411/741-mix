@@ -24,7 +24,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * loop snap (only with snap on): to loop cues (on, window 1-8 beats, default 4) and to the 4-bar grid (on, tolerance 1-8 beats, default 1)
 * align grid anchor to phrases: off / suggest (default) / automatic -> on load the anchor is checked against the track's 8-bar structure, see manual 05
 * history: played after x seconds audible, optional copy into the collection's history folder
-* show 4 decks, preview start position in the browser
+* decks shown 1 / 2 / 4 (`ui.deckCount`, older `showFourDecks` is read once), preview start position in the browser
 
 ## ◆ MIXER & FX
 
@@ -52,6 +52,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 
 ## ◆ DISPLAY
 
+* profiles: list (rename, apply, update, ↑ / ↓, ✕), save current view -> [manual](MANUAL.md#view-profiles). `ui.layoutProfiles`, `ui.activeLayoutProfile`
 * waveform style: 3-band blend (default) / spectrum (6 bands) / mono; palette (not for spectrum): spectrum (rgb, default) / 741 bone / orange / blue / classic; high emphasis 0-3
 * palette: 741 bone, orange, blue / white, classic (not for spectrum fine, it has fixed band colors -> [manual](MANUAL.md#-05--waveform--grid))
 * high emphasis (spectrum fine): 0-2, default 1

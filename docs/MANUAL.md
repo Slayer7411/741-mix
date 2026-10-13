@@ -72,7 +72,7 @@ tracks without an analysis in the collection play, but have no grid -> no sync. 
 ## ◆ 03 · SCREEN
 
 ```
-┌ toolbar ───────── MIXER · 2 / 4 DECKS · browser layout · DECKS · ↻ ┐
+┌ toolbar ─ PROFILE ▾ ───── MIXER · 1 / 2 / 4 · browser layout · DECKS · ↻ ┐
 ├ FX 1 ─────────┬ master clock + link + metronome ─┬ bars ──┬ FX 2 ─┤
 ├ deck A ───────────────────────┬ deck B ────────────────────────────┤
 ├ deck C ───────────────────────┼ deck D ────────────────────────────┤
@@ -80,14 +80,27 @@ tracks without an analysis in the collection play, but have no grid -> no sync. 
 └ status: message · detail ─ device · routing · prep ─ DSP LAT DROP RAM CPU ┘
 ```
 
+* PROFILE ▾ (left) -> view profile, see [view profiles](#view-profiles)
 * MIXER -> internal mixer on / off (⌥⌘M)
-* 2 DECKS / 4 DECKS (⌥⌘4)
+* 1 / 2 / 4 -> decks shown. 1 = deck A over the full width (mixer next to it when on), 2 = A + B, 4 = A-D. hidden decks keep playing. ⌥⌘4 switches 2 ↔ 4 (from 1 -> 4)
 * browser layout -> one pane, side by side, stacked
 * DECKS -> hide decks, big browser (⌥⌘B)
 * ↻ -> reload the collection
 * the line between decks and browser can be dragged, the height is saved
 * fullscreen -> toolbar hides, comes back with the mouse at the top
 * zoom like a web browser -> ⌘+ / ⌘− / ⌘0 (view menu), 50 · 67 · 75 · 80 · 90 · 100 · 110 · 125 · 150 · 175 · 200 %, step shown in the status bar, saved. text, controls, waveform marks and table columns scale at full resolution. minimum window size × zoom, capped at what fits the screen. toolbar, settings and dialogs stay at 100 %
+
+### view profiles
+
+a profile = named set of view settings: decks shown (1 / 2 / 4), internal mixer, fx units on / off and count, deck rows (incl. grid tools, so also compact decks), browser layout, browser height, hide tree, big browser, status bar, load meters, waveform minimum height, cover in the deck, cover preview, browser preview mode. not in it: audio, controller, waveform style and colors, tags, keys.
+
+* switch: PROFILE ▾ left in the toolbar, view menu -> profile, ⌃⌥⌘1-4 (first four of the list), ⌃⌥⇥ next profile. keys assignable under ⌘, -> KEYBOARD
+* switching only sets these fields, decks are rebuilt only as far as the toolbar switches do it anyway
+* after a switch any view change keeps the name, marked `*` (`Default Setup *`) until `update profile`
+* `save current view as profile …` asks for a name, an existing name is overwritten. `update profile` -> active profile = current view. `delete profile …` asks first
+* ⌘, -> DISPLAY -> profiles: rename in place, APPLY, UPDATE, ↑ / ↓ order (first four = keys), ✕ delete, SAVE CURRENT VIEW
+* first start with this version: `Default Setup` (4 decks, no internal mixer, no fx units, rows readouts + phase bar + transport + loop, browser side by side, status bar automatic, no cover in the deck) and `Musik suchen` (english `Search music`: 1 deck, no mixer, browser ≥ 520 pt with tree, preview full row, cover preview, status bar always). other values from the view saved before. deleted profiles stay deleted
+* saved in `prefs.v1` -> `ui.layoutProfiles`, active one in `ui.activeLayoutProfile`
 
 ### status bar
 
@@ -677,7 +690,9 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | ⌃⌘1-8 | hotcue 1-8 |
 | ⌥⌘P | reset played state |
 | ⌥⌘M | mixer on / off |
-| ⌥⌘4 | 2 / 4 decks |
+| ⌥⌘4 | 2 / 4 decks (from 1 deck -> 4) |
+| ⌃⌥⌘1-4 | view profile 1-4 |
+| ⌃⌥⇥ | next view profile |
 | ⌥⌘B | big browser |
 | ⌥⌘K | compact decks (pitch fader, hotcues, grid tools off / on) |
 | ⌥⌘E | edit mode on the focused deck |
