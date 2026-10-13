@@ -579,9 +579,15 @@ enum WaveShot {
         let loop = at == nil && grid != nil
             ? (active: true, start: grid!.time(ofBeat: 4), end: grid!.time(ofBeat: 8)) : (active: false, start: 0.0, end: 0.0)
         var looks = (env["MIX741_SHOT_STYLE"] ?? "settings").split(separator: ",").map { look(String($0), ui) }
-        // Versuchswerte der Mischung je Zeile: MIX741_SHOT_TUNE="sat,win,gl,gm,gh;…" (eine Zeile je Eintrag, Stil der ersten Zeile)
+        // Versuchswerte der Mischung je Zeile: MIX741_SHOT_TUNE="sat,win,gl,gm,gh,base,fade,stack,warm,open;…" (eine Zeile je Eintrag,
+        // Stil der ersten Zeile); MIX741_SHOT_PRESET=all|0,3,5: Varianten A…K der Mischung, eine Zeile je Variante
         let tunes = (env["MIX741_SHOT_TUNE"] ?? "").split(separator: ";").compactMap { BlendPaint.Tune(String($0)) }
         if !tunes.isEmpty, let first = looks.first { looks = tunes.map { (first.0, first.1 + " · " + $0.label) } }
+        var presets: [Int] = [ui.blendPreset]
+        if let ps = env["MIX741_SHOT_PRESET"] {
+            presets = ps == "all" ? Array(BlendPreset.all.indices) : ps.split(separator: ",").compactMap { Int($0) }.map(BlendPreset.clamp)
+            looks = presets.map { (WaveformStyle.blend, BlendPreset.all[$0].name) }
+        }
         let w: CGFloat = 1200, h: CGFloat = 180, gap: CGFloat = 8, label: CGFloat = 18, scale: CGFloat = 2, oh: CGFloat = 48
         let rowH = (label + h * 2 + oh + gap * 3)
         let totalH = rowH * CGFloat(looks.count)
@@ -596,7 +602,7 @@ enum WaveShot {
             WaveLayerNSView.tileTime.withLock { $0 = (0, 0) }
             let tr = Date()
             let wf = RenderedWaveform.render(audio, style: lk.0, palette: ui.waveformPalette, highBoost: ui.waveformHighBoost,
-                                             tune: tunes.isEmpty ? nil : tunes[row])
+                                             preset: presets.count > 1 ? presets[row] : presets[0], tune: tunes.isEmpty ? nil : tunes[row])
             SelfTest.log(String(format: "%@: Wellenform gerechnet in %.2f s, %.0f Pfade je Abschnitt", lk.1, Date().timeIntervalSince(tr), Double(wf.chunks.reduce(0) { $0 + $1.layers.count }) / Double(max(1, wf.chunks.count))))
             let view = WaveLayerNSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
             view.position = { pos }

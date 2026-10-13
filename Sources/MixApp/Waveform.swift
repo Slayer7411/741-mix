@@ -244,11 +244,11 @@ final class RenderedWaveform: @unchecked Sendable {
         return (CGFloat(pk), fine.color(L, sustain: sus / c))
     }
 
-    static func render(_ a: TrackAudio, style: WaveformStyle, palette: WaveformPalette, highBoost: Double = 1,
+    static func render(_ a: TrackAudio, style: WaveformStyle, palette: WaveformPalette, highBoost: Double = 1, preset: Int = 0,
                        tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
         let colors = Colors.of(palette)
         if style == .blend, a.blend.count >= a.peak.count, !a.peak.isEmpty {
-            return blend(a, palette: palette, highBoost: highBoost, tune: tune)
+            return blend(a, palette: palette, highBoost: highBoost, preset: preset, tune: tune)
         }
         let env = envelope(a)
         let fine = style == .spectrum && a.spectrum.count >= a.peak.count && !a.peak.isEmpty ? Fine(a.spectrum, highBoost: highBoost) : nil
@@ -287,9 +287,28 @@ final class RenderedWaveform: @unchecked Sendable {
     }
 }
 
+/// Varianten der Mischung zum Durchschalten (⌘, -> Anzeige -> Variante): jede ändert nur wenige Werte gegenüber A
+enum BlendPreset {
+    struct Item { let name: String; let apply: @Sendable (inout BlendPaint.Palette) -> Void }
+    static let all: [Item] = [
+        Item(name: "A · Standard") { _ in },
+        Item(name: "B · Mitten +") { $0.gain.g = 0.85 },
+        Item(name: "C · Mitten ++, Höhen +") { $0.gain.g = 1.2; $0.gain.b *= 1.3 },
+        Item(name: "D · klare Stapel") { $0.base = 0.15 },
+        Item(name: "E · nur Stapel") { $0.base = 0; $0.gain.g = 0.75 },
+        Item(name: "F · harte Kanten") { $0.fade = 0.05; $0.base = 0.25; $0.gain.g = 0.75 },
+        Item(name: "G · leise Bänder höher") { $0.stackCurve = 0.45; $0.gain.g = 0.75 },
+        Item(name: "H · nach Pegel") { $0.stackCurve = 0.85; $0.base = 0.25; $0.gain.g = 0.85 },
+        Item(name: "I · ohne Orange") { $0.warmth = 0; $0.gain.g = 0.8 },
+        Item(name: "J · Energie-Mischung, ohne Stapel") { $0.base = 1; $0.saturation = 1.2; $0.gain.g = 0.8 },
+        Item(name: "K · weich") { $0.saturation = 1.0; $0.base = 0.5; $0.gain.g = 0.8 },
+    ]
+    static func clamp(_ i: Int) -> Int { max(0, min(all.count - 1, i)) }
+}
+
 extension RenderedWaveform {
-    /// Palette der Mischung: RGB = Bandanteile direkt, sonst die drei Palettenfarben
-    static func blendPalette(_ p: WaveformPalette, highBoost: Double) -> BlendPaint.Palette {
+    /// Palette der Mischung: RGB = Bandanteile direkt, sonst die drei Palettenfarben; `preset` = Variante A…K
+    static func blendPalette(_ p: WaveformPalette, highBoost: Double, preset: Int = 0) -> BlendPaint.Palette {
         let k = Float(pow(2, highBoost - 1))   // Höhen-Betonung 0…3: Gewicht der Höhen ×0,5…×4 (Farbe und Stapelhöhe)
         var pal: BlendPaint.Palette
         if p == .rgb { pal = .rgb } else {
@@ -298,12 +317,13 @@ extension RenderedWaveform {
             pal = BlendPaint.Palette(low: f(c.low), mid: f(c.mid), high: f(c.high))   // gehaltene Höhen: halb zu Weiß
         }
         pal.gain.b *= k
+        BlendPreset.all[BlendPreset.clamp(preset)].apply(&pal)
         return pal
     }
 
     /// 3-Band Mischung: keine Pfade, die Kacheln rastern aus den Blöcken; Übersicht gleich gerastert
-    static func blend(_ a: TrackAudio, palette: WaveformPalette, highBoost: Double, tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
-        var pal = blendPalette(palette, highBoost: highBoost)
+    static func blend(_ a: TrackAudio, palette: WaveformPalette, highBoost: Double, preset: Int = 0, tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
+        var pal = blendPalette(palette, highBoost: highBoost, preset: preset)
         tune?.apply(to: &pal)   // Versuchswerte, nur im Selbsttest-Bild
         // Anteil gehaltener Höhen je Block aus der Höhen-Dauer des Spektrums (geschlossene Hats blau, offene hellblau)
         let n = a.peak.count
@@ -335,13 +355,13 @@ final class WaveformCache {
 
     func waveform(for audio: TrackAudio?, ui: UIPrefs) -> RenderedWaveform? {
         guard let audio else { return nil }
-        let style = ui.waveformStyle, palette = ui.waveformPalette, boost = ui.waveformHighBoost
-        let key = "\(ObjectIdentifier(audio).hashValue)-\(style.rawValue)-\(palette.rawValue)-\(boost)"
+        let style = ui.waveformStyle, palette = ui.waveformPalette, boost = ui.waveformHighBoost, preset = ui.blendPreset
+        let key = "\(ObjectIdentifier(audio).hashValue)-\(style.rawValue)-\(palette.rawValue)-\(boost)-\(preset)"
         if let e = done[key], e.audio === audio { return e.wave }
         if !running.contains(key) {
             running.insert(key)
             Task.detached(priority: .userInitiated) {
-                let w = RenderedWaveform.render(audio, style: style, palette: palette, highBoost: boost)
+                let w = RenderedWaveform.render(audio, style: style, palette: palette, highBoost: boost, preset: preset)
                 await MainActor.run {
                     self.done.removeAll { $0.value.audio == nil }
                     self.done[key] = Entry(audio: audio, wave: w)

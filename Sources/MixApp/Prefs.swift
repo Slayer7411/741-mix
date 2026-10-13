@@ -156,6 +156,8 @@ struct UIPrefs: Codable, Equatable {
     var waveformPalette = WaveformPalette.rgb
     /// Höhen-Betonung (0 = neutral, 1 = Standard, 3 = sehr stark): Spektrum 0…15 dB, 3-Band Höhen-Gewicht ×0,5…×4
     var waveformHighBoost = 1.0
+    /// Variante der 3-Band-Mischung (Index in BlendPreset.all, 0 = Standard)
+    var blendPreset = 0
     var showBeatgrid = true
     var showBarNumbers = true
     var dimPlayed = true

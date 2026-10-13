@@ -487,6 +487,9 @@ struct WaveformSettings: View {
                     sliderRow("Höhen-Betonung", $mix.prefs.ui.waveformHighBoost, 0...3, step: 0.25, format: "%.2f")
                 }
                 if mix.prefs.ui.waveformStyle == .blend {
+                    Picker("Variante", selection: $mix.prefs.ui.blendPreset) {
+                        ForEach(Array(BlendPreset.all.enumerated()), id: \.offset) { i, p in Text(verbatim: p.name).tag(i) }
+                    }
                     Text("Je Pixelzeile gemischt: Tiefen (< 150 Hz) als Körper von der Mitte, Mitten (um 670 Hz) als Ring, Höhen (> 3 kHz) außen an den Spitzen, Helligkeit nach oben weich auslaufend. Spektrum (RGB): Kick-Anschlag rot, gehaltener Bass / Sub-Ausklang orange, Mitten grün, kurze Höhen (geschlossene Hats) blau, gehaltene Höhen (offene Hats, Ride) hellblau. Höhen-Betonung 1 = Standard, 3 = Höhen ×4.")
                         .font(.caption).foregroundStyle(.secondary)
                 }

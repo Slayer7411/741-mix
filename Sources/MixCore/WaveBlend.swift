@@ -61,6 +61,16 @@ public enum BlendPaint {
         public var window: Int
         /// Band-Gewichte Tief / Mitte / Hoch auf die gespeicherten Hüllkurven (1 = wie analysiert)
         public var gain: RGB
+        /// Anteil der Energie-Mischung an der Farbe (Tönung), Rest aus dem Stapel-Abschnitt; 1 = keine Stapel
+        public var base: Float = BlendPaint.base
+        /// Breite der Übergänge zwischen den gestapelten Bändern (Anteil der Blockspitze)
+        public var fade: Float = BlendPaint.fade
+        /// Exponent auf die gewichteten Band-Spitzen für die Stapel-Abschnitte (< 1: leise Bänder bekommen sichtbar Höhe)
+        public var stackCurve: Float = BlendPaint.stackCurve
+        /// Stärke der Orange-Tönung gehaltener Tiefen (0 = aus)
+        public var warmth: Float = 1
+        /// Stärke der Hellblau-Tönung gehaltener Höhen (0 = aus)
+        public var openness: Float = 1
         public init(low: RGB, mid: RGB, high: RGB, highOpen: RGB? = nil, lowWarm: RGB? = nil, direct: Bool = false, highShare: Float = 1,
                     saturation: Float = BlendPaint.saturation, window: Int = BlendPaint.window, gain: RGB = BlendPaint.gain) {
             self.low = low; self.mid = mid; self.high = high; self.direct = direct; self.highShare = highShare
@@ -73,23 +83,32 @@ public enum BlendPaint {
                                         lowWarm: BlendPaint.warmOrange, direct: true)
     }
 
-    /// Versuchswerte für Bilder: "sat,win,gl,gm,gh" (leere Felder = Standard)
+    /// Versuchswerte für Bilder: "sat,win,gl,gm,gh,base,fade,stack,warm,open" (leere Felder = Standard)
     public struct Tune: Sendable {
         public var saturation: Float?, window: Int?, gain: (Float?, Float?, Float?)
+        public var base: Float?, fade: Float?, stackCurve: Float?, warmth: Float?, openness: Float?
         public init?(_ spec: String) {
             let f = spec.split(separator: ",", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
             guard !f.isEmpty else { return nil }
-            saturation = f.count > 0 ? Float(f[0]) : nil
+            func at(_ i: Int) -> Float? { f.count > i ? Float(f[i]) : nil }
+            saturation = at(0)
             window = f.count > 1 ? Int(f[1]) : nil
-            gain = (f.count > 2 ? Float(f[2]) : nil, f.count > 3 ? Float(f[3]) : nil, f.count > 4 ? Float(f[4]) : nil)
+            gain = (at(2), at(3), at(4))
+            base = at(5); fade = at(6); stackCurve = at(7); warmth = at(8); openness = at(9)
         }
         public func apply(to p: inout Palette) {
             if let saturation { p.saturation = saturation }
             if let window { p.window = window }
             p.gain = (gain.0 ?? p.gain.r, gain.1 ?? p.gain.g, gain.2 ?? p.gain.b)
+            if let base { p.base = base }
+            if let fade { p.fade = fade }
+            if let stackCurve { p.stackCurve = stackCurve }
+            if let warmth { p.warmth = warmth }
+            if let openness { p.openness = openness }
         }
         public var label: String {
             "sat \(saturation.map { String(format: "%.1f", $0) } ?? "-") win \(window.map(String.init) ?? "-") gain \(gain.0 ?? 1)/\(gain.1 ?? 1)/\(gain.2 ?? 1)"
+            + " base \(base ?? BlendPaint.base) fade \(fade ?? BlendPaint.fade) stack \(stackCurve ?? BlendPaint.stackCurve) warm \(warmth ?? 1) open \(openness ?? 1)"
         }
     }
 
@@ -202,7 +221,7 @@ public enum BlendPaint {
         let rows = min(half, Int((top * Float(half)).rounded(.up)))
         guard rows > 0 else { return }
         let wlo = max(0, lo - p.window), whi = min(n, hi + p.window)
-        let count = Float(hi - lo), inv = 1 / Float(half), rest = 1 - base
+        let count = Float(hi - lo), inv = 1 / Float(half), base = p.base, rest = 1 - p.base
             for j in 0..<rows {
             let y = (Float(j) + 0.5) * inv
             var c: Float = 0, wc: Float = 0, er: Float = 0, eg: Float = 0, eb: Float = 0, eo: Float = 0, ew: Float = 0
@@ -217,11 +236,11 @@ public enum BlendPaint {
                 let t = o + WaveBlend.peakSlot
                 let el = amp[Int(blend[t])], em = amp[Int(blend[t + 1])], eh = amp[Int(blend[t + 2])]
                 // Stapel-Anteile aus den gewichteten Spitzen (Analyse-Gewicht × Palette-Gewicht), gestaucht
-                let pl = powf(el * p.gain.r, stackCurve), pm = powf(em * p.gain.g, stackCurve), ph = powf(eh * p.gain.b, stackCurve)
+                let pl = powf(el * p.gain.r, p.stackCurve), pm = powf(em * p.gain.g, p.stackCurve), ph = powf(eh * p.gain.b, p.stackCurve)
                 let sum = pl + pm + ph
                 guard sum > 0 else { continue }
                 // Stapel: größtes Band unten (Mitte), kleinstes oben (Spitze); Abschnitte auf die Blockspitze skaliert
-                let scale = pk / sum, f = fade * pk
+                let scale = pk / sum, f = p.fade * pk
                 var gl: Float = 0, gm: Float = 0, gh: Float = 0
                 if pl >= pm, pl >= ph {
                     if pm >= ph {   // L M H
@@ -254,11 +273,11 @@ public enum BlendPaint {
                 let q = msum / (msum + floor), mi = base / (msum + 1e-9), si = rest / gsum
                 let lr = cov * q * (el * p.gain.r * mi + gl * si)
                 er += lr
-                if let warm, k < warm.count { ew += lr * Float(warm[k]) * (1 / 255) }
+                if let warm, k < warm.count { ew += lr * Float(warm[k]) * (p.warmth / 255) }
                 eg += cov * q * (em * p.gain.g * mi + gm * si)
                 let hb = cov * q * (eh * p.gain.b * mi + gh * si)
                 eb += hb
-                if let open, k < open.count { eo += hb * Float(open[k]) * (1 / 255) }
+                if let open, k < open.count { eo += hb * Float(open[k]) * (p.openness / 255) }
                 wc += cov
             }
             guard c > 0 else { continue }
