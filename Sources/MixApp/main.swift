@@ -422,6 +422,7 @@ extension MixApp {
         m.onPreview = { [browser, mix] pane in if let t = browser.selectedTrack(pane: pane) { mix.togglePreview(t) } }
         m.onToggleBrowser = { [browser] in browser.maximized.toggle() }
         m.onMatching = { [browser] pane in browser.pane(pane).matching.toggle() }
+        m.onSide = { [mix] key, side in mix.prefs.controller.sides[key] = side.rawValue }
         // alle Tastenkürzel (Belegung unter ⌘, -> Tastatur); Leertaste = Browser groß/klein, nicht beim Tippen in Suchfeldern
         KeyMonitor.install(actions)
         m.start()

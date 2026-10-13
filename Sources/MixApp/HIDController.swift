@@ -17,6 +17,10 @@ final class ControllerStatus {
         var pane: Int = 0
         /// FX-Sektionen: -1 = FX1/FX2, 0 = beide FX1, 1 = beide FX2, 10 = FX1/FX3, 11 = FX2/FX4
         var fxUnit: Int = -1
+        /// Produktname, Seriennummer ("" = keine) und feste Seite (nil = dritter Controller)
+        var name = ""
+        var serial = ""
+        var side: ControllerSide?
     }
     var devices: [Info] = []
     var lastEvent = ""
@@ -45,6 +49,18 @@ final class ControllerStatus {
     }
 
     func identify(_ serial: String) { manager?.identify(serial) }
+
+    /// Seite wechseln (Decks, Browser, FX folgen); ein anderer Controller auf dieser Seite tauscht
+    func setSide(_ id: String, _ side: ControllerSide) { manager?.setSide(id, side) }
+
+    func playShow(_ id: String) { manager?.playShow(id) }
+
+    /// Infos aus der Steuer-Queue übernehmen
+    func update(_ infos: [Info]) {
+        for i in infos {
+            if let k = devices.firstIndex(where: { $0.id == i.id }) { devices[k] = i }
+        }
+    }
 }
 
 /// DJ-Controller (2 Deck-Seiten, 2 FX-Sektionen, Browse-Encoder, Touchstrip) im nativen HID-Modus (VID 0x17cc, PID 0x1220).
@@ -73,6 +89,10 @@ final class ControllerManager: @unchecked Sendable {
     var onPreview: (@MainActor (_ pane: Int) -> Void)?
     var onToggleBrowser: (@MainActor () -> Void)?
     var onMatching: (@MainActor (_ pane: Int) -> Void)?
+    /// Seite eines Geräts speichern (ControllerPrefs.sides, Hauptthread)
+    var onSide: (@MainActor (_ key: String, _ side: ControllerSide) -> Void)?
+    /// in dieser Sitzung gespeicherte Seiten (Steuer-Queue), gehen vor prefs.sides, bis die Einstellungen nachziehen
+    private var localSides: [String: ControllerSide] = [:]
 
     /// Standard: erster Controller (nach USB-Position) steuert A/C, der zweite B/D – pro Gerät in den Einstellungen änderbar.
     static let defaultAssignments: [(Int, Int)] = [(0, 2), (1, 3), (0, 1), (2, 3)]
@@ -96,6 +116,13 @@ final class ControllerManager: @unchecked Sendable {
                                                                          queue: nil) { [weak self] _ in
             guard let self else { return }
             self.core.controlQueue.async { self.reopen() }
+        }
+        // MIX741_LEDSHOW=1: Startsequenz nach dem Start noch einmal (Vorführen), nur mit verbundenen Controllern
+        if ProcessInfo.processInfo.environment["MIX741_LEDSHOW"] == "1" {
+            core.controlQueue.asyncAfter(deadline: .now() + 6) {
+                print("[hid] MIX741_LEDSHOW: \(self.units.count) Controller")
+                for u in self.units.values { u.startShow() }
+            }
         }
     }
     private var wakeObserver: NSObjectProtocol?
@@ -140,23 +167,113 @@ final class ControllerManager: @unchecked Sendable {
     }
 
     private func attach(_ device: IOHIDDevice) {
-        let serial = IOHIDDeviceGetProperty(device, kIOHIDSerialNumberKey as CFString) as? String ?? UUID().uuidString
-        let loc = IOHIDDeviceGetProperty(device, kIOHIDLocationIDKey as CFString) as? Int ?? 0
-        guard units[serial] == nil else { return }
-        let saved = UserDefaults.standard.array(forKey: "x1.\(serial)") as? [Int]
-        let def = Self.defaultAssignments[min(units.count, Self.defaultAssignments.count - 1)]
-        let savedPane = UserDefaults.standard.object(forKey: "x1pane.\(serial)") as? Int
-        var info = ControllerStatus.Info(id: serial, location: loc, left: saved?.first ?? def.0, right: saved?.last ?? def.1,
-                                 pane: savedPane ?? min(units.count, 1))
-        // Standard mit 2 Controllern: Seite mit A/C steuert FX1 (+FX3), mit B/D FX2 (+FX4)
-        info.fxUnit = UserDefaults.standard.object(forKey: "x1fx.\(serial)") as? Int
-            ?? ([0, 2].contains(info.left) || [0, 2].contains(info.right) ? 10 : 11)
-        units[serial] = ControllerUnit(device: device, info: info, manager: self)
-        DispatchQueue.main.async {
-            self.status.devices.append(info)
-            self.status.devices.sort { $0.location < $1.location }
-            self.status.lastEvent = "Controller \(serial) verbunden"
+        func prop(_ k: String) -> Any? { IOHIDDeviceGetProperty(device, k as CFString) }
+        register(device: device, serial: prop(kIOHIDSerialNumberKey) as? String ?? "", location: prop(kIOHIDLocationIDKey) as? Int ?? 0,
+                 name: prop(kIOHIDProductKey) as? String ?? "Controller")
+    }
+
+    /// Gerät aufnehmen (Steuer-Queue; device nil = Tests): Seite bestimmen, speichern, Startsequenz
+    @discardableResult
+    func register(device: IOHIDDevice?, serial rawSerial: String, location loc: Int, name: String) -> ControllerStatus.Info? {
+        let serial = rawSerial.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = ControllerSides.key(serial: serial, location: loc) ?? ControllerSides.tempPrefix + UUID().uuidString
+        guard units[key] == nil else { return nil }
+        let d = UserDefaults.standard
+        let saved = d.array(forKey: "x1.\(key)") as? [Int]
+        let savedPane = d.object(forKey: "x1pane.\(key)") as? Int
+        let savedFX = d.object(forKey: "x1fx.\(key)") as? Int
+        var info: ControllerStatus.Info
+        let stable = ControllerSides.isStable(key)
+        let stored = stable ? storedSide(key) : nil
+        // ohne gespeicherte Seite: alte Deck-Zuordnung A/C bzw. B/D übernehmen
+        let wanted = stored ?? saved.flatMap { $0.count == 2 ? ControllerSide(decks: $0[0], $0[1]) : nil }
+        if let (side, moved) = ControllerSides.resolve(saved: wanted, taken: Set(units.values.compactMap(\.info.side))) {
+            // eigene Zuordnung (Decks, Browser, FX) gilt nur, wenn das Gerät seine Seite bekommt
+            if moved { clearOverrides(key) }
+            let decks = !moved ? saved.flatMap { $0.count == 2 ? ($0[0], $0[1]) : nil } ?? side.decks : side.decks
+            info = .init(id: key, location: loc, left: decks.0, right: decks.1, pane: !moved ? savedPane ?? side.pane : side.pane)
+            info.fxUnit = !moved ? savedFX ?? side.fxUnit : side.fxUnit
+            info.side = side
+            if stable, stored != side { storeSide(key, side) }
+        } else {
+            // dritter Controller: der Reihe nach wie bisher
+            let def = Self.defaultAssignments[min(units.count, Self.defaultAssignments.count - 1)]
+            info = .init(id: key, location: loc, left: saved?.first ?? def.0, right: saved?.last ?? def.1,
+                         pane: savedPane ?? min(units.count, 1))
+            info.fxUnit = savedFX ?? ([0, 2].contains(info.left) || [0, 2].contains(info.right) ? 10 : 11)
         }
+        info.name = name
+        info.serial = serial
+        let unit = ControllerUnit(device: device, info: info, manager: self)
+        units[key] = unit
+        if prefs.startShow { unit.startShow() }
+        print("[hid] Controller \(key) verbunden: \(info.side?.rawValue ?? "-") \(deckLetters[info.left]) / \(deckLetters[info.right])")
+        let final = info
+        DispatchQueue.main.async {
+            self.status.devices.append(final)
+            self.status.devices.sort { ($0.side?.rawValue ?? "z", $0.location) < ($1.side?.rawValue ?? "z", $1.location) }
+            self.status.lastEvent = "Controller \(key) verbunden"
+        }
+        announce(info)
+        return info
+    }
+
+    /// gespeicherte Seite eines Geräts (Steuer-Queue)
+    func storedSide(_ key: String) -> ControllerSide? { localSides[key] ?? ControllerSides.saved(key, in: prefs.sides) }
+
+    func unit(_ key: String) -> ControllerUnit? { units[key] }
+
+    /// Statusleiste: welche Decks der Controller steuert
+    private func announce(_ i: ControllerStatus.Info) {
+        let a = deckLetters[i.left], b = deckLetters[i.right]
+        let text = switch i.side {
+        case .left: String(localized: "Controller links: \(a) / \(b)")
+        case .right: String(localized: "Controller rechts: \(a) / \(b)")
+        case nil: String(localized: "Controller: \(a) / \(b)")
+        }
+        StatusCenter.post(.info, text, key: "controller.\(i.id)")
+    }
+
+    private func storeSide(_ key: String, _ side: ControllerSide) {
+        localSides[key] = side
+        DispatchQueue.main.async { self.onSide?(key, side) }
+    }
+
+    /// eigene Deck-/Browser-/FX-Zuordnung eines Geräts verwerfen (Seite bestimmt sie wieder)
+    private func clearOverrides(_ key: String) {
+        for k in ["x1.", "x1pane.", "x1fx."] { UserDefaults.standard.removeObject(forKey: k + key) }
+    }
+
+    /// Seite wechseln (Steuer-Queue): Decks, Browser und FX folgen der Seite, ein anderes Gerät auf ihr tauscht
+    func setSide(_ key: String, _ side: ControllerSide) {
+        core.controlQueue.async {
+            guard self.units[key] != nil else { return }
+            let current = self.units.compactMapValues(\.info.side)
+            let next = ControllerSides.assign(key, to: side, current: current)
+            var changed: [ControllerStatus.Info] = []
+            for (k, s) in next where current[k] != s || k == key {
+                guard let u = self.units[k] else { continue }
+                self.clearOverrides(k)
+                u.info.side = s
+                (u.info.left, u.info.right) = s.decks
+                u.info.pane = s.pane
+                u.info.fxUnit = s.fxUnit
+                u.resetLEDs()
+                if ControllerSides.isStable(k) { self.storeSide(k, s) }
+                // Decks der neuen Seite zeigen (ohne Sturm)
+                if self.prefs.startShow { u.startShow(at: LEDShow.stormEnd) }
+                changed.append(u.info)
+                self.announce(u.info)
+            }
+            DispatchQueue.main.async {
+                self.status.update(changed)
+                self.status.devices.sort { ($0.side?.rawValue ?? "z", $0.location) < ($1.side?.rawValue ?? "z", $1.location) }
+            }
+        }
+    }
+
+    func playShow(_ key: String) {
+        core.controlQueue.async { self.units[key]?.startShow() }
     }
 
     private func detach(_ device: IOHIDDevice) {
@@ -410,7 +527,10 @@ final class ControllerUnit {
     ]
 
     func parse(_ r: [UInt8]) {
-        for e in decode(r) { manager?.handle(e, unit: self) }
+        let events = decode(r)
+        // echte Eingabe bricht die Startsequenz ab (Ereignis gilt normal)
+        if !events.isEmpty, showStart != nil { stopShow() }
+        for e in events { manager?.handle(e, unit: self) }
     }
 
     /// Report → Ereignisse in Reihenfolge (Shift zuerst); merkt sich den Report für den nächsten Vergleich
@@ -476,8 +596,46 @@ final class ControllerUnit {
 
     // MARK: - LEDs
 
+    // MARK: - Startsequenz (Steuer-Queue, im LED-Takt)
+
+    /// Start der Sequenz (Systemlaufzeit), nil = normale LEDs
+    private(set) var showStart: TimeInterval?
+    private var showSeed: UInt32 = 0
+
+    /// Sequenz starten, at = Einstieg in Sekunden (LEDShow.stormEnd = gleich die Decks)
+    func startShow(at offset: Double = 0) {
+        showStart = ProcessInfo.processInfo.systemUptime - offset
+        showSeed = UInt32.random(in: 0 ... .max)
+    }
+
+    func stopShow() {
+        showStart = nil
+        resetLEDs()
+    }
+
+    /// nächster LED-Takt schickt alles neu
+    func resetLEDs() { lastLED = []; lastDisplay = [] }
+
+    /// Bild der laufenden Sequenz senden; false = keine Sequenz (mehr), normale LEDs
+    private func sendShow(peak: UInt8) -> Bool {
+        guard let start = showStart else { return false }
+        guard let f = LEDShow.frame(at: ProcessInfo.processInfo.systemUptime - start, decks: (info.left, info.right), seed: showSeed) else {
+            stopShow()
+            return false
+        }
+        let (led, disp) = LEDShow.reports(f, peak: peak)
+        if let device {
+            if led != lastLED { IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x80, led, led.count) }
+            if disp != lastDisplay { IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x81, disp, disp.count) }
+        }
+        lastLED = led
+        lastDisplay = disp
+        return true
+    }
+
     func sendLEDs(state: MixState, prefs: ControllerPrefs) {
         let on = UInt8(max(0, min(127, prefs.ledOn))), dim = UInt8(max(0, min(127, prefs.ledOff)))
+        if sendShow(peak: on) { return }
         var r = [UInt8](repeating: 0, count: 0x34)
         r[0] = 0x80
         let flash = flashUntil.map { $0 > Date() } ?? false
@@ -547,9 +705,10 @@ final class ControllerUnit {
         }
     }
 
-    private static let segments: [Character: [Int]] = [
+    /// Segmente je Zeichen (1 = g, 2 = c, 3 = b, 4 = a, 5 = f, 6 = e, 7 = d, 0 = Punkt)
+    static let segments: [Character: [Int]] = [
         "0": [2, 3, 4, 5, 6, 7], "1": [2, 3], "2": [1, 3, 4, 6, 7], "3": [1, 2, 3, 4, 7], "4": [1, 2, 3, 5],
         "5": [4, 5, 1, 2, 7], "6": [4, 5, 1, 2, 6, 7], "7": [4, 3, 2], "8": [1, 2, 3, 4, 5, 6, 7], "9": [5, 4, 1, 3, 2, 7],
-        "-": [1], " ": [],
+        "-": [1], " ": [], "A": [4, 3, 2, 6, 5, 1], "b": [2, 7, 6, 5, 1], "C": [4, 7, 6, 5], "d": [3, 2, 7, 6, 1],
     ]
 }

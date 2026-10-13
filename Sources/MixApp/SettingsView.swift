@@ -778,11 +778,27 @@ struct ControllerSettings: View {
                 ForEach(status.devices) { d in
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("Controller \(d.id)").font(Theme.mono(11, .medium))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(verbatim: d.name.isEmpty ? "Controller" : d.name).font(Theme.mono(11, .medium))
+                                Text(d.serial.isEmpty ? String(localized: "ohne Seriennummer · \(d.id)") : "SN \(d.serial)")
+                                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
+                            }
                             Spacer()
+                            Button("Startsequenz") { status.playShow(d.id) }.help("Lichtsequenz auf diesem Controller abspielen")
                             Button("Blinken") { status.identify(d.id) }.help("Pads dieses Controllers leuchten kurz weiß")
                         }
                         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                            if let side = d.side {
+                                GridRow {
+                                    deviceLabel("Seite")
+                                    Picker("Seite", selection: Binding(get: { side }, set: { status.setSide(d.id, $0) })) {
+                                        Text("Links (A / C)").tag(ControllerSide.left)
+                                        Text("Rechts (B / D)").tag(ControllerSide.right)
+                                    }
+                                    .labelsHidden().frame(width: 120)
+                                    .help("Fest für dieses Gerät gespeichert; der andere Controller wechselt auf die freie Seite")
+                                }
+                            }
                             GridRow {
                                 deviceLabel("Links")
                                 Picker("Links", selection: Binding(get: { d.left }, set: { status.assign(d.id, left: $0, right: d.right) })) {
@@ -849,6 +865,8 @@ struct ControllerSettings: View {
                 sliderRow("Helligkeit aus", Binding(get: { Double(mix.prefs.controller.ledOff) }, set: { mix.prefs.controller.ledOff = Int($0) }),
                           0...40, step: 1, format: "%.0f")
                 Text("pad-farben: ⌘, -> anzeige -> cue-farben (gleich wie auf dem bildschirm)").settingsHint()
+                Toggle("Startsequenz beim Verbinden", isOn: $mix.prefs.controller.startShow)
+                Text("rot / weiß / lila, dann die decks der seite auf der 7-segment-anzeige, weißer blitz, bereit (3,4 s). eine eingabe bricht ab.").settingsHint()
             }
             Section("Feste Belegung (Standard)") {
                 Text("""

@@ -5,8 +5,24 @@ supported: the 2-deck hid controller with vid `0x17cc`, pid `0x1220` (usage page
 ## ◆ SETUP
 
 * two units at the same time, each with a left and a right deck
-* default: first unit (usb position) = a / d, second = c / b -> change per device under ⌘, -> controller
+* fixed side per device: left unit = decks a / c, browser pane left, fx1 (+fx3); right unit = b / d, pane right, fx2 (+fx4)
+* the side is saved per serial number (no serial: usb position) in `controller.sides`. first time without an entry: in order of detection, then saved. old deck assignments a / c or b / d count as left / right
+* both units never share a side: when the saved side is taken, the second one gets the other side (and keeps it)
+* ⌘, -> CONTROLLER: name, serial number and side per device. picking the other side swaps both units at once (decks, browser pane, fx, leds). decks, pane and fx stay changeable per device, a side change resets them to the side's default
 * "blink" lights the pads of one unit white
+* status bar on connect: `Controller links: A / C`
+
+## ◆ STARTUP SHOW
+
+on every connect (app start, replug, wake) ~3.4 s on all leds of the unit, then the normal state:
+* 0-2 s storm: dark red embers, purple chase over the pads and the touch strip with red trails and white sparks, then a strobe getting denser and whiter
+* 2-3.2 s decks of the side: 7 segment displays `-A-` / `-C-` (right unit `-b-` / `-d-`), left pads + left half of the strip purple, right side red, deck buttons lit
+* short black, one white flash (150 ms), ready
+* colors: 741 red, bone white, purple. brightness max = `led brightness on`
+* any input stops it, the input works as usual
+* runs on the control queue in the 30 ms led tick, pure generator time -> frame (`LEDShow`)
+* ⌘, -> CONTROLLER -> LEDS -> `Startsequenz beim Verbinden` (default on), button `Startsequenz` per device plays it again. a side change shows the decks part
+* `MIX741_LEDSHOW=1`: plays it once more 6 s after the start, only with connected units
 
 ## ◆ MAPPING
 
@@ -70,4 +86,4 @@ output report `0x80` (leds, 0-127 brightness):
 | 0x2C 0x2D 0x30 0x31 | left flux, sync, cue, play |
 | 0x2E 0x2F 0x32 0x33 | right flux, sync, cue, play |
 
-output report `0x81`: 7 segment displays (left from 0x01, right from 0x19, 3 digits x 8 segments) and the touch strip (0x31+, red / blue per segment).
+output report `0x81`: 7 segment displays (left from 0x01, right from 0x19, 3 digits x 8 segments: +0 dot, +1 g, +2 c, +3 b, +4 a, +5 f, +6 e, +7 d) and the touch strip (0x31+, red / blue per segment, 21 pairs as used by the startup show).

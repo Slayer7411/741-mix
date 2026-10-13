@@ -84,6 +84,10 @@ struct ControllerPrefs: Codable, Equatable {
     var browsePush = ControllerBrowsePush.bigBrowser
     var ledOn = 127
     var ledOff = 5
+    /// feste Seite je Gerät: Seriennummer (sonst "loc-<USB-Position>") -> "left" / "right"
+    var sides: [String: String] = [:]
+    /// Lichtsequenz beim Verbinden (rot/weiß/lila, Decks der Seite, weißer Blitz)
+    var startShow = true
     // alte Felder (nicht mehr benutzt, bleiben für gespeicherte Einstellungen)
     var cuePadColor = PadColor.red
     var loopPadColor = PadColor.green
