@@ -175,7 +175,7 @@ DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, commen
 | RE | reloop |
 | LOOP | auto loop on / off with the selected size |
 | 1/32 … 32 | loop size. click = select, a running loop takes the new size |
-| ◀◀ 1/4 … 64 ▶▶ | beatjump size + jump. inside a loop = move the loop |
+| ◀◀ 1/4 … 64 ▶▶ | beatjump size + jump. inside a loop = jump by the loop length, the loop moves along (nothing to hear) |
 
 * hotcues, loop sizes and beatjump sizes each span the full deck width
 * the selected loop size is purple, the selected beatjump size red, also when changed from the controller (loop encoder, flux + pads)
