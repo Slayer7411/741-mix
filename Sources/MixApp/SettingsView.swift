@@ -743,6 +743,7 @@ struct BrowserSettings: View {
             Section("Zeilen") {
                 sliderRow("Luft um den Text", $mix.prefs.ui.browserRowPadding, 3...16, step: 1, format: "%.0f", unit: "pt")
                 Toggle("Trennlinie zwischen den Zeilen", isOn: $mix.prefs.ui.browserRowLines)
+                Toggle("Höhe rastet auf ganze Zeilen", isOn: $mix.prefs.ui.browserSnapRows)
                 Text("zeilenhöhe = schrift + luft (11 pt = bisher, 5 pt = eng). gilt für alle listen, auch mit vorschau.")
                     .settingsHint()
             }

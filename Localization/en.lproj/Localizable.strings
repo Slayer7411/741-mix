@@ -788,6 +788,7 @@
 "Zeilen" = "Rows";
 "Luft um den Text" = "Space around the text";
 "Trennlinie zwischen den Zeilen" = "Line between rows";
+"Höhe rastet auf ganze Zeilen" = "Height snaps to whole rows";
 "zeilenhöhe = schrift + luft (11 pt = bisher, 5 pt = eng). gilt für alle listen, auch mit vorschau." = "row height = font + space (11 pt = as before, 5 pt = tight). applies to every list, also with the preview.";
 "☁✓ Info (Cloud, Analysiert)" = "☁✓ Info (cloud, analysed)";
 "Gespielte Tracks ausblenden" = "Hide played tracks";

@@ -10,6 +10,12 @@ enum RoleFilter: String, CaseIterable, Identifiable {
 /// Zustand eines Browser-Bereichs – jeder Bereich hat eigene Quelle, Suche, Sortierung, Auswahl, Tag-Filter.
 @MainActor @Observable
 final class BrowserPaneModel: Identifiable {
+    /// Maße für das Einrasten der Browser-Höhe auf ganze Zeilen (ContentView.SplitHandle): Bereich, Tabelle (mit Kopf),
+    /// Favoritenleiste – nur gelesen beim Ziehen, keine Beobachtung
+    @ObservationIgnored var paneHeight: CGFloat = 0
+    @ObservationIgnored var tableHeight: CGFloat = 0
+    @ObservationIgnored var favoritesHeight: CGFloat = 0
+
     let id = UUID()
     var name: String
     var source: BrowserSource = .collection
@@ -298,6 +304,7 @@ struct BrowserPane: View {
         let tree = model.showTree && !(decks.prefs.ui.hideTreeWithDecks && !browserState.maximized)
         VStack(spacing: 0) {
         FavoritesBar(model: model, keys: decks.prefs.keys)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.favoritesHeight = $0 }
         HSplitView {
             SourceTree(selection: $model.source)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -310,11 +317,13 @@ struct BrowserPane: View {
                     HistoryTable(entries: Self.historyEntries(model.source, history), model: model)
                 } else {
                     TrackTable(model: model)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.tableHeight = $0 }
                 }
             }
             .frame(minWidth: 380.z)
         }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.paneHeight = $0 }
         .background {
             // ⌘E: Bearbeiten-Fenster für die Auswahl (nur der zuletzt benutzte Bereich reagiert)
             if browserState.activePane.id == model.id, !model.source.isHistory {

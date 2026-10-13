@@ -230,6 +230,8 @@ struct UIPrefs: Codable, Equatable {
     /// Browser-Zeilen: Luft um den Text in pt (Zeilenhöhe = Schrift + Luft; 11 = wie bisher), Trennlinie unter jeder Zeile
     var browserRowPadding = 11.0
     var browserRowLines = true
+    /// Browser-Höhe beim Ziehen auf ganze Zeilen rasten (keine halbe Zeile unten)
+    var browserSnapRows = true
     /// Cover links im Deck-Kopf
     var showDeckCover = true
     /// Cover des gewählten Tracks unter dem Baum im Browser

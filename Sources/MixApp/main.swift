@@ -42,7 +42,7 @@ struct ContentView: View {
                 .clipped()
                 .layoutPriority(big ? 0 : 1)
             if !big {
-                SplitHandle(height: Binding(get: { mix.prefs.ui.browserHeight }, set: { mix.prefs.ui.browserHeight = $0 }))
+                SplitHandle(height: Binding(get: { mix.prefs.ui.browserHeight }, set: { mix.prefs.ui.browserHeight = $0 }), snap: snapBrowserHeight)
             }
             browsers
                 .frame(height: big ? nil : mix.prefs.ui.browserHeight.z)
@@ -121,10 +121,20 @@ struct ContentView: View {
         }
     }
 
-    /// Ziehbarer Trenner zwischen Decks und Browser; Höhe wird gespeichert. Sichtbar 3 pt (Linie + 1 pt Luft),
-    /// greifbar 9 pt: die Griff-Fläche ragt nach oben in den Deck-Rand (unten gewinnt der Browser)
+    /// Browser-Höhe (unskaliert) auf ganze Tabellenzeilen rasten: Rahmen = Bereich ohne Tabelle plus Spaltenkopf
+    /// (⌘, -> BROWSER „Höhe rastet auf ganze Zeilen“; nicht bei Browsern übereinander, dort teilt der Split die Höhe)
+    private func snapBrowserHeight(_ h: Double) -> Double {
+        let ui = mix.prefs.ui, m = paneA
+        guard ui.browserSnapRows, layout != .stacked, m.paneHeight > 0, m.tableHeight > 0 else { return h }
+        let chrome = (m.paneHeight - m.tableHeight + (24.z).rounded()) / 1.z
+        return BrowserSnap.height(h, chrome: chrome, row: TableStyle.rowHeight(ui) / 1.z)
+    }
+
+    /// Ziehbarer Trenner zwischen Decks und Browser; Höhe wird gespeichert, `snap` rundet sie beim Ziehen. Sichtbar 3 pt
+    /// (Linie + 1 pt Luft), greifbar 9 pt: die Griff-Fläche ragt nach oben in den Deck-Rand (unten gewinnt der Browser)
     struct SplitHandle: View {
         @Binding var height: Double
+        var snap: (Double) -> Double = { $0 }
         @State private var start: Double?
         var body: some View {
             Rectangle().fill(Theme.hairline).frame(height: 1)
@@ -136,7 +146,7 @@ struct ContentView: View {
                         .gesture(DragGesture(minimumDistance: 1)
                             .onChanged { g in
                                 if start == nil { start = height }
-                                height = max(120, min(900, (start ?? height) - g.translation.height / 1.z))
+                                height = snap(max(120, min(900, (start ?? height) - g.translation.height / 1.z)))
                             }
                             .onEnded { _ in start = nil })
                 }
@@ -499,3 +509,12 @@ NSApplication.shared.setActivationPolicy(.regular)
 if ProcessInfo.processInfo.environment["MIX741_SHOT"] == nil { NSApplication.shared.activate(ignoringOtherApps: true) }
 setAppIcon()
 MixApp.main()
+
+/// Browser-Höhe auf ganze Zeilen: `chrome` = alles außer den Zeilen (Kopf, Favoriten, Spaltenkopf), `row` = Zeilenhöhe
+enum BrowserSnap {
+    static func height(_ h: Double, chrome: Double, row: Double) -> Double {
+        guard row > 0, h > chrome else { return h }
+        let rows = max(1, ((h - chrome) / row).rounded())
+        return chrome + rows * row
+    }
+}

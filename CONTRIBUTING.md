@@ -47,7 +47,13 @@ modules: [docs/architecture.md](docs/architecture.md).
 
 ## ◆ VERIFY
 
-before a pr:
+before a pr, and before anything is merged or installed:
+
+```
+scripts/check.sh
+```
+
+it builds, runs `swift test`, the self test (silent, no external devices), the table checks, the deck and window shots and the ui test. `--quick` skips the unit tests. a feature is done when it has all three: a unit test for its logic (MixCore / MixMedia / MixEngine / MixApp tests), a self test step for its path through the app, and a shot or ui test for what it shows. `scripts/coverage.sh` prints the line coverage per target (unit tests + self test). by hand:
 
 ```
 swift test

@@ -131,3 +131,20 @@ private func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-6 }
     #expect(near(l.start, 18) && near(l.end, 20))
     #expect(!c.setLoop(0, start: 21, end: 23))  // ganz außerhalb des Schnitts
 }
+
+/// aktiver Loop: Beatjump springt um die Loop-Länge (nicht die Jump-Größe) und nimmt den Loop mit
+@Test func beatjumpInsideLoopMovesByLoopLength() async throws {
+    let (c, url) = try await controller(trim: TrackTrim())
+    defer { try? FileManager.default.removeItem(at: url) }
+    c.seek(0, seconds: 4)
+    c.setJumpSize(0, 16)
+    c.autoLoop(0, size: 4)                // 4 Beats = 2 s ab 4 s
+    let before = c.engine.loop(0)
+    #expect(before.active && c.snapshot().decks[0].loopActive)
+    c.beatjump(0, beats: 16)
+    #expect(near(c.position(0), 6))       // + 4 Beats, nicht + 16
+    let l = c.engine.loop(0)
+    #expect(near(l.start, before.start + 2) && near(l.end, before.end + 2))
+    c.beatjump(0, beats: -16)
+    #expect(near(c.position(0), 4))
+}

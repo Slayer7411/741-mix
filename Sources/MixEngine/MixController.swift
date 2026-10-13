@@ -1135,9 +1135,12 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
+    /// Beatjump; bei aktivem Loop springt er um die Loop-Länge (in Richtung des Sprungs) und nimmt den Loop mit:
+    /// die Stelle im Loop bleibt dieselbe, der Sprung ist nicht zu hören
     public func beatjump(_ d: Int, beats: Double) {
         locked {
             guard audio[d] != nil else { return }
+            let beats = state.decks[d].loopActive ? (beats < 0 ? -state.decks[d].loopSize : state.decks[d].loopSize) : beats
             let delta = beats * beatLength(d)
             if state.decks[d].loopActive {
                 // Loop wandert mit; passt er nicht mehr in den Schnitt, bleibt alles stehen

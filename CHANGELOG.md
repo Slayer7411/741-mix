@@ -6,6 +6,9 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* beatjump with an active loop jumps by the loop length (in the jump's direction) and takes the loop along: same spot inside the loop, nothing to hear
+* browser height snaps to whole table rows while dragging the divider (⌘, -> BROWSER -> rows, on by default; not with browsers stacked)
+* `scripts/coverage.sh`: line coverage per target from the unit tests and the self test; ci runs the self test after `swift test`
 * deck: comment and tags sit in the free middle of the deck header (two lines, the title keeps its width) instead of their own row
 * top bar: drag the grip below it to scale it 60-130 % (double click = 100 %, saved), fx units 10 pt flatter; bar counter's big number counts within the phrase and starts over; time of day and a session stopwatch next to it (runs from the first play, click = restart)
 * browser: `info` column = cloud state + analysed check in one 28 pt column (saved layouts: the first of the two old columns becomes `info`, the other goes; both stay in the header menu, hidden)
