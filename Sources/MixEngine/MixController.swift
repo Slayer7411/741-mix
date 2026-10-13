@@ -1416,6 +1416,75 @@ public final class MixController: @unchecked Sendable {
 
     public func clearTrim(_ d: Int) { locked { _ = setTrim(d, TrackTrim()) } }
 
+    // MARK: Rückgängig (Bearbeitungsstand eines Decks)
+
+    /// Bearbeitungsstand eines Decks (kleine Kopie unter der Sperre, kein Audio)
+    public func deckEdit(_ d: Int) -> DeckEdit {
+        locked {
+            let s = state.decks[d], l = engine.loop(d)
+            var e = DeckEdit()
+            e.trackKey = s.track?.key
+            e.hotcues = s.hotcues; e.activeLoops = s.activeLoops
+            e.grid = s.grid; e.gridEdited = s.gridEdited
+            e.trim = s.trim; e.cuePoint = s.cuePoint
+            e.loopActive = s.loopActive; e.loopStart = l.start; e.loopEnd = l.end; e.loopIn = s.loopIn; e.loopSize = s.loopSize
+            e.keyShift = s.keyShift; e.keylock = s.keylock
+            e.tempoPct = s.tempoPct; e.sync = s.sync; e.masterDeck = state.masterDeck
+            e.flux = s.flux
+            e.position = position(d)
+            return e
+        }
+    }
+
+    /// Teile eines gesicherten Stands zurückschreiben (nur gleicher Track). `changedFrom` = Stand, von dem aus zurückgeschrieben
+    /// wird: Hotcues nur die dazwischen geänderten (spätere Änderungen anderer Hotcues, z. B. vom Controller, bleiben).
+    /// `position` = Sprungziel (s), nil = Position bleibt. Schnitt vor Loop (der Schnitt kürzt den Loop), Position zuletzt
+    public func restoreDeckEdit(_ d: Int, _ e: DeckEdit, _ p: DeckEdit.Parts, changedFrom o: DeckEdit? = nil, position target: Double? = nil) {
+        locked {
+            guard e.trackKey != nil, state.decks[d].track?.key == e.trackKey else { return }
+            if p.contains(.trim) {
+                _ = setTrim(d, e.trim)
+                if state.decks[d].playRange.contains(e.cuePoint) { state.decks[d].cuePoint = e.cuePoint }
+            }
+            if p.contains(.cues) {
+                if let o {
+                    for n in Set(e.hotcues.keys).union(o.hotcues.keys) where e.hotcues[n] != o.hotcues[n] { state.decks[d].hotcues[n] = e.hotcues[n] }
+                    for n in e.activeLoops.symmetricDifference(o.activeLoops) {
+                        if e.activeLoops.contains(n) { state.decks[d].activeLoops.insert(n) } else { state.decks[d].activeLoops.remove(n) }
+                    }
+                } else {
+                    state.decks[d].hotcues = e.hotcues
+                    state.decks[d].activeLoops = e.activeLoops
+                }
+                armLoops(d, at: position(d))
+            }
+            if p.contains(.grid) {
+                state.decks[d].grid = e.grid
+                state.decks[d].gridEdited = e.gridEdited
+            }
+            if p.contains(.loop) {
+                let was = state.decks[d].loopActive
+                if !(e.loopActive && e.loopEnd > e.loopStart && loopOn(d, start: e.loopStart, end: e.loopEnd)) {
+                    engine.setLoop(d, active: false, start: e.loopStart, end: e.loopEnd)
+                    state.decks[d].loopActive = false
+                }
+                state.decks[d].loopIn = e.loopIn
+                state.decks[d].loopSize = e.loopSize
+                if was, !state.decks[d].loopActive, state.decks[d].flux, target == nil { jump(d, to: engine.fluxPosition(d), "undo loop, flux return") }
+            }
+            if p.contains(.key) { state.decks[d].keyShift = e.keyShift; state.decks[d].keylock = e.keylock }
+            if p.contains(.sync), state.decks[d].sync != e.sync { toggleSync(d) }
+            if p.contains(.master), state.masterDeck != e.masterDeck {
+                state.masterDeck = e.masterDeck
+                state.decks[d].nudge = 0
+            }
+            if p.contains(.tempo) { state.decks[d].tempoPct = e.tempoPct }
+            if p.contains(.flux) { state.decks[d].flux = e.flux; engine.player(d).flux = e.flux }
+            if !p.isDisjoint(with: [.grid, .key, .tempo, .master]) { applyRate(d) }
+            if p.contains(.position), let target { seek(d, seconds: target) }
+        }
+    }
+
     // MARK: Master-Clock
 
     /// Semi-Sync: neue Tracks laden mit dem Tempo des Masters (kein Phasen-Sync), ein ungesynctes Deck startet in Phase

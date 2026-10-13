@@ -589,7 +589,7 @@ struct SourceTreeFixed: View, SourceMenus {
             .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
             .onDrop(of: [.text], isTargeted: nil) { providers in
                 TrackDrag.keys(providers) { keys in
-                    for k in keys where store.track(k) != nil && !store.preparation.contains(k) { store.preparation.append(k) }
+                    store.appendToPreparation(keys.filter { store.track($0) != nil })
                 }
             }
             .contextMenu {
@@ -779,9 +779,7 @@ struct HistoryTable: View {
                 Button("In Deck \(deckLetters[n]) laden") { load(ids, n) }
             }
             Button("An Preparation anhängen") {
-                for i in ids.sorted() where i < entries.count && !store.preparation.contains(entries[i].key) {
-                    store.preparation.append(entries[i].key)
-                }
+                store.appendToPreparation(ids.sorted().filter { $0 < entries.count }.map { entries[$0].key })
             }
         } primaryAction: { ids in load(ids, mix.focusedDeck) }
     }

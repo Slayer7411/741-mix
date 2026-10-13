@@ -246,6 +246,7 @@ final class MixModel {
                 if key != decks[d].trackKey {
                     decks[d].trackKey = key
                     if decks[d].range != nil { decks[d].range = nil }
+                    UndoStack.shared.clear(deck: d)   // auch Controller-LOAD, Entladen
                     // Instant Double (auch vom Controller): Collection-Stand und gespeicherte Änderung vom Quell-Deck
                     if !key.isEmpty, originals[d]?.key != key, let e = originals.first(where: { $0.value.key == key })?.key {
                         originals[d] = originals[e]
@@ -332,6 +333,7 @@ final class MixModel {
         savedEdit[d] = e
         core.load(e?.apply(to: t) ?? t, deck: d, trim: e?.trim ?? TrackTrim(), gridEdited: e?.hasGrid ?? false,
                   activeLoops: Set(e?.activeLoops ?? []))
+        UndoStack.shared.clear(deck: d)   // Trackwechsel: kein Rückgängig, die Schritte passen nicht zum neuen Track
         focusedDeck = d
         pull()
         return true
@@ -363,23 +365,41 @@ final class MixModel {
     /// offene Änderungen sofort schreiben (Beenden)
     func flushEdits() { edits.flush() }
 
-    func shiftGrid(_ d: Int, ms: Double) { run { core.shiftGrid(d, ms: ms) } }
-    func setGridBPM(_ d: Int, _ v: Double) { run { core.setGridBPM(d, v) } }
-    func scaleGridBPM(_ d: Int, _ f: Double) { run { core.scaleGridBPM(d, f) } }
-    func setGridAnchorHere(_ d: Int) { run { core.setGridAnchorHere(d) } }
-    func shiftGridBeats(_ d: Int, _ n: Int) { run { core.shiftGridBeats(d, n) } }
-    func applyPhraseAnchor(_ d: Int) { run { core.applyPhraseAnchor(d) } }
-    func resetGrid(_ d: Int) { if let o = originals[d] { run { core.resetGrid(d, original: o) } } }
-    func tapGrid(_ d: Int) { run { core.tapGrid(d) } }
+    /// Rückgängig für Deck-Aktionen (Stand vorher/nachher, nur die betroffenen Teile; Trackwechsel leert das Deck)
+    @ObservationIgnored private(set) lazy var deckUndo: DeckUndoRecorder = {
+        let r = DeckUndoRecorder(core: core)
+        r.changed = { [weak self] in self?.pull() }
+        return r
+    }()
+    /// Aktion mit Rückgängig; `coalesce` = schnelle Wiederholungen (Ziehen, Nudgen) ergeben einen Schritt
+    private func edit(_ d: Int, _ label: String, _ parts: DeckEdit.Parts, coalesce: String? = nil, window: Double = 1, _ f: () -> Void) {
+        deckUndo.edit(d, label, parts, coalesce: coalesce, window: window) { run(f) }
+    }
+
+    func shiftGrid(_ d: Int, ms: Double) { edit(d, String(localized: "Grid verschieben"), .grid, coalesce: "grid.shift") { core.shiftGrid(d, ms: ms) } }
+    func setGridBPM(_ d: Int, _ v: Double) { edit(d, String(localized: "Grid-BPM ändern"), .grid, coalesce: "grid.bpm") { core.setGridBPM(d, v) } }
+    func scaleGridBPM(_ d: Int, _ f: Double) { edit(d, String(localized: "Grid-BPM ändern"), .grid) { core.scaleGridBPM(d, f) } }
+    func setGridAnchorHere(_ d: Int) { edit(d, String(localized: "Grid-Anker setzen"), .grid) { core.setGridAnchorHere(d) } }
+    func shiftGridBeats(_ d: Int, _ n: Int) { edit(d, String(localized: "Grid-Anker verschieben"), .grid) { core.shiftGridBeats(d, n) } }
+    func applyPhraseAnchor(_ d: Int) { edit(d, String(localized: "Phrasen-Anker übernehmen"), .grid) { core.applyPhraseAnchor(d) } }
+    func resetGrid(_ d: Int) {
+        if let o = originals[d] { edit(d, String(localized: "Grid zurücksetzen"), .grid) { core.resetGrid(d, original: o) } }
+    }
+    func tapGrid(_ d: Int) { edit(d, String(localized: "Grid tappen"), .grid, coalesce: "grid.tap", window: 2.5) { core.tapGrid(d) } }
 
     // Schnitt
     /// IN HERE / OUT HERE: Quantize rastet auf den Beat, ⌥ = genau hier
     func trimHere(_ d: Int, end: Bool, free: Bool = false) {
         var ok = false
-        run { ok = core.trimHere(d, end: end, free: free) }
+        edit(d, end ? String(localized: "Schnitt OUT setzen") : String(localized: "Schnitt IN setzen"), [.trim, .loop]) {
+            ok = core.trimHere(d, end: end, free: free)
+        }
         if !ok, deck(d).track != nil { StatusCenter.post(.warning, String(localized: "Schnitt zu kurz (mindestens 1 s)"), key: "trim.\(d)") }
     }
-    func setTrimPoint(_ d: Int, end: Bool, _ t: Double) { run { _ = core.setTrimPoint(d, end: end, t) } }
+    func setTrimPoint(_ d: Int, end: Bool, _ t: Double) {
+        edit(d, end ? String(localized: "Schnitt OUT verschieben") : String(localized: "Schnitt IN verschieben"), [.trim, .loop],
+             coalesce: end ? "trim.out" : "trim.in") { _ = core.setTrimPoint(d, end: end, t) }
+    }
     /// Griff ziehen (Wellenform, Übersicht): Quantize rastet auf den Beat, ⌥ = frei
     func dragTrim(_ d: Int, end: Bool, to time: Double) {
         let s = deck(d)
@@ -388,30 +408,44 @@ final class MixModel {
         if abs(t - (end ? s.trim.end ?? s.duration : s.trim.start ?? 0)) < 1e-6 { return }
         setTrimPoint(d, end: end, t)
     }
-    func clearTrim(_ d: Int) { run { core.clearTrim(d) } }
+    func clearTrim(_ d: Int) { edit(d, String(localized: "Schnitt löschen"), [.trim, .loop]) { core.clearTrim(d) } }
 
     // Bereich (Markierung in der Wellenform): Schneiden, Schnitt, Loop
     func range(_ d: Int) -> TrackRange? { decks.indices.contains(d) ? decks[d].range : nil }
-    func setRange(_ d: Int, _ r: TrackRange?) { if decks.indices.contains(d), decks[d].range != r { decks[d].range = r } }
+    func setRange(_ d: Int, _ r: TrackRange?) {
+        guard decks.indices.contains(d), decks[d].range != r else { return }
+        recordRange(d, from: decks[d].range, to: r)
+        decks[d].range = r
+    }
     /// Esc: Bereich des Fokus-Decks weg, sonst alle; false = keiner da (Taste bleibt frei)
     @discardableResult
     func clearRange(_ d: Int? = nil) -> Bool {
         let hit = d.flatMap { decks.indices.contains($0) && decks[$0].range != nil ? [$0] : nil } ?? decks.indices.filter { decks[$0].range != nil }
-        for i in hit { decks[i].range = nil }
+        for i in hit { setRange(i, nil) }
         return !hit.isEmpty
+    }
+    /// Bereich markieren (Ziehen = ein Schritt) / aufheben; nur für denselben Track
+    private func recordRange(_ d: Int, from old: TrackRange?, to new: TrackRange?) {
+        let key = decks[d].trackKey
+        guard !key.isEmpty else { return }
+        UndoStack.shared.record(DeckUndoRecorder.label(new == nil ? String(localized: "Bereich aufheben") : String(localized: "Bereich markieren"), deck: d),
+                                deck: d, coalesce: new == nil ? nil : "range.\(d)", before: old, after: new) { [weak self] b, a, undo in
+            guard let self, self.decks[d].trackKey == key else { return }
+            self.decks[d].range = undo ? b : a
+        }
     }
     /// Schnitt IN / OUT auf den Bereich (nicht destruktiv)
     func rangeToTrim(_ d: Int) {
         guard let r = range(d) else { return }
         var ok = false
-        run { ok = core.setTrim(d, TrackTrim(start: r.start, end: r.end)) }
+        edit(d, String(localized: "Schnitt aus Bereich"), [.trim, .loop]) { ok = core.setTrim(d, TrackTrim(start: r.start, end: r.end)) }
         if !ok { StatusCenter.post(.warning, String(localized: "Schnitt zu kurz (mindestens 1 s)"), key: "trim.\(d)") }
     }
     /// Loop auf den Bereich
     func rangeToLoop(_ d: Int) {
         guard let r = range(d) else { return }
         var ok = false
-        run { ok = core.setLoop(d, start: r.start, end: r.end) }
+        edit(d, String(localized: "Loop aus Bereich"), [.loop, .position]) { ok = core.setLoop(d, start: r.start, end: r.end) }
         if !ok { StatusCenter.post(.warning, String(localized: "Loop aus Bereich nicht möglich (außerhalb des Schnitts)"), key: "loop.\(d)") }
     }
 
@@ -428,29 +462,62 @@ final class MixModel {
     func cueDown(_ d: Int) { run { core.cueDown(d) } }
     func cueUp(_ d: Int) { run { core.cueUp(d) } }
     func cup(_ d: Int) { run { core.cup(d) } }
-    func seek(_ d: Int, fraction: Double) { core.seek(d, fraction: fraction) }
+    /// Sprung über die Übersicht (Ziehen = ein Schritt), ohne Spiegel-Abgleich je Ereignis
+    func seek(_ d: Int, fraction: Double) {
+        deckUndo.edit(d, String(localized: "Sprung"), .position, coalesce: "seek") { core.seek(d, fraction: fraction) }
+    }
+    /// Wellenform ziehen (Ziehen = ein Schritt)
+    func scrub(_ d: Int, seconds: Double) {
+        deckUndo.edit(d, String(localized: "Sprung"), .position, coalesce: "seek") { core.seek(d, seconds: seconds) }
+    }
     func toggleReverse(_ d: Int) { run { core.toggleReverse(d) } }
-    func toggleFlux(_ d: Int) { run { core.toggleFlux(d) } }
-    func hotcue(_ d: Int, _ n: Int, delete: Bool = false) { run { core.hotcue(d, n, delete: delete) } }
-    func toggleActiveLoop(_ d: Int, _ n: Int) { run { core.toggleActiveLoop(d, n) } }
-    func autoLoop(_ d: Int, size: Double? = nil) { run { core.autoLoop(d, size: size) } }
-    func exitLoop(_ d: Int) { run { core.exitLoop(d) } }
-    func reloop(_ d: Int) { run { core.reloop(d) } }
-    func changeLoopSize(_ d: Int, by s: Int) { run { core.changeLoopSize(d, by: s) } }
-    func setLoopIn(_ d: Int) { run { core.setLoopIn(d) } }
-    func setLoopOut(_ d: Int) { run { core.setLoopOut(d) } }
-    func beatjump(_ d: Int, beats: Double) { run { core.beatjump(d, beats: beats) } }
+    func toggleFlux(_ d: Int) { edit(d, deck(d).flux ? String(localized: "Flux aus") : String(localized: "Flux an"), .flux) { core.toggleFlux(d) } }
+    /// Setzen und Löschen gehen in Rückgängig, Anspringen nicht (Hotcues bleiben gleich -> kein Eintrag)
+    func hotcue(_ d: Int, _ n: Int, delete: Bool = false) {
+        edit(d, delete ? String(localized: "Hotcue \(n + 1) löschen") : String(localized: "Hotcue \(n + 1) setzen"), .cues) {
+            core.hotcue(d, n, delete: delete)
+        }
+    }
+    func toggleActiveLoop(_ d: Int, _ n: Int) { edit(d, String(localized: "Active Loop \(n + 1)"), .cues) { core.toggleActiveLoop(d, n) } }
+    func autoLoop(_ d: Int, size: Double? = nil) {
+        let s = deck(d)
+        let label = !s.loopActive ? String(localized: "Loop setzen")
+            : size == nil || size == s.loopSize ? String(localized: "Loop aus") : String(localized: "Loop-Größe")
+        edit(d, label, [.loop, .position]) {
+            core.autoLoop(d, size: size)
+        }
+    }
+    func exitLoop(_ d: Int) { edit(d, String(localized: "Loop aus"), [.loop, .position]) { core.exitLoop(d) } }
+    func reloop(_ d: Int) { edit(d, String(localized: "Reloop"), [.loop, .position]) { core.reloop(d) } }
+    func changeLoopSize(_ d: Int, by s: Int) {
+        edit(d, String(localized: "Loop-Größe"), .loop, coalesce: "loop.size") { core.changeLoopSize(d, by: s) }
+    }
+    func setLoopIn(_ d: Int) { edit(d, String(localized: "Loop IN"), .loop) { core.setLoopIn(d) } }
+    func setLoopOut(_ d: Int) { edit(d, String(localized: "Loop OUT"), [.loop, .position]) { core.setLoopOut(d) } }
+    func beatjump(_ d: Int, beats: Double) {
+        edit(d, String(localized: "Beatjump \(String(format: "%+g", beats))"), [.position, .loop]) { core.beatjump(d, beats: beats) }
+    }
     func setJumpSize(_ d: Int, _ s: Double) { run { core.setJumpSize(d, s) } }
-    func setTempo(_ d: Int, _ v: Double) { run { core.setTempo(d, v) } }
+    /// Fader ziehen = ein Schritt
+    func setTempo(_ d: Int, _ v: Double) { edit(d, String(localized: "Tempo"), .tempo, coalesce: "tempo") { core.setTempo(d, v) } }
     func setTempoRange(_ d: Int, _ v: Double) { run { core.setTempoRange(d, v) } }
-    func toggleSync(_ d: Int) { run { core.toggleSync(d) } }
-    func toggleMaster(_ d: Int) { run { core.toggleMaster(d) } }
-    func toggleKeylock(_ d: Int) { run { core.toggleKeylock(d) } }
-    func shiftKey(_ d: Int, _ s: Int) { run { core.shiftKey(d, s) } }
-    func keySync(_ d: Int) { run { core.keySync(d) } }
-    /// Instant Double; `force` nil = ⌥ beim Klick übergeht den Lade-Schutz
+    func toggleSync(_ d: Int) {
+        edit(d, deck(d).sync ? String(localized: "Sync aus") : String(localized: "Sync an"), [.sync, .tempo]) { core.toggleSync(d) }
+    }
+    func toggleMaster(_ d: Int) { edit(d, String(localized: "Master"), .master) { core.toggleMaster(d) } }
+    func toggleKeylock(_ d: Int) {
+        edit(d, deck(d).keylock ? String(localized: "Keylock aus") : String(localized: "Keylock an"), .key) { core.toggleKeylock(d) }
+    }
+    func shiftKey(_ d: Int, _ s: Int) {
+        edit(d, s == 0 ? String(localized: "Key-Shift zurücksetzen") : String(localized: "Key-Shift \(String(format: "%+d", s))"), .key) {
+            core.shiftKey(d, s)
+        }
+    }
+    func keySync(_ d: Int) { edit(d, String(localized: "Key Sync"), .key) { core.keySync(d) } }
+    /// Instant Double; `force` nil = ⌥ beim Klick übergeht den Lade-Schutz. Trackwechsel: kein Rückgängig, Deck-Schritte weg
     func instantDouble(from s: Int, to d: Int, force: Bool? = nil) {
         run { core.instantDouble(from: s, to: d, force: force ?? NSEvent.modifierFlags.contains(.option)) }
+        UndoStack.shared.clear(deck: d)
     }
     func bend(_ d: Int, _ v: Double) { run { core.bend(d, v) } }
     func updateDeck(_ d: Int, _ f: (inout DeckState) -> Void) { run { core.updateDeck(d, f) } }

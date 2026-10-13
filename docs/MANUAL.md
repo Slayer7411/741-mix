@@ -197,6 +197,16 @@ DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, commen
 * failed load: deck empty, reason in red in the header, skull in the waveform for 5 s, message in the status bar. other decks are never touched
 * empty deck -> lobster in the waveform
 
+### undo
+
+* ⌘Z = undo the last edit, ⇧⌘Z = redo. edit menu names the next step (`undo: set hotcue 3 · deck B`), the status bar what was undone. keys assignable (⌘, -> KEYBOARD)
+* deck: hotcue set / delete, active loop, loop on / off / size / in / out / reloop / from range, beatjump and jumps via overview or waveform drag (play head moves back by the jump, a playing deck keeps running), grid (anchor, move, bpm, tap, reset, phrase anchor), cut in / out / clear / from range, marked range, key shift, key sync, keylock, tempo, sync, master, flux. own edits (hotcues, grid, cut) are saved again after undo
+* browser: append to / remove from preparation, reset played state, metadata from the edit window and inline edit (written back the same way, also into the collection file when that is on)
+* not undone: track load, instant double, unload (they clear that deck's steps), play / pause / cue, hotcue jump, mixer and fx, settings, cut audio (the new file stays), tag colors
+* a drag (tempo fader, waveform, overview, cut handle, range) or quick repeats (grid nudge, tap) = one step
+* up to 100 steps, gone on quit. inside a text field ⌘Z stays text undo
+* controller actions are not recorded
+
 ## ◆ 05 · WAVEFORM + GRID
 
 * rendered as bitmap tiles in screen resolution (background thread) -> sharp at any zoom, no load on the render server
@@ -690,6 +700,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | ⌘, | settings |
 | ⌘W | close window -> main window: quit (asks first) |
 | esc | clear the marked range (only when one exists, not in a search field) |
+| ⌘Z / ⇧⌘Z | undo / redo (text undo inside a text field) |
 
 no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, reconnect audio.
 ⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.

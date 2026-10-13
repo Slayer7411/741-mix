@@ -100,6 +100,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case compactDecks = "view.compactdecks"
     case zoomIn = "view.zoom.in", zoomOut = "view.zoom.out", zoomReset = "view.zoom.reset"
     case openCollection = "app.open", settings = "app.settings", closeWindow = "app.close", reconnectAudio = "app.reconnect"
+    case undo = "edit.undo", redo = "edit.redo"
 
     public var group: ShortcutGroup {
         switch self {
@@ -107,6 +108,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
              .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6: .browser
         case .toggleMixer, .toggleFourDecks, .bigBrowser, .bigBrowserKey, .compactDecks, .zoomIn, .zoomOut, .zoomReset: .view
         case .openCollection, .settings, .closeWindow, .reconnectAudio: .general
+        case .undo, .redo: .general
         default: .decks
         }
     }
@@ -169,6 +171,8 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .openCollection: KeyCombo("o")
         case .settings: KeyCombo(",")
         case .closeWindow: KeyCombo("w")
+        case .undo: KeyCombo("z")
+        case .redo: KeyCombo("z", [.shift, .command])
         case .master, .keylock, .reloop, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .reconnectAudio,
              .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop: nil
         }
