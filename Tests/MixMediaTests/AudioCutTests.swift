@@ -78,7 +78,14 @@ struct AudioCutTests {
     @Test(arguments: [1, 2, 6])
     func writeAppleLossless(channels: Int) throws {
         let rate = 44_100.0, n = 44_100 * 3
-        let chans = (0..<channels).map { c in (0..<n).map { Float(sin(Double($0) * 0.01 * Double(c + 1))) * 0.5 } }
+        // einfache Teilausdrücke: der Typprüfer der CI brauchte für die verschachtelte Zeile zu lang
+        var chans: [[Float]] = []
+        for c in 0..<channels {
+            let step = 0.01 * Double(c + 1)
+            var ch = [Float](repeating: 0, count: n)
+            for i in 0..<n { ch[i] = Float(sin(Double(i) * step)) * 0.5 }
+            chans.append(ch)
+        }
         let src = AudioCutWriter.Source.samples(chans, sampleRate: rate, bitDepth: 24)
         let splice = AudioSplice.removing(44_100..<88_200, frames: n, fade: AudioSplice.fadeFrames(sampleRate: rate))
         let dir = tempDir()
