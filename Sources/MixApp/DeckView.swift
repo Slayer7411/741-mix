@@ -8,6 +8,8 @@ import MixEngine
 /// eine Zustandsänderung kostet so nur die Zeile, die sie zeigt, statt das ganze Deck neu zu messen.
 struct DeckView: View {
     @Environment(MixModel.self) private var mix
+    @Environment(LibraryStore.self) private var store
+    @Environment(BrowserState.self) private var browser
     let d: Int
 
     var body: some View {
@@ -68,7 +70,10 @@ struct DeckView: View {
     /// Zeile in eigener Hosting-View: eine Änderung (Taste an/aus) rechnet nur das Layout dieser Zeile, nicht das des
     /// ganzen Decks. Breite vom Deck, Höhe einmal gemessen (je `key`, z. B. FX-Tasten im Kopf ohne Mixer).
     private func row<V: View>(_ name: String, _ v: V, key: AnyHashable = 0) -> some View {
-        Isolated(deckLetters[d] + " " + name, sizeKey: key, fillWidth: true) { v.environment(mix).foregroundStyle(Theme.bone).tint(Theme.state) }
+        // eigene Hosting-View erbt keine Umgebung: Library und Browser mitgeben (Menü „Track bearbeiten“, Drop-Ziel im Kopf)
+        Isolated(deckLetters[d] + " " + name, sizeKey: key, fillWidth: true) {
+            v.environment(mix).environment(store).environment(browser).foregroundStyle(Theme.bone).tint(Theme.state)
+        }
     }
 
     static func same(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-9 }
@@ -943,6 +948,8 @@ enum DeckShot {
         let root = DeckView(d: 0)
             .environment(mix)
             .environment(WaveformCache())
+            .environment(LibraryStore())
+            .environment(BrowserState())
             .frame(width: size.width, height: size.height)
             .background(Theme.background)
             .foregroundStyle(Theme.bone)
