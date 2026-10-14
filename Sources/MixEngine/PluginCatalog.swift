@@ -420,6 +420,12 @@ public final class PluginCatalog: @unchecked Sendable {
     public func pickerList(refresh: Bool = false) -> [Choice] {
         let s = settings
         return entries(refresh: refresh).compactMap { e in
+            if e.info == nil, e.format == .vst3, e.foreignArch {
+                // Bundle nur für Intel: gesperrt zeigen statt weglassen
+                var i = PluginInfo(id: e.id, name: e.name, manufacturer: e.manufacturer, type: 0, subtype: 0, manu: 0)
+                i.format = .vst3
+                return Choice(info: i, note: nil, lock: String(localized: "nur Intel – VST3 nicht ladbar"), fixInSettings: false)
+            }
             guard let i = e.info, !s.disabled.contains(e.id), s.blocked[e.id] == nil else { return nil }
             if e.foreignArch && !e.canIsolate {
                 return Choice(info: i, note: nil, lock: String(localized: "nur Intel – VST3 nicht ladbar"), fixInSettings: false)
@@ -511,7 +517,11 @@ public final class PluginCatalog: @unchecked Sendable {
                 : (b.path.hasPrefix("/Library/Audio") ? .system : .folder)
             let key = "bundle:" + b.path
             var classes: [PluginInfo] = [], problem: String?
-            if s.blocked[key] == nil {
+            let archs = arch(b)
+            if !archs.isEmpty, !archs.contains(PluginBundle.hostArch), PluginBundle.vst3Classes(b) == nil {
+                // fremde Architektur ohne moduleinfo.json: nicht laden (ginge ohnehin nicht), gesperrt anzeigen
+                problem = String(localized: "nur Intel – VST3 nicht ladbar")
+            } else if s.blocked[key] == nil {
                 if let c = PluginBundle.vst3Classes(b) {
                     classes = c
                 } else {
@@ -527,9 +537,8 @@ public final class PluginCatalog: @unchecked Sendable {
             if fresh.isEmpty {
                 if !classes.isEmpty { continue }   // dieselben Klassen liegen schon in einem anderen Ordner
                 out.append(PluginEntry(id: key, name: v.name, manufacturer: v.vendor, version: v.version, format: .vst3,
-                                       source: src, path: b.path, info: nil, problem: problem))
+                                       source: src, path: b.path, info: nil, problem: problem, architectures: archs))
             }
-            let archs = arch(b)
             for c in fresh {
                 out.append(PluginEntry(id: c.id, name: c.name, manufacturer: c.manufacturer, version: c.versionString, format: .vst3,
                                        source: src, path: b.path, info: c, problem: nil, architectures: archs))

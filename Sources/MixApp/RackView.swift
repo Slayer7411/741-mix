@@ -15,6 +15,8 @@ struct EffectPicker: View {
     @Environment(\.openSettings) private var openSettings
     let b: Int
     var replacing: Int?
+    /// Suchtext beim Öffnen (Bilder, Tests)
+    var query = ""
     var done: () -> Void = {}
     @State private var search = ""
     @State private var choices: [PluginCatalog.Choice] = []
@@ -58,7 +60,7 @@ struct EffectPicker: View {
         .padding(10)
         .frame(width: 320)
         .background(Theme.chitin)
-        .onAppear { choices = mix.pluginChoices() }
+        .onAppear { choices = mix.pluginChoices(); if !query.isEmpty { search = query } }
     }
 
     private func header(_ t: LocalizedStringKey) -> some View {
@@ -69,7 +71,7 @@ struct EffectPicker: View {
     static func byMaker(_ list: [PluginCatalog.Choice]) -> [(String, [PluginCatalog.Choice])] {
         var order: [String] = [], by: [String: [PluginCatalog.Choice]] = [:]
         for c in list {
-            let m = c.info.manufacturer.isEmpty ? "?" : c.info.manufacturer
+            let m = c.info.manufacturer.isEmpty ? "—" : c.info.manufacturer
             if by[m] == nil { order.append(m) }
             by[m, default: []].append(c)
         }
@@ -102,6 +104,7 @@ struct EffectPicker: View {
         }
         .buttonStyle(.plain)
         .disabled(blocked)
+        .background(UITestMark(name: "pick \(e.name)"))
         .help(at == nil ? Text(verbatim: e.name)
               : replacing == nil ? Text("schon in Slot \(at! + 1) – je Effekt ein Slot je Unit")
               : Text("tauscht mit Slot \(at! + 1)"))
@@ -126,6 +129,7 @@ struct EffectPicker: View {
             }
             .buttonStyle(.plain)
             .disabled(locked)
+            .background(UITestMark(name: "pick \(c.info.id)"))
             if c.fixInSettings {
                 Button("⌘, PLUGINS") {
                     mix.settingsRequest = "PLUGINS"
@@ -229,7 +233,7 @@ struct RackView: View {
                     Menu {
                         ForEach(FXTemplate.all, id: \.name) { t in Button(t.name) { mix.applyTemplate(b, t) } }
                     } label: { Text("VORLAGEN") }
-                    .menuStyle(.borderlessButton).fixedSize().font(Theme.label(10, .bold))
+                    .menuStyle(.borderlessButton).fixedSize().font(Theme.label(10, .bold)).tint(Theme.bone)
                     .help("Slots durch eine Vorlage ersetzen: Gruppe FLT·DLY·REV oder ein eingebauter Effekt")
                 }
                 Menu {
@@ -241,7 +245,7 @@ struct RackView: View {
                         Menu("Löschen") { ForEach(names, id: \.self) { n in Button(n) { mix.deleteRack(n) } } }
                     }
                 } label: { Text("RACKS") }
-                .menuStyle(.borderlessButton).fixedSize().font(Theme.label(10, .bold))
+                .menuStyle(.borderlessButton).fixedSize().font(Theme.label(10, .bold)).tint(Theme.bone)
                 .help("Gemerkte Racks laden oder dieses merken (mit den Einstellungen der Effekte und Plugins)")
             }
             if let error {
@@ -350,21 +354,23 @@ struct RackButton: View {
 }
 
 /// kompakte Slot-Zeilen einer Unit in der Leiste: Nummer, Effekt (Klick = wählen), ON-Punkt, D/W-Balken.
-/// Rechtsklick: EDIT, früher, später, entfernen. Ziehen einer Zeile auf eine andere = umordnen. Bis 3 Zeilen je Spalte
+/// Rechtsklick: EDIT, früher, später, entfernen. Ziehen einer Zeile auf eine andere = umordnen. Bis 4 Zeilen je Spalte
 struct SlotRows: View {
     @Environment(MixModel.self) private var mix
     let b: Int
-    static let perColumn = 3
+    static let perColumn = 4
 
     var body: some View {
         let slots = mix.slots(b)
-        let rows = slots.count + (slots.count < MixEngine.slotCount ? 1 : 0)
-        let columns = max(1, (rows + Self.perColumn - 1) / Self.perColumn)
+        let columns = max(1, (slots.count + Self.perColumn - 1) / Self.perColumn)
         HStack(alignment: .top, spacing: 6.z) {
+            if slots.isEmpty {
+                Text("leer").font(Theme.label(8.z, .bold)).foregroundStyle(Theme.muted).frame(height: 12.z)
+            }
             ForEach(0..<columns, id: \.self) { c in
-                VStack(alignment: .leading, spacing: 1.z) {
-                    ForEach(c * Self.perColumn..<min(rows, (c + 1) * Self.perColumn), id: \.self) { k in
-                        if k < slots.count { SlotRow(b: b, k: k, slot: slots[k]) } else { AddSlotRow(b: b) }
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(c * Self.perColumn..<min(slots.count, (c + 1) * Self.perColumn), id: \.self) { k in
+                        SlotRow(b: b, k: k, slot: slots[k])
                     }
                 }
             }
@@ -406,8 +412,9 @@ private struct SlotRow: View {
             .help("an/aus (aus = durchgereicht, Fahne klingt aus)")
             MixBar(value: slot.mix) { mix.setSlotMix(b, slot: k, $0) }
         }
-        .frame(height: 12.z)
+        .frame(height: 11.z)
         .background(Rectangle().fill(dropping ? Theme.secondary.opacity(0.25) : .clear))
+        .background(UITestMark(name: "fx slot \(b) \(k) \(slot.id)"))
         .popover(isPresented: $editing, arrowEdge: .bottom) { SlotParamsView(b: b, k: k).environment(mix) }
         .contextMenu {
             Button(slot.isPlugin ? "Plugin-Fenster öffnen" : "Parameter …") {
@@ -431,20 +438,22 @@ private struct SlotRow: View {
     }
 }
 
-/// leere Zeile unter den Slots: + SLOT (Effekt-Auswahl)
-private struct AddSlotRow: View {
+/// + im Kopf der Unit: Effekt hinten anhängen (Effekt-Auswahl)
+struct AddSlotButton: View {
     @Environment(MixModel.self) private var mix
     let b: Int
     @State private var picking = false
 
     var body: some View {
+        let full = mix.slots(b).count >= MixEngine.slotCount
         Button { picking = true } label: {
-            Text("+ SLOT").font(Theme.label(8.z, .bold)).foregroundStyle(Theme.muted)
-                .frame(height: 12.z).padding(.leading, 10.z)
+            Text(verbatim: "+").font(Theme.mono(10.z, .bold)).foregroundStyle(full ? Theme.hairline : Theme.bone)
+                .frame(width: 12.z, height: 12.z)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Effekt hinzufügen: eingebaut oder Plugin")
+        .disabled(full)
+        .help("+ SLOT: Effekt hinzufügen (eingebaut oder Plugin)")
         .popover(isPresented: $picking, arrowEdge: .bottom) { EffectPicker(b: b, replacing: nil) { picking = false }.environment(mix) }
         .background(UITestMark(name: "fx add \(b)"))
     }
@@ -463,7 +472,7 @@ private struct MixBar: View {
         }
         .frame(width: w, height: h)
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-        .padding(.vertical, 3.z)
+        .padding(.vertical, 2.z)
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 0).onChanged { g in set(max(0, min(1, g.location.x / w))) })
         .onTapGesture(count: 2) { set(1) }

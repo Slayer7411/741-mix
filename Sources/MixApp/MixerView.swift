@@ -129,6 +129,7 @@ struct FXUnitView: View {
                     .buttonStyle(.plain)
                     .help(unit.pluginError.map { Text(verbatim: $0) } ?? Text("Rack: Slots, Vorlagen, gemerkte Racks"))
                     .popover(isPresented: $rack, arrowEdge: .bottom) { RackView(b: u).environment(mix) }
+                    AddSlotButton(b: u)
                 }
                 SlotRows(b: u)
             }
@@ -145,6 +146,7 @@ struct FXUnitView: View {
         .padding(.vertical, 2.z)
         .background(Rectangle().fill(Theme.deck))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+        .fixedSize(horizontal: true, vertical: false)   // nie stauchen: die Zählerleiste in der Mitte gibt Platz ab
     }
 }
 
