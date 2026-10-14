@@ -222,6 +222,7 @@ enum SelfTest {
             await wavePresetProbe(mix)
             await recordProbe(mix, tracks: c)
             waveTileProbe(mix)
+            ledShowProbe()
             await ripProbe(mix, tracks: c)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
@@ -691,6 +692,28 @@ enum SelfTest {
 
     /// wird vom HistoryStore gesetzt, damit der Test genau seine eigene Datei entfernen kann
     nonisolated(unsafe) static var historyURL: URL?
+
+    /// Controller-Startsequenz ohne Gerät: Generator über die volle Dauer im LED-Takt, Reports, Ausdimmen gemischt
+    static func ledShowProbe() {
+        var normal = [UInt8](repeating: 0, count: 0x34), normalDisp = [UInt8](repeating: 0, count: LEDShow.displayLength)
+        normal[0] = 0x80; normalDisp[0] = 0x81
+        var frames = 0, phases = Set<Int>()
+        let t0 = CACurrentMediaTime()
+        var t = 0.0
+        while let f = LEDShow.frame(at: t, decks: (0, 2), seed: 741) {
+            var (led, disp) = LEDShow.reports(f, peak: 127)
+            LEDShow.blend(&led, toward: normal, f.mix)
+            LEDShow.blend(&disp, toward: normalDisp, f.mix)
+            frames += 1
+            phases.insert(f.phase.rawValue)
+            t += LEDShow.step
+        }
+        let ms = (CACurrentMediaTime() - t0) * 1000 / Double(max(1, frames))
+        let ok = abs(frames - Int((LEDShow.duration / LEDShow.step).rounded(.up))) <= 1 && phases.count == 5 && ms < 0.1
+        log(String(format: "Startsequenz: %d Frames über %.2f s, %.3f ms je Frame (Generator + Reports + Mischen) · %@",
+                   frames, LEDShow.duration, ms, ok ? "OK" : "FAIL"))
+        if !ok { log("STARTSEQUENZ FALSCH"); exit(1) }
+    }
 
     static func log(_ s: String) {
         print("[selftest] \(s)")

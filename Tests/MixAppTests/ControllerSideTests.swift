@@ -77,7 +77,7 @@ import MixCore
 // MARK: - Startsequenz
 
 @Test func ledShowPhasesInOrderAndEndsReady() {
-    #expect(LEDShow.duration >= 3 && LEDShow.duration <= 4)
+    #expect(LEDShow.duration >= 8.5 && LEDShow.duration <= 9.2)
     var last = LEDShow.Phase.storm
     var seen: [LEDShow.Phase] = []
     var t = 0.0
@@ -91,20 +91,81 @@ import MixCore
         if let f { #expect(f.phase == ph) }
         t += LEDShow.step
     }
-    #expect(seen == [.storm, .decks, .blackout, .flash, .ready])
+    #expect(seen == [.storm, .decks, .blackout, .flash, .fade, .ready])
     #expect(LEDShow.frame(at: LEDShow.duration, decks: (0, 2), seed: 7) == nil)
-    // Sturm etwa 2 s, Decks etwa 1 s, Blitz etwa 150 ms
-    #expect(abs(LEDShow.stormEnd - 2) < 0.3 && abs(LEDShow.decksEnd - LEDShow.stormEnd - 1) < 0.3)
-    #expect(abs(LEDShow.flashEnd - LEDShow.blackoutEnd - 0.15) < 0.03)
+    // Sturm 5 s, Decks 1,2 s, Blitz gut 1 s, Ausdimmen 1,5 s
+    #expect(LEDShow.stormEnd == 5 && abs(LEDShow.decksEnd - LEDShow.stormEnd - 1.2) < 0.01)
+    #expect(abs(LEDShow.flashEnd - LEDShow.blackoutEnd - 1.1) < 0.06)
+    #expect(abs(LEDShow.fadeEnd - LEDShow.flashEnd - 1.5) < 0.01)
+}
+
+@Test func ledShowTimeline() {
+    func f(_ t: Double) -> LEDShow.Frame? { LEDShow.frame(at: t, decks: (0, 2), seed: 3) }
+    // Sturm: Glut, Lauflicht (zwei Runden), Stroboskop bis zuletzt
+    #expect(LEDShow.phase(at: 1.0) == .storm && f(1.0)!.pads.allSatisfy { $0.color == .red })
+    #expect(f(2.0)!.pads.contains { $0 == .init(color: .purple, level: 1) })
+    #expect(f(3.0)!.pads.contains { $0 == .init(color: .purple, level: 1) })
+    var strobe = 0
+    for k in 0..<4 {
+        let s = f(4.8 + Double(k) * LEDShow.step)!
+        #expect(s.phase == .storm && s.mix == 0)
+        if s.pads.contains(where: { $0.color == .white && $0.level > 0 }) || s.digits.contains(where: { $0 != 0 }) { strobe += 1 }
+    }
+    #expect(strobe >= 1 && strobe <= 3)   // jeder zweite Takt dunkel
+    #expect(f(4.9)!.phase == .storm)
+    // Deck-Teil
+    let d = f(5.6)!
+    #expect(d.phase == .decks && d.digits[1] == LEDShow.mask("A"))
+    // Blitz weiß, hält
+    for t in [6.3, 7.2] {
+        let w = f(t)!
+        #expect(w.phase == .flash && w.mix == 0)
+        #expect(w.pads.allSatisfy { $0 == .init(color: .white, level: 1) } && w.buttons.allSatisfy { $0 == 1 })
+    }
+    // Ausdimmen: gemischt, weich (Kosinus), am Ende normal
+    let m = f(7.4)!
+    #expect(m.phase == .fade && m.mix > 0 && m.mix < 0.1)
+    #expect(abs(LEDShow.mix(at: (LEDShow.flashEnd + LEDShow.fadeEnd) / 2) - 0.5) < 1e-9)
+    var prev = 0.0
+    for k in 0...50 {
+        let w = LEDShow.mix(at: LEDShow.flashEnd + Double(k) / 50 * (LEDShow.fadeEnd - LEDShow.flashEnd))
+        #expect(w >= prev)
+        prev = w
+    }
+    #expect(prev == 1)
+    #expect(f(8.9) == nil)
+}
+
+@Test func ledShowFadeBlendsIntoNormal() {
+    let peak: UInt8 = 100
+    var normal = [UInt8](repeating: 0, count: 0x34)
+    normal[0] = 0x80
+    normal[0x31] = 100; normal[0x01] = 20; normal[0x14] = 80   // Play an, FX gedimmt, Pad rot
+    func led(_ t: Double) -> [UInt8] {
+        let f = LEDShow.frame(at: t, decks: (0, 2), seed: 3)!
+        var (r, _) = LEDShow.reports(f, peak: peak)
+        LEDShow.blend(&r, toward: normal, f.mix)
+        return r
+    }
+    let white = led(7.2)
+    #expect(white[0x31] == 100 && white[0x01] == 100)
+    let mid = led((LEDShow.flashEnd + LEDShow.fadeEnd) / 2)
+    #expect(mid[0] == 0x80 && mid[0x01] == 60 && mid[0x15] < white[0x15] && mid[0x15] > 0)
+    let late = led(LEDShow.fadeEnd - 0.001)
+    #expect(zip(late, normal).allSatisfy { abs(Int($0) - Int($1)) <= 1 })
+    // Anteil 0 lässt das Bild unverändert
+    var same = white
+    LEDShow.blend(&same, toward: normal, 0)
+    #expect(same == white)
 }
 
 @Test func ledShowIsPureAndShowsDeckLetters() {
     let a = LEDShow.frame(at: 1.0, decks: (0, 2), seed: 42), b = LEDShow.frame(at: 1.0, decks: (0, 2), seed: 42)
     #expect(a == b)
-    let left = LEDShow.frame(at: 2.5, decks: (0, 2), seed: 1)!
+    let left = LEDShow.frame(at: 5.5, decks: (0, 2), seed: 1)!
     #expect(left.phase == .decks)
     #expect(left.digits[1] == LEDShow.mask("A") && left.digits[4] == LEDShow.mask("C"))
-    let right = LEDShow.frame(at: 2.5, decks: (1, 3), seed: 1)!
+    let right = LEDShow.frame(at: 5.5, decks: (1, 3), seed: 1)!
     #expect(right.digits[1] == LEDShow.mask("b") && right.digits[4] == LEDShow.mask("d"))
     let flash = LEDShow.frame(at: LEDShow.blackoutEnd + 0.05, decks: (0, 2), seed: 1)!
     #expect(flash.pads.allSatisfy { $0 == .init(color: .white, level: 1) } && flash.buttons.allSatisfy { $0 == 1 })

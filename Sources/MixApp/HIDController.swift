@@ -616,26 +616,37 @@ final class ControllerUnit {
     /// nächster LED-Takt schickt alles neu
     func resetLEDs() { lastLED = []; lastDisplay = [] }
 
-    /// Bild der laufenden Sequenz senden; false = keine Sequenz (mehr), normale LEDs
-    private func sendShow(peak: UInt8) -> Bool {
-        guard let start = showStart else { return false }
-        guard let f = LEDShow.frame(at: ProcessInfo.processInfo.systemUptime - start, decks: (info.left, info.right), seed: showSeed) else {
-            stopShow()
-            return false
-        }
-        let (led, disp) = LEDShow.reports(f, peak: peak)
-        if let device {
-            if led != lastLED { IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x80, led, led.count) }
-            if disp != lastDisplay { IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x81, disp, disp.count) }
-        }
-        lastLED = led
-        lastDisplay = disp
-        return true
-    }
-
+    /// LED-Takt: Bild der laufenden Sequenz (beim Ausdimmen in den normalen Zustand gemischt) oder normaler Zustand
     func sendLEDs(state: MixState, prefs: ControllerPrefs) {
         let on = UInt8(max(0, min(127, prefs.ledOn))), dim = UInt8(max(0, min(127, prefs.ledOff)))
-        if sendShow(peak: on) { return }
+        var show: LEDShow.Frame?
+        if let start = showStart {
+            show = LEDShow.frame(at: ProcessInfo.processInfo.systemUptime - start, decks: (info.left, info.right), seed: showSeed)
+            if show == nil { stopShow() }
+        }
+        var led: [UInt8], disp: [UInt8]
+        if let f = show {
+            (led, disp) = LEDShow.reports(f, peak: on)
+            if f.mix > 0 {
+                LEDShow.blend(&led, toward: ledReport(state: state, prefs: prefs, on: on, dim: dim), f.mix)
+                LEDShow.blend(&disp, toward: displayReport(state: state), f.mix)
+            }
+        } else {
+            led = ledReport(state: state, prefs: prefs, on: on, dim: dim)
+            disp = displayReport(state: state)
+        }
+        if led != lastLED, let device {
+            lastLED = led
+            IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x80, led, led.count)
+        }
+        if disp != lastDisplay, let device {
+            lastDisplay = disp
+            IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x81, disp, disp.count)
+        }
+    }
+
+    /// normaler Zustand der Tasten- und Pad-LEDs (Report 0x80)
+    private func ledReport(state: MixState, prefs: ControllerPrefs, on: UInt8, dim: UInt8) -> [UInt8] {
         var r = [UInt8](repeating: 0, count: 0x34)
         r[0] = 0x80
         let flash = flashUntil.map { $0 > Date() } ?? false
@@ -678,15 +689,11 @@ final class ControllerUnit {
             r[0x01 + u * 4] = fx.anyOn ? on : dim
             for i in 0..<3 { r[0x02 + u * 4 + i] = state.fxControls[fu][FXControl.button(i).slot].active ? on : dim }
         }
-        if r != lastLED, let device {
-            lastLED = r
-            IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x80, r, r.count)
-        }
-        sendDisplay(state: state)
+        return r
     }
 
-    /// 7-Segment-Anzeigen: Loopgröße der jeweiligen Seite
-    private func sendDisplay(state: MixState) {
+    /// 7-Segment-Anzeigen: Loopgröße der jeweiligen Seite (Report 0x81)
+    private func displayReport(state: MixState) -> [UInt8] {
         var r = [UInt8](repeating: 0, count: 0x5B)
         r[0] = 0x81
         for (i, d) in [info.left, info.right].enumerated() {
@@ -699,10 +706,7 @@ final class ControllerUnit {
             // Punkt vor der Zahl = Bruchteil (1/x)
             if size < 1 { r[0x01 + i * 0x18 + (3 - text.count) * 8] = 0x7f }
         }
-        if r != lastDisplay, let device {
-            lastDisplay = r
-            IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x81, r, r.count)
-        }
+        return r
     }
 
     /// Segmente je Zeichen (1 = g, 2 = c, 3 = b, 4 = a, 5 = f, 6 = e, 7 = d, 0 = Punkt)
