@@ -634,6 +634,18 @@ final class MixModel {
         run { core.instantDouble(from: s, to: d, force: force ?? NSEvent.modifierFlags.contains(.option)) }
         UndoStack.shared.clear(deck: d)
     }
+    /// Auswerfen: Deck leer, nur wenn es nicht spielt (sonst Hinweis); eigene Änderungen vorher gespeichert
+    func eject(_ d: Int) {
+        persistEdits()
+        guard core.eject(d) else {
+            StatusCenter.post(.warning, String(localized: "Deck \(deckLetters[d]) spielt · Auswerfen gesperrt"), key: "eject.\(d)")
+            return
+        }
+        originals.removeValue(forKey: d)
+        savedEdit.removeValue(forKey: d)
+        dawGrid.removeValue(forKey: d)
+        pull()
+    }
     func bend(_ d: Int, _ v: Double) { run { core.bend(d, v) } }
     func updateDeck(_ d: Int, _ f: (inout DeckState) -> Void) { run { core.updateDeck(d, f) } }
     func setCrossfader(_ v: Double) { run { core.setCrossfader(v) } }

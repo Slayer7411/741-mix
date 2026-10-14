@@ -1234,40 +1234,11 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         let ids = menuKeys()
         guard !ids.isEmpty else { return }
         let tracks = { ids.compactMap { store.track($0) } }
-        for n in 0..<4 {
-            menu.addItem(ActionItem(String(localized: "In Deck \(["A", "B", "C", "D"][n]) laden")) { [weak mix] in
-                if let id = ids.first, let t = store.track(id) { mix?.load(t, deck: n) }
-            })
-        }
-        menu.addItem(.separator())
         let rows = self.rows
-        let edit = ActionItem(String(localized: "Bearbeiten …"), key: "e") { [weak model] in model?.openEditor(ids, rows: rows, store: store) }
-        edit.keyEquivalentModifierMask = .command
-        menu.addItem(edit)
-        if store.hasEdits(ids) { menu.addItem(ActionItem(String(localized: "Eigene Änderungen verwerfen")) { store.revertEdits(Array(ids)) }) }
-        menu.addItem(.separator())
-        menu.addItem(ActionItem(String(localized: "Analysieren")) { Analyses.shared.enqueue(tracks(), refresh: false) })
-        menu.addItem(ActionItem(String(localized: "Neu analysieren")) { Analyses.shared.enqueue(tracks(), refresh: true) })
-        if store.hasAnalysis(ids) { menu.addItem(ActionItem(String(localized: "Analyse verwerfen")) { store.discardAnalysis(Array(ids)) }) }
-        RipChecks.shared.addMenuItems(menu, tracks: tracks, single: ids.count == 1 ? ids.first.flatMap { store.track($0) } : nil)
-        menu.addItem(.separator())
-        menu.addItem(ActionItem(String(localized: "An Preparation anhängen")) { store.appendToPreparation(ids) })
-        if case .preparation = model.source {
-            menu.addItem(ActionItem(String(localized: "Aus Preparation entfernen")) {
-                store.editPreparation(String(localized: "Aus Preparation entfernen")) { $0.removeAll { ids.contains($0) } }
-            })
+        for i in TrackMenu.browserItems(browserFacts(ids), rip: RipChecks.shared.menuItems(tracks: tracks, single: ids.count == 1 ? ids.first.flatMap { store.track($0) } : nil),
+                                        browserActions(ids, rows: rows, tracks: tracks, store: store, model: model, mix: mix, history: history)) {
+            menu.addItem(i.make())
         }
-        addPlaylistItems(menu, ids: ids, rows: rows)
-        menu.addItem(.separator())
-        if CloudLibrary.shared.hasCloudTracks {
-            menu.addItem(ActionItem(String(localized: "Bereitmachen (herunterladen)")) { CloudLibrary.shared.makeReady(tracks(), label: String(localized: "Auswahl")) })
-        }
-        menu.addItem(ActionItem(String(localized: "Vorhören")) { [weak mix] in if let id = ids.first, let t = store.track(id) { mix?.preview(t) } })
-        menu.addItem(ActionItem(String(localized: "Im Finder zeigen")) {
-            NSWorkspace.shared.activateFileViewerSelecting(tracks().map { URL(fileURLWithPath: $0.path) })
-        })
-        menu.addItem(.separator())
-        menu.addItem(ActionItem(String(localized: "Reset Played State")) { [weak history] in history?.resetPlayed() })
     }
 
     /// Rechtsklick auf den Kopf: Spalten ein/aus (Vorschau-Spalte folgt der Einstellung)

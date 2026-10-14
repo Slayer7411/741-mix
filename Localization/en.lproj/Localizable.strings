@@ -1497,3 +1497,13 @@
 "◆ %lld Treffer" = "◆ %lld results";
 "%lld Treffer" = "%lld results";
 "Keine Treffer" = "No results";
+"Track" = "Track";
+"Track laden …" = "Load track …";
+"Auf Deck %@ kopieren" = "Copy to deck %@";
+"Auswerfen" = "Eject";
+"Auswerfen (Deck spielt)" = "Eject (deck playing)";
+"Deck %@ spielt · Auswerfen gesperrt" = "Deck %@ playing · eject locked";
+"Vorschau berechnen" = "Compute preview";
+"Bewertung" = "Rating";
+"Keine" = "None";
+"UNGESPIELT aus: der Track ist gespielt" = "UNPLAYED off: the track is played";

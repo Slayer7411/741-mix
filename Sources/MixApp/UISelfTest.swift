@@ -110,7 +110,7 @@ enum UISelfTest {
 
         let u = UIDriver(mix: mix, store: store, browser: browser, history: history)
         let cases: [(String, (UIDriver, [Track]) -> Void)] = [
-            ("deck-menü", deckMenu), ("drop aufs deck", dropOnDeck), ("bereich in der wellenform", waveRange),
+            ("deck-menü", deckMenu), ("deck-menü-fläche", deckMenuArea), ("drop aufs deck", dropOnDeck), ("bereich in der wellenform", waveRange),
             ("spaltenbreite per doppelklick", fitColumn), ("statusleiste automatisch", autoStatusBar),
             ("tastenkürzel", shortcuts), ("werkzeugleiste", toolbar), ("zoom", zoom),
             ("edit-modus", editMode),
@@ -205,6 +205,87 @@ enum UISelfTest {
         pane.editSession = nil
         u.spin(5) { u.window.attachedSheet == nil }
         check(u.window.attachedSheet == nil, "Bearbeiten-Fenster schließt nicht")
+    }
+
+    /// Rechtsklick auf Übersicht, Cover-Spalte und Wellenform von Deck A: Track-Menü (Wellenform mit Bereich: „Track ▸“ oben).
+    /// „Im Browser zeigen“ wählt den Track im aktiven Bereich (aus PREPARATION zurück auf TRACK COLLECTION). Spielend:
+    /// „Auswerfen“ ausgegraut; Deck B auswerfen -> leer, Menü mit „Track laden …“, danach wieder geladen
+    static func deckMenuArea(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, ui0 = mix.prefs.ui
+        let edit = String(localized: "Track bearbeiten …"), reveal = String(localized: "Im Browser zeigen")
+        let eject = String(localized: "Auswerfen")
+        func has(_ m: NSMenu?, _ title: String) -> Bool { m?.items.contains { $0.title == title } ?? false }
+        func overview(_ deck: String) -> NSRect? {
+            guard let v = u.named("deck " + deck) else { return nil }
+            func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+            let dw = u.frame(v).width
+            return all(v).compactMap { $0 as? LiveCanvasView }.map { u.frame($0) }
+                .filter { $0.width > dw / 2 && $0.height >= 11 }.max { $0.height < $1.height }
+        }
+        guard let key = mix.deck(0).track?.key else { fail("Deck A ohne Track") }
+        if mix.deck(0).playing { mix.togglePlay(0) }
+        guard let ov = overview("A") else { fail("Deck A: Übersicht nicht gefunden") }
+        let om = u.rightClick(at: NSPoint(x: ov.midX, y: ov.midY))
+        check(has(om, edit) && has(om, reveal), "Rechtsklick auf die Übersicht: \(om?.items.map(\.title) ?? [])")
+        check(om?.items.first { $0.title == eject }?.isEnabled == true, "Übersicht: „\(eject)“ ausgegraut, Deck steht")
+        log("menü an der übersicht: " + (om?.items.map(\.title).joined(separator: " · ") ?? ""))
+
+        // Cover als eigene Spalte
+        defer { mix.prefs.ui = ui0; u.spin(0.5) }
+        mix.prefs.ui.deckCoverSize = 120
+        u.spin(3) { u.named("A cover") != nil }
+        guard let cv = u.named("A cover").map({ u.frame($0) }) else { fail("Cover-Spalte fehlt") }
+        let cm = u.rightClick(at: NSPoint(x: cv.midX, y: cv.midY))
+        check(has(cm, edit) && has(cm, reveal), "Rechtsklick auf das Cover: \(cm?.items.map(\.title) ?? [])")
+
+        // Wellenform: ohne Bereich das Track-Menü, mit Bereich dessen Menü und oben „Track ▸“
+        guard let w = u.views.compactMap({ $0 as? WaveMouseView }).first(where: { $0.d == 0 }) else { fail("Wellenform A nicht gefunden") }
+        mix.setRange(0, nil)
+        let wr = u.frame(w)
+        let wm = u.rightClick(at: NSPoint(x: wr.midX, y: wr.midY))
+        check(has(wm, edit), "Rechtsklick in die Wellenform ohne Bereich: \(wm?.items.map(\.title) ?? [])")
+        let pos = mix.position(0)
+        mix.setRange(0, TrackRange(max(0, pos - 2), pos + 2))
+        let rm = u.rightClick(at: NSPoint(x: wr.midX, y: wr.midY))
+        mix.setRange(0, nil)
+        check(rm?.items.first?.title == String(localized: "Track") && has(rm?.items.first?.submenu, edit)
+              && has(rm, String(localized: "Bereich aufheben")), "Wellenform mit Bereich: \(rm?.items.map(\.title) ?? [])")
+
+        // Im Browser zeigen
+        let pane = u.browser.activePane, source0 = pane.source
+        pane.selection = []
+        pane.source = .preparation
+        u.spin(0.5)
+        guard let m = u.rightClick(at: NSPoint(x: cv.midX, y: cv.midY)), let ri = m.items.firstIndex(where: { $0.title == reveal }) else { fail("„\(reveal)“ fehlt") }
+        check(m.items[ri].isEnabled, "„\(reveal)“ ausgegraut")
+        m.performActionForItem(at: ri)
+        u.spin(2) { pane.selection == [key] && pane.shown.contains { $0.key == key } }
+        check(u.browser.activePane === pane && pane.selection == [key], "Im Browser zeigen: Auswahl \(pane.selection) statt \(key)")
+        check(pane.shown.contains { $0.key == key }, "Im Browser zeigen: Track steht nicht in der Liste (Quelle \(pane.source))")
+        pane.source = source0
+        u.spin(0.3)
+
+        // spielend: Auswerfen ausgegraut
+        mix.togglePlay(0)
+        u.spin(1) { mix.deck(0).playing }
+        let pm = u.rightClick(at: NSPoint(x: ov.midX, y: ov.midY))
+        mix.togglePlay(0)
+        u.spin(1) { !mix.deck(0).playing }
+        let pe = pm?.items.first { $0.title.hasPrefix(eject) }
+        check(pe != nil && pe?.isEnabled == false, "Deck spielt: „\(eject)“ nicht ausgegraut: \(pm?.items.map(\.title) ?? [])")
+
+        // Deck B auswerfen und wieder laden
+        guard let ovb = overview("B"), let bm = u.rightClick(at: NSPoint(x: ovb.midX, y: ovb.midY)),
+              let ei = bm.items.firstIndex(where: { $0.title == eject }) else { fail("Deck B: kein „\(eject)“") }
+        bm.performActionForItem(at: ei)
+        u.spin(1) { mix.deck(1).track == nil }
+        check(mix.deck(1).track == nil && mix.core.trackAudio(1) == nil, "Deck B nach dem Auswerfen nicht leer")
+        let em = u.rightClick(at: NSPoint(x: ovb.midX, y: ovb.midY))
+        check(has(em, String(localized: "Track laden …")) && em?.items.first { $0.title == edit }?.isEnabled == false,
+              "leeres Deck: \(em?.items.map(\.title) ?? [])")
+        _ = mix.load(t[1], deck: 1, force: true)
+        u.spin(30) { mix.core.trackAudio(1) != nil && mix.deck(1).grid != nil }
+        check(mix.core.trackAudio(1) != nil, "Deck B lädt nach dem Auswerfen nicht")
     }
 
     /// Track (wie vom Deck gezogen) auf den Kopf von Deck A fallen lassen: Ziel ist die Hosting-View, die SwiftUI für
@@ -1930,7 +2011,7 @@ extension UISelfTest {
         let item = String(localized: "Markierten Bereich entfernen")
         var via = "rechtsklick"
         if let menu = u.rightClick(at: NSPoint(x: r.midX, y: r.midY)), let i = menu.items.firstIndex(where: { $0.title == item }) {
-            check(i <= 3, "RIP-Bereich: „\(item)“ nicht oben: \(menu.items.map(\.title))")
+            check(i <= 5, "RIP-Bereich: „\(item)“ nicht oben: \(menu.items.map(\.title))")   // unter „Track ▸“
             check(menu.items.contains { $0.title == String(localized: "Markierten Bereich entfernen (neue Datei)") }, "RIP-Bereich: ohne „… (neue Datei)“")
             menu.performActionForItem(at: i)
         } else {
