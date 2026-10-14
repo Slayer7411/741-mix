@@ -716,6 +716,7 @@ final class MainSampler: @unchecked Sendable {
     }
 
     private func sample() -> [UInt]? {
+        #if arch(arm64)
         guard thread_suspend(port) == KERN_SUCCESS else { return nil }
         defer { thread_resume(port) }
         var st = arm_thread_state64_t()
@@ -735,6 +736,9 @@ final class MainSampler: @unchecked Sendable {
             fp = next
         }
         return out
+        #else
+        return nil   // Profiler nur auf Apple Silicon (Frame-Pointer-Kette über den ARM-Thread-Zustand)
+        #endif
     }
 
     /// stoppen und die häufigsten Funktionen melden

@@ -5,6 +5,11 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ## ◆ [UNRELEASED]
 
+## ◆ [0.8.1] · 2026-10-14 · UNIVERSAL
+
+### fixed
+* release: universal dmg build failed on the x86_64 slice (the layout profiler read the arm thread state); the profiler is arm64 only now, x86_64 returns no samples
+
 ## ◆ [0.8.0] · 2026-10-14 · WORKBENCH
 
 ### added
@@ -411,7 +416,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * native hid controllers (two units), custom mappings
 * history + preparation as nml
 
-[UNRELEASED]: https://github.com/Slayer7411/MINOS-741/compare/v0.8.0...HEAD
+[UNRELEASED]: https://github.com/Slayer7411/MINOS-741/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/Slayer7411/MINOS-741/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Slayer7411/MINOS-741/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Slayer7411/MINOS-741/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Slayer7411/MINOS-741/compare/v0.5.0...v0.6.0

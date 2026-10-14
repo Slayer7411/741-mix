@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/Slayer7411/MINOS-741/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Slayer7411/MINOS-741/ci.yml?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=CI" alt="ci"></a> <a href="https://github.com/Slayer7411/MINOS-741/commits/main"><img src="https://img.shields.io/github/last-commit/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=LAST%20COMMIT" alt="last commit"></a> <a href="https://github.com/Slayer7411/MINOS-741/graphs/contributors"><img src="https://img.shields.io/github/contributors/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=CONTRIBUTORS" alt="contributors"></a> <a href="https://github.com/Slayer7411/MINOS-741/discussions"><img src="https://img.shields.io/github/discussions/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=DISCUSSIONS" alt="discussions"></a> <a href="https://github.com/sponsors/Slayer7411"><img src="https://img.shields.io/badge/SPONSOR-%E2%99%A5-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="sponsor"></a></p>
 
 ```
-$MINOS  v0.8.0 ▲  ·  CPU 70% -> 13% ▼  ·  PHASE 0.0000 BEATS  ·  14,160 TRACKS / 0.9 S  ·  LINK ●  ·  HID ×2
+$MINOS  v0.8.1 ▲  ·  CPU 70% -> 13% ▼  ·  PHASE 0.0000 BEATS  ·  14,160 TRACKS / 0.9 S  ·  LINK ●  ·  HID ×2
 ```
 
 native dj software for macos. classic deck workflow, nml collection in and out, own browser and tag system.
