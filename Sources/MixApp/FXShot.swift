@@ -5,7 +5,8 @@ import MixEngine
 
 /// Nur Selbsttest (MIX741_SHOT=fx:<ordner>): FX-Leiste mit Insert-Slots offscreen als PNG, ohne Audio.
 /// topbar-2 / topbar-4: obere Leiste mit 2 bzw. 4 Units (Vorlage Gruppe, ein Slot, Rack mit Plugin, 6 Slots);
-/// rack, picker, params: Rack-Popover, Effekt-Auswahl (Plugins vom Rechner, gesperrte mit Grund), Parameter eines Slots.
+/// rack, picker, params: Rack-Popover, Effekt-Auswahl (Plugins vom Rechner, gesperrte mit Grund), Parameter eines Slots;
+/// picker-search mit MIX741_SHOT_QUERY=<suche>.
 @MainActor
 enum FXShot {
     static func runIfRequested() {
@@ -43,7 +44,9 @@ enum FXShot {
             render(MasterClockPanel().environment(mix), width: nil, dir.appendingPathComponent("clock.png"))
             render(RackView(b: 2).environment(mix), width: nil, dir.appendingPathComponent("rack.png"))
             render(EffectPicker(b: 2, replacing: nil).environment(mix), width: nil, dir.appendingPathComponent("picker.png"))
-            render(EffectPicker(b: 1, replacing: 0, query: "oril").environment(mix), width: nil, dir.appendingPathComponent("picker-intel.png"))
+            if let q = ProcessInfo.processInfo.environment["MIX741_SHOT_QUERY"] {   // Suche in der Effekt-Auswahl (z. B. ein Plugin vom Rechner)
+                render(EffectPicker(b: 1, replacing: 0, query: q).environment(mix), width: nil, dir.appendingPathComponent("picker-search.png"))
+            }
             render(SlotParamsView(b: 1, k: 0).environment(mix), width: nil, dir.appendingPathComponent("params.png"))
             log("PNG \(dir.path)")
             exit(0)
