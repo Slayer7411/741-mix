@@ -856,7 +856,7 @@ struct BrowserSettings: View {
                     .font(Theme.mono(10)).foregroundStyle(Theme.muted)
                 Toggle("Cuts und Tool-Loops als neue Einträge anlegen", isOn: $mix.prefs.ui.writeCuts)
                     .disabled(!mix.prefs.ui.writeCollection)
-                Toggle("Preparation und History als Playlists (Ordner MINOS-741)", isOn: $mix.prefs.ui.writePlaylists)
+                Toggle("Preparation, History und eigene Playlists als Playlists (Ordner MINOS-741)", isOn: $mix.prefs.ui.writePlaylists)
                     .disabled(!mix.prefs.ui.writeCollection)
                 Text("eigene playlists stehen nur im ordner MINOS-741 und werden bei jedem schreiben ersetzt, andere playlists bleiben unberührt.")
                     .font(Theme.mono(10)).foregroundStyle(Theme.muted)

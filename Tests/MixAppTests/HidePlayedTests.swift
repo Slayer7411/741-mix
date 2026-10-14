@@ -16,7 +16,7 @@ private func track(_ k: String, _ title: String) -> Track {
 @Test func playedTracksHidden() {
     let base = [track("a", "Night"), track("b", "Day"), track("c", "Nightfall")]
     let played: Set<String> = ["b", "c"]
-    for src in [BrowserSource.collection, .custom(CustomSmartlist(name: "x", query: "$BPM > 0")), .folder("/m"), .cuts] {
+    for src in [BrowserSource.collection, .own(OwnRef(PlaylistItem(name: "x", kind: .smartlist))), .folder("/m"), .cuts] {
         var c = BrowserPaneModel.Criteria()
         c.exclude = BrowserPaneModel.hiddenKeys(source: src, played: played, hidePlayed: true)
         let r = BrowserPaneModel.filteredCounting(base, c, index: .init())
