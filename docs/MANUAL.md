@@ -394,6 +394,13 @@ per channel (order C · A · B · D):
 routing is in ⌘, -> AUDIO. the device sample rate is never changed by minos.
 the status bar shows device, mode and routing, preview pair as `PRE→9/10` (`PRE→–` = off).
 
+### audio core: decks in parallel
+
+* default: one audio thread renders all four decks (play, keylock, channel strip, fx) and sums them
+* ⌘, -> AUDIO -> `Decks parallel rechnen`: deck A stays on the audio thread, B-D run on three real-time worker threads that join the device's workgroup, the sum follows once all are done. bit-identical output, switchable while playing (takes effect with the next block)
+* for the live load test (`scripts/loadtest.sh --modes serial,parallel`), off by default. `MIX741_PARALLEL_DECKS=1` / `0` overrides the setting for one run
+* self test: switches it on at the running device and checks blocks, overloads, position, workers in the workgroup and with real-time policy
+
 ### device gone, rate change, sleep
 
 * interface unplugged or off -> output stops, status bar `Warte auf <device> …`, the decks keep their state. same device back (same uid) -> output reopens by itself (self test: ~5-12 ms after the device shows up), notice with the gap
@@ -803,7 +810,7 @@ scripts/loadtest.sh --minutes 30          # release build, first external interf
 tail -f ~/Library/Application\ Support/MINOS-741/loadtest/latest.log
 ```
 
-* stages: buffer 512 -> 256 -> 128 (`--buffers 512,256,128,64`), `--minutes` each (10)
+* stages: buffer 512 -> 256 -> 128 (`--buffers 512,256,128,64`), `--minutes` each (10); `--modes serial,parallel` runs all buffers with the serial core first, then with decks in parallel (default `serial`), column `Kern` in the table
 * per stage: 4 local tracks, keylock, B-D synced to A, link on, fx 1 (A/C) + fx 2 (B/D) delay + reverb, fx 3 (all) isolated plugin (`--plugin <id>|none`, default apple matrix reverb isolated)
 * stress: track change on B / C / D every 60 s (file service), search + sort over the collection every 20 s, main thread blocked 1 s every 5 min
 * routing external A 1/2 · B 3/4 · C 5/6 · D 7/8, master 0 dB -> turn the desk down first. `--mute` silent, `--out <name>` picks the device, `--builtin` built-in output (silent)

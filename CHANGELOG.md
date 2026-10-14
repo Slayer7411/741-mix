@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* audio core: decks in parallel (⌘, -> AUDIO, default off): deck A on the audio thread, B-D on three real-time worker threads joined to the device's workgroup, woken per block by semaphores, summed after the join. bit-identical to the serial core (unit test), switchable while playing. `MIX741_PARALLEL_DECKS=1/0` overrides for one run. load test `--modes serial,parallel` runs every buffer stage with both cores (column `Kern`). self test checks blocks, overloads, position, workers in the workgroup + real-time policy
 * beatjump with an active loop jumps by the loop length (in the jump's direction) and takes the loop along: same spot inside the loop, nothing to hear
 * browser height snaps to whole table rows while dragging the divider (⌘, -> BROWSER -> rows, on by default; not with browsers stacked)
 * `scripts/coverage.sh`: line coverage per target from the unit tests and the self test (unit tests alone: MixApp 2 %, with the self test 38 %, overall 56 %)

@@ -116,6 +116,8 @@ final class MixModel {
     var sampleRate = 0.0
     /// Puffergröße in Frames (0 = Gerätestandard)
     var bufferSize = 0
+    /// Decks parallel rechnen (Worker-Threads in der Workgroup des Geräts); MIX741_PARALLEL_DECKS=1/0 überstimmt
+    var parallelDecks = false { didSet { engine.parallelDecks = parallelDecks; saveSetup() } }
 
     /// eigene Änderungen (Grid, Hotcues, Schnitt) dauerhaft je Track – die Collection bleibt unangetastet.
     /// Selbsttest/Messung: nur lesen (Christians edits.json nie schreiben)
@@ -686,6 +688,7 @@ final class MixModel {
         bufferSize = d.integer(forKey: "bufferSize")
         engine.deviceRate = sampleRate > 0 ? sampleRate : nil
         engine.bufferFrames = bufferSize > 0 ? UInt32(bufferSize) : nil
+        parallelDecks = ProcessInfo.processInfo.environment["MIX741_PARALLEL_DECKS"].map { $0 == "1" } ?? d.bool(forKey: "parallelDecks")
     }
 
     /// Samplerate/Puffer setzen und die Ausgabe neu starten
@@ -711,6 +714,7 @@ final class MixModel {
         d.set(previewPair, forKey: "previewPair")
         d.set(sampleRate, forKey: "sampleRate")
         d.set(bufferSize, forKey: "bufferSize")
+        d.set(parallelDecks, forKey: "parallelDecks")
     }
 
     // MARK: - Vorhören im Browser

@@ -25,6 +25,7 @@ final class CoreAudioOutput: @unchecked Sendable {
     var onDeviceEvent: (@Sendable (DeviceEvent) -> Void)?
 
     private var unit: AudioUnit?
+    private var engine: OpaquePointer?
     private let infoLock = NSLock()
     private var _info = Info()
     var info: Info { infoLock.withLock { _info } }
@@ -93,6 +94,9 @@ final class CoreAudioOutput: @unchecked Sendable {
                                        &cb, UInt32(MemoryLayout<AURenderCallbackStruct>.size)), "Callback")
         mdsp_load_set_rate(engineRate)   // DSP-Last: Blöcke kommen mit der Rate des Kerns
         try check(AudioUnitInitialize(au), "Initialisieren")
+        // Worker der parallelen Decks: Workgroup des IO-Threads (erst nach dem Initialisieren vorhanden), Blockdauer des Geräts
+        self.engine = engine
+        mdsp_au_join_workgroup(engine, au, Double(Self.bufferFrames(dev)) / (MixEngine.nominalRate(dev) ?? engineRate))
         // vor dem Start als laufend melden: der erste Callback kann kommen, bevor Start zurückkehrt (Freigaben warten dann
         // auf den Kern statt auf `running`); scheitert der Start, setzt stop() es zurück
         infoLock.withLock { _info.running = true }
@@ -114,6 +118,7 @@ final class CoreAudioOutput: @unchecked Sendable {
         let rate = MixEngine.nominalRate(dev) ?? info.deviceRate
         let lat = Double(Self.latencyFrames(dev)) / rate, buf = Self.bufferFrames(dev)
         infoLock.withLock { _info.deviceRate = rate; _info.outputLatency = lat; _info.bufferFrameSize = buf }
+        if let au = unit, let engine { mdsp_au_join_workgroup(engine, au, Double(buf) / rate) }   // Worker: neue Periode
     }
 
     static func bufferFrames(_ dev: AudioDeviceID) -> UInt32 {

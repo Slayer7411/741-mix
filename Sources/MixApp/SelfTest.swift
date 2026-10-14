@@ -206,6 +206,7 @@ enum SelfTest {
             log(String(format: "Pegel A: trocken %.3f · Filter HP %.3f (%.0f %%) · Reverb %.3f (%.0f %%)",
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
             await deviceProbe(core)
+            await parallelProbe(core)
             await previewProbe(mix, tracks: c)
             await cutProbe(mix, tracks: c)
             await profileProbe(mix, browser: browser)
@@ -316,6 +317,31 @@ enum SelfTest {
         let woke = await waitRunning()
         log(String(format: "Ruhezustand: %@, Ausgabe aus %@, Position steht %@ -> aufgewacht, läuft nach %.0f ms, A läuft %@, Deck spielt %@",
                    sleeping.rawValue, "\(quiet)", "\(frozen)", woke * 1000, "\(await advancing())", "\(core.snapshot().decks[0].playing)"))
+        if !wasPlaying { core.togglePlay(0) }
+    }
+
+    /// Decks parallel am laufenden Gerät: einschalten, Blöcke laufen weiter, keine Überläufe, Position läuft; danach zurück
+    static func parallelProbe(_ core: MixController) async {
+        let engine = core.engine
+        let was = engine.parallelDecks
+        let wasPlaying = core.snapshot().decks[0].playing
+        if !wasPlaying { core.togglePlay(0) }
+        _ = engine.takeLoad()
+        engine.resetOverloads()
+        engine.parallelDecks = true
+        let p0 = core.position(0)
+        try? await Task.sleep(for: .milliseconds(600))
+        let l = engine.takeLoad()
+        let moved = core.position(0) - p0
+        let info = engine.parallelInfo
+        engine.parallelDecks = was
+        try? await Task.sleep(for: .milliseconds(200))
+        let l2 = engine.takeLoad()
+        let ok = l.blocks > 0 && l.overloads == 0 && moved > 0.4 && l2.blocks > 0 && info.joined == info.workers && info.realtime == info.workers
+        log(String(format: "Decks parallel: an -> %d Blöcke, DSP %.1f %% (Spitze %.0f %%), über Budget %d, A lief %.2f s, Worker %d (Workgroup %d, Echtzeit %d); zurück %@ -> %d Blöcke · %@",
+                   l.blocks, l.average * 100, l.peak * 100, l.overloads, moved, info.workers, info.joined, info.realtime, "\(was)", l2.blocks,
+                   ok ? "OK" : "FAIL"))
+        if !ok { log("FEHLER Decks parallel: Ausgabe läuft nicht sauber"); exit(1) }
         if !wasPlaying { core.togglePlay(0) }
     }
 
