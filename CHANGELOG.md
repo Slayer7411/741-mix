@@ -5,6 +5,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ## ◆ [UNRELEASED]
 
+## ◆ [0.8.0] · 2026-10-14 · WORKBENCH
+
 ### added
 * browser stacked: the pane header (title, count, search, roles, TAGS, PASST, LOKAL, active tags) becomes a column left of the list, the whole pane height goes to track rows
 * defaults: compact decks (readouts, comment, tags, phase bar, overview, transport, loop sizes; hotcues, beatjump, grid tools, pitch fader, groove off)
@@ -409,7 +411,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * native hid controllers (two units), custom mappings
 * history + preparation as nml
 
-[UNRELEASED]: https://github.com/Slayer7411/MINOS-741/compare/v0.7.0...HEAD
+[UNRELEASED]: https://github.com/Slayer7411/MINOS-741/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Slayer7411/MINOS-741/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Slayer7411/MINOS-741/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Slayer7411/MINOS-741/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Slayer7411/MINOS-741/compare/v0.4.0...v0.5.0
