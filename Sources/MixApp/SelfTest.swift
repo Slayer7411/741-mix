@@ -39,6 +39,7 @@ enum SelfTest {
             var p = mix.prefs.engine
             p.historyThreshold = 3            // nur im Test: schnell als gespielt markieren (nicht gespeichert)
             p.phraseAnchor = .suggest         // nur vorschlagen: der Test verschiebt keinen Anker (keine eigenen Änderungen)
+            p.autoLoopBars = 16
             core.setPrefs(p)
             while store.tracks.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
             if env["MIX741_BENCH"] == "memory" { await memoryProbe(core, tracks: store.tracks); exit(0) }
@@ -59,6 +60,7 @@ enum SelfTest {
                 let s = core.snapshot().decks[d]
                 log(String(format: "Phrasen-Anker %@: %@", deckLetters[d], s.phraseSuggestion.map { String(format: "%+d Beats (Sicherheit %.2f)", $0, s.phraseConfidence) } ?? "kein Vorschlag"))
             }
+            autoLoopCheck(core)
             // nur Bild: beide Decks auf 1:00 stellen, nicht abspielen, kurz stehen lassen (für Screenshots)
             if ProcessInfo.processInfo.environment["MIX741_SNAPSHOT"] != nil {
                 core.seek(0, seconds: 60); core.seek(1, seconds: 60)
@@ -691,6 +693,37 @@ enum SelfTest {
 
     /// wird vom HistoryStore gesetzt, damit der Test genau seine eigene Datei entfernen kann
     nonisolated(unsafe) static var historyURL: URL?
+
+    /// Auto-Loop beim Laden (16 Takte): nur ohne gespeicherten Loop, Lage wie berechnet, nicht aktiv; Reloop springt hinein
+    static func autoLoopCheck(_ core: MixController) {
+        var reloops = 0
+        for d in 0..<2 {
+            let s = core.snapshot().decks[d], l = core.engine.loop(d)
+            let isLoop = { (c: Cue) in c.kind == .loop && c.lengthMs > 0 }
+            let stored = s.hotcues.values.contains(where: isLoop) || (s.track?.cues.contains { $0.hotcue < 0 && isLoop($0) } ?? false)
+            let want = stored ? nil : MixController.autoLoopRange(grid: s.grid, phraseAnchor: s.phraseTarget, bars: 16, range: s.playRange)
+            let ok = s.autoLoop == (want != nil) && !l.active
+                && want.map { abs($0.start - l.start) < 1e-6 && abs($0.end - l.end) < 1e-6 } ?? true
+            guard ok else {
+                log(String(format: "AUTO-LOOP FALSCH %@: auto %@ aktiv %@ · %.3f–%.3f s, soll %@", deckLetters[d], "\(s.autoLoop)", "\(l.active)",
+                           l.start, l.end, want.map { String(format: "%.3f–%.3f s", $0.start, $0.end) } ?? "keiner"))
+                exit(1)
+            }
+            guard want != nil, let g = s.grid else { log("Auto-Loop \(deckLetters[d]): keiner (\(stored ? "Track hat einen Loop" : "kein Grid / kein Platz"))"); continue }
+            core.reloop(d)
+            let r = core.engine.loop(d), pos = core.position(d)
+            guard r.active, core.snapshot().decks[d].loopActive, !core.snapshot().decks[d].autoLoop,
+                  abs(r.end - r.start - 64 * g.beat) < 1e-6, abs(pos - r.start) < 0.01 else {
+                log(String(format: "AUTO-LOOP FALSCH %@: Reloop aktiv %@ · %.3f–%.3f s, Position %.3f", deckLetters[d], "\(r.active)", r.start, r.end, pos))
+                exit(1)
+            }
+            core.exitLoop(d)
+            core.seek(d, seconds: s.cuePoint)
+            reloops += 1
+            log(String(format: "Auto-Loop %@: %.3f–%.3f s (16 Takte), nicht aktiv; Reloop -> aktiv, Position am Anfang", deckLetters[d], r.start, r.end))
+        }
+        log("AUTO-LOOP OK (\(reloops) Decks mit Auto-Loop)")
+    }
 
     static func log(_ s: String) {
         print("[selftest] \(s)")

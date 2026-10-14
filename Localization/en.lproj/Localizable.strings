@@ -1390,3 +1390,5 @@
 "Beat am Anfang um %@ ms versetzt" = "beat at the start off by %@ ms";
 "Tempo am Anfang %@" = "tempo at the start %@";
 "Sicherheit %lld %%" = "confidence %lld %%";
+"Auto-Loop beim Laden" = "Auto loop on load";
+"nur wenn der track keinen loop hat (loop-hotcue, loop-memory-cue). beginnt am ersten phrasenanfang (phrasen-anker, sonst grid-anker) im schnitt, nicht aktiv, rahmen mit AUTO in der wellenform. reloop springt hinein, loop übernimmt ihn ohne sprung, wenn die position darin oder kurz davor liegt. nicht gespeichert." = "only if the track has no loop (loop hotcue, loop memory cue). starts on the first phrase start (phrase anchor, else grid anchor) inside the cut, not active, frame with AUTO in the waveform. reloop jumps in, loop takes it without a jump when the playhead is inside or just before it. not saved.";

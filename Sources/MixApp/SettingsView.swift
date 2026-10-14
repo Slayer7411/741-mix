@@ -387,6 +387,13 @@ struct DeckSettings: View {
                 }
                 Text("rechtsklick auf einen loop-hotcue -> active loop (punkt auf der taste, gestrichelter rahmen in der wellenform). erreicht die position den loop-anfang, rastet der loop ein, die loop-taste verlässt ihn. gespeichert je track in den eigenen änderungen.")
                     .settingsHint()
+                Picker("Auto-Loop beim Laden", selection: $mix.prefs.engine.autoLoopBars) {
+                    Text("Aus").tag(0)
+                    ForEach([4, 8, 16, 32], id: \.self) { Text("\($0) Takte").tag($0) }
+                }
+                .background(UITestMark(name: "auto loop"))
+                Text("nur wenn der track keinen loop hat (loop-hotcue, loop-memory-cue). beginnt am ersten phrasenanfang (phrasen-anker, sonst grid-anker) im schnitt, nicht aktiv, rahmen mit AUTO in der wellenform. reloop springt hinein, loop übernimmt ihn ohne sprung, wenn die position darin oder kurz davor liegt. nicht gespeichert.")
+                    .settingsHint()
             }
             Section("Zeilen je Deck") {
                 ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in

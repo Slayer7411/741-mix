@@ -127,6 +127,7 @@ enum UISelfTest {
             ("aufnahme", recording),
             ("linien", gridLines),
             ("rip", ripCheck),
+            ("auto-loop", autoLoop),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1697,6 +1698,52 @@ extension UISelfTest {
     /// Rip-Prüfung: Befund (fremder Anfang 4 s) für Track C im Speicher -> Spalte „▸ 4,0 s“, Klick auf ◆ RIP filtert
     /// Bereich A auf genau diesen Track, Quelle ZU BEARBEITEN enthält ihn; Rechtsklick-Eintrag „Schnitt IN auf 4,0 s
     /// setzen“ -> trimStart 4 s in edits (nur Speicher), Befund erledigt, Liste leer. Danach alles zurück
+    /// ⌘, DECKS: Auswahl Auto-Loop; 8 Takte, Track ohne Loop in Deck B: inaktiver Loop über 8 Takte, Rahmen mit AUTO
+    static func autoLoop(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, d = 1, bars0 = mix.prefs.engine.autoLoopBars
+        func loaded(_ key: String) -> Bool { let s = mix.core.snapshot().decks[d]; return !s.loading && s.track?.key == key && mix.core.trackAudio(d) != nil }
+        defer {
+            mix.prefs.engine.autoLoopBars = bars0
+            _ = mix.load(t[1], deck: d, force: true)
+            u.spin(30) { loaded(t[1].key) }
+            mix.pull()
+        }
+        let root = SettingsView(selection: "DECKS").environment(mix).environment(u.browser).environment(u.store)
+        let host = NSHostingView(rootView: root)
+        let w = UITestWindow(contentRect: NSRect(origin: UITestWindow.origin, size: NSSize(width: 900, height: 4000)), styleMask: [.titled],
+                             backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        w.alphaValue = 0
+        w.ignoresMouseEvents = true
+        w.contentView = host
+        w.orderFrontRegardless()
+        func settingsViews() -> [NSView] {
+            func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+            return all(w.contentView?.superview ?? host)
+        }
+        u.spin(5) { settingsViews().contains { ($0 as? UITestMark.V)?.name == "auto loop" } }
+        let found = settingsViews().contains { ($0 as? UITestMark.V)?.name == "auto loop" }
+        w.orderOut(nil)
+        check(found, "⌘, DECKS: Auswahl Auto-Loop fehlt")
+        mix.prefs.engine.autoLoopBars = 8
+        if mix.deck(d).playing { mix.togglePlay(d) }
+        var track = t[1]
+        track.cues.removeAll { $0.kind == .loop }
+        mix.core.load(track, deck: d)
+        u.spin(30) { loaded(track.key) }
+        mix.pull()
+        let s = mix.deck(d), l = mix.engine.loop(d)
+        guard let g = s.grid else { fail("AUTO-LOOP: Deck B ohne Grid") }
+        check(s.autoLoop && !l.active && abs(l.end - l.start - 32 * g.beat) < 1e-6,
+              String(format: "AUTO-LOOP: auto %@ aktiv %@ · %.3f–%.3f s statt 8 Takte (%.3f s)", "\(s.autoLoop)", "\(l.active)", l.start, l.end, 32 * g.beat))
+        func shown() -> Bool {
+            u.views.compactMap { $0 as? WaveLayerNSView }.contains { v in v.autoLoopShown.map { abs($0.start - l.start) < 1e-9 && abs($0.end - l.end) < 1e-9 } ?? false }
+        }
+        u.spin(3) { shown() }
+        check(shown(), "AUTO-LOOP: Rahmen mit AUTO in der Wellenform fehlt")
+        log(String(format: "auto-loop: %.3f–%.3f s (8 takte), nicht aktiv, rahmen mit AUTO", l.start, l.end))
+    }
+
     static func ripCheck(_ u: UIDriver, _ t: [Track]) {
         let pane = u.browser.paneA, rips = RipChecks.shared, track = t[2]
         let mix0 = rips.mix, lib0 = rips.library, source0 = pane.source, edit0 = u.mix.edits.edit(for: track.key)

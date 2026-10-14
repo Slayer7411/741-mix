@@ -35,6 +35,8 @@ public struct DeckEdit: Equatable, Sendable {
     public var loopStart = 0.0, loopEnd = 0.0
     public var loopIn: Double?
     public var loopSize = 4.0
+    /// Loop im Kern ist der Auto-Loop vom Laden
+    public var autoLoop = false
     public var keyShift = 0
     public var keylock = true
     public var tempoPct = 0.0
@@ -52,7 +54,7 @@ public struct DeckEdit: Equatable, Sendable {
     public func same(as o: DeckEdit, in p: Parts) -> Bool {
         if trackKey != o.trackKey { return false }
         if p.contains(.cues), hotcues != o.hotcues || activeLoops != o.activeLoops { return false }
-        if p.contains(.loop), loopActive != o.loopActive || loopIn != o.loopIn || loopSize != o.loopSize
+        if p.contains(.loop), loopActive != o.loopActive || loopIn != o.loopIn || loopSize != o.loopSize || autoLoop != o.autoLoop
             || (loopActive || o.loopActive) && (abs(loopStart - o.loopStart) > 1e-6 || abs(loopEnd - o.loopEnd) > 1e-6) { return false }
         if p.contains(.position), abs(position - o.position) >= Self.positionTolerance { return false }
         if p.contains(.grid), grid != o.grid || gridEdited != o.gridEdited { return false }

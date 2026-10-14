@@ -73,3 +73,14 @@ import Testing
     let odd = AppPrefs.decode(Data(#"{"ui": {"gridLineWeight": "xyz", "zoom": 1.25}}"#.utf8))
     #expect(odd.ui.gridLineWeight == .fine && odd.ui.zoom == 1.25)
 }
+
+// Auto-Loop beim Laden: Standard 16 Takte, alte Einstellungen ohne das Feld bekommen ihn, gespeicherte Werte bleiben
+@MainActor @Test func autoLoopPrefDefaultAndOldPrefs() throws {
+    let old = AppPrefs.decode(Data(#"{"engine": {"snap": false, "defaultLoopSize": 8}}"#.utf8))
+    #expect(old.engine.autoLoopBars == 16 && !old.engine.snap && old.engine.defaultLoopSize == 8)
+    var p = old
+    p.engine.autoLoopBars = 0
+    #expect(AppPrefs.decode(try JSONEncoder().encode(p)).engine.autoLoopBars == 0)
+    p.engine.autoLoopBars = 32
+    #expect(AppPrefs.decode(try JSONEncoder().encode(p)).engine.autoLoopBars == 32)
+}
