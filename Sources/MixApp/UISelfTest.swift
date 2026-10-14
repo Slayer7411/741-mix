@@ -1455,14 +1455,22 @@ extension UISelfTest {
     /// bleiben dahinter (Kommentar ▼, dann BPM: BPM ▲ · Kommentar ▼2); zweiter Klick dreht; Liste wirklich so sortiert
     static func multiSort(_ u: UIDriver, _ t: [Track]) {
         let pane = u.browser.paneA
-        let order0 = pane.sortOrder
-        defer { pane.sortOrder = order0; u.spin(0.3) }
+        let order0 = pane.sortOrder, source0 = pane.source
+        defer { pane.sortOrder = order0; pane.source = source0; u.spin(0.3) }
+        pane.source = .collection
         pane.sortOrder = [KeyPathComparator(\Track.artist)]
-        u.spin(2) { !pane.listPending }
-        guard let head = u.views.compactMap({ $0 as? TrackHeaderView }).first(where: { h in
-            guard let tv = h.tableView else { return false }
-            return tv.numberOfRows == pane.shown.count && u.frame(h).minX < u.window.frame.width / 2
-        }), let tv = head.tableView else { fail("Tabellenkopf von Bereich A nicht gefunden") }
+        u.spin(3) { !pane.listPending && !pane.shown.isEmpty }
+        func findHead() -> TrackHeaderView? {
+            u.views.compactMap({ $0 as? TrackHeaderView }).first(where: { h in
+                guard let tv = h.tableView else { return false }
+                return tv.numberOfRows == pane.shown.count && u.frame(h).minX < u.window.frame.width / 2
+            })
+        }
+        u.spin(5) { findHead() != nil }   // Tabelle lädt die Collection nach dem Quellwechsel
+        guard let head = findHead(), let tv = head.tableView else { fail("Tabellenkopf von Bereich A nicht gefunden") }
+        // die Tabelle muss die Sortierung des Bereichs übernommen haben, sonst stapelt AppKit nichts dahinter
+        u.spin(2) { tv.sortDescriptors.map(\.key) == ["artist"] }
+        check(tv.sortDescriptors.map(\.key) == ["artist"], "Tabelle zeigt nicht die Artist-Sortierung: \(tv.sortDescriptors.map { $0.key ?? "?" })")
         func header(_ id: String) -> NSPoint {
             guard let i = tv.tableColumns.firstIndex(where: { $0.identifier.rawValue == id && !$0.isHidden }) else { fail("Spalte \(id) fehlt") }
             let r = head.headerRect(ofColumn: i)
