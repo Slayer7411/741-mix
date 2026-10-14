@@ -798,54 +798,132 @@ struct Phaser {
     }
 };
 
-// ---------- Plugin (Audio Unit, VST3 – MixDSPPlugin.h) ----------
-// wie Delay/Reverb: aus = Eingang zu, Ausgang klingt aus; gerechnet wird, bis es 1 s (oder die vom Plugin gemeldete
-// Nachklingzeit, höchstens 30 s) unter -100 dB war
-struct PluginSlot {
+// ---------- Plugin-Kette (Audio Unit, VST3 – MixDSPPlugin.h) ----------
+// bis zu kChain Plugins in Reihe. Wie Delay/Reverb: aus = Eingang zu, Ausgang klingt aus; gerechnet wird, bis es 1 s
+// (oder die vom Plugin gemeldete Nachklingzeit, höchstens 30 s) unter -100 dB war. Ein Platz aus = durchreichen,
+// seine Fahne klingt aus. D/W wirkt auf die ganze Kette (trocken = Eingang der Kette)
+constexpr int kChain = MDSP_FX_CHAIN;
+
+struct ChainSlot {
     std::atomic<MDPlugin *> plugin{nullptr};
-    std::atomic<uint64_t> releaseAt{0};   // Render-Zähler, ab dem das vorherige Plugin frei ist
-    /// NaN im Deck (healDeck): Plugin bis zum Zurücksetzen durch den Steuer-Thread nicht rechnen
+    /// NaN (im Deck oder aus dem Plugin): nicht rechnen, bis der Steuer-Thread es zurückgesetzt hat
     std::atomic<bool> resetPending{false};
     // nur Audio-Thread
     MDPlugin *last = nullptr;
-    float send = 0;
+    float mix = -1;           // Anteil des Plugins (Platz an = 1, aus = 0, Rampe dazwischen), -1 = beim ersten Block setzen
     int quiet = 0x7fffffff;   // Samples in Folge unter der Schwelle
-    std::vector<float> dryL, dryR;
     int quietLimit(double fs) const {
         double t = last ? double(last->tailFrames.load(std::memory_order_relaxed)) : 0;
         return int(std::clamp(t, fs, 30 * fs));
     }
     bool tail(double fs) const { return last && quiet < quietLimit(fs); }
-    bool active(double fs) const { return send > 0.0005f || tail(fs); }
-    /// Audio-Thread: Zeiger des Steuer-Threads übernehmen; ein neues (oder kein) Plugin beginnt ohne Fahne
-    MDPlugin *sync() {
-        MDPlugin *p = plugin.load(std::memory_order_acquire);
-        if (p != last) { last = p; send = 0; quiet = 0x7fffffff; }
-        return p;
+};
+
+struct PluginChain {
+    ChainSlot slot[kChain];
+    /// Plätze werden zusammen getauscht: Steuer-Thread zählt vor und nach dem Schreiben hoch (ungerade = wird geschrieben)
+    std::atomic<uint32_t> seq{0};
+    std::atomic<uint64_t> releaseAt{0};   // Render-Zähler, ab dem herausgenommene Plugins frei sind
+    // nur Audio-Thread
+    uint32_t seen = 0;
+    bool any = false;
+    float send = 0;
+    std::vector<float> dryL, dryR, xL, xR;
+    void init() {
+        dryL.assign(kMaxFrames, 0); dryR.assign(kMaxFrames, 0); xL.assign(kMaxFrames, 0); xR.assign(kMaxFrames, 0);
     }
-    /// out = dry·(1 − dw·send) + wet·dw – an: klassisches Dry/Wet, aus: trocken + ausklingende Fahne
-    void run(MDPlugin *p, float *L, float *R, int n, float dw, bool on, double fs) {
+    /// Audio-Thread: vollständig geschriebenen Stand übernehmen. Ein verschobenes Plugin behält Rampe und Fahne, ein neues
+    /// blendet ein; eine vorher leere Kette beginnt ohne Fahne mit geschlossenem Eingang
+    void sync() {
+        uint32_t s = seq.load(std::memory_order_acquire);
+        if (s == seen || (s & 1)) return;
+        MDPlugin *p[kChain];
+        for (int k = 0; k < kChain; k++) p[k] = slot[k].plugin.load(std::memory_order_acquire);
+        if (seq.load(std::memory_order_acquire) != s) return;
+        seen = s;
+        MDPlugin *oldP[kChain]; float oldMix[kChain]; int oldQuiet[kChain];
+        for (int k = 0; k < kChain; k++) { oldP[k] = slot[k].last; oldMix[k] = slot[k].mix; oldQuiet[k] = slot[k].quiet; }
+        bool was = any;
+        any = false;
+        for (int k = 0; k < kChain; k++) {
+            ChainSlot &c = slot[k];
+            if (p[k] != oldP[k]) {
+                c.last = p[k]; c.mix = was ? 0.f : -1.f; c.quiet = 0x7fffffff;
+                for (int j = 0; j < kChain; j++) if (p[k] && oldP[j] == p[k]) { c.mix = oldMix[j]; c.quiet = oldQuiet[j]; }
+            }
+            if (p[k]) any = true;
+        }
+        if (!was) send = 0;
+    }
+    bool active(double fs) const {
+        if (send > 0.0005f) return true;
+        for (auto &c : slot) if (c.tail(fs)) return true;
+        return false;
+    }
+    /// NaN/Inf aus einem Plugin auf 0 (sonst vergiftet es die folgenden Plätze), Platz zurücksetzen lassen; Spitzenwert
+    static float clean(ChainSlot &c, float *L, float *R, int n) {
+        float peak = 0; bool bad = false;
+        for (int i = 0; i < n; i++) {
+            if (!std::isfinite(L[i])) { L[i] = 0; bad = true; }
+            if (!std::isfinite(R[i])) { R[i] = 0; bad = true; }
+            peak = std::max(peak, std::max(std::fabs(L[i]), std::fabs(R[i])));
+        }
+        if (bad) c.resetPending.store(true, std::memory_order_release);
+        return peak;
+    }
+    /// out = Eingang·(1 − dw·send) + Kette·dw – an: klassisches Dry/Wet, aus: trocken + ausklingende Fahnen
+    void run(float *L, float *R, int n, float dw, bool on, const std::atomic<float> *slotOn, double tempo, double beat, double fs) {
         float target = on ? 1.f : 0.f;
         std::memcpy(dryL.data(), L, sizeof(float) * n); std::memcpy(dryR.data(), R, sizeof(float) * n);
         float s = send;
         for (int i = 0; i < n; i++) { s += (target - s) * 0.002f; L[i] *= s; R[i] *= s; }
-        mdplug_process(p, L, R, n);
-        float peak = 0;
+        for (int k = 0; k < kChain; k++) {
+            ChainSlot &c = slot[k];
+            MDPlugin *p = c.last;
+            if (!p || c.resetPending.load(std::memory_order_acquire)) continue;
+            bool kOn = slotOn[k].load(std::memory_order_relaxed) > 0.5f;
+            float kt = kOn ? 1.f : 0.f;
+            if (c.mix < 0) c.mix = kt;
+            if (!kOn && c.mix == 0.f && !c.tail(fs)) continue;   // aus und verklungen: durchreichen
+            p->tempo = tempo; p->beat = beat;
+            float peak;
+            if (kOn && c.mix == 1.f) {
+                mdplug_process(p, L, R, n);
+                peak = clean(c, L, R, n);
+            } else {   // Platz blendet ein/aus: x·(1 − m) + P(x·m)
+                std::memcpy(xL.data(), L, sizeof(float) * n); std::memcpy(xR.data(), R, sizeof(float) * n);
+                float m = c.mix;
+                for (int i = 0; i < n; i++) { m += (kt - m) * 0.002f; L[i] *= m; R[i] *= m; }
+                mdplug_process(p, L, R, n);
+                peak = clean(c, L, R, n);
+                m = c.mix;
+                for (int i = 0; i < n; i++) { m += (kt - m) * 0.002f; L[i] += xL[i] * (1 - m); R[i] += xR[i] * (1 - m); }
+                c.mix = std::fabs(kt - m) < 1e-4f ? kt : m;
+            }
+            if ((on && kOn) || peak >= 1e-5f) c.quiet = 0; else if (c.quiet < 0x7fff0000) c.quiet += n;
+        }
         for (int i = 0; i < n; i++) {
             send += (target - send) * 0.002f;
-            float wl = L[i], wr = R[i];
-            if (!std::isfinite(wl)) wl = 0;
-            if (!std::isfinite(wr)) wr = 0;
-            peak = std::max(peak, std::max(std::fabs(wl), std::fabs(wr)));
             float k = 1 - dw * send;
-            L[i] = dryL[i] * k + wl * dw; R[i] = dryR[i] * k + wr * dw;
+            L[i] = dryL[i] * k + L[i] * dw; R[i] = dryR[i] * k + R[i] * dw;
         }
-        if (on || peak >= 1e-5f) quiet = 0; else if (quiet < 0x7fff0000) quiet += n;
+    }
+    /// Steuer-Thread: alle Plätze in einem Schritt
+    void set(MDPlugin *const *p, int count, uint64_t renders) {
+        seq.fetch_add(1, std::memory_order_acq_rel);
+        for (int k = 0; k < kChain; k++) slot[k].plugin.store(k < count ? p[k] : nullptr, std::memory_order_release);
+        seq.fetch_add(1, std::memory_order_release);
+        // ein Block, der vor dem Tausch begann, kann die alten noch rechnen – frei erst nach dem nächsten fertigen Block
+        releaseAt.store(renders + 1);
+    }
+    bool contains(MDPlugin *p) const {
+        for (auto &c : slot) if (c.plugin.load() == p) return true;
+        return false;
     }
 };
 
 struct FXChain {   // eine FX-Unit für ein Deck
-    SweepFilter filter; Delay delay; Reverb reverb; ReverbClassic classic; PluginSlot plug;
+    SweepFilter filter; Delay delay; Reverb reverb; ReverbClassic classic; PluginChain plug;
     Gater gater; Roll roll; Flanger flanger; Phaser phaser;
 };
 
@@ -937,12 +1015,23 @@ struct Workers {
     std::atomic<int> joined{0}, realtime{0};   // Worker in der Workgroup / mit Echtzeit-Policy (Diagnose)
 };
 
+/// Master-Bus: Plugin-Kette nach der Summe der Decks auf einem Kanalpaar (Audio-Thread, seriell nach den Decks)
+struct MasterBus {
+    PluginChain chain;
+    std::atomic<int> ch{-1};              // erster Kanal des Paars, -1 = aus (externer Mixer: kein Summenpunkt)
+    std::atomic<float> on{0}, dw{1};
+    std::atomic<float> slotOn[MDSP_FX_CHAIN];
+    std::atomic<float> rms{0}, peak{0};   // Pegel des Paars nach dem Master-Bus, vor der Master-Lautstärke
+};
+
 struct MDEngine {
     double fs;
     Clock clock;
     Workers workers;
     Deck decks[MDSP_DECKS];
     std::atomic<float> fxp[MDSP_FX_UNITS][MDFX_PARAM_COUNT];
+    std::atomic<float> chainOn[MDSP_FX_UNITS][MDSP_FX_CHAIN];   // Platz der Plugin-Kette an (gilt für alle Decks der Unit)
+    MasterBus bus;
     std::atomic<float> master{0.85f};
     float masterSm = 0.85f;
     uint64_t renderHost = 0;   // setzt der CoreAudio-Callback vor jedem Block
@@ -1058,7 +1147,7 @@ static void healDeck(Deck &d) {
         c.gater.clear(); c.roll.clear(); c.flanger.clear(); c.phaser.clear();
         for (Biquad *b : {&c.reverb.hp1, &c.reverb.hp2, &c.reverb.lp, &c.reverb.lowCut, &c.reverb.tilt,
                           &c.classic.hp, &c.classic.lp, &c.classic.lowCut}) b->clearState();   // clear() lässt die Filter stehen
-        if (c.plug.last) c.plug.resetPending.store(true);   // Plugin zurücksetzen lassen (Steuer-Thread), bis dahin trocken
+        for (auto &k : c.plug.slot) if (k.last) k.resetPending.store(true);   // Plugins zurücksetzen lassen (Steuer-Thread), bis dahin durchreichen
     }
     d.stretch.reset();
     d.wasStretching = false; d.latSm = 0; d.inAcc = 0;
@@ -1241,13 +1330,10 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n) {
             if (onC || c.classic.active()) c.classic.run(L, R, n, size, level, wet, hpP, lpP, lvl, br, pre, onC, dwSend, frz);
             if (onF || c.reverb.active()) c.reverb.run(L, R, n, size, level, wet, hpP, lpP, lvl, br, pre, onF, dwSend, frz);
         }
-        MDPlugin *pl = c.plug.sync();
-        bool plugOn = pl && fp[MDFX_PLUGIN_ON].load() > 0.5f;
-        if (pl && !c.plug.resetPending.load(std::memory_order_acquire) && (plugOn || c.plug.active(e->fs))) {
-            pl->tempo = e->clock.bpm.load(std::memory_order_relaxed);
-            pl->beat = e->fxBeat;
-            c.plug.run(pl, L, R, n, dw, plugOn, e->fs);
-        }
+        c.plug.sync();
+        bool plugOn = c.plug.any && fp[MDFX_PLUGIN_ON].load() > 0.5f;
+        if (c.plug.any && (plugOn || c.plug.active(e->fs)))
+            c.plug.run(L, R, n, dw, plugOn, e->chainOn[u], e->clock.bpm.load(std::memory_order_relaxed), e->fxBeat, e->fs);
     }
 
     // Lautstärke; Ausgangspaar und Summe in mixDeck (Audio-Thread, nach dem Join)
@@ -1386,10 +1472,13 @@ MDEngine *mdsp_create(double sampleRate) {
         for (auto &c : d.fx) {
             c.delay.init(sampleRate); c.reverb.init(sampleRate); c.classic.init(sampleRate);
             c.gater.init(sampleRate); c.roll.init(sampleRate); c.flanger.init(sampleRate); c.phaser.init(sampleRate);
-            c.plug.dryL.assign(kMaxFrames, 0); c.plug.dryR.assign(kMaxFrames, 0);
+            c.plug.init();
         }
     }
     for (auto &u : e->fxp) for (auto &x : u) x.store(0);
+    for (auto &u : e->chainOn) for (auto &x : u) x.store(1);
+    for (auto &x : e->bus.slotOn) x.store(1);
+    e->bus.chain.init();
     for (int u = 0; u < MDSP_FX_UNITS; u++) {
         e->fxp[u][MDFX_DRYWET].store(1); e->fxp[u][MDFX_DELAY_SECONDS].store(0.46f);
         e->fxp[u][MDFX_DELAY_FEEDBACK].store(0.45f); e->fxp[u][MDFX_REVERB_SIZE].store(0.6f);
@@ -1459,28 +1548,64 @@ void mdsp_set_param(MDEngine *e, int deck, MDParam p, float v) { if (std::isfini
 void mdsp_set_fx(MDEngine *e, int unit, MDFXParam p, float v) { if (std::isfinite(v)) e->fxp[unit][p].store(v); }
 void mdsp_set_master(MDEngine *e, float v) { if (std::isfinite(v)) e->master.store(v); }
 
+static PluginChain *chainOf(MDEngine *e, int unit, int deck) {
+    if (unit == MDSP_MASTER_UNIT) return &e->bus.chain;
+    if (unit < 0 || unit >= MDSP_FX_UNITS || deck < 0 || deck >= MDSP_DECKS) return nullptr;
+    return &e->decks[deck].fx[unit].plug;
+}
+
 MDPlugin *mdsp_set_fx_plugin(MDEngine *e, int unit, int deck, MDPlugin *p) {
-    PluginSlot &s = e->decks[deck].fx[unit].plug;
-    MDPlugin *old = s.plugin.exchange(p, std::memory_order_acq_rel);
-    // ein Block, der vor dem Tausch begann, kann das alte noch rechnen – frei erst nach dem nächsten fertigen Block
-    s.releaseAt.store(e->renders.load() + 1);
+    PluginChain *c = chainOf(e, unit, deck);
+    if (!c) return nullptr;
+    MDPlugin *cur[kChain];
+    for (int k = 0; k < kChain; k++) cur[k] = c->slot[k].plugin.load();
+    MDPlugin *old = cur[0];
+    cur[0] = p;
+    c->set(cur, kChain, e->renders.load());
     return old;
 }
 
 bool mdsp_fx_plugin_released(MDEngine *e, int unit, int deck, MDPlugin *old) {
-    PluginSlot &s = e->decks[deck].fx[unit].plug;
-    if (!old) return true;
-    if (s.plugin.load() == old) return false;
-    return e->renders.load() >= s.releaseAt.load();
+    PluginChain *c = chainOf(e, unit, deck);
+    if (!old || !c) return true;
+    if (c->contains(old)) return false;
+    return e->renders.load() >= c->releaseAt.load();
 }
 
-bool mdsp_fx_plugin_needs_reset(MDEngine *e, int unit, int deck) {
-    return e->decks[deck].fx[unit].plug.resetPending.load(std::memory_order_acquire);
+bool mdsp_fx_plugin_needs_reset(MDEngine *e, int unit, int deck) { return mdsp_fx_chain_needs_reset(e, unit, deck, 0); }
+void mdsp_fx_plugin_reset_done(MDEngine *e, int unit, int deck) { mdsp_fx_chain_reset_done(e, unit, deck, 0); }
+
+void mdsp_set_fx_chain(MDEngine *e, int unit, int deck, MDPlugin *const *plugins, int count) {
+    if (PluginChain *c = chainOf(e, unit, deck)) c->set(plugins, plugins ? count : 0, e->renders.load());
 }
 
-void mdsp_fx_plugin_reset_done(MDEngine *e, int unit, int deck) {
-    e->decks[deck].fx[unit].plug.resetPending.store(false, std::memory_order_release);
+void mdsp_set_fx_chain_on(MDEngine *e, int unit, int slot, bool on) {
+    if (slot < 0 || slot >= kChain) return;
+    if (unit == MDSP_MASTER_UNIT) e->bus.slotOn[slot].store(on ? 1.f : 0.f);
+    else if (unit >= 0 && unit < MDSP_FX_UNITS) e->chainOn[unit][slot].store(on ? 1.f : 0.f);
 }
+
+bool mdsp_fx_chain_needs_reset(MDEngine *e, int unit, int deck, int slot) {
+    PluginChain *c = chainOf(e, unit, deck);
+    return c && slot >= 0 && slot < kChain && c->slot[slot].resetPending.load(std::memory_order_acquire);
+}
+
+void mdsp_fx_chain_reset_done(MDEngine *e, int unit, int deck, int slot) {
+    PluginChain *c = chainOf(e, unit, deck);
+    if (c && slot >= 0 && slot < kChain) c->slot[slot].resetPending.store(false, std::memory_order_release);
+}
+
+void mdsp_set_master_fx(MDEngine *e, bool on, float dryWet) {
+    e->bus.on.store(on ? 1.f : 0.f);
+    if (std::isfinite(dryWet)) e->bus.dw.store(std::clamp(dryWet, 0.f, 1.f));
+}
+
+void mdsp_set_master_fx_channel(MDEngine *e, int firstChannel) {
+    e->bus.ch.store(firstChannel < 0 ? -1 : firstChannel);
+    if (firstChannel < 0) { e->bus.rms.store(0); e->bus.peak.store(0); }
+}
+
+void mdsp_master_levels(MDEngine *e, float *rms, float *peak) { *rms = e->bus.rms.load(); *peak = e->bus.peak.load(); }
 void mdsp_seek(MDEngine *e, int deck, double s) {
     if (!std::isfinite(s)) return;
     Deck &d = e->decks[deck];
@@ -1552,6 +1677,26 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
         if (e->workers.enabled.load(std::memory_order_relaxed)) renderDecksParallel(e, n);
         else for (auto &d : e->decks) renderDeckBlock(e, d, n);
         for (auto &d : e->decks) mixDeck(e, d, o, std::min(channels, 64), n);
+        // Master-Bus: nach der Summe, vor Master-Lautstärke und Begrenzung (Vorhören bleibt auf seinem Paar unberührt)
+        MasterBus &mb = e->bus;
+        mb.chain.sync();
+        int mch = mb.ch.load(std::memory_order_relaxed);
+        if (mb.chain.any && mch >= 0 && mch + 1 < std::min(channels, 64)) {
+            bool on = mb.on.load(std::memory_order_relaxed) > 0.5f;
+            if (on || mb.chain.active(e->fs))
+                mb.chain.run(o[mch], o[mch + 1], n, mb.dw.load(std::memory_order_relaxed), on, mb.slotOn,
+                             k.bpm.load(std::memory_order_relaxed), e->fxBeat, e->fs);
+        }
+        if (mch >= 0 && mch + 1 < std::min(channels, 64)) {
+            float sum = 0, pk = 0;
+            for (int i = 0; i < n; i++) {
+                float l = o[mch][i], r = o[mch + 1][i];
+                sum += (l * l + r * r) * 0.5f; pk = std::max(pk, std::max(std::fabs(l), std::fabs(r)));
+            }
+            if (!std::isfinite(sum)) sum = pk = 0;
+            mb.rms.store(mb.rms.load(std::memory_order_relaxed) * 0.7f + std::sqrt(sum / n) * 0.3f, std::memory_order_relaxed);
+            mb.peak.store(std::max(pk, mb.peak.load(std::memory_order_relaxed) * 0.85f), std::memory_order_relaxed);
+        }
         done += n;
     }
     float m = e->master.load();
