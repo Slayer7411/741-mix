@@ -44,7 +44,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * rows per deck (`ui.deckRows`), compact decks
 * master clock & metronome: metronome output pair
 * phrase anchor: off / suggest (default) / automatic -> on load the anchor is checked against the track's 8-bar structure, see manual 05
-* edit mode & tool-loops: snap when marking (`ui.editSnap`: 1 beat / 1 bar / 2 / 4 / 8 bars, default 1 bar), load the cut result into the deck (`ui.cutLoadsResult`), tool-loops into folder … (`ui.toolLoopFolder`, empty = next to the original)
+* edit mode & tool-loops: snap when marking (`ui.editSnap`: 1 beat / 1 bar / 2 / 4 / 8 bars, default 1 bar), load the cut result into the deck (`ui.cutLoadsResult`), tool-loops into folder … (`ui.toolLoopFolder`, empty = next to the original), prepare amp: allow clipping (`ui.prepAllowClipping`, off), prepare join: match tempo within ±0.5 % (`ui.prepJoinMatchTempo`, on) -> [manual](MANUAL.md#prepare-mode)
 * groove → midi (`groove`): midi source name (default `MINOS-741 Groove`), channel bass (1) / drums (10), bass octave 0-3 (C3 = 60, default 1), length without loop 1 / 2 bars (default 2), offset −100…100 ms. instrument and style of the deck row are saved here too
 
 ## ◆ MIXER & FX

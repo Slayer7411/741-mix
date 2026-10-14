@@ -384,6 +384,12 @@ struct MixApp: App {
                          .editRender, .toolLoop2, .toolLoop4, .toolLoop8, .toolLoop16]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
+                Menu("Vorbereiten") {
+                    ForEach([ShortcutID.prepBIn, .prepBOut, .prepABA, .prepAnalyse, .prepAmpUp, .prepNorm, .prepAmpReset, .prepJoin,
+                             .prepSplit, .prepRender]) { a in
+                        Button(a.title) { run(a) }.shortcut(keys.combo(a))
+                    }
+                }
                 Divider()
                 Menu("Zeilen") {
                     ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in

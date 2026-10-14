@@ -120,6 +120,7 @@ enum UISelfTest {
             ("doppelklick", doubleClickReset),
             ("gestapelt", stackedSide),
             ("ungespielt", unplayed),
+            ("vorbereiten", prepareMode),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1090,5 +1091,130 @@ extension UISelfTest {
         u.spin(5) { !mix.prefs.ui.hidePlayedTracks && !pane.listPending && pane.shown.count == n0 }
         check(!mix.prefs.ui.hidePlayedTracks && pane.shown.count == n0, "zweiter Klick: \(pane.shown.count) Zeilen, soll \(n0)")
         log("ungespielt: \(n0) -> \(n0 - expected) zeilen (\(expected) gespielt) -> \(pane.shown.count)")
+    }
+}
+
+extension UISelfTest {
+    /// Profil „Vorbereiten“ an Deck A mit einer eigenen WAV (16 Bit, Spitze 0.5, 120 BPM, im Temp-Ordner): Werkzeugzeile
+    /// da, Deck im EDIT-Modus, Klick auf +3 -> Gain +3 dB, Klick auf RENDER -> `[amp +3].wav` im Test-Ordner mit
+    /// Spitze × 1,41. MIX741_UITEST_PREPSHOT=<png>: Bild des Fensters. Danach Ansicht und Deck A wie vorher
+    static func prepareMode(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, d = 0
+        if mix.deck(d).playing { mix.togglePlay(d) }
+        let savedUI = mix.prefs.ui, savedBig = u.browser.maximized, before = mix.deck(d).track, wasEditing = mix.editing(d)
+        UITestFrames.on = true
+        // Quelle: 20 s Kick, Spitze genau 0.5
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("minos741-uitest-prep-\(getpid())", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("prep.wav")
+        let rate = 44_100.0, n = Int(rate * 20)
+        do {
+            let settings: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: 2,
+                                           AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false]
+            let f = try AVAudioFile(forWriting: url, settings: settings)
+            let buf = AVAudioPCMBuffer(pcmFormat: f.processingFormat, frameCapacity: AVAudioFrameCount(n))!
+            buf.frameLength = AVAudioFrameCount(n)
+            let kick = (0..<n).map { i -> Double in
+                let k = (Double(i) / rate).truncatingRemainder(dividingBy: 0.5)
+                return sin(2 * .pi * (50 + 120 * exp(-k * 40)) * k) * exp(-k * 12)
+            }
+            let scale = 0.5 / (kick.map(abs).max() ?? 1)
+            for i in 0..<n {
+                let v = Float((kick[i] * scale * 32_768).rounded() / 32_768)   // 16 Bit genau, Spitze 16384 = 0.5
+                buf.floatChannelData![0][i] = v
+                buf.floatChannelData![1][i] = v
+            }
+            try f.write(from: buf)
+        } catch { fail("Vorbereiten: Test-WAV nicht geschrieben: \(error)") }
+        defer {
+            try? FileManager.default.removeItem(at: dir)
+            UITestFrames.on = false
+        }
+        var track = Track(key: url.path, path: url.path)
+        track.title = "Prepare Fixture"
+        track.bpm = 120
+        track.duration = 20
+        track.cues = [Cue(name: "AutoGrid", kind: .grid, startMs: 0, lengthMs: 0, hotcue: -1)]
+        _ = mix.load(track, deck: d, force: true)
+        u.spin(20) { mix.core.trackAudio(d) != nil && mix.deck(d).track?.key == track.key }
+        check(mix.core.trackAudio(d) != nil, "Vorbereiten: Test-WAV lädt nicht")
+        // Profil wie aus dem Menü
+        let p = mix.prefs.ui.layoutProfiles.first { $0.id == LayoutProfile.prepareID } ?? LayoutProfile.prepare(from: mix.prefs.ui)
+        LayoutProfiles.apply(p, mix: mix, browser: u.browser)
+        u.spin(5) { u.named("A prepare") != nil && mix.editing(d) && mix.editSession(d) != nil && mix.prepState(d).peak != nil }
+        guard let row = u.named("A prepare") else { fail("Vorbereiten: Werkzeugzeile A fehlt") }
+        check(mix.editing(d) && mix.editSession(d) != nil, "Vorbereiten: Deck A nicht im EDIT-Modus")
+        check(u.named("A transport") == nil && u.named("A loop") == nil, "Vorbereiten: Transport- / Loop-Zeile sichtbar")
+        // Deck-Puffer in der Rate des Geräts: Spitze bis ~0.2 dB neben der der Datei (RENDER misst die Ausgabe genau)
+        check(abs((mix.prepState(d).peak ?? 0) - 0.5) < 0.015, "Vorbereiten: Spitze \(mix.prepState(d).peak ?? -1) statt 0.5")
+        // Taste klicken; kommt der Klick nicht an, das Tastenkürzel derselben Aktion (KeyMonitor), kommt auch das nicht an
+        // (synthetische Ereignisse erreichen SwiftUI / die Monitore nicht, wie „groove“ auf main), die Aktion direkt.
+        // Der Weg steht im Log
+        var via: [String] = []
+        func press(_ id: String, key: ShortcutID, times: Int = 1, until done: () -> Bool, direct: () -> Void) {
+            let marks = u.views.compactMap { $0 as? UITestFrames.Marker }.filter { $0.id == "\(d).\(id)" && $0.window === u.window }
+            guard let m = marks.first(where: { u.frame(row).contains(u.center($0)) }) else {
+                fail("Vorbereiten: Taste \(id) nicht in der Zeile (\(marks.map { u.frame($0) }))")
+            }
+            u.click(at: u.center(m))
+            u.spin(1, until: done)
+            guard !done() else { via.append("\(id): klick"); return }
+            let keys = mix.prefs.keys
+            guard let combo = [KeyCombo("y", [.control, .option, .shift]), KeyCombo("u", [.control, .option, .shift])]
+                .first(where: { keys.action(for: $0) == nil || keys.action(for: $0) == key }) else { fail("Vorbereiten: keine freie Taste") }
+            mix.prefs.keys.set(key, combo)
+            u.window.makeFirstResponder(nil)
+            for _ in 0..<times { u.key(combo); u.spin(0.1) }
+            mix.prefs.keys = keys
+            u.spin(1, until: done)
+            guard !done() else { via.append("\(id): taste \(combo.symbols)"); return }
+            via.append("\(id): direkt (klick und taste nicht zugestellt)")
+            direct()
+            u.spin(1, until: done)
+        }
+        u.spin(0.3)
+        press("amp.3", key: .prepAmpUp, times: 3, until: { mix.prepState(d).gainDb == 3 }, direct: { mix.prepareAmp(d, add: 3) })
+        check(mix.prepState(d).gainDb == 3 && !mix.prepState(d).limited, "Vorbereiten: +3 setzt \(mix.prepState(d).gainDb) dB")
+        log(String(format: "vorbereiten: zeile %.0f × %.0f pt · gain %@ dB · headroom %.1f dB", u.frame(row).width, u.frame(row).height,
+                   Amplify.label(mix.prepState(d).gainDb), mix.prepState(d).headroomLeft ?? .nan))
+        if let out = ProcessInfo.processInfo.environment["MIX741_UITEST_PREPSHOT"], let v = u.window.contentView?.superview, let layer = v.layer {
+            u.spin(1)   // Zeile und Wellenform nachgezogen
+            let w = Int(v.bounds.width * 2), h = Int(v.bounds.height * 2)
+            if let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                ctx.scaleBy(x: 2, y: 2)
+                if v.isFlipped { ctx.translateBy(x: 0, y: v.bounds.height); ctx.scaleBy(x: 1, y: -1) }
+                layer.render(in: ctx)
+                if let img = ctx.makeImage(), let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) {
+                    try? png.write(to: URL(fileURLWithPath: out))
+                    log("vorbereiten: bild \(out)")
+                }
+            }
+        }
+        // Reste eines abgebrochenen Laufs im Test-Ordner
+        let cutDir = CutJob.selfTestDirectory
+        for f in (try? FileManager.default.contentsOfDirectory(atPath: cutDir.path)) ?? [] where f.hasPrefix("prep [amp") {
+            try? FileManager.default.removeItem(at: cutDir.appendingPathComponent(f))
+        }
+        CutJob.lastTracks = []
+        press("render", key: .prepRender, until: { CutJob.running || !CutJob.lastTracks.isEmpty }, direct: { mix.prepareRender(d) })
+        u.spin(30) { !CutJob.running && !CutJob.lastTracks.isEmpty }
+        log("vorbereiten: eingabe " + via.joined(separator: " · "))
+        guard let res = CutJob.lastTracks.first else { fail("Vorbereiten: RENDER ohne Ergebnis (\(StatusCenter.shared.current?.text ?? "-"))") }
+        let file = URL(fileURLWithPath: res.path)
+        defer { try? FileManager.default.removeItem(at: file) }
+        check(file.path.hasPrefix(CutJob.selfTestDirectory.path), "Vorbereiten: nicht im Test-Ordner: \(file.path)")
+        check(file.lastPathComponent == "prep [amp +3].wav", "Vorbereiten: Dateiname \(file.lastPathComponent)")
+        guard let s = try? AudioCutWriter.source(url: file, deck: nil) else { fail("Vorbereiten: Ergebnis nicht lesbar") }
+        let peak = AudioCutWriter.peak(s.channels, frames: s.frames)
+        check(s.frames == n && abs(peak / 0.5 - 1.4125) < 1e-3, "Vorbereiten: \(s.frames) Frames, Spitze \(peak) (soll \(0.5 * 1.4125))")
+        check(abs((CutJob.lastGain ?? 0) - 3) < 1e-6 && res.title == "Prepare Fixture [amp +3]", "Vorbereiten: Gain \(CutJob.lastGain ?? -1), Titel \(res.title)")
+        log(String(format: "vorbereiten: %@ · %d frames · spitze %.4f -> %.4f (× %.4f)", file.lastPathComponent, s.frames, 0.5, peak, peak / 0.5))
+        // zurück
+        mix.prefs.ui = savedUI
+        u.browser.maximized = savedBig
+        u.spin(1) { u.named("A prepare") == nil }
+        check(mix.editing(d) == wasEditing, "Vorbereiten: EDIT bleibt nach dem Profilwechsel an")
+        if let b = before { _ = mix.load(b, deck: d, force: true); u.spin(20) { mix.core.trackAudio(d) != nil && mix.deck(d).track?.key == b.key } }
     }
 }

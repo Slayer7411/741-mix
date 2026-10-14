@@ -39,12 +39,15 @@ struct DeckView: View {
                 // EDIT: Schnitt an der Stelle der Loop-Größen, Grid an der von Beatjump, falls die Grid-Zeile aus ist.
                 // Beide Zeilen liegen im selben Platz übereinander, Umschalten ändert nur die Deckkraft: keine neuen
                 // Hosting-Views, kein neues Deck-Layout. Der Schalter wird nur gelesen, wo er eine Zeile hinzufügt
-                if rows.loop || mix.editing(d) { row("loop", Slot(d: d, normal: LoopRow(d: d), edit: CutRow(d: d))) }
-                if rows.jump || (!gridRow && mix.editing(d)) {
+                // Vorbereiten: eigene Werkzeugzeile mit Schnitt und Grid, EDIT bringt dann keine Zeilen dazu
+                let editRows = !rows.prepare && mix.editing(d)
+                if rows.loop || editRows { row("loop", Slot(d: d, normal: LoopRow(d: d), edit: CutRow(d: d))) }
+                if rows.jump || (!gridRow && editRows) {
                     if gridRow { row("jump", JumpRow(d: d)) } else { row("jump", Slot(d: d, normal: JumpRow(d: d), edit: GridToolsRow(d: d))) }
                 }
                 if gridRow { row("grid", GridToolsRow(d: d)) }
                 if rows.groove { row("groove", GrooveRow(d: d)) }
+                if rows.prepare { row("prepare", PrepareRow(d: d)) }
             }
             if rows.tempo { TempoColumn(d: d).padding(.trailing, 3.z) }
         }

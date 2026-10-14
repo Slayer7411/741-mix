@@ -432,6 +432,10 @@ struct DeckSettings: View {
                 }
                 Text("edit-modus: ziehen markiert auf dem raster, klick setzt eine schnittmarke, die zeile bearbeitet die schnittliste, das deck spielt sie. render schreibt <name> [cut].m4a, tool 2 · 4 · 8 · 16 schreibt <name> [tool-loop n].m4a.")
                     .settingsHint()
+                Toggle("Vorbereiten AMP: Clipping erlauben (über 0 dBFS, Spitzen hart begrenzt)", isOn: $mix.prefs.ui.prepAllowClipping)
+                Toggle("Vorbereiten JOIN: Tempo der zweiten angleichen (bis ±0,5 %)", isOn: $mix.prefs.ui.prepJoinMatchTempo)
+                Text("vorbereiten (profil oder deck-zeile): amp hebt nur an (samples × faktor, kein limiter), ohne clipping höchstens bis 0 dbfs, norm = spitze −0.3 dbfs. join hängt die zweite datei am nächsten taktanfang an, split teilt am takt. alles als neue datei neben dem original.")
+                    .settingsHint()
             }
             GrooveSettingsSection()
         }

@@ -102,6 +102,7 @@ a profile = named set of view settings: decks shown (1 / 2 / 4), internal mixer,
 * `save current view as profile …` asks for a name, an existing name is overwritten. `update profile` -> active profile = current view. `delete profile …` asks first
 * ⌘, -> DISPLAY -> profiles: rename in place, APPLY, UPDATE, ↑ / ↓ order (first four = keys), ✕ delete, SAVE CURRENT VIEW
 * first start with this version: `Default Setup` (4 decks, no internal mixer, no fx units, rows readouts + phase bar + transport + loop, browser side by side, status bar automatic, no cover in the deck) and `Musik suchen` (english `Search music`: 1 deck, no mixer, browser ≥ 520 pt with tree, preview full row, cover preview, status bar always). other values from the view saved before. deleted profiles stay deleted
+* `Vorbereiten` (english `Prepare`: 1 deck, browser ≥ 520 pt, deck rows header + overview + the [prepare row](#prepare-mode)) is part of the first-start set; existing profile lists get it once
 * saved in `prefs.v1` -> `ui.layoutProfiles`, active one in `ui.activeLayoutProfile`
 
 ### status bar
@@ -146,7 +147,7 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 
 ### rows
 
-DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, comment, tags (comment 2), phase bar, overview, transport, hotcues (with IN / OUT / RE), loop sizes, beatjump, grid tools, groove → midi (off by default), pitch fader. waveform and header always stay.
+DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, comment, tags (comment 2), phase bar, overview, transport, hotcues (with IN / OUT / RE), loop sizes, beatjump, grid tools, groove → midi (off by default), prepare (off by default, [prepare mode](#prepare-mode)), pitch fader. waveform and header always stay. `all rows` leaves prepare off.
 
 * pitch fader off -> waveform and rows take its width
 * DECKS -> compact decks (⌥⌘K) -> pitch fader, hotcues and grid tools off / on together -> more room for waveform and beatgrid
@@ -396,6 +397,68 @@ real cut = a new audio file. the original is never changed.
 * source: decoded audio of the deck when it has the file's rate, else the file is decoded again at its own rate. runs on an own queue (not main, not audio thread), progress + ✕ in the status bar, then `Geschnitten: <file> · 5:12`
 * metadata: all fields of the original, title + ` [cut]`, bpm, key, comments, tags (comment 2), cover of the original. grid: anchor before the removed range stays, else it moves back by the removed length. keep: anchor from the new start, by whole bars behind it when it would lie before. hotcues, memory cues and loops outside the removed part move along, inside are dropped (loops over a cut edge too). a grid marker on a hotcue slot stays there on the new anchor
 * browser: tree entry CUTS (once a cut exists) with all cuts and their metadata, the file in MUSIC FOLDERS shows the same. saved in `cuts.json`, never in the collection file. `Collection prüfen` lists a cut in a music folder like any file without an entry
+
+### prepare mode
+
+one deck, one row to get tracks ready: grid, cut, gain, join, split, all on the grid. profile `Vorbereiten` (PROFILE ▾, view menu -> profile) or DECKS -> ROWS -> `Vorbereiten`. while the row is shown the deck is in edit mode (drag = mark on the snap, click = cut mark); when the row goes, edit mode goes off again if the row switched it on. every result is a new file next to the original, the original is never written.
+
+| button | action |
+|---|---|
+| ▶ / ❚❚ | play / pause |
+| GRID `BPM −` / `+` | grid bpm −/+ 0.01 |
+| TAP · SET | bpm from taps · beat 1 at the play position |
+| ◂ ▸ | grid 1 ms earlier / later |
+| ◂1 1▸ | anchor one beat earlier / later, raster stays |
+| CUT `1 BAR` | snap for marking (click = next, ⌥-click = previous) |
+| B IN · B OUT | start / end of the range at the play position, on the snap (no range yet: one snap step long) |
+| REMOVE · KEEP | edit list, as in [edit mode](#edit-mode) |
+| A-B-A | marked range = B out, A and A joined |
+| AMP `+3 dB · +1.2 dB bis Vollaussteuerung` | gain, dB left to 0 dBFS after the gain (red = limited) |
+| ANALYSE | measure the peak of what the deck plays |
+| +1 +3 +6 | gain up by that much |
+| NORM | peak exactly −0.3 dBFS |
+| 0 | gain off |
+| JOIN | second file at the end, on the grid |
+| SPLIT | two files |
+| RENDER | edit list + gain into one file |
+
+narrow deck: grid, B IN / B OUT / KEEP / clear and the AMP buttons move into menus (▾). keys: below.
+
+A-B-A:
+
+* B = the marked range (drag, B IN / B OUT) or, without a range, the segment between two cut marks under the play head. edges go to the nearest beat
+* B out of the edit list (REMOVE), 2 ms crossfade at the joint. the deck plays the result right away and stands 2 bars before the joint
+* ⌘Z = B back. A on both sides needs at least 10 ms, the result at least 1 s
+
+amp (gain only):
+
+* can the volume go up without changing the audio much: yes. AMP multiplies every sample by one factor (10^(dB/20)). no limiter, compressor or eq: waveform, dynamics and spectrum stay as they are. the samples are bit exact except for rounding to the output bit depth (×2 = +6.02 dB on a 16-bit file is exact) and clipping
+* clipping is blocked: asking for more than the headroom -> warning `AMP: nur +x dB ohne Clipping`, the gain stops at 0 dBFS. ⌘, -> DECKS -> `Vorbereiten AMP: Clipping erlauben` (off) -> more gain, peaks above full scale are cut hard
+* ANALYSE (also on first show and after every edit list change) measures the deck buffer (device rate, up to ~0.2 dB off the file). RENDER measures the peak of the finished output first and takes the gain from it: NORM lands exactly on −0.3 dBFS, a gain over the headroom is limited there too (note in the status bar)
+* new entry: PERCEIVED_DB − gain, PEAK_DB from the measured peak -> auto-gain plays the louder file at the same level as the original
+
+RENDER:
+
+* edit list + gain in one pass. file `<name> [amp +3].m4a`, with edits `[cut amp +3]`, edits only `[cut]` (taken -> `#2` …). nothing changed -> `Nichts zu rendern`
+* format: wav / aiff sources stay wav / aiff in their bit depth (float wav stays float), everything else apple lossless (16 bit from 16-bit sources, else 24; mp3 / aac decoded, no second lossy generation)
+* metadata, grid and cues of the original through the edit list (as RENDER in edit mode). a grid set while the edit list plays counts (mapped back to the original). `load result into the deck` loads it (load lock applies)
+
+JOIN:
+
+* second file: drag a track from the browser onto JOIN, or click = the track selected in the browser (not the one in the deck), else a file dialog
+* the first = what the deck plays (edit list included). the second starts with its first beat one (bar start of its grid, audio before it is dropped) on the next bar start of the first at or after its end; silence up to there. 2 ms crossfade, centered on the joint when the first has audio past it, else ending on it: the second's beat one sits exactly on the joint
+* tempo within ±0.5 % -> the second is matched to the first's bpm (resampled, pitch moves with it, at most ~9 cents; ⌘, -> DECKS -> `Vorbereiten JOIN: Tempo … angleichen`, on). more than ±0.5 % -> joined as it is, note `Tempo verschieden`. the grid of the first runs on
+* cues of both files: the second's move behind the joint (loops with matched length), its hotcue slots taken by the first go to free slots, else memory cues. hand grid and hotcues of the second (edits.json) count
+* file `<name1> + <name2> [join].m4a` (format of the first), title `<title1> + <title2> [join]`, metadata and loudness of the first
+
+SPLIT:
+
+* at the range start, else at the bar start nearest the play position (edit list output). each part at least 1 s
+* `<name> [part 1].m4a` and `[part 2]`, 2 ms fade at the inner edges. grid: part 1 as the original, part 2 anchor at 0 on bar one. cues go to their part, shifted. not loaded into the deck
+
+files: like cut files: CUTS, MUSIC FOLDERS, `cuts.json`; with ⌘, -> BROWSER `write into the collection file` and `cuts and tool loops as new entries` also a new collection entry. jobs run one at a time on the cut queue, progress + ✕ in the status bar.
+
+keys (⌘, -> KEYBOARD, menu DECKS -> Vorbereiten, no default): B IN, B OUT, A-B-A, analyse, amp +1 dB, norm, amp 0 dB, join with the selected track, split, render.
 
 ## ◆ 06 · SYNC / CLOCK / LINK
 
@@ -862,7 +925,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | esc | clear the marked range (only when one exists, not in a search field) |
 | ⌘Z / ⇧⌘Z | undo / redo (text undo inside a text field) |
 
-no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, edit: remove / keep / duplicate / mute / segment left / right / mark at the play head / next snap / render, tool-loop 2 / 4 / 8 / 16, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, browser: hide played tracks on / off, reconnect audio, master fx on / off.
+no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, edit: remove / keep / duplicate / mute / segment left / right / mark at the play head / next snap / render, tool-loop 2 / 4 / 8 / 16, prepare: B IN / B OUT / A-B-A / analyse / amp +1 dB / norm / amp 0 dB / join / split / render, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, browser: hide played tracks on / off, reconnect audio, master fx on / off.
 ⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.
 
 controller mapping -> [controllers.md](controllers.md). flux on the controller = pad layer switch: tap -> pads 1-4 play hotcues 5-8 (flux led lit), tap again -> back, shift + flux = tap (grid bpm from the taps; setting: flux mode instead), shift + sync = master. old layout under ⌘, -> CONTROLLER -> flux button.

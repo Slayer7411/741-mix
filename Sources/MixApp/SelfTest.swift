@@ -217,6 +217,7 @@ enum SelfTest {
             await nmlProbe()
             await dawBridgeProbe(mix, store: store)
             await hidePlayedProbe(mix, store: store, browser: browser, tracks: c)
+            await prepareProbe(mix)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -1154,5 +1155,129 @@ extension SelfTest {
         log(String(format: "UNGESPIELT: Collection %d -> %d (%d gespielt ausgeblendet, %.1f ms) · Preparation %d = %d · History %d Einträge · %@",
                    all.count, shown.count, expected, ms, prep, prepHidden, history.live.count, ok ? "OK" : "FAIL"))
         if !ok { log("UNGESPIELT FALSCH"); exit(1) }
+    }
+
+    /// Vorbereiten auf Deck A (Dateien nur im Test-Ordner): Spitze messen, +3 dB -> RENDER (Spitze × 1,41 bzw. bis 0 dBFS
+    /// begrenzt, Länge, Format wie die Quelle, LOUDNESS nachgeführt), A-B-A (16 Beats heraus, Vorschau vor der Naht),
+    /// RENDER Schnitt + Amp, SPLIT am Takt (Längen, Grid von Teil 2), JOIN mit dem Track von Deck B (Länge, Grid).
+    /// Danach alles zurück, Dateien gelöscht
+    static func prepareProbe(_ mix: MixModel) async {
+        let d = 0
+        mix.pull()
+        let s0 = mix.deck(d)
+        guard let t0 = s0.track, let g = s0.grid, g.bpm > 0, s0.duration > 120 else { log("Vorbereiten: übersprungen (Deck A ohne Grid)"); return }
+        let wasEditing = mix.editing(d), u = UndoStack.shared, n0 = u.done.count
+        var files: [String] = []
+        func settle() async {
+            for _ in 0..<500 where mix.editSession(d)?.rendering == true || mix.prepState(d).measuring { try? await Task.sleep(for: .milliseconds(20)) }
+            mix.pull()
+        }
+        func job() async -> [Track] {
+            for _ in 0..<6000 where CutJob.running { try? await Task.sleep(for: .milliseconds(20)) }
+            files += CutJob.lastTracks.map(\.path)
+            return CutJob.lastTracks
+        }
+        func peakAndFrames(_ path: String) async -> (Float, Int, Double) {
+            await Task.detached {
+                guard let s = try? AudioCutWriter.source(url: URL(fileURLWithPath: path), deck: nil) else { return (0, 0, 0) }
+                return (AudioCutWriter.peak(s.channels, frames: s.frames), s.frames, s.sampleRate)
+            }.value
+        }
+        mix.prepareRowAppeared(d)
+        await settle()
+        guard let session = mix.editSession(d) else { log("Vorbereiten FALSCH: keine Sitzung"); exit(1) }
+        if !session.shown.isPlain || session.shown.segments.count > 1 { mix.editReset(d); await settle() }
+        mix.prepareAmpReset(d)
+        mix.prepareAnalyse(d)
+        await settle()
+        let deckPeak = mix.prepState(d).peak ?? -1
+        // +3 dB -> RENDER
+        let (srcPeak, srcFrames, rate) = await peakAndFrames(t0.path)
+        mix.prepareAmp(d, add: 3)
+        let want = Amplify.limit(3, peak: srcPeak, allowClipping: false)
+        CutJob.lastTracks = []
+        let c0 = CACurrentMediaTime()
+        mix.prepareRender(d, load: false)
+        let amp = await job()
+        let ampSecs = CACurrentMediaTime() - c0
+        guard let a = amp.first else { log("Vorbereiten FALSCH: kein Ergebnis für AMP"); exit(1) }
+        let (outPeak, outFrames, _) = await peakAndFrames(a.path)
+        let ratio = Double(outPeak / max(srcPeak, 1e-9))
+        let fmt = AudioCutWriter.format(matching: URL(fileURLWithPath: t0.path))
+        let ampOK = outFrames == srcFrames && (want.limited ? outPeak <= 1 && outPeak > 0.99 : abs(ratio - Amplify.factor(db: 3)) < 2e-3)
+            && a.path.hasPrefix(CutJob.selfTestDirectory.path) && (a.path as NSString).pathExtension == fmt.ext
+            && (t0.perceivedDb == nil || abs((a.perceivedDb ?? 99) - (t0.perceivedDb! - (CutJob.lastGain ?? 0))) < 1e-6)
+        log(String(format: "Vorbereiten AMP +3 dB: Spitze Deck %.4f / Datei %.4f -> %.4f (× %.4f%@) · %d / %d Frames · %@ · %.2f s · %@",
+                   deckPeak, srcPeak, outPeak, ratio, want.limited ? ", auf 0 dBFS begrenzt" : "", outFrames, srcFrames,
+                   (a.path as NSString).lastPathComponent, ampSecs, ampOK ? "ok" : "FALSCH"))
+        // A-B-A: 16 Beats ab dem Takt nahe 40 s
+        let b0 = g.time(ofBeat: (g.beatPosition(at: 40) / 4).rounded() * 4), len = 16 * g.beat
+        mix.setRange(d, TrackRange(b0, b0 + len))
+        mix.prepareABA(d)
+        await settle()
+        let dur1 = mix.deck(d).duration, pos1 = mix.position(d)
+        let abaOK = mix.editSession(d)?.preview != nil && abs(dur1 - (s0.duration - len)) < 2 / rate
+            && abs(pos1 - (b0 - 8 * g.beat)) < 0.25 && mix.range(d) == nil
+        log(String(format: "Vorbereiten A-B-A: 16 Beats heraus %.3f -> %.3f s · Vorschau bei %.2f s (Naht %.2f s) · %@",
+                   s0.duration, dur1, pos1, b0, abaOK ? "ok" : "FALSCH"))
+        // RENDER Schnitt + Amp
+        mix.prepareRender(d, load: false)
+        let both = await job()
+        let (_, bothFrames, _) = await peakAndFrames(both.first?.path ?? "")
+        let bothOK = both.first?.title.hasSuffix("[cut amp \(Amplify.label(CutJob.lastGain ?? 0))]") == true
+            && abs(Double(bothFrames) - Double(srcFrames) + len * rate) <= 2
+        log(String(format: "Vorbereiten RENDER Schnitt + Amp: %@ · %d Frames (soll %.0f) · %@", both.first?.fileName ?? "-", bothFrames,
+                   Double(srcFrames) - len * rate, bothOK ? "ok" : "FALSCH"))
+        // SPLIT am Takt nahe 60 s (gespielte Liste)
+        mix.prepareAmpReset(d)
+        mix.core.seek(d, seconds: g.time(ofBeat: (g.beatPosition(at: 60) / 4).rounded() * 4) + 0.3 * g.beat)
+        mix.pull()
+        let at = SplitPlan.point(range: nil, position: mix.position(d), grid: mix.deck(d).grid, duration: dur1) ?? -1
+        mix.prepareSplit(d)
+        let parts = await job()
+        var splitOK = parts.count == 2
+        var lens: [Int] = []
+        for p in parts { lens.append(await peakAndFrames(p.path).1) }
+        if parts.count == 2 {
+            let ga = BeatGrid(track: parts[1])
+            splitOK = abs(Double(lens[0]) - at * rate) <= 2 && abs(Double(lens[0] + lens[1]) - dur1 * rate) <= 3
+                && (ga.map { $0.anchor < 1e-3 } ?? false) && parts[0].title.hasSuffix("[part 1]") && parts[1].title.hasSuffix("[part 2]")
+        }
+        log(String(format: "Vorbereiten SPLIT bei %.3f s: %@ Frames (zusammen %d, soll %.0f) · Grid Teil 2 ab %.4f s · %@", at,
+                   lens.map(String.init).joined(separator: " + "), lens.reduce(0, +), dur1 * rate,
+                   parts.count == 2 ? (BeatGrid(track: parts[1])?.anchor ?? .nan) : .nan, splitOK ? "ok" : "FALSCH"))
+        // JOIN mit dem Track von Deck B
+        var joinOK = true
+        if let second = mix.deck(1).track, second.key != t0.key, FileManager.default.fileExists(atPath: second.path) {
+            let b = mix.edits.edit(for: second.key)?.apply(to: second) ?? second
+            mix.prepareJoin(d, with: second)
+            let joined = await job()
+            let (_, jFrames, _) = await peakAndFrames(joined.first?.path ?? "")
+            let bInfo = await peakAndFrames(second.path)
+            let bDur = Double(bInfo.1) / max(1, bInfo.2)
+            let plan = JoinPlan.plan(durationA: dur1, gridA: mix.deck(d).grid, durationB: bDur, gridB: BeatGrid(track: b),
+                                     matchTempo: mix.prefs.ui.prepJoinMatchTempo)
+            let jg = joined.first.flatMap { BeatGrid(track: $0) }
+            joinOK = abs(Double(jFrames) - plan.duration * rate) <= 3 + plan.duration * rate * 1e-5
+                && jg.map { abs($0.bpm - g.bpm) < 1e-9 } ?? false
+            log(String(format: "Vorbereiten JOIN mit %@ (%.2f BPM): Naht %.3f s, B ab %.3f s, Tempo × %.4f%@ · %d Frames (soll %.0f) · %@ · %@",
+                       second.title, b.bpm, plan.joint, plan.startB, plan.speed, plan.tempoMismatch ? " (verschieden)" : "",
+                       jFrames, plan.duration * rate, CutJob.lastNote ?? "-", joinOK ? "ok" : "FALSCH"))
+        } else {
+            log("Vorbereiten JOIN: übersprungen (Deck B ohne anderen Track)")
+        }
+        // zurück
+        while u.done.count > n0 { u.undo() }
+        await settle()
+        let back = mix.core.trackAudio(d) === session.source && abs(mix.deck(d).duration - s0.duration) < 1e-6
+        mix.prepareAmpReset(d)
+        mix.setRange(d, nil)
+        mix.prepareRowDisappeared(d)
+        mix.setEditing(d, wasEditing)
+        mix.pull()
+        for f in files { try? FileManager.default.removeItem(atPath: f) }
+        let ok = ampOK && abaOK && bothOK && splitOK && joinOK && back
+        log("Vorbereiten: Rückgängig -> Original \(back) · \(files.count) Dateien gelöscht · " + (ok ? "ok" : "FALSCH"))
+        if !ok { log("Vorbereiten FALSCH"); exit(1) }
     }
 }

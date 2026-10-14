@@ -94,6 +94,9 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case editLeft = "deck.edit.left", editRight = "deck.edit.right", editMark = "deck.edit.mark", editSnap = "deck.edit.snap"
     case editRender = "deck.edit.render"
     case toolLoop2 = "deck.toolloop.2", toolLoop4 = "deck.toolloop.4", toolLoop8 = "deck.toolloop.8", toolLoop16 = "deck.toolloop.16"
+    case prepBIn = "deck.prep.bin", prepBOut = "deck.prep.bout", prepABA = "deck.prep.aba", prepAnalyse = "deck.prep.analyse"
+    case prepAmpUp = "deck.prep.amp.up", prepNorm = "deck.prep.norm", prepAmpReset = "deck.prep.amp.reset"
+    case prepJoin = "deck.prep.join", prepSplit = "deck.prep.split", prepRender = "deck.prep.render"
     case keySync = "deck.keysync", instantDouble = "deck.double"
     case masterFX = "mix.masterfx"
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", loadSelectedForce = "browser.load.force"
@@ -194,7 +197,8 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .master, .keylock, .reloop, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .reconnectAudio, .hidePlayed,
              .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop, .masterFX,
              .editRemove, .editKeep, .editDuplicate, .editMute, .editLeft, .editRight, .editMark, .editSnap, .editRender,
-             .toolLoop2, .toolLoop4, .toolLoop8, .toolLoop16: nil
+             .toolLoop2, .toolLoop4, .toolLoop8, .toolLoop16, .prepBIn, .prepBOut, .prepABA, .prepAnalyse, .prepAmpUp, .prepNorm,
+             .prepAmpReset, .prepJoin, .prepSplit, .prepRender: nil
         }
     }
 }
