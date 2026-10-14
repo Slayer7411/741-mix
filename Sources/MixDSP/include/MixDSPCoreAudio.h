@@ -4,6 +4,7 @@
 #define MIXDSP_COREAUDIO_H
 #include <AudioToolbox/AudioToolbox.h>
 #include "MixDSP.h"
+#include "MixDSPRecord.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -32,6 +33,21 @@ void mdsp_load_record(uint64_t start, uint64_t end, uint32_t frames);
 /// Werte seit dem letzten Aufruf abholen (Mittel und Spitze werden dabei zurückgesetzt)
 MDLoad mdsp_load_take(void);
 void mdsp_load_reset_overloads(void);
+/// Eingang (eigenes AUHAL nur mit Eingang): Callback holt das Eingangspaar per AudioUnitRender (Bus 1) in vorab angelegte
+/// Puffer und schreibt es in den Ring. Kein Speicher, keine Sperre im Callback. Kanäle/Frames = Größe der Puffer
+typedef struct MDInput MDInput;
+MDInput *mdsp_input_create(int deviceChannels, int maxFrames);
+void mdsp_input_destroy(MDInput *in);
+/// vor dem Start setzen (Steuer-Thread, Unit gestoppt): Unit, Ziel-Ring, erster Kanal des Paars (0-basiert)
+void mdsp_input_set(MDInput *in, AudioUnit au, struct MDRing *ring, int firstChannel);
+/// als kAudioOutputUnitProperty_SetInputCallback, inRefCon = MDInput*
+AURenderCallback mdsp_input_callback(void);
+/// Blöcke, Fehler von AudioUnitRender, zu große Blöcke; Rechenzeit gesamt / schwerster Block (ns) seit dem letzten Abholen
+typedef struct {
+    uint32_t blocks, renderErrors, oversized;
+    uint64_t totalNs, worstNs;
+} MDInputStats;
+MDInputStats mdsp_input_take_stats(MDInput *in);
 #ifdef __cplusplus
 }
 #endif

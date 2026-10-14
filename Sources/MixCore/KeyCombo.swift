@@ -98,7 +98,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case prepAmpUp = "deck.prep.amp.up", prepNorm = "deck.prep.norm", prepAmpReset = "deck.prep.amp.reset"
     case prepJoin = "deck.prep.join", prepSplit = "deck.prep.split", prepRender = "deck.prep.render"
     case keySync = "deck.keysync", instantDouble = "deck.double"
-    case masterFX = "mix.masterfx"
+    case masterFX = "mix.masterfx", record = "mix.record"
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", loadSelectedForce = "browser.load.force"
     case previewSelected = "browser.preview"
     case reloadCollection = "browser.reload", matching = "browser.matching", hidePlayed = "browser.hideplayed"
@@ -195,7 +195,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .undo: KeyCombo("z")
         case .redo: KeyCombo("z", [.shift, .command])
         case .master, .keylock, .reloop, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .reconnectAudio, .hidePlayed,
-             .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop, .masterFX,
+             .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop, .masterFX, .record,
              .editRemove, .editKeep, .editDuplicate, .editMute, .editLeft, .editRight, .editMark, .editSnap, .editRender,
              .toolLoop2, .toolLoop4, .toolLoop8, .toolLoop16, .prepBIn, .prepBOut, .prepABA, .prepAnalyse, .prepAmpUp, .prepNorm,
              .prepAmpReset, .prepJoin, .prepSplit, .prepRender: nil

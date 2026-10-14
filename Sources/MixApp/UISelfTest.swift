@@ -124,6 +124,7 @@ enum UISelfTest {
             ("playlist-baum", playlistTree),
             ("mehrfach-sortierung", multiSort),
             ("wellenform-preset", wavePreset),
+            ("aufnahme", recording),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1602,5 +1603,54 @@ extension UISelfTest {
             check(cache.waveform(for: a, ui: mix.prefs.ui, preset: mix.wavePreset) != nil && cache.reanalyzed == 1, "keine Nachanalyse für Deck A")
         }
         log(String(format: "wellenform-preset: „%@“ · tief %.0f Hz · nachanalyse %.2f s", copy.name, low, cache.lastReanalysis))
+    }
+}
+
+extension UISelfTest {
+    /// Aufnahme: Klick auf ● REC in der oberen Leiste startet (interner Master, Temp-Ordner), die Laufzeit läuft, zweiter
+    /// Klick stoppt, Statuszeile meldet die Datei. Kommt der synthetische Klick nicht an: Direktaktion (steht im Log)
+    static func recording(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, rec = mix.recorder
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("minos741-uitest-rec-\(getpid())", isDirectory: true)
+        let saved = mix.prefs.record
+        rec.folderOverride = dir
+        rec.history = u.browser.history
+        mix.prefs.record.source = .master
+        defer { rec.folderOverride = nil; mix.prefs.record = saved; try? FileManager.default.removeItem(at: dir) }
+        if !mix.deck(0).playing { mix.togglePlay(0) }
+        u.spin(0.3)
+        guard let mark = u.views.compactMap({ $0 as? UITestMark.V }).first(where: { $0.name == "rec" }) else { fail("● REC nicht gefunden") }
+        let r = u.frame(mark), p = NSPoint(x: r.midX, y: r.midY)
+        check(r.width > 10 && u.window.contentView?.bounds.contains(p) == true, "● REC liegt außerhalb: \(r)")
+        let root = u.window.contentView?.superview ?? u.host
+        func press(_ want: Bool) {
+            if let hit = root.hitTest(root.convert(p, from: nil)) {
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    guard let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                     windowNumber: u.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                                     pressure: type == .leftMouseUp ? 0 : 1) else { fail("kein Mausereignis") }
+                    if type == .leftMouseDown { hit.mouseDown(with: e) } else { hit.mouseUp(with: e) }
+                }
+            }
+            u.spin(1) { rec.recording == want }
+            if rec.recording != want {
+                log("aufnahme: klick auf ● REC kommt nicht an – schalte direkt")
+                rec.toggle()
+            }
+        }
+        press(true)
+        check(rec.recording, "Aufnahme startet nicht: \(StatusCenter.shared.current?.text ?? "-")")
+        u.spin(1.6)
+        let ran = rec.elapsed()
+        check(ran >= 1.4, "Laufzeit steht: \(ran) s")
+        let url = rec.url
+        press(false)
+        u.spin(3) { !rec.recording && rec.lastStats != nil }
+        check(!rec.recording, "Aufnahme stoppt nicht")
+        let want = String(localized: "Aufnahme gespeichert: \(url?.lastPathComponent ?? "?") · \(SetRecorder.clock(ran))")
+        let text = StatusCenter.shared.history.first { $0.text.hasPrefix(String(want.prefix(22))) }?.text ?? ""
+        check(text.contains(url?.lastPathComponent ?? "?"), "Statuszeile ohne „\(want)“: \(StatusCenter.shared.history.prefix(3).map(\.text))")
+        check(url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false, "Datei fehlt")
+        log(String(format: "aufnahme: %@ · %.1f s · %@", url?.lastPathComponent ?? "?", ran, text))
     }
 }

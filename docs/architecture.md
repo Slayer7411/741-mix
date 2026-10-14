@@ -63,6 +63,22 @@ dsp load (`MixDSPCoreAudio.cpp`):
 * device overloads: property listener on `kAudioDeviceProcessorOverload`, counted on a utility queue
 * latency shown = `kAudioDevicePropertyBufferFrameSize` + `Latency` + `SafetyOffset` + stream latency. keylock lookahead (`mdsp_keylock_latency`, stretch output latency) is pre-read and not added
 
+recording (`MixDSPRecord.h` / `Record.cpp`, `MixDSPCoreAudio.cpp`, `Recording.swift`, `CoreAudioInput.swift`, `RecordingFile`, app `SetRecorder`):
+
+```
+internal master: mdsp_render -> main volume -> hard clip -> tap (pair = main) -> ring -> metronome, preview
+desk input:      own auhal, input only (bus 1) -> input callback -> AudioUnitRender(bus 1) -> pair -> ring
+ring -> writer queue `minos741.record` (every 250 ms) -> ~1 s blocks -> RecordingFile (AVAudioFile: alac / wav / aiff 24 bit)
+history (HistoryStore.live) -> SetTracklist -> .txt + .cue (every 60 s, at the stop)
+```
+
+* ring: one writer, one reader, stereo float interleaved, power of two (2^21 frames, 16 mb, pages touched at creation). 64-bit write / read counters with acquire / release. not armed = level only. no room for a whole block -> block dropped, frames + event counted, never overwritten, never waiting. reset by the reader (counters as baselines, no store from two threads)
+* master tap: atomic ring pointer + pair in the engine, `mdsp_ring_write` after the clip loop. the clock / metronome loop runs after the tap, preview after that -> neither is in the file. cost measured per block (`mdsp_record_tap_cost`). the ring lives as long as the recorder (taken out with `setMasterTap(nil)`, `mdsp_record_tap_released` = a block without it)
+* input: a second auhal with input enabled and output disabled, current device = chosen device (default: the output device). the output unit is not reinitialized and no buffer size is set -> the running output keeps playing. same device = same io cycle and clock. format on bus 1 = device rate, all input channels, float non-interleaved. buffers + `AudioBufferList` allocated before start (`max(4096, MaximumFramesPerSlice)`), blocks above that are counted and skipped. the input runs only while recording or while the input level is shown
+* writer: reads the ring on its own queue, writes ~1 s blocks; stop = disarm, wait 80 ms for the last audio block, drain, close. write error -> recording stops, file closed. quit -> blocking stop
+* device: output lost / sleep -> stop (master, input on the output device). input device gone or rate changed -> stop. no automatic resume
+* access to inputs: `AVCaptureDevice` authorization (microphone), asked only when a device exists; `NSMicrophoneUsageDescription` in the bundle
+
 track load (`MixController.load`):
 
 * through the file service (default, see FILE SERVICE): this process never touches the music path

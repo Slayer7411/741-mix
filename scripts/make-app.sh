@@ -43,6 +43,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>com.github.slayer7411.minos741</string>
   <key>CFBundleDevelopmentRegion</key><string>de</string>
   <key>NSLocalNetworkUsageDescription</key><string>Link: MINOS-741 syncs tempo and beat with other link apps on this network.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Recording: MINOS-741 records the input from your mixer (audio interface input) to a file.</string>
   <key>CFBundleLocalizations</key><array><string>de</string><string>en</string></array>
   <key>CFBundleExecutable</key><string>MINOS-741</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>

@@ -714,6 +714,7 @@ struct AudioSettings: View {
                 }
             }
             PreviewOutputSettings()
+            RecordSettings()
             LoadCacheSettings()
             Section("Rechenkern") {
                 Toggle("Decks parallel rechnen", isOn: Binding(get: { mix.parallelDecks }, set: { mix.parallelDecks = $0 }))
@@ -766,6 +767,67 @@ private struct PreviewOutputSettings: View {
         if mix.mixerMode == .internalMixer { return c == mix.internalPair ? " · Master" : "" }
         let decks = mix.deckPairs.indices.filter { mix.deckPairs[$0] == c }.map { "Deck \(deckLetters[$0])" }
         return decks.isEmpty ? "" : " · " + decks.joined(separator: " ")
+    }
+}
+
+/// Aufnahme: Quelle (Eingang vom Pult / interner Master), Eingangsgerät und -paar, Pegel, Ordner, Format
+private struct RecordSettings: View {
+    @Environment(MixModel.self) private var mix
+    @State private var inputs: [MixEngine.OutputDevice] = []
+
+    var body: some View {
+        @Bindable var mix = mix
+        let rec = mix.recorder, src = rec.source(mix)
+        Section("Aufnahme") {
+            Picker("Quelle", selection: $mix.prefs.record.source) {
+                Text(mix.mixerMode == .external ? "Automatisch – Eingang vom Pult" : "Automatisch – interner Master").tag(RecordSource.auto)
+                Text("Eingang vom Pult").tag(RecordSource.input)
+                Text("Interner Master").tag(RecordSource.master)
+            }
+            if src == .input {
+                Picker("Eingangsgerät", selection: $mix.prefs.record.inputUID) {
+                    Text(verbatim: String(localized: "wie Ausgabegerät") + (mix.currentDevice.map { " – \($0.name)" } ?? "")).tag("")
+                    ForEach(inputs) { d in Text(verbatim: "\(d.name) – \(d.channels) " + String(localized: "Eingänge")).tag(d.uid) }
+                }
+                Picker("Eingangspaar", selection: $mix.prefs.record.inputFirstChannel) {
+                    ForEach(Array(stride(from: 0, to: max(2, inputChannels - 1), by: 2)), id: \.self) { c in
+                        Text(verbatim: "\(c + 1)/\(c + 2)").tag(c)
+                    }
+                }
+                LabeledContent("Eingangspegel anzeigen") {
+                    HStack(spacing: 8) {
+                        if rec.monitoring || rec.recording { RecordMeter(width: 120).environment(\.zoomExempt, true) }
+                        Toggle("", isOn: $mix.prefs.record.showInputLevel).labelsHidden()
+                    }
+                }
+            }
+            Picker("Format", selection: $mix.prefs.record.format) {
+                ForEach(RecordingFile.Kind.allCases, id: \.self) { Text(verbatim: $0.title).tag($0) }
+            }
+            HStack {
+                Text("Ordner")
+                Spacer()
+                Text(verbatim: (mix.prefs.record.folderURL.path as NSString).abbreviatingWithTildeInPath)
+                    .font(Theme.mono(10)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                Button("Wählen …") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true
+                    panel.canChooseFiles = false
+                    panel.canCreateDirectories = true
+                    if panel.runModal() == .OK, let u = panel.url { mix.prefs.record.folder = u.path }
+                }
+                if !mix.prefs.record.folder.isEmpty { Button("Standard") { mix.prefs.record.folder = "" } }
+            }
+            Text("rec in der oberen leiste oder im mixer (zeile master): klick = start, noch mal = stopp. interner master = das main-paar nach fadern, crossfader, master-fx, main und begrenzung, ohne metronom und vorhören. eingang vom pult = das gewählte eingangspaar der soundkarte (pult-summe auf usb legen). datei: jjjj-mm-tt hh.mm set.m4a mit der rate des kerns bzw. des eingangs, daneben .txt und .cue mit den tracks aus der history (alle 60 s und beim stopp). gerät weg: datei wird geschlossen, keine automatische fortsetzung.")
+                .settingsHint()
+        }
+        .onAppear { inputs = MixEngine.inputDevices() }
+    }
+
+    private var inputChannels: Int {
+        let uid = mix.prefs.record.inputUID
+        if !uid.isEmpty { return inputs.first { $0.uid == uid }?.channels ?? 2 }
+        return mix.recorder.inputDevice(mix).map { MixEngine.inputChannels($0) } ?? 2
     }
 }
 

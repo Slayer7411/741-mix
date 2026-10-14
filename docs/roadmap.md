@@ -70,7 +70,7 @@
 | hid controller native, two units | ■ | |
 | midi learn, other controllers | □ p2 | |
 | keyboard mapping | ■ | every shortcut configurable (⌘, -> keyboard) |
-| mix recording | □ p2 | |
+| mix recording | ■ | internal master or desk input, apple lossless / wav / aiff, tracklist .txt + .cue |
 | timecode / dvs | □ p4 | |
 | layouts, deck sizes | ◧ p3 | |
 | playlist export (nml, m3u, folder) | ■ | |

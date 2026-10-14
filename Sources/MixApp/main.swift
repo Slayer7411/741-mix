@@ -365,6 +365,7 @@ struct MixApp: App {
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
                 Button(ShortcutID.masterFX.title) { run(.masterFX) }.shortcut(keys.combo(.masterFX))
+                Button(ShortcutID.record.title) { run(.record) }.shortcut(keys.combo(.record))
                 Divider()
                 ForEach([ShortcutID.hotcue1, .hotcue2, .hotcue3, .hotcue4, .hotcue5, .hotcue6, .hotcue7, .hotcue8]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
@@ -431,6 +432,7 @@ extension MixApp {
         history.start(store: store, mix: mix)
         store.history = history
         appDelegate.onQuit = { [mix, browser, history] in
+            mix.recorder.stopNow()   // laufende Aufnahme sauber schließen (Tracklist dabei)
             Session.saveNow(mix: mix, browser: browser)
             mix.flushEdits()
             history.finish()

@@ -220,6 +220,7 @@ enum SelfTest {
             await prepareProbe(mix)
             await playlistTreeProbe(store: store)
             await wavePresetProbe(mix)
+            await recordProbe(mix, tracks: c)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -617,6 +618,73 @@ enum SelfTest {
                    deckLetters[d], recorded, label, jumped, back, ok ? "ok" : "FALSCH", prepOK ? "ok" : "FALSCH", metaOK ? "ok" : "FALSCH",
                    ms.map { String(format: "%.2f", $0) }.joined(separator: "/"), snap))
         if !(ok && prepOK && metaOK) { log("RÜCKGÄNGIG FALSCH"); exit(1) }
+    }
+
+    /// Aufnahme „Interner Master“ stumm in einen temporären Ordner: DSP-Last und Kosten des Abgriffs ohne / mit Aufnahme,
+    /// Deck C startet während der Aufnahme -> Datei (Länge ±1 Block zur Laufzeit), .txt / .cue mit dem Track.
+    /// Eingang ohne Gerät: sauberer Fehler, keine Aufnahme, kein Absturz. Ordner danach gelöscht
+    static func recordProbe(_ mix: MixModel, tracks c: [Track]) async {
+        func fail(_ s: String) -> Never { log("Aufnahme: \(s)"); log("AUFNAHME FALSCH"); exit(1) }
+        let rec = mix.recorder, engine = mix.engine
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("minos741-selftest-rec-\(getpid())", isDirectory: true)
+        let savedPrefs = mix.prefs.record
+        defer {
+            rec.folderOverride = nil; rec.testSource = nil
+            mix.prefs.record = savedPrefs
+            try? FileManager.default.removeItem(at: dir)
+        }
+        rec.folderOverride = dir
+        // Last ohne Aufnahme (Decks A/B laufen wie im übrigen Test oder stehen)
+        func load(_ secs: Double) async -> MixEngine.RenderLoad {
+            _ = engine.takeLoad(); _ = engine.takeTapCost()
+            try? await Task.sleep(for: .seconds(secs))
+            return engine.takeLoad()
+        }
+        let t = c.count > 2 ? c[2] : c[0]
+        mix.core.load(t, deck: 2)
+        for _ in 0..<500 where mix.core.trackAudio(2) == nil && mix.core.snapshot().decks[2].error == nil { try? await Task.sleep(for: .milliseconds(40)) }
+        guard mix.core.trackAudio(2) != nil else { fail("Deck C lädt nicht") }
+        if !mix.deck(0).playing { mix.core.togglePlay(0) }
+        let without = await load(2)
+        rec.testSource = .master
+        rec.start()
+        guard rec.recording, let url = rec.url, let started = rec.startedAt else { fail("startet nicht (\(StatusCenter.shared.current?.text ?? "-"))") }
+        let with = await load(2)   // gleiche Decks wie ohne, nur der Abgriff dazu
+        let cost = engine.takeTapCost()
+        mix.core.togglePlay(2)
+        // History meldet Deck C nach der Schwelle (Test: 3 s)
+        for _ in 0..<100 where !(rec.history?.live.contains { $0.key == t.key && $0.start >= started } ?? false) { try? await Task.sleep(for: .milliseconds(100)) }
+        let stopAt = Date()
+        rec.stop()
+        for _ in 0..<100 where rec.recording { try? await Task.sleep(for: .milliseconds(50)) }
+        mix.core.togglePlay(2)
+        guard !rec.recording, let stats = rec.lastStats else { fail("stoppt nicht") }
+        let ran = stopAt.timeIntervalSince(started), secs = Double(stats.frames) / engine.sampleRate
+        log(String(format: "Aufnahme Master: DSP ohne / mit %.1f / %.1f %% (Spitze %.1f / %.1f %%) · schwerster Block %.3f / %.3f ms (%d Frames) · Abgriff %.4f ms je Block (schwerster %.4f ms, %d Blöcke)",
+                   without.average * 100, with.average * 100, without.peak * 100, with.peak * 100,
+                   without.worstTotalMs, with.worstTotalMs, with.worstFrames,
+                   cost.blocks > 0 ? cost.totalMs / Double(cost.blocks) : 0, cost.worstMs, cost.blocks))
+        log(String(format: "Aufnahme Master: %@ · %.2f s in der Datei, %.2f s gelaufen · %d Aussetzer", url.lastPathComponent, secs, ran, stats.overflows))
+        guard FileManager.default.fileExists(atPath: url.path), let f = try? AVAudioFile(forReading: url) else { fail("Datei fehlt") }
+        guard Int(f.length) == stats.frames, abs(secs - ran) <= 1.0, f.fileFormat.sampleRate == engine.sampleRate else {
+            fail(String(format: "Länge %lld Frames (%.2f s) zu %.2f s gelaufen, Rate %.0f", f.length, secs, ran, f.fileFormat.sampleRate))
+        }
+        guard stats.overflows == 0 else { fail("\(stats.overflows) Aussetzer") }
+        let stem = url.deletingPathExtension()
+        let txt = (try? String(contentsOf: stem.appendingPathExtension("txt"), encoding: .utf8)) ?? ""
+        let cue = (try? String(contentsOf: stem.appendingPathExtension("cue"), encoding: .utf8)) ?? ""
+        for _ in 0..<20 where txt.isEmpty { try? await Task.sleep(for: .milliseconds(50)) }
+        let txt2 = txt.isEmpty ? ((try? String(contentsOf: stem.appendingPathExtension("txt"), encoding: .utf8)) ?? "") : txt
+        let cue2 = cue.isEmpty ? ((try? String(contentsOf: stem.appendingPathExtension("cue"), encoding: .utf8)) ?? "") : cue
+        guard txt2.contains(t.title), cue2.contains("INDEX 01") else { fail("Tracklist ohne \(t.title): \(txt2.debugDescription)") }
+        log("Aufnahme Tracklist: " + txt2.split(separator: "\n").joined(separator: " | "))
+        // Eingang ohne Gerät: Fehler in der Statuszeile, keine Aufnahme
+        rec.testSource = .input
+        mix.prefs.record.inputUID = "minos741-selftest-no-such-device"
+        rec.start()
+        guard !rec.recording else { fail("Eingang ohne Gerät nimmt auf") }
+        log("Aufnahme Eingang ohne Gerät: \(StatusCenter.shared.current?.text ?? "-") · läuft \(rec.recording)")
+        log("AUFNAHME OK")
     }
 
     /// wird vom HistoryStore gesetzt, damit der Test genau seine eigene Datei entfernen kann

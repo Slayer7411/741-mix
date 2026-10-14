@@ -426,6 +426,7 @@ struct TopBar: View {
             MasterClockPanel()
             BarCounter()
             SessionClockView()
+            RecordPanel()
             Button { mix.core.resetSession() } label: {
                 Text("↺").font(Theme.mono(14.z)).foregroundStyle(Theme.bone).frame(width: 22.z, height: 42.z)
             }

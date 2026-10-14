@@ -22,6 +22,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * external: one pair per deck, default a 1/2 · b 3/4 · c 5/6 · d 7/8
 * preview: channel pair of the browser preview (automatic: external -> first free pair after the decks, none free -> off; internal -> main output · any pair · off), preview volume -> [manual · preview output](MANUAL.md#preview-output)
 * loading & cache: decoding in the file service (own process) or in the app. notice after (no audio data, 2-15 s, default 4), cancel loading after (15-300 s, default 60, file service only), decoded track cache (1-64 gb, default 8) + used size -> [architecture · file service](architecture.md#-file-service)
+* recording: source (`record.source`: automatic -> external = input from the desk, internal = internal master; input; master), input device (`record.inputUID`, empty = output device), input pair (`record.inputFirstChannel`, 0 = 1/2), show input level without recording (`record.showInputLevel`, off), format (`record.format`: apple lossless 24 bit / wav 24 bit / aiff 24 bit), folder (`record.folder`, empty = `~/Music/MINOS-741/Recordings`) -> [manual · recording](MANUAL.md#-16--recording)
 * audio core: decks in parallel (deck A on the audio thread, B-D on real-time workers in the device workgroup, same output; default off, for the load test) -> [manual · audio core](MANUAL.md#audio-core-decks-in-parallel)
 
 ## ◆ DISPLAY

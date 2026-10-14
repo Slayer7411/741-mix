@@ -57,6 +57,7 @@ final class HistoryStore {
     func start(store: LibraryStore, mix: MixModel) {
         self.store = store
         self.mix = mix
+        mix.recorder.history = self
         mix.core.onPlayed = { [weak self] d, t, start in
             DispatchQueue.main.async { self?.record(deck: d, track: t, start: start) }
         }

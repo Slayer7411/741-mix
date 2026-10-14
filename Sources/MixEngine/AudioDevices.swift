@@ -90,9 +90,48 @@ extension MixEngine {
         return n.takeRetainedValue() as String
     }
 
-    static func channelCount(_ id: AudioDeviceID) -> Int {
+    // MARK: - Eingang (Aufnahme)
+
+    /// Geräte mit Eingangskanälen (Aufnahme vom Pult): ID, UID, Name, Eingangskanäle
+    public static func inputDevices() -> [OutputDevice] {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
+                                              mScope: kAudioObjectPropertyScopeGlobal,
+                                              mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size)
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids)
+        return ids.compactMap { id in
+            let ch = channelCount(id, scope: kAudioDevicePropertyScopeInput)
+            guard ch > 0 else { return nil }
+            return OutputDevice(id: id, uid: stringProperty(id, kAudioDevicePropertyDeviceUID),
+                                name: stringProperty(id, kAudioObjectPropertyName), channels: ch)
+        }
+    }
+
+    /// Eingangsgerät zur UID (nil = nicht da oder ohne Eingangskanäle)
+    public static func inputDevice(uid: String) -> AudioDeviceID? {
+        guard !uid.isEmpty else { return nil }
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyTranslateUIDToDevice, mScope: kAudioObjectPropertyScopeGlobal,
+                                              mElement: kAudioObjectPropertyElementMain)
+        var cf = uid as CFString, id = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let st = withUnsafeMutablePointer(to: &cf) {
+            AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, UInt32(MemoryLayout<CFString>.size), $0, &size, &id)
+        }
+        guard st == noErr, id != kAudioObjectUnknown, channelCount(id, scope: kAudioDevicePropertyScopeInput) > 0 else { return nil }
+        return id
+    }
+
+    /// Eingangskanäle eines Geräts
+    public static func inputChannels(_ id: AudioDeviceID) -> Int { channelCount(id, scope: kAudioDevicePropertyScopeInput) }
+    /// Nennrate eines Geräts (nil = unbekannt)
+    public static func deviceRate(_ id: AudioDeviceID) -> Double? { nominalRate(id) }
+    /// UID eines Geräts
+    public static func deviceUID(_ id: AudioDeviceID) -> String { stringProperty(id, kAudioDevicePropertyDeviceUID) }
+
+    static func channelCount(_ id: AudioDeviceID, scope: AudioObjectPropertyScope = kAudioDevicePropertyScopeOutput) -> Int {
         var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration,
-                                              mScope: kAudioDevicePropertyScopeOutput,
+                                              mScope: scope,
                                               mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(id, &addr, 0, nil, &size) == noErr, size > 0 else { return 0 }

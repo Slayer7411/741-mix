@@ -46,3 +46,18 @@ import Testing
     // jede Zeile genau einmal in Menü und Einstellungen
     #expect(Set(DeckRows.all.map(\.1)).count == DeckRows.all.count && DeckRows.all.count == 13)   // mit Vorbereiten (bleibt bei „alle Zeilen“ aus)
 }
+
+// Aufnahme: Standard (automatische Quelle, Apple Lossless, Pegel aus) und alte Einstellungen ohne `record`
+@MainActor @Test func recordPrefsDefaultsAndOldPrefs() throws {
+    let old = AppPrefs.decode(Data(#"{"ui": {"zoom": 1.1}}"#.utf8))
+    #expect(old.record == RecordPrefs() && old.ui.zoom == 1.1)
+    #expect(old.record.source == .auto && old.record.format == .alac && !old.record.showInputLevel && old.record.inputUID.isEmpty)
+    #expect(old.record.folderURL.path.hasSuffix("/MINOS-741/Recordings"))
+    var p = old
+    p.record.source = .input; p.record.inputFirstChannel = 2; p.record.format = .aiff; p.record.showInputLevel = true; p.record.folder = "/tmp/rec"
+    let again = AppPrefs.decode(try JSONEncoder().encode(p))
+    #expect(again.record == p.record && again.record.folderURL.path == "/tmp/rec")
+    // teilweise gespeichert: fehlende Felder bekommen den Standard
+    let part = AppPrefs.decode(Data(#"{"record": {"source": "master"}}"#.utf8))
+    #expect(part.record.source == .master && part.record.format == .alac)
+}

@@ -150,6 +150,17 @@ struct MasterFXStrip: View {
 
     var body: some View {
         let m = mix.masterFX, active = mix.masterFXActive
+        VStack(alignment: .leading, spacing: 3.z) {
+            fx(m, active)
+            // Aufnahme (Master oder Eingang vom Pult, ⌘, -> AUDIO); auch extern aktiv
+            HStack(spacing: 4.z) {
+                RecordButton(compact: true)
+                RecordMeter(width: 40)
+            }
+        }
+    }
+
+    private func fx(_ m: MasterFXState, _ active: Bool) -> some View {
         HStack(spacing: 4.z) {
             Text("MASTER").font(Theme.label(9.z, .heavy)).foregroundStyle(m.on && active ? Theme.state : Theme.muted)
             DeckButton(title: "FX", active: m.on, color: Theme.state, width: 20) { mix.toggleMasterFX() }

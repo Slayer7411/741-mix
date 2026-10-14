@@ -2,6 +2,7 @@
 // keine Sperren, kein new/delete, keine Systemaufrufe, nur vorab angelegter Speicher.
 #include "MixDSP.h"
 #include "MixDSPPlugin.h"
+#include "MixDSPRecord.h"
 #include "PluginBackend.h"
 #include "Preview.h"
 #include <atomic>
@@ -1054,6 +1055,12 @@ struct MDEngine {
     double blockPos[MDSP_DECKS] = {};   // hörbare Positionen am Anfang des laufenden Blocks (nur Audio-Thread)
     MDPreview preview;                  // Vorhören (Preview.cpp)
     double fxBeat = 0, fxBps = 0;       // Clock am Anfang des Teilblocks, Beats je Sample (Beat-FX, Plugins)
+    // Aufnahme-Abgriff des Masters (MixDSPRecord.h): Ring, erstes Kanalpaar, Freigabe nach einem Block ohne ihn
+    std::atomic<MDRing *> recTap{nullptr};
+    std::atomic<int> recCh{-1};
+    std::atomic<uint64_t> recReleaseAt{0};
+    std::atomic<uint64_t> recCostNs{0}, recWorstNs{0};
+    std::atomic<uint32_t> recBlocks{0};
 };
 
 MDPreview &mdsp_preview_of(MDEngine *e) { return e->preview; }
@@ -1763,6 +1770,20 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
             float x = out[c][i] * e->masterSm;
             out[c][i] = x > 1.f ? 1.f : (x < -1.f ? -1.f : (x == x ? x : 0.f));   // harte Begrenzung als letzte Sicherung, NaN → 0
         }
+    }
+    // Aufnahme: Master-Paar nach Begrenzung, vor Metronom und Vorhören (nur Kopie in den Ring)
+    if (MDRing *tap = e->recTap.load(std::memory_order_acquire)) {
+        int tc = e->recCh.load(std::memory_order_relaxed);
+        if (tc >= 0 && tc + 1 < channels) {
+            uint64_t r0 = nowNs();
+            mdsp_ring_write(tap, out[tc], out[tc + 1], frames);
+            uint64_t dt = nowNs() - r0;
+            e->recCostNs.fetch_add(dt, std::memory_order_relaxed);
+            e->recBlocks.fetch_add(1, std::memory_order_relaxed);
+            if (dt > e->recWorstNs.load(std::memory_order_relaxed)) e->recWorstNs.store(dt, std::memory_order_relaxed);
+        }
+    }
+    for (int i = 0; i < frames; i++) {
         // Clock weiterzählen, bei jedem Beat klicken (Takt-Eins höher)
         double before = k.beat;
         k.beat += perSample;
@@ -1801,6 +1822,24 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
 }
 
 void mdsp_set_render_host(MDEngine *e, uint64_t hostTime) { e->renderHost = hostTime; }
+
+void mdsp_set_record_tap(MDEngine *e, MDRing *ring, int firstChannel) {
+    e->recCh.store(firstChannel, std::memory_order_relaxed);
+    MDRing *old = e->recTap.exchange(ring, std::memory_order_acq_rel);
+    if (old && old != ring) e->recReleaseAt.store(e->renders.load() + 2);
+}
+
+bool mdsp_record_tap_released(MDEngine *e, MDRing *ring) {
+    if (!ring) return true;
+    if (e->recTap.load(std::memory_order_acquire) == ring) return false;
+    return e->renders.load() >= e->recReleaseAt.load();
+}
+
+void mdsp_record_tap_cost(MDEngine *e, uint64_t *total, uint64_t *worst, uint32_t *blocks) {
+    if (total) *total = e->recCostNs.exchange(0, std::memory_order_relaxed);
+    if (worst) *worst = e->recWorstNs.exchange(0, std::memory_order_relaxed);
+    if (blocks) *blocks = e->recBlocks.exchange(0, std::memory_order_relaxed);
+}
 
 bool mdsp_clock_stamp(MDEngine *e, double *beat, uint64_t *hostTime) {
     Clock &k = e->clock;

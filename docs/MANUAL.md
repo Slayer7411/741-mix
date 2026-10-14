@@ -7,6 +7,7 @@
   03 screen           08 fx                     13 files + folders
   04 decks            09 browser                14 troubleshooting
   05 waveform + grid  10 tags + smartlists      15 faq
+                                                16 recording
 ```
 
 user manual for MINOS-741 `0.7.x`. ui terms are shown in CAPS like on screen.
@@ -75,7 +76,7 @@ tracks without an analysis in the collection play, but have no grid -> no sync. 
 
 ```
 ┌ toolbar ─ PROFILE ▾ ───── MIXER · 1 / 2 / 4 · browser layout · DECKS · ↻ ┐
-├ FX 1 ─────────┬ master clock + link + metronome ─┬ bars ──┬ FX 2 ─┤
+├ FX 1 ───────┬ master clock + link + metronome ─┬ bars ┬ clock ┬ REC ┬ FX 2 ─┤
 ├ deck A ───────────────────────┬ deck B ────────────────────────────┤
 ├ deck C ───────────────────────┼ deck D ────────────────────────────┤
 ├ browser pane 1 ───────────────┼ browser pane 2 ────────────────────┤
@@ -536,6 +537,7 @@ per channel (order C · A · B · D):
 * gain / eq / fader happen on your desk
 * own headroom and auto-gain setting, main volume off by default
 * metronome on an own pair
+* record the desk's sum through its usb input -> [16 · recording](#-16--recording)
 
 ### preview output
 
@@ -966,7 +968,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | esc | clear the marked range (only when one exists, not in a search field) |
 | ⌘Z / ⇧⌘Z | undo / redo (text undo inside a text field) |
 
-no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, edit: remove / keep / duplicate / mute / segment left / right / mark at the play head / next snap / render, tool-loop 2 / 4 / 8 / 16, prepare: B IN / B OUT / A-B-A / analyse / amp +1 dB / norm / amp 0 dB / join / split / render, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, browser: hide played tracks on / off, reconnect audio, master fx on / off.
+no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, edit: remove / keep / duplicate / mute / segment left / right / mark at the play head / next snap / render, tool-loop 2 / 4 / 8 / 16, prepare: B IN / B OUT / A-B-A / analyse / amp +1 dB / norm / amp 0 dB / join / split / render, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, browser: hide played tracks on / off, reconnect audio, master fx on / off, recording start / stop.
 ⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.
 
 controller mapping -> [controllers.md](controllers.md). flux on the controller = pad layer switch: tap -> pads 1-4 play hotcues 5-8 (flux led lit), tap again -> back, shift + flux = tap (grid bpm from the taps; setting: flux mode instead), shift + sync = master. old layout under ⌘, -> CONTROLLER -> flux button.
@@ -987,6 +989,7 @@ controller mapping -> [controllers.md](controllers.md). flux on the controller =
 | history | `~/Library/Application Support/MINOS-741/History` |
 | preparation archive | `~/Library/Application Support/MINOS-741/Preparation` |
 | cover thumbnails (cache, safe to delete) | `~/Library/Caches/MINOS-741/artwork` |
+| set recordings + tracklists | `~/Music/MINOS-741/Recordings` (setting) |
 
 backup = copy the `MINOS-741` folder.
 
@@ -1082,3 +1085,36 @@ the link library is GPL-2.0-or-later -> the whole app is.
 
 **can i change it for my own setup?**
 fork it. ideas back -> [discussions](https://github.com/Slayer7411/MINOS-741/discussions).
+
+## ◆ 16 · RECORDING
+
+records the set to a file. two sources:
+
+| source | what ends up in the file | rate |
+|---|---|---|
+| `Eingang vom Pult` (input from the desk) | an input pair of an audio device, e.g. the desk's master on its usb send | input device rate |
+| `Interner Master` (internal master) | the main pair after faders, crossfader, master fx, main volume and the hard clip; without metronome and preview | core rate |
+
+default `Automatisch`: external mode -> input from the desk, internal mode -> internal master. internal master in external mode is refused (no sum point).
+
+* ● REC in the top bar next to the clock and in the mixer below MASTER: click = start, click again = stop, no dialog. while recording the dot blinks slowly, the time runs (`1:02:33`), two bars show the level (peak held, red = clipping). idle: second line shows the source (`MASTER`, `IN 1/2`)
+* menu DECKS -> `Aufnahme Start/Stopp`, key assignable under ⌘, -> KEYBOARD (no default)
+* stop -> status bar `Aufnahme gespeichert: <file> · 1:02:33`. blocks lost because the writer fell behind -> `Aufnahme: n Aussetzer`
+* file: `YYYY-MM-DD HH.MM Set.m4a` (wav / aif by setting), ` 2`, ` 3` … if the name exists. apple lossless 24 bit (default), wav 24 bit, aiff 24 bit
+* next to it `<same name>.txt` (`00:00 Artist – Title`, one line per track) and `.cue` (INDEX per track). source: the history. tracks started during the recording at their start time, tracks already playing at the start at 00:00. written every 60 s and at the stop
+* device gone (output for the internal master, input device for the input) or sleep -> the file is closed cleanly, notice. the device coming back does not resume the recording
+* input rate changed while recording -> recording stops (the file keeps one rate)
+* quit while recording -> file and tracklist are closed first
+
+⌘, -> AUDIO -> `Aufnahme`:
+
+* `Quelle`: automatic / input from the desk / internal master
+* `Eingangsgerät`: like the output device (default) or any device with inputs. `Eingangspaar`: 1/2, 3/4 …
+* `Eingangspegel anzeigen` (off): level of the input pair in REC without recording, to check the routing on the desk first. the input only runs while this is on or a recording runs
+* `Format`, `Ordner` (default `~/Music/MINOS-741/Recordings`)
+* first use of an input: macos asks for access to audio inputs (microphone). denied -> system settings -> privacy -> microphone
+
+on the desk: put the master (or a record send) on the usb return the input pair listens to. same device as the output = same clock. another device runs on its own clock and rate.
+
+audio thread cost: internal master = one copy of the pair into a ring buffer per block (self test: ~0.003 ms per 512-frame block at 96 khz). input = an own input callback on the device thread, render input + copy. the file is written on its own queue in ~1 s blocks.
+

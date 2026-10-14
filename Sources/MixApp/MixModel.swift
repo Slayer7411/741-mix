@@ -91,6 +91,7 @@ final class MixModel {
             savePrefs()
             if prefs.engine != oldValue.engine { core.setPrefs(prefs.engine) }
             if prefs.ui.previewVolume != oldValue.ui.previewVolume { previewer.setVolume(prefs.ui.previewVolume) }
+            if prefs.record != oldValue.record { recorder.updateMonitoring() }
             // 1 Deck (umgeschaltet oder ein Profil mit 1 Deck angewendet): Tasten und Doppelklick laden ins sichtbare Deck A
             if prefs.ui.deckCount <= 1, oldValue.ui.deckCount > 1 || oldValue.ui.activeLayoutProfile != prefs.ui.activeLayoutProfile,
                focusedDeck != 0 { focusedDeck = 0 }
@@ -157,6 +158,9 @@ final class MixModel {
     /// Gerät, auf das die Engine wartet (Statuszeile)
     @ObservationIgnored private var lostDevice: String?
 
+    /// Set-Aufnahme (Master oder Eingang vom Pult), REC in der oberen Leiste und im Mixer
+    @ObservationIgnored let recorder = SetRecorder()
+
     /// Bibliothek (Schneiden: neue Datei in CUTS), beim Start gesetzt
     @ObservationIgnored weak var library: LibraryStore?
 
@@ -168,6 +172,7 @@ final class MixModel {
 
     init() {
         wavePresets = WavePresetStore()
+        recorder.mix = self
         // gespeicherte Plugin-Einstellungen + Absturz-Markierung vom letzten Lauf, bevor eine Sitzung Plugins lädt.
         // Selbsttest: nur lesen (keine Markierung, keine Änderungen)
         VST3Thread.useMain = true   // VST3: Laden, Zustand, Controller, Ansicht immer auf dem Haupt-Thread
@@ -706,9 +711,11 @@ final class MixModel {
         switch e {
         case let .lost(name):
             lostDevice = name
+            recorder.outputLost(name)
             StatusCenter.post(.error, String(format: String(localized: "%@ weg – Ausgabe angehalten, wartet auf das Gerät"), name), key: "audio.device")
         case let .restored(name, secs, gap):
             lostDevice = nil
+            recorder.updateMonitoring()   // Eingangspegel wieder an (Aufnahme setzt nicht fort)
             StatusCenter.post(.ok, String(format: String(localized: "%@ wieder verbunden (%.0f ms nach dem Erkennen, Pause %.1f s)"),
                                           name, secs * 1000, gap), key: "audio.device")
         case let .rateChanged(from, to):
@@ -717,6 +724,7 @@ final class MixModel {
         case let .bufferChanged(from, to):
             StatusCenter.post(.info, String(format: String(localized: "Puffer %lld → %lld Frames"), Int(from), Int(to)), key: "audio.buffer")
         case .sleeping:
+            recorder.outputLost(String(localized: "Ruhezustand"))
             StatusCenter.post(.info, String(localized: "Ruhezustand: Ausgabe angehalten"), key: "audio.device")
         }
         refreshDevices()
@@ -735,6 +743,7 @@ final class MixModel {
         refreshEngineStatus()
         saveSetup()
         pull()
+        recorder.routingChanged()
     }
 
     /// Audio-Zeile der Statusleiste aus dem Zustand der Engine
