@@ -5,13 +5,15 @@ import CoreAudioKit
 import SwiftUI
 import MixEngine
 
-/// Fenster mit der Oberfläche eines Plugins (eine FX-Unit, Instanz des ersten Decks; Änderungen gehen live an alle Decks).
+/// Fenster mit der Oberfläche eines Plugins (ein Platz der Kette einer FX-Unit oder des Master-Busses, Instanz des ersten
+/// Decks; Änderungen gehen live an alle Decks). Ein Fenster je Instanz.
 /// AU: AUv3-View-Controller, eigene Cocoa-Ansicht (v2), sonst die generische Ansicht.
 /// VST3: eigene Ansicht (IPlugView in einer NSView), sonst Schieberegler je Parameter.
 @MainActor
 final class PluginWindow: NSObject, NSWindowDelegate {
-    private static var open: [Int: PluginWindow] = [:]
+    private static var open: [ObjectIdentifier: PluginWindow] = [:]
 
+    /// FX-Unit 0…3 oder MixController.masterBus
     private let unit: Int
     private let inst: PluginInstance
     private let core: MixController
@@ -22,17 +24,24 @@ final class PluginWindow: NSObject, NSWindowDelegate {
     private var vst3Container: NSView?
     private var resizingFromPlugin = false
 
-    static func show(unit u: Int, core: MixController) {
-        if let w = open[u] { w.window.makeKeyAndOrderFront(nil); return }
-        guard let inst = core.beginPluginEdit(u) else { NSSound.beep(); return }
+    static func show(unit u: Int, slot k: Int = 0, core: MixController) {
+        if let inst = core.pluginInstance(u, slot: k), let w = open[ObjectIdentifier(inst)] { w.window.makeKeyAndOrderFront(nil); return }
+        guard let inst = core.beginPluginEdit(u, slot: k) else { NSSound.beep(); return }
         let w = PluginWindow(unit: u, inst: inst, core: core)
-        open[u] = w
+        open[ObjectIdentifier(inst)] = w
         w.loadView()
         w.window.center()
         w.window.makeKeyAndOrderFront(nil)
     }
 
-    static func close(_ u: Int) { open[u]?.window.close() }
+    /// alle Fenster einer Kette schließen
+    static func close(_ u: Int) { for w in open.values where w.unit == u { w.window.close() } }
+
+    /// Fenster eines Platzes schließen
+    static func close(_ u: Int, slot k: Int, core: MixController) {
+        guard let inst = core.pluginInstance(u, slot: k) else { return }
+        open[ObjectIdentifier(inst)]?.window.close()
+    }
 
     private init(unit: Int, inst: PluginInstance, core: MixController) {
         self.unit = unit
@@ -41,7 +50,7 @@ final class PluginWindow: NSObject, NSWindowDelegate {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 160), styleMask: [.titled, .closable, .miniaturizable],
                           backing: .buffered, defer: false)
         super.init()
-        window.title = "◆ PLUGIN · \(inst.info.name) · FX \(unit + 1)"
+        window.title = "◆ PLUGIN · \(inst.info.name) · " + (unit == MixController.masterBus ? "MASTER" : "FX \(unit + 1)")
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         window.delegate = self
@@ -55,7 +64,7 @@ final class PluginWindow: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if vst3Container != nil { inst.closeEditor(); vst3Container = nil }
         core.endPluginEdit(unit, inst)
-        Self.open[unit] = nil
+        Self.open[ObjectIdentifier(inst)] = nil
     }
 
     /// Fenster gezogen (nur VST3 mit veränderbarer Ansicht): Größe an das Plugin, es darf sie anpassen

@@ -38,7 +38,8 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * show fx units, 2 or 4 units, delay feedback, fx filter resonance
 * reverb level (dB, 0 = reverb ~4 dB below the track at full d/w), reverb brightness (dark -> airy: high decay 35 … 90 %, low cut 150 … 400 Hz, high shelf −4 … +6 dB, default 0.6), reverb pre-delay (ms)
 * fx mapping: per unit D/W, knob 1-3, button 1-3 -> parameter of the loaded effect (menu, search field above), all to default. same menu as the right click on the unit
-* remembered mappings per effect / plugin id (`engine.fxMappings`), forget per entry. a unit keeps its own mapping in the session
+* remembered mappings per effect / plugin id / plugin chain (`engine.fxMappings`, chain key = plugin ids joined by ` > `), forget per entry. a unit keeps its own mapping in the session
+* remembered plugin chains (`engine.pluginChains`: name -> slots with plugin id, on / off, state), forget per entry. saved from the chain popover of a unit or the master bus
 
 ## ◆ PLUGINS
 
@@ -49,6 +50,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * list with search: per plugin use in MINOS-741 (on / off), status, PRÜFEN (auval / VST3 self-check), click -> path, load default / isolated / in-process (audio units), `läuft im prozess` (VST3), unblock, last log
 * ALLE PRÜFEN with progress and cancel, results kept per plugin + version
 * crash marker `plugin-opening.json` next to it, a leftover marker blocks that plugin on the next start -> [manual](MANUAL.md#-08--fx)
+* chains (up to 4 per fx unit, master bus) use the same list, isolation and crash handling per slot: a crashed or hanging slot is passed through, reloads after 2 s, blocked after 3 crashes
 * offscreen image of this tab without audio: `MIX741_SELFTEST=1 MIX741_SHOT=plugins:<folder>` (optional `MIX741_SHOT_PLUGINS=<plugin folder>`)
 
 ## ◆ DISPLAY

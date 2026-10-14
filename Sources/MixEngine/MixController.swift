@@ -69,6 +69,8 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var fxFilterResonance = 0.4
     /// FX-Belegung je Effekt-Kennung (GROUP, FILTER, DELAY, REVERB, Plugin-ID): gilt beim nächsten Laden des Effekts
     public var fxMappings: [String: FXMapping] = [:]
+    /// gemerkte Plugin-Ketten (Name → Plätze mit Zustand), für jede FX-Unit und den Master-Bus
+    public var pluginChains: [String: [FXPluginSlot]] = [:]
     /// Reverb: Pegel in dB (0 = Hall bei vollem D/W ≈ 4 dB unter dem Track), Helligkeit 0…1, Vorverzögerung in ms
     public var reverbLevelDb = 0.0
     public var reverbBrightness = 0.6
@@ -194,9 +196,21 @@ public struct FXUnitState: Equatable, Sendable, Codable {
     public var singleType = Effect.delay.rawValue
     public var singleOn = false
     public var params = [0.5, 0.45, 0.6]
-    /// Effekt-Plugin (PluginInfo.id, z. B. "aufx:mrev:appl") und sein Zustand (ClassInfo, Binär-Plist)
-    public var pluginID: String?
-    public var pluginState: Data?
+    /// Plugin-Kette (Single + PLUGIN): bis zu MixEngine.chainSlots Plugins in Reihe, D/W wirkt auf die ganze Kette
+    public var chain: [FXPluginSlot] = []
+    /// erstes Plugin der Kette (PluginInfo.id, z. B. "aufx:mrev:appl") und sein Zustand (ClassInfo, Binär-Plist).
+    /// Setzen ersetzt die Kette durch dieses eine Plugin (nil = leer)
+    public var pluginID: String? {
+        get { chain.first?.id }
+        set {
+            guard newValue != chain.first?.id || chain.count != 1 else { return }
+            chain = newValue.map { [FXPluginSlot(id: $0)] } ?? []
+        }
+    }
+    public var pluginState: Data? {
+        get { chain.first?.state }
+        set { if !chain.isEmpty { chain[0].state = newValue } }
+    }
     /// Zuweisung der Bedienelemente und die Effekt-Kennung, zu der sie gehört
     public var mapping = FXMapping()
     public var mappingKey: String?
@@ -204,6 +218,24 @@ public struct FXUnitState: Equatable, Sendable, Codable {
     public var pluginValues: [String: Double] = [:]
     public var anyOn: Bool { single ? singleOn : slots.contains { $0.on } }
     public init() {}
+
+    enum CodingKeys: String, CodingKey {
+        case dryWet, slots, slotTypes, opts, delayIndex, reverbSize, reverbFreeze, single, singleType, singleOn, params
+        case chain, pluginID, pluginState, mapping, mappingKey, pluginValues
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(dryWet, forKey: .dryWet); try c.encode(slots, forKey: .slots); try c.encode(slotTypes, forKey: .slotTypes)
+        try c.encode(opts, forKey: .opts); try c.encode(delayIndex, forKey: .delayIndex); try c.encode(reverbSize, forKey: .reverbSize)
+        try c.encode(reverbFreeze, forKey: .reverbFreeze); try c.encode(single, forKey: .single)
+        try c.encode(singleType, forKey: .singleType); try c.encode(singleOn, forKey: .singleOn); try c.encode(params, forKey: .params)
+        try c.encode(chain, forKey: .chain)
+        // erstes Plugin zusätzlich wie bisher (ältere Fassungen lesen nur das)
+        try c.encodeIfPresent(pluginID, forKey: .pluginID); try c.encodeIfPresent(pluginState, forKey: .pluginState)
+        try c.encode(mapping, forKey: .mapping); try c.encodeIfPresent(mappingKey, forKey: .mappingKey)
+        try c.encode(pluginValues, forKey: .pluginValues)
+    }
 
     // tolerant laden: neue Felder fehlen in alten Sitzungen
     public init(from decoder: Decoder) throws {
@@ -221,8 +253,12 @@ public struct FXUnitState: Equatable, Sendable, Codable {
         if slotTypes.count != 3 || Set(slotTypes).count != 3
             || !slotTypes.allSatisfy({ Effect(rawValue: $0).map(Effect.groupable.contains) ?? false }) { slotTypes = Self.defaultSlotTypes }
         opts = (try c.decodeIfPresent([String: Double].self, forKey: .opts) ?? [:]).filter { !$0.key.hasSuffix(".freeze") && !$0.key.hasSuffix(".mute") }
-        pluginID = try c.decodeIfPresent(String.self, forKey: .pluginID)
-        pluginState = try c.decodeIfPresent(Data.self, forKey: .pluginState)
+        if let list = try c.decodeIfPresent([FXPluginSlot].self, forKey: .chain) {
+            chain = Array(list.prefix(MixEngine.chainSlots))
+        } else if let id = try c.decodeIfPresent(String.self, forKey: .pluginID) {
+            // ein Plugin je Unit (bis 2026-10): wird Platz 1 der Kette
+            chain = [FXPluginSlot(id: id, state: try c.decodeIfPresent(Data.self, forKey: .pluginState))]
+        }
         mapping = try c.decodeIfPresent(FXMapping.self, forKey: .mapping) ?? FXMapping()
         mappingKey = try c.decodeIfPresent(String.self, forKey: .mappingKey)
         if let v = try c.decodeIfPresent([String: Double].self, forKey: .pluginValues) {
@@ -231,6 +267,42 @@ public struct FXUnitState: Equatable, Sendable, Codable {
             // ältere Sitzung: Regler 1–3 = die ersten drei Plugin-Parameter ("@i" = Index, beim Laden aufgelöst)
             for i in 0..<3 { pluginValues["@\(i)"] = params[i] }
         }
+    }
+}
+
+/// Platz einer Plugin-Kette (FX-Unit oder Master-Bus)
+public struct FXPluginSlot: Equatable, Sendable, Codable {
+    /// Kennung zur Laufzeit (Instanzen folgen dem Platz beim Verschieben), nicht gespeichert
+    public var uid = UUID()
+    /// PluginInfo.id
+    public var id: String
+    /// aus = durchreichen, Fahne klingt aus
+    public var on = true
+    /// Zustand des Plugins (AU: ClassInfo, VST3: Komponente + Controller)
+    public var state: Data?
+
+    public init(id: String, on: Bool = true, state: Data? = nil) { self.id = id; self.on = on; self.state = state }
+
+    enum CodingKeys: String, CodingKey { case id, on, state }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        on = try c.decodeIfPresent(Bool.self, forKey: .on) ?? true
+        state = try c.decodeIfPresent(Data.self, forKey: .state)
+    }
+}
+
+/// Master-Bus: Plugin-Kette nach der Summe der Decks, vor MAIN (nur interner Mixer)
+public struct MasterFXState: Equatable, Sendable, Codable {
+    public var on = false
+    public var dryWet = 1.0
+    public var chain: [FXPluginSlot] = []
+    public init() {}
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        on = try c.decodeIfPresent(Bool.self, forKey: .on) ?? false
+        dryWet = try c.decodeIfPresent(Double.self, forKey: .dryWet) ?? 1
+        chain = Array((try c.decodeIfPresent([FXPluginSlot].self, forKey: .chain) ?? []).prefix(MixEngine.chainSlots))
     }
 }
 
@@ -265,8 +337,10 @@ public struct MixState: Equatable, Sendable {
     public var fxParams = [[FXParam]](repeating: [], count: MixEngine.fxUnitCount)
     public var fxControls = [[FXControlInfo]](repeating: Array(repeating: FXControlInfo(), count: FXControl.allCases.count),
                                               count: MixEngine.fxUnitCount)
-    /// je FX-Unit: letzter Plugin-Ladefehler
-    public var pluginErrors = [String?](repeating: nil, count: MixEngine.fxUnitCount)
+    /// je FX-Unit und Master-Bus (Index MixController.masterBus): letzter Plugin-Ladefehler
+    public var pluginErrors = [String?](repeating: nil, count: MixEngine.fxUnitCount + 1)
+    /// Master-Bus: Plugin-Kette nach der Summe der Decks (interner Mixer)
+    public var masterFX = MasterFXState()
 
     public init() {}
 
@@ -381,7 +455,7 @@ public final class MixController: @unchecked Sendable {
         if let fs = fileService, fs.cacheLimit != Int64(gb * 1e9) { fs.cacheLimit = Int64(gb * 1e9) }
     }
 
-    public func setExternalMixer(_ on: Bool) { locked { state.externalMixer = on; applyAllMixer(); applyMaster() } }
+    public func setExternalMixer(_ on: Bool) { locked { state.externalMixer = on; applyAllMixer(); applyMaster(); applyMasterFX() } }
 
     // MARK: Positionen / Phase
 
@@ -1590,7 +1664,7 @@ public final class MixController: @unchecked Sendable {
         locked {
             f(&state)
             for d in state.decks.indices { applyRate(d) }
-            applyAllMixer(); applyAllFX()
+            applyAllMixer(); applyAllFX(); applyMasterFX()
             engine.setClockBPM(state.clockBPM)
             engine.setMetronome(on: state.metronome, volume: state.metronomeVolume, firstChannel: state.prefs.metronomeChannel)
             applyMaster()
@@ -1675,7 +1749,7 @@ public final class MixController: @unchecked Sendable {
     }
 
     private func applyFX(_ u: Int) {
-        syncPlugins(u)
+        syncChain(u)
         prepareControls(u)
         var fx = state.fx[u]
         // D/W der Unit wirkt nur, wenn ein Bedienelement darauf liegt (sonst voll nass, z. B. D/W auf dem Mix des Plugins)
@@ -1695,7 +1769,7 @@ public final class MixController: @unchecked Sendable {
 
     private var paramIndex = [[String: Int]](repeating: [:], count: MixEngine.fxUnitCount)
     private var paramsKey = [String?](repeating: nil, count: MixEngine.fxUnitCount)
-    private var paramsInst = [ObjectIdentifier?](repeating: nil, count: MixEngine.fxUnitCount)
+    private var paramsInst = [[ObjectIdentifier]](repeating: [], count: MixEngine.fxUnitCount)
 
     /// Regler oder D/W bewegt (0…1): an das zugewiesene Ziel, nicht zugewiesen = nichts
     public func setFXControl(_ u: Int, _ c: FXControl, _ v: Double) {
@@ -1743,7 +1817,7 @@ public final class MixController: @unchecked Sendable {
         applyFX(u)
     }
 
-    /// Ziel setzen: eigener Parameter -> Feld der Unit, Plugin-Parameter -> alle Instanzen der Unit (Steuer-Weg wie das Fenster)
+    /// Ziel setzen: eigener Parameter -> Feld der Unit, Plugin-Parameter -> alle Instanzen des Platzes (Steuer-Weg wie das Fenster)
     private func setFXParam(_ u: Int, _ p: FXParam, _ v: Double) {
         let pos = p.snapped(v)
         guard let pid = p.pluginParam else {
@@ -1752,7 +1826,7 @@ public final class MixController: @unchecked Sendable {
             return
         }
         let plain = Float(p.plain(pos))
-        for case let inst? in plugins[u] { inst.set(pid, plain) }
+        for inst in slotInsts(u, p.pluginSlot) ?? [] { inst.set(pid, plain) }
         state.fx[u].pluginValues[p.id] = pos
         refreshControls(u)
     }
@@ -1764,22 +1838,28 @@ public final class MixController: @unchecked Sendable {
             state.fx[u].mapping = state.prefs.fxMappings[key] ?? FXMapping()
             state.fx[u].mappingKey = key
         }
-        let inst = state.fx[u].pluginActive ? loadedPlugin(u) : nil
-        let id = inst.map(ObjectIdentifier.init)
-        if paramsKey[u] != key || paramsInst[u] != id {
-            paramsKey[u] = key; paramsInst[u] = id
+        let slots = state.fx[u].pluginActive ? loadedSlots(u) : []
+        let ids = slots.map { ObjectIdentifier($0.inst) }
+        if paramsKey[u] != key || paramsInst[u] != ids {
+            paramsKey[u] = key; paramsInst[u] = ids
             var list = FXCatalog.params(for: key)
-            if let inst { list += inst.parameters.map { FXParam(plugin: $0, normalized: inst.isVST3) } }
+            let named = slots.count > 1
+            for (k, inst) in slots {
+                list += inst.parameters.map { par in
+                    var p = FXParam(plugin: par, normalized: inst.isVST3, slot: k)
+                    if named { p.group = "\(k + 1) " + inst.info.name + (p.group.isEmpty ? "" : " · " + p.group) }
+                    return p
+                }
+            }
             state.fxParams[u] = list
             paramIndex[u] = Dictionary(list.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
         }
         refreshControls(u)
     }
 
-    /// Plugin der Unit, wenn es für alle Decks geladen ist
-    private func loadedPlugin(_ u: Int) -> PluginInstance? {
-        guard let want = state.fx[u].pluginID, plugins[u].allSatisfy({ $0?.info.id == want }) else { return nil }
-        return plugins[u][0]
+    /// geladene Plätze der Unit in Ketten-Reihenfolge (Instanz des ersten Decks)
+    private func loadedSlots(_ u: Int) -> [(slot: Int, inst: PluginInstance)] {
+        state.fx[u].chain.indices.compactMap { k in slotInsts(u, k).map { (k, $0[0]) } }
     }
 
     /// Ziele der Bedienelemente auflösen und ihre Stellung lesen
@@ -1806,21 +1886,38 @@ public final class MixController: @unchecked Sendable {
     private func fxValue(_ u: Int, _ p: FXParam) -> Double {
         guard let pid = p.pluginParam else { return FXCatalog.value(p.id, effect: state.fx[u].effectKey, state.fx[u]) ?? 0 }
         if let v = state.fx[u].pluginValues[p.id] { return v }
-        guard let inst = plugins[u][0] else { return p.defaultValue }
+        guard let inst = slotInsts(u, p.pluginSlot)?.first else { return p.defaultValue }
         let v = p.position(Double(inst.value(pid)))
         state.fx[u].pluginValues[p.id] = v
         return v
     }
 
     // MARK: Plugins
-    // je FX-Unit eine Instanz pro Deck (auch nicht zugewiesene: Zuweisen wirkt sofort, ohne Ladepause).
+    // Je Kette (FX-Unit 0…3, Master-Bus = masterBus) bis zu MixEngine.chainSlots Plugins in Reihe; je Platz eine Instanz
+    // pro Deck (Master: eine). Auch nicht zugewiesene Decks haben Instanzen (Zuweisen wirkt sofort, ohne Ladepause).
     // Laden auf eigener Queue außerhalb der Sperre (Plugins brauchen teils lange), Einsetzen unter der Sperre;
-    // alte Instanzen werden erst frei, wenn der Audio-Thread sie nicht mehr rechnet.
+    // herausgenommene Instanzen werden erst frei, wenn der Audio-Thread sie nicht mehr rechnet.
 
-    private var plugins = [[PluginInstance?]](repeating: Array(repeating: nil, count: MixEngine.deckCount), count: MixEngine.fxUnitCount)
-    private var pluginGen = [Int](repeating: 0, count: MixEngine.fxUnitCount)
-    private var pluginLoading = [String?](repeating: nil, count: MixEngine.fxUnitCount)
-    private var pluginFailed = [String?](repeating: nil, count: MixEngine.fxUnitCount)
+    /// Kette des Master-Busses (Index nach den FX-Units)
+    public static let masterBus = MixEngine.fxUnitCount
+    private static let busCount = MixEngine.fxUnitCount + 1
+
+    /// geladener Platz: Instanzen aller Decks (Master: eine); folgen dem Platz beim Verschieben
+    private final class LoadedSlot {
+        var uid: UUID
+        let insts: [PluginInstance]
+        init(uid: UUID, insts: [PluginInstance]) { self.uid = uid; self.insts = insts }
+        var id: String { insts[0].info.id }
+    }
+    private var loaded = [[LoadedSlot]](repeating: [], count: busCount)
+    /// Platz → laufender Ladeauftrag bzw. Plugin-ID, die nicht lud
+    private var loading = [[UUID: Int]](repeating: [:], count: busCount)
+    private var failed = [[UUID: String]](repeating: [:], count: busCount)
+    private var loadToken = 0
+    /// Stand im Kern je Kette × Deck × Platz
+    private var installed: [[[PluginInstance?]]] = (0..<busCount).map { b in
+        Array(repeating: Array(repeating: nil, count: MixEngine.chainSlots), count: b == MixEngine.fxUnitCount ? 1 : MixEngine.deckCount)
+    }
     private let pluginQueue = DispatchQueue(label: "minos741.plugins", qos: .userInitiated)
     private let pluginEvents = DispatchQueue(label: "minos741.plugin-events", qos: .userInitiated)
     /// Plugin-Liste, Einstellungen, Absturz-Markierung (die App setzt vor dem ersten Laden eine gespeicherte ein)
@@ -1828,6 +1925,21 @@ public final class MixController: @unchecked Sendable {
         didSet { observeInvalidation() }
     }
     private var invalidationObserver: NSObjectProtocol?
+
+    private func chain(_ b: Int) -> [FXPluginSlot] { b == Self.masterBus ? state.masterFX.chain : state.fx[b].chain }
+    private func editChain(_ b: Int, _ f: (inout [FXPluginSlot]) -> Void) {
+        if b == Self.masterBus { f(&state.masterFX.chain) } else { f(&state.fx[b].chain) }
+    }
+    private func coreUnit(_ b: Int) -> Int { b == Self.masterBus ? MixEngine.masterUnit : b }
+    private func busName(_ b: Int) -> String { b == Self.masterBus ? "MASTER" : "FX \(b + 1)" }
+    private func applyBus(_ b: Int) { if b == Self.masterBus { applyMasterFX() } else { applyFX(b) } }
+
+    /// Instanzen des k-ten Platzes (alle Decks), nil = (noch) nicht geladen
+    private func slotInsts(_ b: Int, _ k: Int) -> [PluginInstance]? {
+        let c = chain(b)
+        guard c.indices.contains(k) else { return nil }
+        return loaded[b].first { $0.uid == c[k].uid && $0.id == c[k].id }?.insts
+    }
 
     /// Effekt-Plugins fürs FX-Menü: eingeschaltet und nicht blockiert (einmal eingelesen, `refresh` liest neu)
     public func pluginList(refresh: Bool = false) -> [PluginInfo] { pluginCatalog.menuList(refresh: refresh) }
@@ -1839,182 +1951,344 @@ public final class MixController: @unchecked Sendable {
 
     /// Anzeige eines Plugin-Werts vom Plugin selbst (VST3; außerhalb der Sperre, Haupt-Thread). Sonst nil
     public func pluginText(_ u: Int, _ p: FXParam, _ pos: Double) -> String? {
-        guard let pid = p.pluginParam, let inst = locked({ plugins[u][0] }), inst.isVST3 else { return nil }
+        guard let pid = p.pluginParam, let inst = locked({ slotInsts(u, p.pluginSlot)?.first }), inst.isVST3 else { return nil }
         let t = inst.text(pid, Float(p.plain(pos)))
         return p.unit.isEmpty || t.hasSuffix(p.unit) ? t : t + " " + p.unit
     }
 
-    /// Plugin einer Unit wählen (schaltet auf Single + PLUGIN)
+    /// Plugin einer Unit wählen: die Kette besteht danach nur aus diesem (nil = leer); schaltet auf Single + PLUGIN
     public func setPlugin(_ u: Int, id: String?) {
         locked {
-            if state.fx[u].pluginID != id {
-                state.fx[u].pluginID = id
-                state.fx[u].pluginState = nil
+            let want = id.map { [$0] } ?? []
+            if state.fx[u].chain.map(\.id) != want {
+                state.fx[u].chain = want.map { FXPluginSlot(id: $0) }
                 state.fx[u].pluginValues = [:]
             }
-            pluginFailed[u] = nil   // nochmals gewählt = neuer Versuch
+            failed[u] = [:]   // nochmals gewählt = neuer Versuch
             state.pluginErrors[u] = nil
             if id != nil { state.fx[u].single = true; state.fx[u].singleType = FXUnitState.Effect.plugin.rawValue }
             applyFX(u)
         }
     }
 
-    /// Instanz für das Plugin-Fenster (die des ersten Decks); Änderungen darin gehen live an die anderen Decks
-    public func beginPluginEdit(_ u: Int) -> PluginInstance? {
+    // MARK: Ketten bearbeiten (FX-Unit 0…3 oder masterBus)
+
+    /// Plugin hinten an die Kette hängen (höchstens MixEngine.chainSlots); FX-Unit schaltet auf Single + PLUGIN
+    public func addPlugin(_ b: Int, id: String) {
         locked {
-            guard let first = plugins[u].compactMap({ $0 }).first else { return nil }
+            guard chain(b).count < MixEngine.chainSlots else { return }
+            let n = chain(b).count
+            changeChain(b, perm: (0..<n).map { Optional($0) }) { $0.append(FXPluginSlot(id: id)) }
+            state.pluginErrors[b] = nil
+            if b < Self.masterBus { state.fx[b].single = true; state.fx[b].singleType = FXUnitState.Effect.plugin.rawValue }
+            applyBus(b)
+        }
+    }
+
+    /// Platz k durch ein anderes Plugin ersetzen (Zustand und Parameter des Platzes beginnen neu)
+    public func replacePlugin(_ b: Int, slot k: Int, id: String) {
+        locked {
+            guard chain(b).indices.contains(k), chain(b)[k].id != id else { return }
+            var perm: [Int?] = Array(chain(b).indices)
+            perm[k] = nil
+            changeChain(b, perm: perm) { $0[k] = FXPluginSlot(id: id, on: $0[k].on) }
+            state.pluginErrors[b] = nil
+            applyBus(b)
+        }
+    }
+
+    /// Platz k aus der Kette nehmen
+    public func removePlugin(_ b: Int, slot k: Int) {
+        locked {
+            guard chain(b).indices.contains(k) else { return }
+            let perm: [Int?] = chain(b).indices.map { $0 == k ? nil : ($0 > k ? $0 - 1 : $0) }
+            changeChain(b, perm: perm) { $0.remove(at: k) }
+            if chain(b).isEmpty { state.pluginErrors[b] = nil }
+            applyBus(b)
+        }
+    }
+
+    /// Platz k um `by` verschieben (−1 = früher in der Kette)
+    public func movePlugin(_ b: Int, slot k: Int, by: Int) {
+        locked {
+            let j = k + by
+            guard chain(b).indices.contains(k), chain(b).indices.contains(j) else { return }
+            let perm: [Int?] = chain(b).indices.map { $0 == k ? j : ($0 == j ? k : $0) }
+            changeChain(b, perm: perm) { $0.swapAt(k, j) }
+            applyBus(b)
+        }
+    }
+
+    /// Platz an/aus (aus = durchreichen, Fahne klingt aus)
+    public func setPluginOn(_ b: Int, slot k: Int, _ on: Bool) {
+        locked {
+            guard chain(b).indices.contains(k) else { return }
+            editChain(b) { $0[k].on = on }
+            applyBus(b)
+        }
+    }
+
+    /// Kette ändern; `perm[alt] = neu` (nil = Platz entfällt). Gemerkte Plugin-Werte und die Belegung folgen ihrem Platz;
+    /// gibt es für die neue Kette eine gemerkte Belegung, gilt die
+    private func changeChain(_ b: Int, perm: [Int?], _ f: (inout [FXPluginSlot]) -> Void) {
+        guard b < Self.masterBus else { editChain(b, f); return }
+        let oldKey = state.fx[b].effectKey, ownMapping = state.fx[b].pluginActive && state.fx[b].mappingKey == oldKey
+        editChain(b, f)
+        var fx = state.fx[b]
+        let move = { (key: String) -> String? in
+            guard let (k, base) = FXParam.pluginSlot(of: key) else { return key }
+            guard k < perm.count, let n = perm[k] else { return nil }
+            return FXParam.pluginKey(base, slot: n)
+        }
+        fx.pluginValues = Dictionary(fx.pluginValues.compactMap { k, v in move(k).map { ($0, v) } }, uniquingKeysWith: { a, _ in a })
+        let key = fx.effectKey
+        if ownMapping, key != oldKey, state.prefs.fxMappings[key] == nil {
+            var m = FXMapping()
+            for (c, t) in fx.mapping.targets { if let n = t.isEmpty ? t : move(t) { m.targets[c] = n } }
+            fx.mapping = m
+            fx.mappingKey = key
+        }
+        state.fx[b] = fx
+    }
+
+    /// Kette als Vorlage merken (Zustände frisch aus den Plugins); gilt für jede FX-Unit und den Master-Bus
+    public func saveChainPreset(_ b: Int, name: String) {
+        let snap: [(FXPluginSlot, PluginInstance?)] = locked { chain(b).indices.map { (chain(b)[$0], slotInsts(b, $0)?.first) } }
+        // VST3 liest den Zustand auf dem UI-Thread: außerhalb der Sperre
+        let slots = snap.map { s, inst -> FXPluginSlot in
+            var x = s
+            if let st = inst?.state { x.state = st }
+            return x
+        }
+        locked { state.prefs.pluginChains[name] = slots.isEmpty ? nil : slots }
+    }
+
+    /// gemerkte Kette laden (ersetzt die Kette, Belegung der Kette aus den Einstellungen)
+    public func loadChainPreset(_ b: Int, name: String) {
+        locked {
+            guard let p = state.prefs.pluginChains[name] else { return }
+            editChain(b) { $0 = p.prefix(MixEngine.chainSlots).map { FXPluginSlot(id: $0.id, on: $0.on, state: $0.state) } }
+            failed[b] = [:]
+            state.pluginErrors[b] = nil
+            if b < Self.masterBus {
+                state.fx[b].pluginValues = [:]
+                state.fx[b].single = true; state.fx[b].singleType = FXUnitState.Effect.plugin.rawValue
+            }
+            applyBus(b)
+        }
+    }
+
+    public func deleteChainPreset(_ name: String) { locked { state.prefs.pluginChains[name] = nil } }
+
+    /// Latenz je Platz und Summe der Kette in Sekunden (nicht ausgeglichen; Anzeige)
+    public func chainLatency(_ b: Int) -> (slots: [Double?], total: Double) {
+        let insts = locked { chain(b).indices.map { slotInsts(b, $0)?.first } }
+        let l = insts.map { $0?.latency }
+        return (l, l.reduce(0) { $0 + ($1 ?? 0) })
+    }
+
+    /// Instanz des ersten Decks eines Platzes (nil = nicht geladen), ohne Zuhören
+    public func pluginInstance(_ b: Int, slot k: Int) -> PluginInstance? { locked { slotInsts(b, k)?.first } }
+
+    /// Instanz für das Plugin-Fenster (die des ersten Decks); Änderungen darin gehen live an die anderen Decks des Platzes
+    public func beginPluginEdit(_ b: Int, slot k: Int = 0) -> PluginInstance? {
+        locked {
+            guard let first = slotInsts(b, k)?.first else { return nil }
             first.observe(on: pluginEvents) { [weak self, weak first] id, v in
                 guard let self, let first else { return }
-                self.pluginParamChanged(u, first, id, v)
+                self.pluginParamChanged(b, first, id, v)
             }
             return first
         }
     }
 
     /// Fenster zu: Zuhören beenden, Zustand für die Sitzung merken (VST3: Zustand auf dem UI-Thread, außerhalb der Sperre)
-    public func endPluginEdit(_ u: Int, _ inst: PluginInstance) {
+    public func endPluginEdit(_ b: Int, _ inst: PluginInstance) {
         inst.stopObserving()
         let st = inst.state
         locked {
-            guard plugins[u].contains(where: { $0 === inst }) else { return }
-            if let st { state.fx[u].pluginState = st }
+            guard let st, let k = chain(b).indices.first(where: { slotInsts(b, $0)?.contains { $0 === inst } == true }) else { return }
+            editChain(b) { $0[k].state = st }
         }
     }
 
-    private func pluginParamChanged(_ u: Int, _ src: PluginInstance, _ id: AudioUnitParameterID, _ v: Float) {
+    private func pluginParamChanged(_ b: Int, _ src: PluginInstance, _ id: AudioUnitParameterID, _ v: Float) {
         locked {
-            guard plugins[u].contains(where: { $0 === src }) else { return }
-            for case let p? in plugins[u] where p !== src && p.value(id) != v { p.set(id, v) }
+            guard let k = chain(b).indices.first(where: { slotInsts(b, $0)?.contains { $0 === src } == true }),
+                  let insts = slotInsts(b, k) else { return }
+            for p in insts where p !== src && p.value(id) != v { p.set(id, v) }
+            guard b < Self.masterBus else { return }
             // Bedienelemente folgen dem Fenster; gemerkte Stellungen bleiben aktuell
-            let key = FXParam.pluginKey(id)
-            guard state.fx[u].pluginValues[key] != nil || state.fxControls[u].contains(where: { $0.param?.id == key }),
+            let key = FXParam.pluginKey(id, slot: k)
+            guard state.fx[b].pluginValues[key] != nil || state.fxControls[b].contains(where: { $0.param?.id == key }),
                   let par = src.parameters.first(where: { $0.id == id }) else { return }
-            state.fx[u].pluginValues[key] = FXParam(plugin: par).position(Double(v))
-            refreshControls(u)
+            state.fx[b].pluginValues[key] = FXParam(plugin: par).position(Double(v))
+            refreshControls(b)
         }
     }
 
-    private func syncPlugins(_ u: Int) {
-        let fx = state.fx[u]
-        guard let want = fx.pluginID else {
-            if plugins[u].contains(where: { $0 != nil }) || pluginLoading[u] != nil {
-                pluginGen[u] += 1; pluginLoading[u] = nil
-                for d in plugins[u].indices { installPlugin(nil, unit: u, deck: d) }
-            }
+    /// Kette mit dem Kern abgleichen: fehlende Plätze laden, Instanzen einsetzen, herausgenommene freigeben. Unter der Sperre
+    private func syncChain(_ b: Int) {
+        let want = Array(chain(b).prefix(MixEngine.chainSlots))
+        let uids = Set(want.map(\.uid))
+        // Sitzung neu übernommen (neue Platz-Kennungen): geladene Instanzen mit derselben Plugin-ID weiterverwenden
+        for s in want where !loaded[b].contains(where: { $0.uid == s.uid }) && loading[b][s.uid] == nil {
+            if let l = loaded[b].first(where: { !uids.contains($0.uid) && $0.id == s.id }) { l.uid = s.uid }
+        }
+        loaded[b].removeAll { l in !want.contains { $0.uid == l.uid && $0.id == l.id } }
+        loading[b] = loading[b].filter { uids.contains($0.key) }
+        failed[b] = failed[b].filter { u, id in want.contains { $0.uid == u && $0.id == id } }
+        for (k, s) in want.enumerated() where !loaded[b].contains(where: { $0.uid == s.uid }) {
+            guard loading[b][s.uid] == nil, failed[b][s.uid] == nil else { continue }
+            startLoad(b, s, slot: k)
+        }
+        // Kern: Platz k = k-ter Platz der Kette (noch nicht geladen = leer, die anderen rechnen schon)
+        for d in installed[b].indices {
+            var row = [PluginInstance?](repeating: nil, count: MixEngine.chainSlots)
+            for (k, s) in want.enumerated() { row[k] = loaded[b].first { $0.uid == s.uid }?.insts[d] }
+            let old = installed[b][d]
+            guard !zip(old, row).allSatisfy({ $0 === $1 }) else { continue }
+            installed[b][d] = row
+            engine.setChain(unit: coreUnit(b), deck: d, row)
+            for case let o? in old where !row.contains(where: { $0 === o }) { retirePlugin(o, unit: coreUnit(b), deck: d) }
+        }
+        for k in 0..<MixEngine.chainSlots { engine.setChainSlotOn(unit: coreUnit(b), slot: k, k < want.count ? want[k].on : true) }
+    }
+
+    private func startLoad(_ b: Int, _ s: FXPluginSlot, slot k: Int) {
+        let want = s.id, uid = s.uid
+        // blockiert (Absturz) oder abgeschaltet: nicht laden, auch nicht aus einer gespeicherten Sitzung
+        if let why = pluginCatalog.unusableReason(want) {
+            failed[b][uid] = want
+            state.pluginErrors[b] = why
+            onNotice?(EngineNotice(.warning, key: "plugin.\(b)", busName(b) + ": " + String(localized: "Plugin nicht geladen · \(why)")))
             return
         }
-        let loaded = plugins[u].allSatisfy { $0?.info.id == want }
-        if !loaded {
-            guard pluginLoading[u] != want, pluginFailed[u] != want else { return }
-            // blockiert (Absturz) oder abgeschaltet: nicht laden, auch nicht aus einer gespeicherten Sitzung
-            if let why = pluginCatalog.unusableReason(want) {
-                pluginFailed[u] = want
-                state.pluginErrors[u] = why
-                onNotice?(EngineNotice(.warning, key: "plugin.\(u)", String(localized: "FX \(u + 1): Plugin nicht geladen · \(why)")))
-                return
-            }
-            pluginGen[u] += 1
-            let gen = pluginGen[u], saved = fx.pluginState, rate = engine.sampleRate
-            pluginLoading[u] = want
-            let catalog = pluginCatalog
-            pluginQueue.async { [self] in
-                do {
-                    // Liste ggf. erst hier einlesen (außerhalb der Sperre)
-                    guard let info = catalog.info(want) ?? PluginHost.codes(want).map({
-                        PluginInfo(id: want, name: PluginHost.fourCC($0.1), manufacturer: PluginHost.fourCC($0.2), type: $0.0, subtype: $0.1, manu: $0.2)
-                    }) else { throw NSError(domain: "minos741.plugin", code: 2, userInfo: [NSLocalizedDescriptionKey: want]) }
-                    // live: Fremd-Plugins nur isoliert; nur im Prozess ladbare (VST3, eigener Ordner) erst nach Freigabe
-                    if let why = catalog.inProcessReason(want) {
-                        throw NSError(domain: "minos741.plugin", code: 3, userInfo: [NSLocalizedDescriptionKey: "\(info.name): \(why)"])
-                    }
-                    let isolated = catalog.isolated(want)
-                    print("[plugin] FX \(u + 1): \(info.name) \(isolated ? "isoliert" : "im Prozess")")
-                    // Absturz-Markierung: stürzt MINOS-741 beim Öffnen ab, ist das Plugin beim nächsten Start blockiert
-                    catalog.beginOpen(key: want, name: info.name)
-                    defer { catalog.endOpen() }
-                    let insts = try (0..<MixEngine.deckCount).map { _ -> PluginInstance in
-                        let p = try PluginInstance(info, sampleRate: rate, outOfProcess: isolated)
-                        if let saved { p.state = saved }
-                        _ = p.parameters
-                        return p
-                    }
-                    // Zustand hier lesen, nicht unter der Sperre (VST3 fragt den UI-Thread)
-                    finishPluginLoad(u, gen, insts, restored: saved != nil, initialState: saved ?? insts[0].state)
-                } catch {
-                    locked {
-                        guard gen == pluginGen[u] else { return }
-                        pluginLoading[u] = nil; pluginFailed[u] = want
-                        state.pluginErrors[u] = error.localizedDescription
-                        onNotice?(EngineNotice(.error, key: "plugin.\(u)",
-                                               String(localized: "FX \(u + 1): Plugin nicht ladbar · \(error.localizedDescription)")))
-                    }
+        loadToken += 1
+        let token = loadToken, saved = s.state, rate = engine.sampleRate, name = busName(b)
+        let count = installed[b].count
+        loading[b][uid] = token
+        let catalog = pluginCatalog
+        pluginQueue.async { [self] in
+            do {
+                // Liste ggf. erst hier einlesen (außerhalb der Sperre)
+                guard let info = catalog.info(want) ?? PluginHost.codes(want).map({
+                    PluginInfo(id: want, name: PluginHost.fourCC($0.1), manufacturer: PluginHost.fourCC($0.2), type: $0.0, subtype: $0.1, manu: $0.2)
+                }) else { throw NSError(domain: "minos741.plugin", code: 2, userInfo: [NSLocalizedDescriptionKey: want]) }
+                // live: Fremd-Plugins nur isoliert; nur im Prozess ladbare (VST3, eigener Ordner) erst nach Freigabe
+                if let why = catalog.inProcessReason(want) {
+                    throw NSError(domain: "minos741.plugin", code: 3, userInfo: [NSLocalizedDescriptionKey: "\(info.name): \(why)"])
+                }
+                let isolated = catalog.isolated(want)
+                print("[plugin] \(name) Platz \(k + 1): \(info.name) \(isolated ? "isoliert" : "im Prozess")")
+                // Absturz-Markierung: stürzt MINOS-741 beim Öffnen ab, ist das Plugin beim nächsten Start blockiert
+                catalog.beginOpen(key: want, name: info.name)
+                defer { catalog.endOpen() }
+                let insts = try (0..<count).map { _ -> PluginInstance in
+                    let p = try PluginInstance(info, sampleRate: rate, outOfProcess: isolated)
+                    if let saved { p.state = saved }
+                    _ = p.parameters
+                    return p
+                }
+                // Zustand hier lesen, nicht unter der Sperre (VST3 fragt den UI-Thread)
+                finishSlotLoad(b, uid, token, insts, restored: saved != nil, initialState: saved ?? insts[0].state)
+            } catch {
+                locked {
+                    guard loading[b][uid] == token else { return }
+                    loading[b][uid] = nil; failed[b][uid] = want
+                    state.pluginErrors[b] = error.localizedDescription
+                    onNotice?(EngineNotice(.error, key: "plugin.\(b)",
+                                           name + ": " + String(localized: "Plugin nicht ladbar · \(error.localizedDescription)")))
                 }
             }
-            return
         }
     }
 
-    private func finishPluginLoad(_ u: Int, _ gen: Int, _ insts: [PluginInstance], restored: Bool, initialState: Data?) {
+    private func finishSlotLoad(_ b: Int, _ uid: UUID, _ token: Int, _ insts: [PluginInstance], restored: Bool, initialState: Data?) {
         locked {
-            // inzwischen anderes Plugin gewählt: die neuen Instanzen waren nie im Kern → einfach verwerfen
-            guard gen == pluginGen[u], state.fx[u].pluginID == insts[0].info.id else { return }
-            pluginLoading[u] = nil; pluginFailed[u] = nil; state.pluginErrors[u] = nil
-            for d in insts.indices { installPlugin(insts[d], unit: u, deck: d) }
+            // inzwischen anders gewählt: die neuen Instanzen waren nie im Kern → einfach verwerfen
+            guard loading[b][uid] == token, let k = chain(b).firstIndex(where: { $0.uid == uid && $0.id == insts[0].info.id }) else { return }
+            loading[b][uid] = nil; failed[b][uid] = nil; state.pluginErrors[b] = nil
+            loaded[b].append(LoadedSlot(uid: uid, insts: insts))
             // Sitzung: Stellungen der Bedienelemente wieder setzen (neuer als der gespeicherte Zustand); neues Plugin: frisch
-            if restored { pushPluginValues(u, insts) } else { state.fx[u].pluginValues = [:] }
-            if state.fx[u].pluginState == nil { state.fx[u].pluginState = initialState }
-            applyFX(u)
+            if b < Self.masterBus {
+                if restored { pushPluginValues(b, slot: k, insts) } else { dropPluginValues(b, slot: k) }
+            }
+            if chain(b)[k].state == nil { editChain(b) { $0[k].state = initialState } }
+            applyBus(b)
         }
     }
 
-    /// gemerkte Stellungen an die neuen Instanzen ("@i" aus älteren Sitzungen = i-ter Parameter)
-    private func pushPluginValues(_ u: Int, _ insts: [PluginInstance]) {
+    /// gemerkte Stellungen eines Platzes an die neuen Instanzen ("@i" aus älteren Sitzungen = i-ter Parameter, Platz 0)
+    private func pushPluginValues(_ u: Int, slot k: Int, _ insts: [PluginInstance]) {
         let params = insts[0].parameters
-        var out: [String: Double] = [:]
-        for (k, v) in state.fx[u].pluginValues {
-            let par = k.hasPrefix("@")
-                ? Int(k.dropFirst()).flatMap { $0 < params.count ? params[$0] : nil }
-                : UInt32(k.dropFirst()).flatMap { id in params.first { $0.id == id } }
+        var out = state.fx[u].pluginValues.filter { FXParam.pluginSlot(of: $0.key)?.0 != k }
+        for (key, v) in state.fx[u].pluginValues {
+            guard let (s, base) = FXParam.pluginSlot(of: key), s == k else { continue }
+            let par = base.hasPrefix("@")
+                ? Int(base.dropFirst()).flatMap { $0 < params.count ? params[$0] : nil }
+                : UInt32(base.dropFirst()).flatMap { id in params.first { $0.id == id } }
             guard let par else { continue }
-            let p = FXParam(plugin: par)
+            let p = FXParam(plugin: par, slot: k)
             for inst in insts { inst.set(par.id, Float(p.plain(v))) }
             out[p.id] = v
         }
         state.fx[u].pluginValues = out
     }
 
-    private func installPlugin(_ p: PluginInstance?, unit u: Int, deck d: Int) {
-        let old = plugins[u][d]
-        plugins[u][d] = p
-        engine.setPlugin(unit: u, deck: d, p)
-        if let old { retirePlugin(old, unit: u, deck: d) }
+    private func dropPluginValues(_ u: Int, slot k: Int) {
+        state.fx[u].pluginValues = state.fx[u].pluginValues.filter { FXParam.pluginSlot(of: $0.key)?.0 != k }
     }
 
     /// alte Instanz halten, bis der Audio-Thread einen Block ohne sie gerechnet hat (steht die Ausgabe, rechnet niemand)
     private func retirePlugin(_ old: PluginInstance, unit u: Int, deck d: Int) {
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { [self] in
-            if engine.pluginReleased(unit: u, deck: d, old) || !engine.running { return }
+            if engine.chainReleased(unit: u, deck: d, old) || !engine.running { return }
             retirePlugin(old, unit: u, deck: d)
         }
     }
 
-    /// NaN im Deck (Kern hat das Deck geheilt): Plugin zurücksetzen, solange rechnet der Kern es nicht. Unter der Sperre.
+    // MARK: Master-Bus
+
+    /// Master-Bus an/aus, Dry/Wet; die Kette bearbeiten addPlugin & Co. mit `masterBus`
+    public func setMasterFX(on: Bool? = nil, dryWet: Double? = nil) {
+        locked {
+            if let on { state.masterFX.on = on }
+            if let dryWet { state.masterFX.dryWet = max(0, min(1, dryWet)) }
+            applyMasterFX()
+        }
+    }
+
+    public func toggleMasterFX() { locked { state.masterFX.on.toggle(); applyMasterFX() } }
+
+    /// Kette und Schalter an den Kern; Paar = Master-Paar des internen Mixers. Extern gibt es keinen Summenpunkt: aus
+    private func applyMasterFX() {
+        syncChain(Self.masterBus)
+        let m = state.masterFX
+        engine.setMasterFX(on: m.on, dryWet: m.dryWet)
+        engine.setMasterFXChannel(state.externalMixer ? nil : engine.routing.firstChannel.first)
+    }
+
+    /// NaN im Deck oder aus einem Plugin: Platz zurücksetzen, solange reicht der Kern ihn durch. Unter der Sperre.
     /// Das Zurücksetzen selbst läuft außerhalb (VST3: UI-Thread, AU: Plugin-Queue – bei isolierten Plugins ein
     /// XPC-Aufruf, der den Steuertakt nicht aufhalten darf)
     private var pluginsResetting = Set<Int>()
     private func healPlugins() {
-        for u in plugins.indices {
-            for d in plugins[u].indices where engine.pluginNeedsReset(unit: u, deck: d) {
-                let key = u * 16 + d
-                guard !pluginsResetting.contains(key) else { continue }
-                guard let p = plugins[u][d] else { engine.pluginResetDone(unit: u, deck: d); continue }
-                pluginsResetting.insert(key)
-                let done = { [weak self] in
-                    guard let self else { return }
-                    self.engine.pluginResetDone(unit: u, deck: d)
-                    self.locked { _ = self.pluginsResetting.remove(key) }
+        for b in installed.indices {
+            let unit = coreUnit(b)
+            for d in installed[b].indices {
+                for k in 0..<MixEngine.chainSlots where engine.chainNeedsReset(unit: unit, deck: d, slot: k) {
+                    let key = (b * 16 + d) * 16 + k
+                    guard !pluginsResetting.contains(key) else { continue }
+                    guard let p = installed[b][d][k] else { engine.chainResetDone(unit: unit, deck: d, slot: k); continue }
+                    pluginsResetting.insert(key)
+                    let done = { [weak self] in
+                        guard let self else { return }
+                        self.engine.chainResetDone(unit: unit, deck: d, slot: k)
+                        self.locked { _ = self.pluginsResetting.remove(key) }
+                    }
+                    if p.isVST3 { p.reset(done) } else { pluginQueue.async { p.reset(done) } }
                 }
-                if p.isVST3 { p.reset(done) } else { pluginQueue.async { p.reset(done) } }
             }
         }
     }
@@ -2031,18 +2305,20 @@ public final class MixController: @unchecked Sendable {
 
     private func pluginInvalidated(_ au: OpaquePointer) {
         locked {
-            for u in plugins.indices {
-                guard let hit = plugins[u].compactMap({ $0 }).first(where: { OpaquePointer($0.audioUnit) == au }) else { continue }
-                pluginDown(u, hit, crashed: true)
+            for b in loaded.indices {
+                for l in loaded[b] {
+                    guard let hit = l.insts.first(where: { OpaquePointer($0.audioUnit) == au }) else { continue }
+                    pluginDown(b, l.uid, hit, crashed: true)
+                }
             }
         }
     }
 
-    /// isoliertes Plugin abgestürzt oder hängt (rechnet seit `hangSeconds` keinen Block): Instanzen heraus (trocken),
-    /// Absturz zählen, Hinweis; unter `PluginCatalog.crashLimit` nach 2 s neu laden, sonst gesperrt. Unter der Sperre
-    private func pluginDown(_ u: Int, _ hit: PluginInstance, crashed: Bool) {
+    /// isoliertes Plugin abgestürzt oder hängt (rechnet seit `hangSeconds` keinen Block): Instanzen des Platzes heraus
+    /// (durchgereicht), Absturz zählen, Hinweis; unter `PluginCatalog.crashLimit` nach 2 s neu laden, sonst gesperrt. Unter der Sperre
+    private func pluginDown(_ b: Int, _ uid: UUID, _ hit: PluginInstance, crashed: Bool) {
         let id = hit.info.id
-        // ein Absturz trifft alle Instanzen im selben Dienst (mehrere Meldungen, auch für andere Units): einmal zählen
+        // ein Absturz trifft alle Instanzen im selben Dienst (mehrere Meldungen, auch für andere Plätze): einmal zählen
         let now = Date()
         let n: Int
         if let t = lastPluginCrash[id], now.timeIntervalSince(t) < 1 {
@@ -2051,52 +2327,52 @@ public final class MixController: @unchecked Sendable {
             n = pluginCatalog.recordCrash(id)
         }
         lastPluginCrash[id] = now
-        pluginGen[u] += 1; pluginLoading[u] = nil; pluginFailed[u] = id
-        for d in plugins[u].indices { installPlugin(nil, unit: u, deck: d) }
+        loaded[b].removeAll { $0.uid == uid }
+        loading[b][uid] = nil; failed[b][uid] = id
         let what = crashed ? String(localized: "abgestürzt") : String(localized: "antwortet nicht")
         let limit = PluginCatalog.crashLimit
         if n >= limit {
-            state.pluginErrors[u] = String(format: String(localized: "%@ %@ (%lld×) – blockiert"), hit.info.name, what, n)
+            state.pluginErrors[b] = String(format: String(localized: "%@ %@ (%lld×) – blockiert"), hit.info.name, what, n)
         } else {
-            state.pluginErrors[u] = String(format: String(localized: "%@ %@ (%lld/%lld) – trocken, lädt neu"), hit.info.name, what, n, limit)
-            let gen = pluginGen[u]
+            state.pluginErrors[b] = String(format: String(localized: "%@ %@ (%lld/%lld) – trocken, lädt neu"), hit.info.name, what, n, limit)
             controlQueue.asyncAfter(deadline: .now() + 2) { [weak self] in
                 guard let self else { return }
                 self.locked {
-                    guard self.pluginGen[u] == gen, self.pluginFailed[u] == id, self.state.fx[u].pluginID == id else { return }
-                    self.pluginFailed[u] = nil
-                    self.applyFX(u)
+                    guard self.failed[b][uid] == id else { return }
+                    self.failed[b][uid] = nil
+                    self.applyBus(b)
                 }
             }
         }
-        print("[plugin] FX \(u + 1): \(hit.info.name) \(crashed ? "abgestürzt" : "hängt") (\(n)/\(limit))")
-        onNotice?(EngineNotice(n >= limit ? .error : .warning, key: "plugin.\(u)", "FX \(u + 1): " + (state.pluginErrors[u] ?? "")))
-        applyFX(u)
+        print("[plugin] \(busName(b)): \(hit.info.name) \(crashed ? "abgestürzt" : "hängt") (\(n)/\(limit))")
+        onNotice?(EngineNotice(n >= limit ? .error : .warning, key: "plugin.\(b)", busName(b) + ": " + (state.pluginErrors[b] ?? "")))
+        applyBus(b)
     }
     private var lastPluginCrash: [String: Date] = [:]
-    /// gemeldete Fehlblöcke je Unit (Hinweis nur bei neuen)
-    private var pluginFailuresSeen = [UInt64](repeating: 0, count: MixEngine.fxUnitCount)
+    /// gemeldete Fehlblöcke je Kette (Hinweis nur bei neuen)
+    private var pluginFailuresSeen = [UInt64](repeating: 0, count: busCount)
     /// isoliertes Plugin, das so lange am Stück keinen Block liefert, gilt als hängend
     static let pluginHangSeconds = 2.0
 
     /// 1 Hz: isolierte Plugins, die Blöcke nicht rechnen (Zeitüberschreitung des Dienstes) -> Hinweis, hängend -> pluginDown
     private func checkPluginFailures() {
-        for u in plugins.indices {
-            let insts = plugins[u].compactMap { $0 }.filter(\.outOfProcess)
-            guard !insts.isEmpty else { pluginFailuresSeen[u] = 0; continue }
-            let f = insts.map(\.renderFailures)
+        for b in loaded.indices {
+            let insts = loaded[b].flatMap { l in l.insts.filter(\.outOfProcess).map { (l.uid, $0) } }
+            guard !insts.isEmpty else { pluginFailuresSeen[b] = 0; continue }
+            let f = insts.map(\.1.renderFailures)
             let blocks = f.reduce(0) { $0 + $1.blocks }
             if let worst = insts.indices.max(by: { f[$0].seconds < f[$1].seconds }), f[worst].seconds >= Self.pluginHangSeconds {
-                pluginDown(u, insts[worst], crashed: false)
-                pluginFailuresSeen[u] = 0
+                pluginDown(b, insts[worst].0, insts[worst].1, crashed: false)
+                pluginFailuresSeen[b] = 0
                 continue
             }
-            if blocks > pluginFailuresSeen[u] {
-                onNotice?(EngineNotice(.warning, key: "plugin.\(u)",
-                                       String(format: String(localized: "FX %lld: %@ antwortet nicht rechtzeitig – %lld Blöcke trocken"),
-                                              u + 1, insts[0].info.name, Int(blocks))))
+            if blocks > pluginFailuresSeen[b] {
+                let name = insts[0].1.info.name
+                onNotice?(EngineNotice(.warning, key: "plugin.\(b)", b == Self.masterBus
+                    ? String(format: String(localized: "MASTER: %@ antwortet nicht rechtzeitig – %lld Blöcke trocken"), name, Int(blocks))
+                    : String(format: String(localized: "FX %lld: %@ antwortet nicht rechtzeitig – %lld Blöcke trocken"), b + 1, name, Int(blocks))))
             }
-            pluginFailuresSeen[u] = blocks
+            pluginFailuresSeen[b] = blocks
         }
     }
 

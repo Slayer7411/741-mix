@@ -21,6 +21,8 @@ struct Session: Codable {
     }
     var decks: [Deck]?
     var fx: [FXUnitState]?
+    /// Master-Bus (Plugin-Kette nach der Summe)
+    var masterFX: MasterFXState?
     var clockBPM: Double?, clockMaster: Bool?, metronome: Bool?, metronomeVolume: Double?, linkEnabled: Bool?, semiSync: Bool?
     var crossfader: Double?, masterVolume: Double?
     var panes: [Pane]?
@@ -61,6 +63,7 @@ struct Session: Codable {
                  xf: $0.xf, fxAssign: $0.fxAssign)
         }
         fx = s.fx
+        masterFX = s.masterFX
         clockBPM = s.clockBPM; clockMaster = s.clockMaster; metronome = s.metronome; semiSync = s.semiSync
         metronomeVolume = s.metronomeVolume; linkEnabled = s.linkEnabled
         crossfader = s.crossfader; masterVolume = s.masterVolume
@@ -93,6 +96,7 @@ struct Session: Codable {
                 if let v = d.fxAssign { for u in 0..<min(v.count, s.decks[i].fxAssign.count) { s.decks[i].fxAssign[u] = v[u] } }
             }
             if let v = fx { for u in 0..<min(v.count, s.fx.count) { s.fx[u] = v[u] } }
+            if let v = masterFX { s.masterFX = v }
             if let v = clockBPM { s.clockBPM = v }
             if let v = clockMaster { s.clockMaster = v }
             if let v = semiSync { s.semiSync = v }
