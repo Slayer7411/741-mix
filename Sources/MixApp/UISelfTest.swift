@@ -124,6 +124,7 @@ enum UISelfTest {
             ("playlist-baum", playlistTree),
             ("mehrfach-sortierung", multiSort),
             ("wellenform-preset", wavePreset),
+            ("linien", gridLines),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1520,6 +1521,45 @@ extension UISelfTest {
     /// ⌘, -> ANZEIGE -> Wellenform (eigenes Fenster, offscreen): KOPIEREN legt eine eigene Kopie des eingebauten Presets
     /// an und wählt sie, der Regler Trennfrequenz Tief ändert sie (Deck A rechnet nach), die Kopie steht im Preset-Menü.
     /// Danach gelöscht, Auswahl wie vorher
+    /// Beatgrid-Linien fein / kräftig: Auswahl in ⌘, -> ANZEIGE vorhanden; umschalten ändert die Linienbreiten der
+    /// Grid-Ebene im Deck (Gerätepixel aus der Ebene, kein Bildvergleich)
+    static func gridLines(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix
+        let weight0 = mix.prefs.ui.gridLineWeight, grid0 = mix.prefs.ui.showBeatgrid
+        defer { mix.prefs.ui.gridLineWeight = weight0; mix.prefs.ui.showBeatgrid = grid0; u.spin(0.3) }
+        let root = SettingsView(selection: "ANZEIGE").environment(mix).environment(u.browser).environment(u.store)
+        let host = NSHostingView(rootView: root)
+        let size = NSSize(width: 900, height: 4000)
+        let w = UITestWindow(contentRect: NSRect(origin: UITestWindow.origin, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        w.alphaValue = 0
+        w.ignoresMouseEvents = true
+        w.contentView = host
+        w.orderFrontRegardless()
+        func settingsViews() -> [NSView] {
+            func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+            return all(w.contentView?.superview ?? host)
+        }
+        u.spin(5) { settingsViews().contains { ($0 as? UITestMark.V)?.name == "grid lines" } }
+        let found = settingsViews().contains { ($0 as? UITestMark.V)?.name == "grid lines" }
+        w.orderOut(nil)
+        check(found, "⌘, ANZEIGE: Auswahl Linien fehlt")
+        func layer() -> WaveLayerNSView? { u.views.compactMap { $0 as? WaveLayerNSView }.first { $0.gridPixels.bar > 0 } }
+        mix.prefs.ui.showBeatgrid = true
+        mix.prefs.ui.gridLineWeight = .fine
+        u.spin(2) { layer() != nil }
+        guard let v = layer() else { fail("Deck: keine Grid-Ebene") }
+        let fine = v.gridPixels
+        mix.prefs.ui.gridLineWeight = .bold
+        u.spin(2) { v.gridPixels != fine }
+        let bold = v.gridPixels
+        check(bold.bar > fine.bar && bold.beat >= fine.beat, "Linien kräftig: Takt \(bold.bar) px / Beat \(bold.beat) px statt breiter als fein (\(fine.bar) / \(fine.beat))")
+        mix.prefs.ui.gridLineWeight = .fine
+        u.spin(2) { v.gridPixels == fine }
+        check(v.gridPixels == fine, "zurück auf fein: \(v.gridPixels) statt \(fine)")
+        log("linien: fein Beat \(fine.beat) px · Takt \(fine.bar) px, kräftig Beat \(bold.beat) px · Takt \(bold.bar) px")
+    }
+
     static func wavePreset(_ u: UIDriver, _ t: [Track]) {
         let mix = u.mix, store = mix.wavePresets
         let style0 = mix.prefs.ui.waveformStyle, preset0 = mix.prefs.ui.wavePreset, n0 = store.list.custom.count

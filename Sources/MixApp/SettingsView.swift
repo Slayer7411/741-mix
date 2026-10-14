@@ -635,6 +635,10 @@ struct DisplaySettings: View {
                 }
                 Toggle("Taktnummern", isOn: $mix.prefs.ui.showBarNumbers)
                 Toggle("Marker alle 8 / 16 / 32 Takte (magenta)", isOn: $mix.prefs.ui.barMarkers)
+                Picker("Linien", selection: $mix.prefs.ui.gridLineWeight) {
+                    ForEach(GridLineWeight.allCases) { Text(LocalizedStringKey($0 == .fine ? "fein (Standard)" : $0.rawValue)).tag($0) }
+                }
+                .background(UITestMark(name: "grid lines"))
             }
             Section("Cue-Farben (Bildschirm und Controller-Pads)") {
                 Picker("Start-Cue (Load / AutoGrid)", selection: $mix.prefs.controller.colorStartCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }

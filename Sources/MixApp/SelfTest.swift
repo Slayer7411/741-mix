@@ -220,6 +220,7 @@ enum SelfTest {
             await prepareProbe(mix)
             await playlistTreeProbe(store: store)
             await wavePresetProbe(mix)
+            waveTileProbe(mix)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -761,6 +762,7 @@ enum WaveShot {
             var scene = WaveScene(
                 waveID: ObjectIdentifier(wf), duration: audio.duration, grid: grid, span: ui.waveformSeconds,
                 showGrid: true, colorful: ui.colorfulGrid, phraseBeats: ui.phraseBeats, barNumbers: ui.showBarNumbers, barMarkers: ui.barMarkers,
+                boldLines: ui.gridLineWeight == .bold,
                 dimPlayed: ui.dimPlayed,
                 cues: grid.map { g in [WaveScene.Mark(t: g.time(ofBeat: 2), number: 1, color: NSColor(Theme.cueColor(.cue))),
                                        WaveScene.Mark(t: g.time(ofBeat: 12), number: 2, color: NSColor(Theme.cueColor(.loop)))] } ?? [],
@@ -1336,6 +1338,20 @@ extension SelfTest {
         PlaylistFile.removeSelfTestDir()
         log(String(format: "Playlist-Baum: Ordner in Ordner, Playlist %d Tracks, Smartlist Genre enthält „%@“ %d Treffer (%.1f ms über %d Tracks), Verschieben + Rückgängig, Reihenfolge, Spiegel, Datei-Rundreise · OK",
                    order.count, genre, hits.count, ms, store.tracks.count))
+    }
+
+    /// Wellenform-Kacheln von Deck A (Stil 3-Band, Preset der Einstellungen): Zeit je Kachel (1024 × 180 pt @2×) bei
+    /// 4 s und 1,5 s je Seite (1 Block je Gerätepixel bzw. Spalten zwischen den Block-Mitten interpoliert)
+    static func waveTileProbe(_ mix: MixModel) {
+        guard let audio = mix.core.trackAudio(0), audio.duration > 20 else { log("Wellenform-Kacheln: Deck A leer – übersprungen"); return }
+        let wf = RenderedWaveform.render(audio, style: .blend, palette: mix.prefs.ui.waveformPalette, preset: mix.wavePreset)
+        var parts: [String] = []
+        for (span, label) in [(4.0, "4 s"), (1.5, "1,5 s")] {
+            let pps = 1200 / (span * 2), n = 4, t0 = Date()
+            for i in 0..<n { _ = WaveLayerNSView.renderTile(i + 1, chunks: wf.chunks, raster: wf.raster, pps: pps, h: 180, tw: 1024, scale: 2) }
+            parts.append(String(format: "%@: %.1f ms", label, Date().timeIntervalSince(t0) * 1000 / Double(n)))
+        }
+        log("Wellenform-Kacheln (1024 × 180 pt @2×, je Kachel): " + parts.joined(separator: " · "))
     }
 
     /// Wellenform-Presets (Datei nur im Temp-Ordner): eingebautes kopieren, Änderung an einem eingebauten legt eine

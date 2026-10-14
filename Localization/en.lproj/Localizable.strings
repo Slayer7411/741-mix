@@ -162,6 +162,9 @@
 "im extern-modus z. b. auf das paar vom kopfhörer-cue legen -> klick nur auf dem kopfhörer" = "in external mode e.g. use the headphone cue pair -> click only in the headphones";
 "pad-farben: ⌘, -> anzeige -> cue-farben (gleich wie auf dem bildschirm)" = "pad colors: ⌘, -> display -> cue colors (same as on screen)";
 "Marker alle 8 / 16 / 32 Takte (magenta)" = "Markers every 8 / 16 / 32 bars (magenta)";
+"Linien" = "Lines";
+"fein (Standard)" = "fine (default)";
+"kräftig" = "bold";
 "BARS · ab erstem Play" = "BARS · from first play";
 "Bar-Zähler: läuft ab dem ersten Play · Doppelklick = neu auf Takt 1" = "Bar counter: runs from the first play · double click = back to bar 1";
 "Sprache" = "Language";

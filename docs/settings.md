@@ -35,7 +35,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * 3-band blend: preset (built in: A-K, 741 bone, orange, blue / white, classic; own ones below) with NEW / COPY / RENAME / DELETE / RESET. fields: crossovers low 40-400 Hz, mid 200-2000 Hz or auto (geometric mean), high 1-8 kHz (log sliders), attack / release per band, analysis weight per band, rgb direct or three colors, held highs / held lows color, level per band, high emphasis, energy share, transitions, stack curve, saturation, orange / light blue amount. changing a built-in preset creates an own copy (`<name> Kopie`) and selects it. `ui.wavePreset`, own presets in `wave-presets.json` (MINOS-741 folder) -> [manual](MANUAL.md#-05--waveform--grid)
 * spectrum / mono: palette (not for spectrum): spectrum (rgb, default) / 741 bone / orange / blue / classic; high emphasis 0-3 (spectrum)
 * zoom (seconds per side), minimum height (grows with the window), dim the played part
-* beatgrid: on / off, colorful (phrases, bars, beats), phrase length 16 / 32 / 64 / 128 beats, bar numbers, magenta markers every 8 / 16 / 32 bars
+* beatgrid: on / off, colorful (phrases, bars, beats), phrase length 16 / 32 / 64 / 128 beats, bar numbers, magenta markers every 8 / 16 / 32 bars, lines fine (default) / bold (`ui.gridLineWeight`) -> [manual](MANUAL.md#-05--waveform--grid)
 * cue colors (screen and controller pads): start cue red, cues white, loops green, short loops (up to 1 / 2 / 4 / 8 bars) magenta
 
 ## ◆ DECKS

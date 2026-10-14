@@ -116,3 +116,75 @@ import Testing
     #expect(body.r > 0.9 && body.g > 0.4 && body.g < 0.6)   // orange
     #expect(hit.r > 0.9 && hit.g < 0.1)                     // rot
 }
+
+/// Blöcke mit gleichen Bändern und Spitze `peaks`, Effektivwert = halbe Spitze
+private func blocks(_ peaks: [Float]) -> [UInt8] {
+    var blend = [UInt8](repeating: 0, count: WaveBlend.stride * peaks.count)
+    for (i, pk) in peaks.enumerated() {
+        let o = i * WaveBlend.stride
+        blend[o + WaveBlend.rmsSlot] = WaveBlend.byte(amplitude: pk * 0.5)
+        for k in 0..<3 {
+            blend[o + WaveBlend.meanSlot + k] = WaveBlend.byte(amplitude: 0.1)
+            blend[o + WaveBlend.peakSlot + k] = WaveBlend.byte(amplitude: 0.1)
+        }
+    }
+    return blend
+}
+
+/// Zeilen einer Spalte: Index → Alpha
+private func columnAlpha(_ peaks: [Float], from: Int, to: Int, edges: (first: Float, last: Float) = (1, 1),
+                         between: BlendPaint.Between? = nil, half: Int = 100) -> [Int: UInt8] {
+    let blend = blocks(peaks)
+    var rows: [Int: UInt8] = [:]
+    peaks.withUnsafeBufferPointer { pk in
+        blend.withUnsafeBufferPointer { bl in
+            BlendPaint.column(peak: pk, blend: bl, from: from, to: to, edges: edges, between: between, half: half, palette: .rgb) { j, _, _, _, a in rows[j] = a }
+        }
+    }
+    return rows
+}
+
+/// Spalte schmaler als ein Block: Höhe steigt zwischen zwei Block-Mitten gleichmäßig (keine Stufe je Block)
+@Test func narrowColumnsInterpolateBetweenBlockCenters() {
+    let peaks: [Float] = [0.2, 0.6]
+    let bps = 300.0
+    var heights: [Int] = []
+    for x in 0...10 {
+        let t = (0.5 + Double(x) / 10) / bps   // Mitte von Block 0 … Mitte von Block 1
+        let b = BlendPaint.Between.at(t, bps: bps, count: peaks.count)
+        heights.append(columnAlpha(peaks, from: 0, to: 2, between: b).count)
+    }
+    #expect(heights.first == 20 && heights.last == 60)
+    #expect(zip(heights, heights.dropFirst()).allSatisfy { $0 <= $1 })   // monoton
+    #expect(Set(heights).count >= 8)                                     // viele Zwischenhöhen statt einer Stufe
+    // Block-Mitten und Ränder
+    #expect(BlendPaint.Between.at(0.5 / bps, bps: bps, count: 2).f == 0)
+    #expect(BlendPaint.Between.at(0, bps: bps, count: 2).k == 0)
+    #expect(BlendPaint.Between.at(5 / bps, bps: bps, count: 2).k == 1)
+}
+
+/// mehrere Blöcke je Spalte: Höhe = höchster Block; ein angeschnittener Randblock zählt nur anteilig
+@Test func wideColumnsKeepMaximumAndWeighEdges() {
+    let peaks: [Float] = [0.3, 0.8, 0.4, 0.5]
+    #expect(columnAlpha(peaks, from: 0, to: 4).count == 80)
+    // Block 1 mit 5 % angeschnitten: Höhe bleibt, oberhalb der übrigen Blöcke aber kaum Deckung
+    let full = columnAlpha(peaks, from: 1, to: 4), edge = columnAlpha(peaks, from: 1, to: 4, edges: (0.05, 1))
+    #expect(edge.count == full.count)
+    #expect(edge[70]! < full[70]! / 4)
+}
+
+/// oberste Zeile: Alpha nach dem Bruchteil, den die Spitze erreicht; darunter voll wie bisher
+@Test func topRowHasFractionalCoverage() {
+    let a = columnAlpha([0.503], from: 0, to: 1, half: 100)   // Spitze bei 50,3 Zeilen
+    let b = columnAlpha([0.508], from: 0, to: 1, half: 100)   // 50,8 Zeilen
+    #expect(a.count == 51 && b.count == 51)
+    #expect(a[50]! > 0 && a[50]! < b[50]!)
+    #expect(a[10] == 255 && b[10] == 255)
+    #expect(columnAlpha([0.5], from: 0, to: 1, half: 100).count == 50)   // genau auf der Kante: keine Zusatzzeile
+}
+
+/// Anzeige-Spitzen: Einzelblock-Kerben gefüllt, einzelne Spitzen bleiben
+@Test func displayPeaksFillSingleBlockNotches() {
+    #expect(BlendPaint.displayPeaks([0.8, 0.2, 0.7, 0.1, 0.1, 0.9, 0.1]) == [0.8, 0.7, 0.7, 0.1, 0.1, 0.9, 0.1])
+    #expect(BlendPaint.displayPeaks([0.5, 0.1]) == [0.5, 0.1])
+}
