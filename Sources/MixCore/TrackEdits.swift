@@ -45,6 +45,8 @@ public struct TrackEdit: Codable, Equatable, Sendable {
     public var trimEnd: Double?
     /// Active Loops: Hotcues (0–7), deren Loop beim Erreichen von selbst einrastet (fehlt in älteren Dateien)
     public var activeLoops: [Int]?
+    /// Herkunft des Grids: nil = von Hand, `.daw` = aus Warp-Markern übernommen (fehlt in älteren Dateien)
+    public var gridSource: GridSource?
     public var modified = Date()
     /// Stand des Collection-Eintrags (`Track.entryStamp`), als Hotcues/Grid zuletzt von leer auf gesetzt gingen –
     /// Konfliktprüfung beim Neu-Laden (nil = unbekannt, ältere Dateien)
@@ -75,7 +77,7 @@ public struct TrackEdit: Codable, Equatable, Sendable {
     public func same(as o: TrackEdit?) -> Bool {
         guard let o else { return isEmpty }
         return bpm == o.bpm && gridAnchorMs == o.gridAnchorMs && hotcues == o.hotcues && trimStart == o.trimStart && trimEnd == o.trimEnd
-            && (activeLoops ?? []) == (o.activeLoops ?? [])
+            && (activeLoops ?? []) == (o.activeLoops ?? []) && gridSource == o.gridSource
     }
 
     /// Track mit den Änderungen (Grid, Hotcues; den Schnitt übernimmt das Deck)

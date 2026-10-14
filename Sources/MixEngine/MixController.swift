@@ -1373,6 +1373,16 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
+    /// ganzes Grid setzen (übernommen, z. B. aus Warp-Markern der DAW): eigene Änderung wie jede Grid-Bearbeitung
+    public func setGrid(_ d: Int, _ g: BeatGrid) {
+        locked {
+            guard state.decks[d].track != nil, g.bpm > 20, g.bpm < 1000, g.anchor.isFinite else { return }
+            state.decks[d].grid = g
+            state.decks[d].gridEdited = true
+            applyRate(d)
+        }
+    }
+
     // MARK: Schnitt (nicht destruktiv)
 
     /// Schnitt setzen (Sekunden, nil = Anfang / Ende der Datei). Zu kurz (< 1 s) oder ohne Track: nichts, false.

@@ -88,7 +88,17 @@ final class LibraryStore {
     let folders = MusicFolderStore()
 
     /// Track zu einem Schlüssel: Collection, geschnittene Datei (CUTS) oder schon angezeigte Datei aus MUSIC FOLDERS
-    func track(_ key: String) -> Track? { byKey[key] ?? cutStore.byKey[key] ?? folders.loose[key] }
+    func track(_ key: String) -> Track? { byKey[key] ?? cutStore.byKey[key] ?? folders.loose[key] ?? dawByKey[key] }
+
+    /// Clips der DAW-Brücke als Tracks (Quelle DAW), gesetzt von DAWBridgeModel
+    private(set) var dawRevision = 0
+    @ObservationIgnored private(set) var dawTracks: [Track] = []
+    @ObservationIgnored private var dawByKey: [String: Track] = [:]
+    func setDAWTracks(_ t: [Track]) {
+        dawTracks = t
+        dawByKey = Dictionary(t.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+        dawRevision += 1
+    }
 
     /// geschnittene Dateien (Schneiden in der Wellenform): eigene Liste mit Metadaten, nie in der Collection-Datei
     @ObservationIgnored let cutStore = CutStore(url: Session.isSelfTest ? nil : HistoryStore.baseDir.appendingPathComponent("cuts.json"))
@@ -135,6 +145,7 @@ final class LibraryStore {
         case .preparation: preparationRevision
         case .custom: smartlistRevision
         case .cuts: cutsRevision
+        case .daw: dawRevision
         case let .folder(p): folders.stamp(p, recursive: subfolders)
         default: 0
         }
@@ -754,6 +765,7 @@ final class LibraryStore {
         case .preparation: return preparation.compactMap { track($0) }
         case .running: return running
         case .cuts: return cuts
+        case .daw: return dawTracks
         case .history, .historyLive: return []
         case .prepArchive: return []   // löst BrowserPaneModel über den HistoryStore auf
         case let .custom(sl):
@@ -785,6 +797,8 @@ enum BrowserSource: Hashable {
     case running
     /// geschnittene Dateien (CUTS)
     case cuts
+    /// Clips der laufenden DAW (Live-Brücke)
+    case daw
     case node(PlaylistNode)
     case historyLive
     case history(HistorySession)
@@ -799,6 +813,7 @@ enum BrowserSource: Hashable {
         case .preparation: "Preparation"
         case .running: "Running Tracks"
         case .cuts: "Cuts"
+        case .daw: "DAW"
         case let .node(n): n.name
         case .historyLive: "History"
         case let .history(s): "History " + (s.label ?? Theme.dateTimeFormat.string(from: s.date))

@@ -30,6 +30,10 @@ struct DeckView: View {
                         .frame(height: 18.z)
                         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
                 }
+                // DAW-Brücke meldet einen Clip derselben Datei: Grid-Streifen mit Position der DAW
+                if DAWBridgeModel.shared.deckClip[d] != nil {
+                    row("daw", DAWClipStrip(d: d).frame(height: 12.z).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1)))
+                }
                 if rows.transport { row("transport", TransportRow(d: d)) }
                 if rows.hotcues { row("cues", CueRow(d: d)) }
                 // EDIT: Schnitt an der Stelle der Loop-Größen, Grid an der von Beatjump, falls die Grid-Zeile aus ist.
@@ -160,6 +164,12 @@ struct DeckTrackMenu: View {
                 let pane = browserState.activePane
                 let rows = pane.shown.contains(where: { $0.key == t.key }) ? pane.shown : [store.track(t.key) ?? t]
                 pane.openEditor([t.key], rows: rows, store: store)
+            }
+            if let c = DAWBridgeModel.shared.clip(deck: d) {
+                Button("Grid des DAW-Clips übernehmen (\(c.trackName.isEmpty ? c.name : c.trackName))") {
+                    DAWBridgeModel.shared.applyGrid(deck: d, mix: mix)
+                }
+                .disabled(!c.warping || c.markers.count < 2)
             }
         }
     }

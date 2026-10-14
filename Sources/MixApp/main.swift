@@ -92,6 +92,7 @@ struct ContentView: View {
             if (n.object as? NSWindow) === MainWindow.window { ZoomControl.fit(mix: mix) }   // gespeicherter Zoom zu groß für den Bildschirm
         }
         .background(RunningTracks())
+        .background(DAWBridgeHook())   // DAW-Brücke: Empfänger nach Einstellung, Clip je Deck
         .background(OverviewHook())   // Browser-Vorschau: Deck-Tracks, Pause-Regel, Leerlauf
         .background(CloudHook())      // Cloud-Library: Prüfen, Lokal-halten, Pause beim Laden
         .onChange(of: mix.prefs.ui.musicFolders, initial: true) { _, f in store.folders.configured = f }

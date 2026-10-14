@@ -573,6 +573,7 @@ struct WaveformSettings: View {
                     .settingsHint()
                 KeyProfileSettings()
             }
+            DAWBridgeSettings()
             Section("Collection prüfen") {
                 Toggle("Beim Start prüfen", isOn: $mix.prefs.ui.checkOnStart)
                 Toggle("Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen", isOn: $mix.prefs.ui.checkMusicFolders)

@@ -76,6 +76,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * language: system / english / german (after restart)
 * status bar: load meters DSP · latency · dropouts · memory · cpu (on) -> [manual](MANUAL.md#status-bar)
 * cancel loading after x s without audio data (4 s, 2-15)
+* DAW bridge: receive warp markers and position from the DAW's remote script (on), udp port 7411 (127.0.0.1 only). `ui.dawBridge`, `ui.dawBridgePort` -> [manual](MANUAL.md#grid-from-the-daw-live-bridge)
 
 ## ◆ BROWSER
 

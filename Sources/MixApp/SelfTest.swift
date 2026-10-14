@@ -213,6 +213,7 @@ enum SelfTest {
             await undoProbe(mix, store: store)
             await grooveProbe(mix)
             await nmlProbe()
+            await dawBridgeProbe(mix, store: store)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -929,5 +930,63 @@ extension SelfTest {
         }.value
         log("NML-Rundreise (Kopie): \(report)")
         if report.hasPrefix("FEHLER") { exit(1) }
+    }
+
+    /// DAW-Brücke: Testpakete (Clip mit Warp-Markern für die Datei in Deck B, Song mit Position) an den eigenen
+    /// Empfänger (Selbsttest: vom System gewählter Port), Modell, Quelle DAW, Streifen-Zuordnung, Grid übernehmen +
+    /// Rückgängig, Abmelden
+    static func dawBridgeProbe(_ mix: MixModel, store: LibraryStore) async {
+        let bridge = DAWBridgeModel.shared, d = 1
+        mix.pull()
+        guard let t = mix.deck(d).track, mix.deck(d).duration > 30 else { log("DAW-Brücke: übersprungen"); return }
+        if bridge.port == 0 { bridge.configure(enabled: true, port: 0) }
+        func fail(_ s: String) -> Never { log("DAW-Brücke: \(s)"); log("DAW-BRÜCKE FALSCH"); exit(1) }
+        guard bridge.port > 0 else { fail("Empfänger nicht gestartet (\(bridge.startError ?? "-"))") }
+        let bpm = 125.0, beat = 60 / bpm, anchor = 0.3
+        let clip: [String: Any] = ["v": 1, "t": "clip", "id": "selftest", "track": 0, "trackName": "Selbsttest", "name": "Clip",
+                                   "file": t.path, "warping": true,
+                                   "markers": [[0, anchor], [64, anchor + 64 * beat], [64.03125, anchor + 64.03125 * beat]],
+                                   "loop": [0, 16], "looping": true, "start": 0, "end": 64, "playing": true, "selected": false, "where": "session"]
+        let song: [String: Any] = ["v": 1, "t": "song", "seq": 1, "tempo": bpm, "playing": true, "beat": 0, "sig": 4,
+                                   "clips": ["selftest"], "pos": ["selftest": [1, 8.0]]]
+        let before = mix.deck(d).grid, edited = mix.deck(d).gridEdited
+        try? await Task.sleep(for: .seconds(1))   // Hauptthread nach den vorigen Schritten zur Ruhe (Übergabe messen)
+        let t0 = CACurrentMediaTime()
+        for p in [clip, song] {
+            guard let data = try? JSONSerialization.data(withJSONObject: p), DAWBridgeReceiver.send(data, port: bridge.port) else { fail("senden") }
+        }
+        while bridge.clip(deck: d)?.id != "selftest", CACurrentMediaTime() - t0 < 2 { try? await Task.sleep(for: .milliseconds(5)) }
+        let latency = (CACurrentMediaTime() - t0) * 1000
+        guard bridge.clip(deck: d)?.id == "selftest" else { fail("Clip nicht beim Deck angekommen") }
+        guard let dt = store.track(DAWBridgeModel.keyPrefix + "selftest"), abs(dt.bpm - bpm) < 1e-6,
+              abs((dt.gridAnchorMs ?? 0) - anchor * 1000) < 1e-6, store.tracks(for: .daw).count == 1 else { fail("Quelle DAW: Track/Grid falsch") }
+        let pos = bridge.position(of: "selftest") ?? 0
+        guard pos >= 8, pos < 8 + 0.5 * bpm / 60 + 1e-9 else { fail("Position \(pos)") }
+        // Dauerbetrieb: 20 Song-Pakete wie im 100-ms-Takt (hier alle 10 ms), nur Positionen
+        let n0 = bridge.deliverMs.count
+        for i in 0..<20 {
+            var s = song
+            s["seq"] = 2 + i
+            s["pos"] = ["selftest": [1, 8.0 + Double(i) * 0.2]]
+            if let data = try? JSONSerialization.data(withJSONObject: s) { DAWBridgeReceiver.send(data, port: bridge.port) }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        try? await Task.sleep(for: .milliseconds(50))
+        let steady = bridge.deliverMs.suffix(from: min(n0, bridge.deliverMs.count)).sorted()
+        bridge.applyGrid(deck: d, mix: mix)
+        mix.pull()
+        guard let g = mix.deck(d).grid, abs(g.bpm - bpm) < 1e-9, abs(g.anchor - anchor) < 1e-9, mix.deck(d).gridEdited else {
+            fail("Grid nicht übernommen: \(String(describing: mix.deck(d).grid))")
+        }
+        UndoStack.shared.undo()
+        mix.pull()
+        guard mix.deck(d).grid == before, mix.deck(d).gridEdited == edited else { fail("Rückgängig stellt das Grid nicht her") }
+        guard let bye = try? JSONSerialization.data(withJSONObject: ["v": 1, "t": "bye"]) else { fail("bye") }
+        DAWBridgeReceiver.send(bye, port: bridge.port)
+        let t1 = CACurrentMediaTime()
+        while !bridge.clips.isEmpty, CACurrentMediaTime() - t1 < 2 { try? await Task.sleep(for: .milliseconds(5)) }
+        guard bridge.clips.isEmpty, bridge.deckClip[d] == nil, store.tracks(for: .daw).isEmpty else { fail("Abmelden leert die Liste nicht") }
+        log(String(format: "DAW-Brücke: Port %d · Clip am Deck nach %.1f ms · Grid %.2f BPM / Anker %.3f s übernommen + rückgängig ok · Position %.2f Beats · Song-Pakete: %d Übergaben, Hauptthread median %.3f ms, max %.3f ms",
+                   Int(bridge.port), latency, bpm, anchor, pos, steady.count, steady.isEmpty ? 0 : steady[steady.count / 2], steady.last ?? 0))
     }
 }
