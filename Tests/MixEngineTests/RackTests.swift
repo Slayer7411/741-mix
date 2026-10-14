@@ -4,7 +4,7 @@ import Testing
 import MixDSP
 @testable import MixEngine
 
-// Plugin-Ketten im Kern (FX-Unit: Plugins in Reihe, D/W gegen den Eingang der Kette) und Master-Bus (nach der Summe der Decks).
+// Insert-Slots im Kern (FX-Unit: Plugins in Reihe, je Slot an/aus und Anteil) und Master-Bus (nach der Summe der Decks).
 // Referenz: dieselben Plugins (frische Instanzen) außerhalb des Kerns auf dasselbe Signal, gleiche Blockgröße.
 
 private let fs = 48000.0
@@ -62,13 +62,20 @@ private final class Rig {
     }
     deinit { mdsp_destroy(e); for t in tracks { t.deallocate() } }
 
-    /// FX-Unit `u` auf Deck `d`, Plugin-Kette an, D/W
+    /// FX-Unit `u` auf Deck `d`: Plugins in den Slots (nil = Slot leer), alle an, D/W
     func chain(_ u: Int, deck d: Int, _ plugs: [OpaquePointer?], dw: Float = 1) {
         mdsp_set_param(e, Int32(d), MDParam(rawValue: MD_FX1_ASSIGN.rawValue + UInt32(u)), 1)
         mdsp_set_fx(e, Int32(u), MDFX_DRYWET, dw)
-        mdsp_set_fx(e, Int32(u), MDFX_PLUGIN_ON, 1)
+        rack(u, deck: d, plugs)
+    }
+
+    /// Slot-Belegung setzen: Plugin oder leer
+    func rack(_ u: Int, deck d: Int, _ plugs: [OpaquePointer?]) {
+        var kinds: [Int32] = plugs.map { $0 == nil ? Int32(MDFX_KIND_NONE.rawValue) : Int32(MDFX_KIND_PLUGIN.rawValue) }
         var p = plugs
-        p.withUnsafeMutableBufferPointer { mdsp_set_fx_chain(e, Int32(u), Int32(d), $0.baseAddress, Int32($0.count)) }
+        kinds.withUnsafeMutableBufferPointer { k in
+            p.withUnsafeMutableBufferPointer { mdsp_set_fx_rack(e, Int32(u), Int32(d), k.baseAddress, $0.baseAddress, Int32(plugs.count)) }
+        }
     }
 
     /// `blocks` Blöcke rendern; je Kanal alle Samples hintereinander
@@ -86,22 +93,24 @@ private final class Rig {
     }
 }
 
-/// Referenz der Kette außerhalb des Kerns: Eingang mit derselben Einblend-Rampe, Plugins in Reihe, D/W = 1
+/// Referenz der Slots außerhalb des Kerns: je Plugin-Slot Eingang mit Einblend-Rampe, x·(1 − m) + P(x·m), Slots in Reihe, D/W = 1
 private func reference(_ x: ([Float], [Float]), _ plugs: [OpaquePointer], blocks: Int) -> ([Float], [Float]) {
-    var send: Float = 0
+    var send = [Float](repeating: 0, count: plugs.count)
     var outL: [Float] = [], outR: [Float] = []
     for b in 0..<blocks {
         let r = (b * block)..<((b + 1) * block)
         var l = Array(x.0[r]), rr = Array(x.1[r])
-        let dryL = l, dryR = rr
-        var s = send
-        for i in 0..<block { s += (1 - s) * 0.002; l[i] *= s; rr[i] *= s }
-        l.withUnsafeMutableBufferPointer { lb in rr.withUnsafeMutableBufferPointer { rb in
-            for p in plugs { mdplug_process(p, lb.baseAddress, rb.baseAddress, Int32(block)) }
-        } }
-        for i in 0..<block {
-            send += (1 - send) * 0.002
-            l[i] = dryL[i] * (1 - send) + l[i]; rr[i] = dryR[i] * (1 - send) + rr[i]
+        for (k, p) in plugs.enumerated() {
+            let dryL = l, dryR = rr
+            var s = send[k]
+            for i in 0..<block { s += (1 - s) * 0.002; l[i] *= s; rr[i] *= s }
+            l.withUnsafeMutableBufferPointer { lb in rr.withUnsafeMutableBufferPointer { rb in
+                mdplug_process(p, lb.baseAddress, rb.baseAddress, Int32(block))
+            } }
+            for i in 0..<block {
+                send[k] += (1 - send[k]) * 0.002
+                l[i] = dryL[i] * (1 - send[k]) + l[i]; rr[i] = dryR[i] * (1 - send[k]) + rr[i]
+            }
         }
         outL += l; outR += rr
     }
@@ -117,7 +126,7 @@ private func faded(_ x: [Float]) -> [Float] {
     return x.map { v += (1 - v) * 0.002; return $0 * v * 0.85 }
 }
 
-/// zwei Plugins in Reihe = f(g(x)); getauscht = g(f(x)), hörbar anders (Limiter nach / vor dem Tiefpass)
+/// zwei Plugin-Slots in Reihe = f(g(x)); getauscht = g(f(x)), hörbar anders (Limiter nach / vor dem Tiefpass)
 @Test func chainRunsPluginsInSeries() throws {
     let blocks = 120
     for order in [["lpas", "lmtr"], ["lmtr", "lpas"]] {
@@ -146,34 +155,31 @@ private func faded(_ x: [Float]) -> [Float] {
     #expect(level[0] > level[1] * 3)
 }
 
-/// Platz tauschen im Betrieb (ein Schritt, keine Lücke), Platz aus = durchreichen, herausgenommenes Plugin erst nach einem Block frei
+/// Slots tauschen im Betrieb (ein Schritt, keine Lücke), Slot aus = durchgereicht, herausgenommenes Plugin erst nach einem Block frei
 @Test func chainSwapSlotOffAndRelease() throws {
     let rig = Rig(seconds: 6)
     let lp = try open("lpas"), lim = try open("lmtr")
     rig.chain(0, deck: 0, [lp, lim])
     _ = rig.render(40)
     let before = rms(rig.render(20)[0][...])
-    var swapped: [OpaquePointer?] = [lim, lp]
-    swapped.withUnsafeMutableBufferPointer { mdsp_set_fx_chain(rig.e, 0, 0, $0.baseAddress, 2) }
+    rig.rack(0, deck: 0, [lim, lp])
     _ = rig.render(40)
     let after = rms(rig.render(20)[0][...])
     #expect(before > after * 3)
-    #expect(!mdsp_fx_plugin_released(rig.e, 0, 0, lp))   // noch in der Kette (verschoben)
-    // Platz 1 (Tiefpass) aus: nur noch der Limiter
-    mdsp_set_fx_chain_on(rig.e, 0, 1, false)
+    #expect(!mdsp_fx_plugin_released(rig.e, 0, 0, lp))   // noch im Rack (verschoben)
+    // Slot 2 (Tiefpass) aus: nur noch der Limiter
+    mdsp_set_fx_slot(rig.e, 0, 1, false, 1)
     _ = rig.render(Int(1.5 * fs) / block)   // Rampe + 1 s Fahne
     let limOnly = rms(rig.render(20)[0][...])
     #expect(limOnly > after * 3)
     // herausnehmen: frei erst nach dem nächsten Block
-    var one: [OpaquePointer?] = [lim]
-    one.withUnsafeMutableBufferPointer { mdsp_set_fx_chain(rig.e, 0, 0, $0.baseAddress, 1) }
+    rig.rack(0, deck: 0, [lim])
     #expect(!mdsp_fx_plugin_released(rig.e, 0, 0, lp) && !mdsp_fx_plugin_released(rig.e, 0, 0, lim))
     _ = rig.render(1)
     #expect(mdsp_fx_plugin_released(rig.e, 0, 0, lp) && !mdsp_fx_plugin_released(rig.e, 0, 0, lim))
     mdplug_close(lp)
     _ = rig.render(4)
-    var none: [OpaquePointer?] = []
-    none.withUnsafeMutableBufferPointer { mdsp_set_fx_chain(rig.e, 0, 0, $0.baseAddress, 0) }
+    rig.rack(0, deck: 0, [])
     _ = rig.render(1)
     #expect(mdsp_fx_plugin_released(rig.e, 0, 0, lim))
     mdplug_close(lim)
@@ -186,9 +192,7 @@ private func faded(_ x: [Float]) -> [Float] {
     let dry = Rig(decks: [0, 1, 2], pairs: [0, 0, 2, 0]).render(blocks)
     let rig = Rig(decks: [0, 1, 2], pairs: [0, 0, 2, 0])
     let lim = try open("lmtr")
-    var one: [OpaquePointer?] = [lim]
-    one.withUnsafeMutableBufferPointer { mdsp_set_fx_chain(rig.e, MDSP_MASTER_UNIT, 0, $0.baseAddress, 1) }
-    mdsp_set_master_fx(rig.e, true, 1)
+    rig.rack(Int(MDSP_MASTER_UNIT), deck: 0, [lim])
     mdsp_set_master_fx_channel(rig.e, 0)
     let out = rig.render(blocks)
     // Referenz: Summe vor der Master-Lautstärke (0,85) durch einen frischen Limiter
@@ -206,9 +210,7 @@ private func faded(_ x: [Float]) -> [Float] {
     // Paar aus (externer Mixer): kein Summenpunkt, nichts verändert, kein Pegel
     let off = Rig(decks: [0, 1, 2], pairs: [0, 0, 2, 0])
     let lim2 = try open("lmtr")
-    var two: [OpaquePointer?] = [lim2]
-    two.withUnsafeMutableBufferPointer { mdsp_set_fx_chain(off.e, MDSP_MASTER_UNIT, 0, $0.baseAddress, 1) }
-    mdsp_set_master_fx(off.e, true, 1)
+    off.rack(Int(MDSP_MASTER_UNIT), deck: 0, [lim2])
     mdsp_set_master_fx_channel(off.e, -1)
     #expect(off.render(blocks) == dry)
     mdsp_master_levels(off.e, &lv.0, &lv.1)
@@ -216,46 +218,44 @@ private func faded(_ x: [Float]) -> [Float] {
     for p in [lim, ref, lim2] { mdplug_close(p) }
 }
 
-/// NaN aus einem Plugin: Platz wird durchgereicht und meldet sich zum Zurücksetzen, die folgenden Plätze bleiben sauber
+/// NaN aus einem Plugin: Slot wird durchgereicht und meldet sich zum Zurücksetzen, die folgenden Slots bleiben sauber
 @Test func chainSlotResetProtocol() throws {
     let rig = Rig()
     let lp = try open("lpas")
     rig.chain(0, deck: 0, [nil, lp])
     _ = rig.render(4)
-    #expect(!mdsp_fx_chain_needs_reset(rig.e, 0, 0, 1))
-    // Deck mit NaN-Sample: das Deck wird geheilt, alle Plätze mit Plugin warten auf das Zurücksetzen
+    #expect(!mdsp_fx_slot_needs_reset(rig.e, 0, 0, 1))
+    // Deck mit NaN-Sample: das Deck wird geheilt, alle Slots mit Plugin warten auf das Zurücksetzen
     rig.tracks[0][Int(fs / 2)] = .nan
     let out = rig.render(Int(fs) / block)
     #expect(out[0].allSatisfy { $0.isFinite })
-    #expect(mdsp_fx_chain_needs_reset(rig.e, 0, 0, 1) && !mdsp_fx_chain_needs_reset(rig.e, 0, 0, 0))
+    #expect(mdsp_fx_slot_needs_reset(rig.e, 0, 0, 1) && !mdsp_fx_slot_needs_reset(rig.e, 0, 0, 0))
     mdplug_reset(lp)
-    mdsp_fx_chain_reset_done(rig.e, 0, 0, 1)
-    #expect(!mdsp_fx_chain_needs_reset(rig.e, 0, 0, 1))
-    var none: [OpaquePointer?] = []
-    none.withUnsafeMutableBufferPointer { mdsp_set_fx_chain(rig.e, 0, 0, $0.baseAddress, 0) }
+    mdsp_fx_slot_reset_done(rig.e, 0, 0, 1)
+    #expect(!mdsp_fx_slot_needs_reset(rig.e, 0, 0, 1))
+    rig.rack(0, deck: 0, [])
     _ = rig.render(1)
     mdplug_close(lp)
 }
 
-/// Sitzung: ein Plugin je Unit (alt) wird Platz 1; Kette mit an/aus und Zustand übersteht Speichern/Laden; Schlüssel je Platz
-@Test func chainStateMigratesAndRoundTrips() throws {
+/// Sitzung: ein Plugin je Unit (alt) wird Slot 1; Slots mit an/aus und Zustand überstehen Speichern/Laden; Schlüssel je Slot
+@Test func slotStateMigratesAndRoundTrips() throws {
     let old = #"{"single":true,"singleType":3,"singleOn":true,"pluginID":"aufx:mrev:appl","pluginState":"AAE=","dryWet":1}"#
     let fx = try JSONDecoder().decode(FXUnitState.self, from: Data(old.utf8))
-    #expect(fx.chain.map(\.id) == ["aufx:mrev:appl"] && fx.chain[0].on && fx.chain[0].state == Data([0, 1]))
-    #expect(fx.pluginID == "aufx:mrev:appl" && fx.effectKey == "aufx:mrev:appl")
+    #expect(fx.slots.map(\.id) == ["aufx:mrev:appl"] && fx.slots[0].on && fx.slots[0].state == Data([0, 1]))
+    #expect(fx.effectKey == "aufx:mrev:appl" && fx.pluginValues == ["@0": 0.5, "@1": 0.45, "@2": 0.6])
     var two = fx
-    two.chain.append(FXPluginSlot(id: "aufx:dely:appl", on: false))
-    #expect(two.effectKey == "aufx:mrev:appl > aufx:dely:appl")
+    two.slots.append(FXSlot(id: "aufx:dely:appl", on: false))
+    two.slots.insert(FXSlot(id: "DELAY", on: true, mix: 0.4, params: ["rate": 0.2]), at: 1)
+    #expect(two.effectKey == "aufx:mrev:appl > DELAY > aufx:dely:appl")
     let back = try JSONDecoder().decode(FXUnitState.self, from: JSONEncoder().encode(two))
-    #expect(back.chain.map(\.id) == two.chain.map(\.id) && back.chain.map(\.on) == [true, false] && back.chain[0].state == Data([0, 1]))
-    // ältere Fassung liest nur pluginID: bleibt das erste Plugin
-    let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(two)) as? [String: Any]
-    #expect(json?["pluginID"] as? String == "aufx:mrev:appl")
+    #expect(back.slots.map(\.id) == two.slots.map(\.id) && back.slots.map(\.on) == [true, true, false] && back.slots[0].state == Data([0, 1]))
+    #expect(back.slots[1].mix == 0.4 && back.slots[1].params == ["rate": 0.2])
     #expect(FXParam.pluginKey(7, slot: 0) == "p7" && FXParam.pluginKey(7, slot: 2) == "s2.p7")
     #expect(FXParam.pluginSlot(of: "s2.p7")! == (2, "p7") && FXParam.pluginSlot(of: "p7")! == (0, "p7") && FXParam.pluginSlot(of: "@1")! == (0, "@1"))
-    #expect(FXParam.pluginSlot(of: "cutoff") == nil && FXParam.pluginSlot(of: "dw") == nil && FXParam.pluginSlot(of: "gater.on") == nil)
-    let master = try JSONDecoder().decode(MasterFXState.self, from: Data(#"{"on":true}"#.utf8))
-    #expect(master.on && master.dryWet == 1 && master.chain.isEmpty)
+    #expect(FXParam.pluginSlot(of: "cutoff") == nil && FXParam.pluginSlot(of: "dw") == nil && FXParam.pluginSlot(of: "s1.on") == nil)
+    let master = try JSONDecoder().decode(MasterFXState.self, from: Data(#"{"on":true,"chain":[{"id":"aufx:lmtr:appl"}]}"#.utf8))
+    #expect(master.on && master.dryWet == 1 && master.slots.map(\.id) == ["aufx:lmtr:appl"] && master.slots[0].on)
 }
 
 private func waitFor(_ seconds: Double = 20, _ cond: () -> Bool) async throws {
@@ -263,53 +263,57 @@ private func waitFor(_ seconds: Double = 20, _ cond: () -> Bool) async throws {
     while !cond(), Date() < end { try await Task.sleep(for: .milliseconds(20)) }
 }
 
-/// Steuerkern: Kette aufbauen, Parameter beider Plätze zuweisbar, Verschieben nimmt Werte und Belegung mit, Master-Kette
-@Test func controllerEditsChains() async throws {
+/// Steuerkern: Slots aufbauen, Parameter beider Plugins zuweisbar, Verschieben nimmt Werte und Belegung mit, Master-Rack
+@Test func controllerEditsSlots() async throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("minos-chain-\(UUID().uuidString.prefix(8))")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
     let core = MixController()
     core.pluginCatalog = PluginCatalog(directory: dir.appendingPathComponent("store"), folders: [], vst3Folders: [])
-    core.addPlugin(1, id: "aufx:lpas:appl")
-    core.addPlugin(1, id: "aufx:lmtr:appl")
+    core.setSlots(1, [])
+    core.addSlot(1, id: "aufx:lpas:appl")
+    core.addSlot(1, id: "aufx:lmtr:appl")
     try await waitFor { core.snapshot().fxParams[1].contains { $0.pluginSlot == 1 } }
     var s = core.snapshot()
-    #expect(s.fx[1].pluginActive && s.fx[1].chain.map(\.id) == ["aufx:lpas:appl", "aufx:lmtr:appl"])
+    #expect(s.fx[1].slots.map(\.id) == ["aufx:lpas:appl", "aufx:lmtr:appl"] && s.slotReady[1] == [true, true])
     let gain = try #require(s.fxParams[1].first { $0.pluginSlot == 1 && $0.name.lowercased().contains("gain") })
     #expect(gain.id.hasPrefix("s1.p") && gain.group.hasPrefix("2 "))
     #expect(s.fxControls[1][FXControl.knob1.slot].param?.pluginSlot == 0)   // Standard: erste Parameter des ersten Plugins
+    #expect(s.fxControls[1][FXControl.button1.slot].param?.id == "on" && s.fxControls[1][FXControl.button2.slot].param?.id == "s1.on")
     core.setFXMapping(1, .knob3, gain.id)
     core.setFXControl(1, .knob3, 0.75)
     let lim = try #require(core.beginPluginEdit(1, slot: 1))
     #expect(lim.info.id == "aufx:lmtr:appl" && abs(Double(lim.value(gain.pluginParam!)) - gain.plain(0.75)) < 1e-3)
     core.endPluginEdit(1, lim)
-    #expect(core.snapshot().fx[1].chain[1].state != nil)
-    // Limiter nach vorn: Wert und Belegung folgen dem Platz, dieselben Instanzen (kein Neuladen)
-    core.movePlugin(1, slot: 1, by: -1)
+    #expect(core.snapshot().fx[1].slots[1].state != nil)
+    // Limiter nach vorn: Wert und Belegung folgen dem Slot, dieselben Instanzen (kein Neuladen)
+    core.moveSlot(1, slot: 1, by: -1)
     s = core.snapshot()
     let moved = FXParam.pluginKey(gain.pluginParam!, slot: 0)
-    #expect(s.fx[1].chain.map(\.id) == ["aufx:lmtr:appl", "aufx:lpas:appl"])
+    #expect(s.fx[1].slots.map(\.id) == ["aufx:lmtr:appl", "aufx:lpas:appl"])
     #expect(s.fx[1].pluginValues[moved] == 0.75 && s.fx[1].mapping[.knob3] == moved)
     #expect(core.beginPluginEdit(1, slot: 0) === lim)
     core.endPluginEdit(1, lim)
-    core.setPluginOn(1, slot: 1, false)
-    #expect(core.snapshot().fx[1].chain[1].on == false)
-    core.removePlugin(1, slot: 0)
+    core.setSlotOn(1, slot: 1, false)
+    #expect(core.snapshot().fx[1].slots[1].on == false)
+    core.removeSlot(1, slot: 0)
     s = core.snapshot()
-    #expect(s.fx[1].chain.map(\.id) == ["aufx:lpas:appl"] && s.fx[1].pluginValues[moved] == nil)
-    // Vorlage: Kette merken und auf den Master-Bus laden
-    core.saveChainPreset(1, name: "LP")
-    core.loadChainPreset(MixController.masterBus, name: "LP")
+    #expect(s.fx[1].slots.map(\.id) == ["aufx:lpas:appl"] && s.fx[1].pluginValues[moved] == nil)
+    // Rack merken (mit eingebautem Delay) und auf den Master-Bus laden
+    core.addSlot(1, id: "DELAY")
+    core.setSlotParam(1, slot: 1, "rate", 0.2)
+    core.saveRack(1, name: "LP")
+    core.loadRack(MixController.masterBus, name: "LP")
     core.setMasterFX(on: true, dryWet: 0.5)
     try await waitFor { core.beginPluginEdit(MixController.masterBus).map { core.endPluginEdit(MixController.masterBus, $0); return true } ?? false }
     s = core.snapshot()
-    #expect(s.masterFX.on && s.masterFX.dryWet == 0.5 && s.masterFX.chain.map(\.id) == ["aufx:lpas:appl"])
-    #expect(core.chainLatency(MixController.masterBus).slots.count == 1)
-    core.setPlugin(1, id: nil)
-    core.removePlugin(MixController.masterBus, slot: 0)
-    #expect(core.snapshot().fx[1].chain.isEmpty && core.snapshot().masterFX.chain.isEmpty)
+    #expect(s.masterFX.on && s.masterFX.dryWet == 0.5 && s.masterFX.slots.map(\.id) == ["aufx:lpas:appl", "DELAY"])
+    #expect(s.masterFX.slots[1].params["rate"] == 0.2 && s.masterFX.slots[0].uid != s.fx[1].slots[0].uid)
+    #expect(core.rackLatency(MixController.masterBus).slots.count == 2)
+    core.setSlots(1, [])
+    core.setSlots(MixController.masterBus, [])
+    #expect(core.snapshot().fx[1].slots.isEmpty && core.snapshot().masterFX.slots.isEmpty)
 }
-
 
 /// Messung (MIX741_BENCH=1): 4 Decks, Rauschen, je Deck FX 1 mit Kette Tiefpass > Hochpass (8 Instanzen), Master-Kette
 /// mit Limiter, gegen dieselben Decks ohne Plugins. Mittel je Block zu 512 Frames
@@ -325,9 +329,7 @@ private func waitFor(_ seconds: Double = 20, _ cond: () -> Bool) async throws {
             }
             let m = try open("lmtr")
             opened.append(m)
-            var one: [OpaquePointer?] = [m]
-            one.withUnsafeMutableBufferPointer { mdsp_set_fx_chain(rig.e, MDSP_MASTER_UNIT, 0, $0.baseAddress, 1) }
-            mdsp_set_master_fx(rig.e, true, 1)
+            rig.rack(Int(MDSP_MASTER_UNIT), deck: 0, [m])
             mdsp_set_master_fx_channel(rig.e, 0)
         }
         _ = rig.render(50)
@@ -342,7 +344,7 @@ private func waitFor(_ seconds: Double = 20, _ cond: () -> Bool) async throws {
                  base, chain, 512 / fs * 1e6))
 }
 
-/// gemischte Kette VST3 (Test-Plugin "AGain") > Audio Unit: beide laden, Gain auf Platz 1 zuweisbar, Zustand je Platz
+/// gemischtes Rack Audio Unit > VST3 (Test-Plugin "AGain"): beide laden, Gain auf Slot 2 zuweisbar
 @Test func controllerMixesVST3AndAudioUnitInOneChain() async throws {
     let src = try #require(VST3Fixture.bundle)
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("minos-chain-vst3-\(UUID().uuidString.prefix(8))")
@@ -354,8 +356,9 @@ private func waitFor(_ seconds: Double = 20, _ cond: () -> Bool) async throws {
     let cat = PluginCatalog(directory: dir.appendingPathComponent("store"), folders: [], vst3Folders: [])
     cat.update { $0.folders = [folder.path]; $0.allowInProcess = true }
     core.pluginCatalog = cat
-    core.addPlugin(0, id: "aufx:lpas:appl")
-    core.addPlugin(0, id: "vst3:C18D3C1E719E4E29924D3ECAA5E4DA18")
+    core.setSlots(0, [])
+    core.addSlot(0, id: "aufx:lpas:appl")
+    core.addSlot(0, id: "vst3:C18D3C1E719E4E29924D3ECAA5E4DA18")
     try await waitFor { core.pluginInstance(0, slot: 1) != nil && core.pluginInstance(0, slot: 0) != nil }
     let s = core.snapshot()
     let gain = try #require(s.fxParams[0].first { $0.pluginSlot == 1 && $0.name == "Gain" })
@@ -365,6 +368,6 @@ private func waitFor(_ seconds: Double = 20, _ cond: () -> Bool) async throws {
     let v = try #require(core.pluginInstance(0, slot: 1))
     #expect(v.isVST3 && abs(v.value(gain.pluginParam!) - 0.3) < 1e-6)
     #expect(core.pluginText(0, gain, 0.3)?.isEmpty == false)
-    core.setPlugin(0, id: nil)
-    #expect(core.snapshot().fx[0].chain.isEmpty)
+    core.setSlots(0, [])
+    #expect(core.snapshot().fx[0].slots.isEmpty)
 }

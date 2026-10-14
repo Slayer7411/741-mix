@@ -592,89 +592,138 @@ the status bar shows device, mode and routing, preview pair as `PRE→9/10` (`PR
 
 ## ◆ 08 · FX
 
-2 or 4 units (⌘, -> MIXER & FX). each unit:
+2 or 4 units (⌘, -> MIXER & FX). each unit is a rack of insert slots:
 
-* GRP -> group mode: 3 slots at once, D/W + one knob + ON each. default FILTER · DELAY · REVERB, slot menu (`FLT·DLY·REV`) -> any built-in effect per slot, each once (picking one already in another slot swaps them)
-* SNGL -> single mode: one effect, 3 parameters
-* delay time in beats (`1 ▾`), beat synced to the deck tempo
+* up to 6 slots in series, slot 1 first = signal flow. one slot is enough, an empty unit passes the signal through
+* each slot holds one effect: built-in (FILTER, DELAY, REVERB, GATER, ROLL, FLANGER, PHASER) or a plugin (audio unit, VST3)
+* each built-in effect once per unit. picking one that sits in another slot swaps the two slots
+* per slot: ON (off = passed through, its tail rings out), D/W of the slot, order, EDIT, ✕
+* a slot taken out rings out behind the remaining slots; reordering while playing ramps the jump out over 5 ms
 * reverb type -> ⌘, -> MIXER & FX: `Reverb` (default, allpass ring: dense, darker tail, 0.4-7 s) or `Reverb (FDN)` (long, airy)
-* ROOM -> reverb size. `Reverb`: 0 small room (0.4 s) · 0.5 (1.6 s) · 0.6 default (2 s) · 0.9 (5 s) · 1 (7 s). `Reverb (FDN)`: 0 (0.3 s) · 0.5 (3.6 s) · 0.6 (5.6 s) · 0.9 (22 s) · 1 near freeze (~3 min)
-* FRZ -> reverb freeze (single REVERB: button 2, group: assignable): input closed, the tail stands until FRZ off, the track keeps playing
-* reverb level, brightness, pre-delay -> ⌘, -> MIXER & FX. level 0 dB: full d/w adds the reverb ~4 dB below the track, same in group and single mode
+* deck assign: FX1 … FX4 in the deck header or the mixer. default: FX1 -> A / C, FX2 -> B / D
+* master bus: same slots on the sum -> [master bus](#master-bus)
+
+### slots in the top bar
+
+```
+FX 1  RACK  +          D/W   knob 1   knob 2   knob 3
+1 FILTER  ● ▬                ON       ON       ON
+2 DELAY   ● ▬
+3 REVERB  ○ ▬
+```
+
+* row: slot number · effect (click = pick another) · ON dot · D/W bar (drag, double click = 100 %)
+* right click a row: parameters / plugin window, on / off, earlier / later, remove slot. drag a row onto another = move it there
+* `+` -> effect picker (add a slot at the end). up to 4 rows per column, 5-6 slots = 2 columns
+* RACK -> the whole rack: ON, effect, D/W, ▲ ▼, EDIT, ✕ per slot, `+ SLOT`, VORLAGEN, RACKS, plugin latency
+* EDIT on a built-in effect -> its parameters (D/W, knobs, switches, value with unit). on a plugin -> its window
+
+### effect picker
+
+* search field: name, manufacturer, `vst3`
+* EINGEBAUT -> the 7 built-in effects. one already in the unit shows its slot: greyed when adding, swaps when replacing
+* PLUGINS -> by manufacturer, apple first, VST3 with a small `VST3`
+* locked entries stay in the list, greyed with the reason: `nur im Prozess – erlauben: ⌘, → PLUGINS` (VST3 and own folders while `Plugins im Prozess (riskant)` is off, `⌘, PLUGINS` jumps there), `nur Intel – VST3 nicht ladbar`
+* `nur Intel – läuft nur isoliert/unter Rosetta` -> intel-only audio unit on apple silicon: loads in apple's plugin service (rosetta), never in-process
+* `Neu einlesen` -> rescan (newly installed plugins)
+* disabled and blocked plugins are not listed -> ⌘, -> PLUGINS
+
+### quick controls
+
+D/W, knobs 1-3 and buttons 1-3 of each unit. the controller's fx section drives the same controls.
+
+* default, first two slots built-in (group layout): knob n = main parameter of slot n (FILTER: cutoff, ROLL: length, others: D/W of the slot), button n = ON of slot n, knob labels = effect names
+* default otherwise (one slot, or a plugin in slot 1 or 2): the 3 parameters of slot 1 (built-in as below, plugin = its first three), button 1 = ON of slot 1, free buttons 2 / 3 = ON of slot 2 / 3
+* D/W of the unit = share of every slot (built-in: amount, plugin: dry / wet against the slot input). only acts while a control sits on it
+* REVERB: `SEND` on (default for a new slot) = the unit's D/W sets what goes into the reverb, the track stays dry. off = D/W sets the reverb share
+* delay time in beats, beat synced to the master tempo
+* ROOM / SIZE -> reverb size. `Reverb`: 0 small room (0.4 s) · 0.5 (1.6 s) · 0.6 default (2 s) · 0.9 (5 s) · 1 (7 s). `Reverb (FDN)`: 0 (0.3 s) · 0.5 (3.6 s) · 0.6 (5.6 s) · 0.9 (22 s) · 1 near freeze (~3 min)
+* FRZ -> reverb freeze (one REVERB slot: button 2, else assignable): input closed, the tail stands until FRZ off, the track keeps playing
+* reverb level, brightness, pre-delay -> ⌘, -> MIXER & FX. level 0 dB: full d/w adds the reverb ~4 dB below the track
 * brightness -> how long the highs ring: 0 dark, 0.6 default (airy hiss in the tail), 1 bright. below ~150-400 Hz nothing goes into the reverb
 * washes / exits: size 0.8-1, reverb on, reverb off or deck stop -> the tail keeps ringing (spillover)
-* deck assign: FX1 … FX4 in the deck header or the mixer
-* default: FX1 -> A / C, FX2 -> B / D
+* filter resonance and delay feedback without an own value in the slot (group template, new delays) -> ⌘, -> MIXER & FX. DELAY's own filter (knob 1) and ROLL's filter use the fx filter resonance
 
-effects so far: filter, delay, reverb, gater, roll, flanger, phaser, PLUGIN (chain of up to 4). plugin chain on the sum -> [master bus](#master-bus). more -> [roadmap](roadmap.md).
+| slot 1 | knob 1 · 2 · 3 | button 2 · 3 |
+|---|---|---|
+| FILTER | CUTOFF · RES | – |
+| DELAY | FILTER · FEEDB · RATE | – |
+| REVERB | SIZE · HP · LP | FRZ |
+
+### templates and racks
+
+* VORLAGEN (rack popover) -> replace the slots: `GRUPPE FLT·DLY·REV` (FILTER · DELAY · REVERB, delay and reverb at 50 %, the former group mode) or one built-in effect (the former single mode)
+* controller: shift + mode steps through the templates, mode alone = all slots off (remembered) / back on
+* RACKS -> load a remembered rack, `Rack speichern …` (name, same name overwrites; plugin states read fresh), delete. a rack holds built-in effects with their settings and plugins with their state. shared by every unit and the master bus, forget -> ⌘, -> MIXER & FX
+
+### sessions from before insert slots
+
+* group mode -> template group (slot amounts, delay time, room size, slot effects as set)
+* single mode -> one slot with the effect and its three parameters
+* plugin chain -> plugin slots (on = unit on and slot on). a chain that was hidden behind another mode comes back as slots after the effects, off
+* remembered mappings: `GROUP` / `GROUP:A/B/C` -> rack keys (`FILTER > DELAY > REVERB`), targets moved to the slots. single effects and plugin ids stay
+* output of the group template and of single effects is bit-identical to before (unit test over blocks)
 
 ### BEAT FX
 
 grid = master clock (follows the master deck's tempo and phase). switching on waits for the next divider, rate / length in beats.
 
-| effect | knob 1 · 2 · 3 | button 2 · 3 | group knob |
+| effect | knob 1 · 2 · 3 | button 2 · 3 | group layout knob |
 |---|---|---|---|
 | GATER | RATE 1/16-1/2 · SHAPE (square -> decay) · WIDTH (open part) | MUTE · TRIP (×2/3) | depth |
 | ROLL | LEN 1/32-1 · FILTER · DECAY (0 to -24 dB per beat) | REV | length |
 | FLANGER | RATE 1/2-32 beats (SYNC off: 0.02-4 Hz) · DEPTH · FEEDB | FRZ (lfo stands) · SYNC | amount |
 | PHASER | RATE 1/2-32 beats (SYNC off: 0.02-4 Hz) · DEPTH · FEEDB | FRZ · STAGE 4 / 8 | amount |
 
-* button 1 = on / off, D/W = share of the effect, D/W 0 = dry signal untouched
+* button 1 = on / off, D/W of the slot × D/W of the unit = share of the effect, 0 = dry signal untouched
 * ROLL repeats the last length from the divider on, the deck keeps running underneath (like flux): off -> back where the track is now. shorter length while rolling -> start of the take on the same grid, longer -> new take at the next divider
 * flanger 0.3-8 ms, stereo phase assignable (default 90°). phaser 130 Hz-6.2 kHz, l/r 90°
-* group: rate, mute, trip, rev, freeze, sync, stages assignable per slot, same values as in single mode. on / off ramps 5 ms
+* every parameter assignable to the quick controls. on / off ramps 5 ms
 
 ### MAPPING
 
-D/W, knobs 1-3 and buttons 1-3 of every unit sit on any parameter of the loaded effect. the controller uses the same mapping.
+D/W, knobs 1-3 and buttons 1-3 of every unit sit on any parameter of any slot. the controller uses the same mapping.
 
-* right click a knob or button -> `Standard` (default) · `Nicht zugewiesen` (off) · every parameter of the effect
-* built-in effects -> their own parameters. group: amounts, on / off, delay time, room size · single: the 3 parameters, on / off, d/w
-* audio unit / VST3 -> the full parameter list with unit and range, in the plugin's groups, long lists in submenus of 20. D/W lists mix / wet / dry parameters first
+* right click a knob or button -> `Standard` (default) · `Nicht zugewiesen` (off) · every parameter, grouped `<slot> <effect>` with two or more slots
+* per slot: ON, D/W of the slot, the effect's parameters. audio unit / VST3: the full parameter list with unit and range, in the plugin's groups, long lists in submenus of 20. D/W lists mix / wet / dry parameters first
 * buttons: switch -> toggles, list -> next entry (wraps), continuous -> min / max
-* label under a knob = short parameter name, bright = own mapping. hover, drag or turn -> value with unit (VST3: text from the plugin)
-* the unit's D/W only acts while a control sits on it. D/W on the plugin's mix -> the unit runs fully wet
-* remembered per effect (`GROUP` or `GROUP:FILTER/GATER/REVERB` per slot set, `FILTER`, `DELAY`, `REVERB`, `GATER`, `ROLL`, `FLANGER`, `PHASER`) or plugin id -> the same effect loads with its mapping again, on any unit
+* label under a knob = short parameter name (D/W of a slot: the effect's name), bright = own mapping. hover, drag or turn -> value with unit (VST3: text from the plugin)
+* D/W on a plugin's mix -> the unit runs fully wet
+* remembered per rack: effect names and plugin ids in slot order (`FILTER > DELAY > REVERB`, `DELAY`, `aufx:mrev:appl > aufx:dely:appl`) -> the same rack gets its mapping again, on any unit. moving or removing a slot takes its values and mapped controls along
 * the session keeps each unit's mapping and the values of mapped plugin parameters
 * table per unit with search, remembered mappings with forget -> ⌘, -> MIXER & FX
-* default = the layout below: group = amount + on / off per slot, single = 3 parameters + button 1 on / off, plugin = first three parameters
 
 ### PLUGIN
 
-any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect in the single mode, e.g. AUMatrixReverb or AUReverb2 instead of the built-in reverb.
+any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect in a slot, e.g. AUMatrixReverb next to the built-in delay.
 
-* SNGL -> effect menu -> PLUGIN -> the chain button below (`name +n`, `—` = empty) opens the chain
-* chain: up to 4 plugins in series, slot 1 first. per slot: ON (off = passed through, its tail rings out), name (click = other plugin), ▲ ▼ order, EDIT (own window), ✕. `+ PLUGIN` appends from the list of every installed effect (`name · manufacturer`, VST3 with a small `VST3` behind)
-* knobs 1-3 -> the first three parameters of the first plugin (default), labels from the plugin. any parameter of any slot -> [mapping](#mapping), grouped `<slot> <plugin>` with two or more plugins
-* D/W -> dry / wet of the unit over the whole chain (dry = input of the chain, on top of the plugins' own mix), or mapped to a plugin's mix
-* ON -> on / off of the unit. off = spillover: the chain gets no new audio and rings out
-* EDIT -> window of the first plugin · each slot has its own EDIT in the chain · changes go to every deck on that unit
-* one instance per deck and slot · loads in the background, the deck plays on through the slots already loaded
-* mapping remembered per chain (plugin ids in order, `a > b`; one plugin = its id as before). moving or removing a slot takes its values and mapped controls along
-* KETTEN -> load a remembered chain, `Kette speichern …` (name, same name overwrites; plugin states read fresh), delete. shared by every unit and the master bus, forget -> ⌘, -> MIXER & FX
-* latency: sum of the slots in the chain popover (ms), not compensated
-* chain, slot on / off and plugin states are saved with the session. older sessions: the one plugin becomes slot 1
-* newly installed plugins -> menu -> rescan plugin list (the PLUGINS tab rescans on its own)
-* the menu lists only plugins that are enabled and not blocked -> ⌘, -> PLUGINS
+* one instance per deck and slot · loads in the background, the deck plays on through the slots already loaded (row shows `…` while loading)
+* EDIT -> its own window · changes go to every deck on that unit
+* ON -> slot on / off. off = the plugin gets no new audio and rings out
+* D/W of the slot × D/W of the unit -> dry / wet against the slot input, on top of the plugin's own mix
+* latency: per slot and sum in the rack popover (ms), not compensated
+* slots, on / off and plugin states are saved with the session
+* newly installed plugins -> effect picker -> `Neu einlesen` (the PLUGINS tab rescans on its own)
 
 ### master bus
 
-plugin chain on the sum of the decks, after the faders and the crossfader, before MAIN and the limiter. mixer -> row `MASTER` under the crossfader.
+insert slots on the sum of the decks, after the faders and the crossfader, before MAIN and the limiter. mixer -> row `MASTER` under the crossfader.
 
-* FX -> on / off (off = spillover, tails ring out) · D/W -> dry / wet over the chain · chain button -> same chain as a unit: up to 4 plugins in series, ON, ▲ ▼, EDIT, ✕, `+ PLUGIN`, KETTEN
+* FX -> on / off of all slots (off = tails ring out) · D/W -> share of every slot · rack button -> same rack as a unit: up to 6 slots, built-in effects and plugins, ON, ▲ ▼, EDIT, ✕, `+ SLOT`, RACKS
 * one instance per slot (not per deck), runs on the audio thread after all decks are summed
-* internal mixer only: master pair. external mixer: every deck on its own pair, no summing point -> off (`EXTERN AUS`), chain and settings stay
+* internal mixer only: master pair. external mixer: every deck on its own pair, no summing point -> off (`EXTERN AUS`), slots and settings stay
 * preview has its own pair after the master: never goes through the master bus
 * metronome is added after the master bus
 * key: Decks menu -> `Master-FX an/aus`, no default, assignable -> ⌘, -> KEYBOARD
-* saved with the session (on / off, D/W, chain)
+* saved with the session (on / off, D/W, slots)
 
 ### manage plugins (⌘, -> PLUGINS)
 
 * list of every effect plugin: name, manufacturer, version, AUv2 / AUv3 / VST3, source (system / user / own folder / app), status, search field
-* square left = use in MINOS-741. off -> not in the fx menu (a loaded one keeps playing until you pick another)
+* square left = use in MINOS-741. off -> not in the effect picker (a loaded one keeps playing until you pick another)
 * PRÜFEN / ALLE PRÜFEN -> audio units: apple's `auval`, VST3: self-check (load, 1 s of noise, state read + written back, unload). both in their own process, pass / fail + the last lines of the log (click the row). cached per plugin and version, cancel any time
 * status: ok · ungeprüft (not validated) · prüfung fehlgeschlagen (failed) · blockiert (crashed before) · nicht ladbar (with the reason in the row)
+* architecture from the binary (without loading it): `nur Intel – isoliert` = intel-only audio unit on apple silicon, runs only isolated (apple's service under rosetta), `nur Intel – nicht ladbar` = intel-only VST3, cannot load into an arm64 process
 * folders always scanned: `/Library/Audio/Plug-Ins/Components`, `~/Library/Audio/Plug-Ins/Components`, AUv3 from apps (system registry), `/Library/Audio/Plug-Ins/VST3`, `~/Library/Audio/Plug-Ins/VST3`
 * ORDNER HINZUFÜGEN … -> own folders. `.component` bundles in there (subfolders too) are loaded into MINOS-741 and registered for this app only, `.vst3` bundles are loaded from where they are, nothing is installed. folder changes trigger a rescan
 * PLUGIN INSTALLIEREN … -> pick `.component` / `.vst3` bundles, folders or a `.zip` -> `.component` copied to `~/Library/Audio/Plug-Ins/Components`, `.vst3` to `~/Library/Audio/Plug-Ins/VST3` (created if missing, never `/Library`). an installed bundle with another version -> asks before replacing
@@ -695,7 +744,7 @@ plugin chain on the sum of the decks, after the faders and the crossfader, befor
 
 #### crash safety
 
-* live rule (default): ⌘, -> PLUGINS -> `Plugins im Prozess (riskant)` off -> audio units from other vendors run only isolated in a separate system service. VST3 and plugins from own folders can only run in-process -> not loaded, not in the fx menu (`nur im Prozess – aus` in the list)
+* live rule (default): ⌘, -> PLUGINS -> `Plugins im Prozess (riskant)` off -> audio units from other vendors run only isolated in a separate system service. VST3 and plugins from own folders can only run in-process -> not loaded, locked in the effect picker (`nur im Prozess – aus` in the list)
 * isolated plugin crashes or renders nothing for 2 s -> the unit goes dry, notice, the plugin reloads after 2 s. 3rd crash -> blocked (count in the plugin row, BLOCK AUFHEBEN resets it). single blocks it missed -> notice `antwortet nicht rechtzeitig – n Blöcke trocken`, the signal stays dry for those blocks
 * `Plugins im Prozess (riskant)` on -> as before: default isolated for third-party, per plugin default / isolated / in-process, VST3 and own folders in-process. a crash in-process ends minos
 * apple plugins always load in-process

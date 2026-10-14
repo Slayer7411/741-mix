@@ -21,8 +21,8 @@ built for my own setup. ideas -> [discussions](https://github.com/Slayer7411/MIN
 * sync modes: dynamic, fixed (keeps a shifted phase), tempo only
 * gpu waveform in a 3-band blend, real file level, colored beatgrid, phrase countdown, grid tools
 * internal mixer or external mode -> every deck on its own usb pair
-* 2 or 4 fx units, group or single mode, channel assign 1-4
-* audio unit plugins (apple or third-party, v2 and v3) and VST3 effects as an effect in the fx single mode, own window per unit
+* 2 or 4 fx units with insert slots (up to 6 in series: built-in effects or plugins), templates, channel assign 1-4
+* audio unit plugins (apple or third-party, v2 and v3) and VST3 effects in any slot, own window per slot
 * two hid controllers in native mode, incl. my custom mappings
 * dual browser side by side or stacked, all library columns (move, hide, saved)
 * reads the `collection.nml` of your existing library directly
@@ -41,7 +41,7 @@ built for my own setup. ideas -> [discussions](https://github.com/Slayer7411/MIN
   sync      ■ master clock · link · 3 sync modes
   mixer     ■ internal + external usb mixer
   fx        ◧ 4 units · filter, delay, 2 reverbs (freeze) · beat fx gater / roll / flanger / phaser
-  plugins   ■ audio unit + VST3 effects in the fx single mode
+  plugins   ■ audio unit + VST3 effects in fx insert slots and on the master bus
   browser   ■ dual browser · all library columns · tags · smartlists · harmonic matching · preview on its own pair
   hid       ■ native controllers, 2 units
   analysis  ■ own bpm / key / grid / loudness, key profiles from the collection

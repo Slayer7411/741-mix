@@ -131,6 +131,7 @@ enum UISelfTest {
             ("link", linkDiagnosis),
             ("auto-loop", autoLoop),
             ("deck-groessen", deckSizes),
+            ("insert-slots", insertSlots),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -997,14 +998,14 @@ extension UISelfTest {
         u.key(combo)
         u.spin(1) { mix.masterFX.on == on0 }
         check(mix.masterFX.on == on0, "\(combo.symbols): Master-FX schaltet nicht zurück")
-        mix.addPlugin(MixController.masterBus, "aufx:lpas:appl")
+        mix.addSlot(MixController.masterBus, "aufx:lpas:appl")
         u.spin(10) { mix.core.pluginInstance(MixController.masterBus, slot: 0) != nil }
-        check(mix.chain(MixController.masterBus).map(\.id) == ["aufx:lpas:appl"], "Master-Kette: \(mix.chain(MixController.masterBus).map(\.id))")
-        check(mix.core.pluginInstance(MixController.masterBus, slot: 0) != nil, "Master-Kette: AULowpass lädt nicht")
-        mix.removePlugin(MixController.masterBus, slot: 0)
+        check(mix.slots(MixController.masterBus).map(\.id) == ["aufx:lpas:appl"], "Master-Rack: \(mix.slots(MixController.masterBus).map(\.id))")
+        check(mix.core.pluginInstance(MixController.masterBus, slot: 0) != nil, "Master-Rack: AULowpass lädt nicht")
+        mix.removeSlot(MixController.masterBus, slot: 0)
         mix.prefs.ui.showMixer = false
         u.spin(0.3)
-        check(mix.chain(MixController.masterBus).isEmpty, "Master-Kette nicht leer")
+        check(mix.slots(MixController.masterBus).isEmpty, "Master-Rack nicht leer")
     }
 
     /// Doppelklick auf Regler und Fader = Standardwert: GAIN-Knopf im Mixer (Kanalzug C·A·B·D: der erste ist Deck C),
@@ -1943,5 +1944,77 @@ extension UISelfTest {
         u.spin(2) { !rips.openKeys.contains(track.key) }
         check(rips.open(track.key).isEmpty && rips.store.entry(for: track.key)?.done == [f.id], "RIP-Bereich: Befund nicht erledigt")
         log("rip-bereich: „\(label)“ · \(via) -> entfernt \(String(format: "%.1f", dur0 - dur1)) s · erledigt")
+    }
+}
+
+extension UISelfTest {
+    /// Insert-Slots an FX 1: „+“ im Kopf der Unit -> Effekt-Auswahl -> DELAY, noch einmal -> AULowpass (Apple), Rechtsklick auf
+    /// Slot 2 -> „Slot entfernen“. Die Zeilen erscheinen bzw. verschwinden in der Leiste. Kommen synthetische Klicks in der
+    /// Effekt-Auswahl (eigenes Popover-Fenster) nicht an: Direktaktion (steht im Log). Danach FX 1 wie vorher
+    static func insertSlots(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, b = 0
+        let saved = mix.fxUnits[b].state.slots
+        mix.core.setSlots(b, [])
+        defer { mix.core.setSlots(b, saved); u.spin(0.3) }
+        u.spin(0.4)
+        func popovers() -> [NSWindow] { NSApp.windows.filter { $0 !== u.window && String(describing: type(of: $0)).contains("Popover") && $0.isVisible } }
+        func allViews(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(allViews) }
+        func mark(_ name: String, in w: NSWindow) -> UITestMark.V? {
+            guard let root = w.contentView?.superview ?? w.contentView else { return nil }
+            return allViews(root).compactMap { $0 as? UITestMark.V }.first { $0.name == name }
+        }
+        func row(_ k: Int, _ id: String) -> UITestMark.V? { mark("fx slot \(b) \(k) \(id)", in: u.window) }
+        func closePopovers() { for w in popovers() { w.orderOut(nil) }; u.spin(0.2) }
+        func click(_ v: NSView, in w: NSWindow) {
+            let r = v.convert(v.bounds, to: nil), p = NSPoint(x: r.midX, y: r.midY)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                guard let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                                 pressure: type == .leftMouseUp ? 0 : 1) else { return }
+                w.sendEvent(e)
+            }
+        }
+        /// + klicken, im Popover den Effekt wählen
+        func add(_ id: String) {
+            let before = mix.slots(b).count
+            guard let plus = mark("fx add \(b)", in: u.window) else { fail("„+“ an FX 1 nicht gefunden") }
+            u.click(at: u.center(plus))
+            u.spin(1.5) { popovers().contains { mark("pick \(id)", in: $0) != nil } }
+            if let w = popovers().first(where: { mark("pick \(id)", in: $0) != nil }), let m = mark("pick \(id)", in: w) {
+                m.superview?.scrollToVisible(m.frame)   // Plugins stehen weiter unten in der Liste
+                u.spin(0.3)
+                click(m, in: w)
+                u.spin(1) { mix.slots(b).count > before }
+                log("insert-slots: \(id) \(mix.slots(b).count > before ? "über die Effekt-Auswahl" : "– Klick in der Auswahl kommt nicht an")")
+            } else {
+                log("insert-slots: Effekt-Auswahl öffnet nicht auf den synthetischen Klick")
+            }
+            closePopovers()
+            if mix.slots(b).count == before {
+                log("insert-slots: \(id) per Direktaktion")
+                mix.addSlot(b, id)
+            }
+        }
+        add("DELAY")
+        u.spin(1) { row(0, "DELAY") != nil }
+        check(mix.slots(b).map(\.id) == ["DELAY"], "nach + DELAY: \(mix.slots(b).map(\.id))")
+        check(row(0, "DELAY") != nil, "Zeile 1 DELAY fehlt in der Leiste")
+        let plug = "aufx:lpas:appl"
+        add(plug)
+        u.spin(10) { mix.core.pluginInstance(b, slot: 1) != nil && row(1, plug) != nil }
+        check(mix.slots(b).map(\.id) == ["DELAY", plug], "nach + AULowpass: \(mix.slots(b).map(\.id))")
+        check(mix.core.pluginInstance(b, slot: 1) != nil, "AULowpass lädt nicht: \(mix.pluginError(b) ?? "-")")
+        check(row(1, plug) != nil, "Zeile 2 AULowpass fehlt in der Leiste")
+        // ✕ über das Kontextmenü der Zeile
+        let item = String(localized: "Slot entfernen")
+        if let r = row(1, plug), let menu = u.rightClick(at: u.center(r)), let i = menu.items.firstIndex(where: { $0.title == item }) {
+            menu.performActionForItem(at: i)
+        } else {
+            log("insert-slots: kein Kontextmenü an Slot 2 – entferne per Direktaktion")
+            mix.removeSlot(b, slot: 1)
+        }
+        u.spin(1) { row(1, plug) == nil }
+        check(mix.slots(b).map(\.id) == ["DELAY"] && row(1, plug) == nil, "nach ✕: \(mix.slots(b).map(\.id))")
+        log("insert-slots: \(mix.slots(b).map(\.id)) · Zeilen in der Leiste ok")
     }
 }
