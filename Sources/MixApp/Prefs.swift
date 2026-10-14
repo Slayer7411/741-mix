@@ -256,6 +256,10 @@ struct UIPrefs: Codable, Equatable {
     var browserSnapRows = true
     /// Cover links im Deck-Kopf
     var showDeckCover = true
+    /// Breite (= Höhe) des Deck-Covers in pt, mit dem Zoom; über `deckCoverHeaderMax` eigene Spalte links neben den Zeilen
+    var deckCoverSize = 32.0
+    /// Höhe der Übersicht (ganze Wellenform unter dem Phasenbalken) in pt, mit dem Zoom
+    var overviewHeight = 18.0
     /// Cover des gewählten Tracks unter dem Baum im Browser
     var showCoverPreview = true
     /// Last-Anzeigen rechts in der Statusleiste (DSP, Latenz, Aussetzer, Speicher, CPU)
@@ -311,6 +315,14 @@ struct UIPrefs: Codable, Equatable {
         get { deckCount >= 4 }
         set { deckCount = newValue ? 4 : 2 }
     }
+
+    static let deckCoverRange = 32.0...200.0
+    static let overviewHeightRange = 12.0...120.0
+    /// bis zu dieser Breite sitzt das Cover im Kopf, darüber in einer eigenen Spalte über mehrere Zeilen
+    static let deckCoverHeaderMax = 40.0
+
+    var deckCoverInHeader: Bool { showDeckCover && deckCoverSize <= Self.deckCoverHeaderMax }
+    var deckCoverColumn: Bool { showDeckCover && deckCoverSize > Self.deckCoverHeaderMax }
 
     /// kompakte Decks: ohne Pitch-Fader, Hotcues und Grid-Werkzeuge (mehr Platz für Wellenform und Beatgrid)
     var compactDecks: Bool {

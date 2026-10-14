@@ -13,7 +13,7 @@ if [ $quick = 0 ]; then
   echo "== swift test"
   # ein Lauf, Ausgabe gesichert: rote Tests stehen im Log, Ergebnis aus dem Exit-Code (zwei Läufe verdoppelten nur das Flattern)
   tlog=$(mktemp)
-  swift test --no-parallel >"$tlog" 2>&1; trc=$?
+  trc=0; swift test --no-parallel >"$tlog" 2>&1 || trc=$?
   grep -E "✘|Test run with" "$tlog" || true
   [ $trc = 0 ] || { grep -E "error:|Expectation failed|recorded an issue" "$tlog" | head -20; rm -f "$tlog"; echo "FEHLER: Unit-Tests rot"; exit 1; }
   rm -f "$tlog"

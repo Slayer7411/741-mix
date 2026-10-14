@@ -3,7 +3,7 @@ import AppKit
 import MixCore
 
 /// Ansichts-Profil: benannter Satz von Ansichts-Einstellungen aus UIPrefs (Decks, Mixer, FX-Units, Deck-Zeilen,
-/// Browser, Statusleiste, Wellenform-Mindesthöhe, Cover, Vorschau). Nicht dabei: Audio, Controller,
+/// Browser, Statusleiste, Wellenform-Mindesthöhe, Cover und Cover-Breite, Übersicht-Höhe, Vorschau). Nicht dabei: Audio, Controller,
 /// Wellenform-Stil und -Farben, Tags, Tastatur
 struct LayoutProfile: Codable, Equatable, Identifiable {
     var id = UUID()
@@ -22,6 +22,8 @@ struct LayoutProfile: Codable, Equatable, Identifiable {
     var statusBar = StatusBarMode.always
     var waveformHeight = 60.0
     var showDeckCover = true
+    var deckCoverSize = 32.0
+    var overviewHeight = 18.0
     var showCoverPreview = true
     var previewMode = PreviewMode.fullRow
     var showMeters = true
@@ -45,6 +47,8 @@ struct LayoutProfile: Codable, Equatable, Identifiable {
         statusBar = ui.statusBar
         waveformHeight = ui.waveformHeight
         showDeckCover = ui.showDeckCover
+        deckCoverSize = ui.deckCoverSize
+        overviewHeight = ui.overviewHeight
         showCoverPreview = ui.showCoverPreview
         previewMode = ui.previewMode
         showMeters = ui.showMeters
@@ -66,6 +70,8 @@ struct LayoutProfile: Codable, Equatable, Identifiable {
         ui.statusBar = statusBar
         ui.waveformHeight = waveformHeight
         ui.showDeckCover = showDeckCover
+        ui.deckCoverSize = deckCoverSize
+        ui.overviewHeight = overviewHeight
         ui.showCoverPreview = showCoverPreview
         ui.previewMode = previewMode
         ui.showMeters = showMeters
@@ -160,6 +166,7 @@ extension LayoutProfile {
         waveformHeight = v(.waveformHeight, waveformHeight); showDeckCover = v(.showDeckCover, showDeckCover)
         showCoverPreview = v(.showCoverPreview, showCoverPreview); previewMode = v(.previewMode, previewMode)
         showMeters = v(.showMeters, showMeters)
+        deckCoverSize = v(.deckCoverSize, deckCoverSize); overviewHeight = v(.overviewHeight, overviewHeight)
     }
 }
 
@@ -362,7 +369,7 @@ struct LayoutProfileSettings: View {
             }
             Button("Aktuelle Ansicht speichern …") { LayoutProfiles.saveAsking(mix: mix, browser: browser) }
                 .settingsControlColumn()
-            Text("profil = decks (1 / 2 / 4), mixer, fx-units, zeilen je deck, browser (anordnung, höhe, baum, groß), statusleiste, last-anzeigen, wellenform-mindesthöhe, cover, vorschau. nicht: audio, controller, wellenform-stil und farben, tags, tastatur. umschalten: profil-menü links in der werkzeugleiste, menü darstellung -> profil, die ersten vier per taste (⌘, -> tastatur), nächstes ⌃⌥⇥. ◆ = aktiv, * = ansicht seitdem geändert -> aktualisieren übernimmt sie.")
+            Text("profil = decks (1 / 2 / 4), mixer, fx-units, zeilen je deck, browser (anordnung, höhe, baum, groß), statusleiste, last-anzeigen, wellenform-mindesthöhe, cover und cover-breite, übersicht-höhe, vorschau. nicht: audio, controller, wellenform-stil und farben, tags, tastatur. umschalten: profil-menü links in der werkzeugleiste, menü darstellung -> profil, die ersten vier per taste (⌘, -> tastatur), nächstes ⌃⌥⇥. ◆ = aktiv, * = ansicht seitdem geändert -> aktualisieren übernimmt sie.")
                 .settingsHint()
         }
     }

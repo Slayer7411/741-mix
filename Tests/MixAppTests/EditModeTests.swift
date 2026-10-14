@@ -62,3 +62,30 @@ struct EditModeTests {
         #expect(ShortcutID.toolLoop16.index == 16)
     }
 }
+
+/// Übersichtsbild: Pixelhöhe aus der Einstellung (Stufen von 60 px), nicht hochskaliert
+@MainActor @Test func overviewBitmapHeightFollowsSetting() async throws {
+    #expect(RenderedWaveform.overviewPixels(points: 18, zoom: 1) == 60)
+    #expect(RenderedWaveform.overviewPixels(points: 30, zoom: 1) == 60)
+    #expect(RenderedWaveform.overviewPixels(points: 31, zoom: 1) == 120)
+    #expect(RenderedWaveform.overviewPixels(points: 90, zoom: 1) == 180)
+    #expect(RenderedWaveform.overviewPixels(points: 120, zoom: 1.5) == 360)
+    #expect(RenderedWaveform.overviewPixels(points: 120, zoom: 3) == 480)
+    let url = try toneWAV(seconds: 4)
+    defer { try? FileManager.default.removeItem(at: url) }
+    let a = try TrackAudio.decode(url: url, sampleRate: 44100)
+    for style in [WaveformStyle.blend, .mono] {
+        let w = RenderedWaveform.render(a, style: style, palette: .rgb, overviewHeight: 180)
+        #expect(w.overview?.height == 180 && w.overview?.width == 1600, "\(style)")
+        #expect(RenderedWaveform.render(a, style: style, palette: .rgb).overview?.height == 60, "\(style)")
+    }
+    // Cache-Schlüssel enthält die Höhe: andere Höhe -> neues Bild
+    let cache = WaveformCache()
+    var ui = UIPrefs()
+    ui.waveformStyle = .blend
+    ui.overviewHeight = 90
+    for _ in 0..<500 where cache.waveform(for: a, ui: ui, preset: WavePresets.standard)?.overview?.height != 180 {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(cache.waveform(for: a, ui: ui, preset: WavePresets.standard)?.overview?.height == 180)
+}

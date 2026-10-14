@@ -17,6 +17,8 @@ import Testing
     ui.hideTreeWithDecks = true
     ui.statusBar = .auto
     ui.waveformHeight = 90
+    ui.deckCoverSize = 120
+    ui.overviewHeight = 64
     ui.showDeckCover = false
     ui.showCoverPreview = false
     ui.previewMode = .behindTitle
@@ -32,6 +34,7 @@ import Testing
     #expect(p.matches(other, maximized: true))
     #expect(other.deckCount == 1 && !other.showMixer && other.fxUnitCount == 4 && other.compactDecks && !other.deckRows.comment)
     #expect(other.browserLayout == .stacked && other.browserHeight == 512 && other.statusBar == .auto && other.previewMode == .behindTitle)
+    #expect(p.deckCoverSize == 120 && p.overviewHeight == 64 && other.deckCoverSize == 120 && other.overviewHeight == 64)
     // Felder außerhalb des Profils bleiben
     #expect(other.waveformStyle == UIPrefs().waveformStyle && other.tagSeparators == "·")
 
@@ -65,6 +68,8 @@ import Testing
     let old = try JSONDecoder().decode(LayoutProfile.self, from: Data(partial.utf8))
     #expect(old.name == "Alt" && old.deckCount == 1 && old.id == p.id)
     #expect(old.statusBar == LayoutProfile(name: "").statusBar && !old.deckRows.info && old.deckRows.transport)
+    // Profil von vor Cover-Breite / Übersicht-Höhe: Standard
+    #expect(old.deckCoverSize == UIPrefs().deckCoverSize && old.overviewHeight == UIPrefs().overviewHeight)
 }
 
 @MainActor @Test func layoutProfileOldPrefs() {

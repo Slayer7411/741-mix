@@ -95,7 +95,7 @@ tracks without an analysis in the collection play, but have no grid -> no sync. 
 
 ### view profiles
 
-a profile = named set of view settings: decks shown (1 / 2 / 4), internal mixer, fx units on / off and count, deck rows (incl. grid tools, so also compact decks), browser layout, browser height, hide tree, big browser, status bar, load meters, waveform minimum height, cover in the deck, cover preview, browser preview mode. not in it: audio, controller, waveform style and colors, tags, keys.
+a profile = named set of view settings: decks shown (1 / 2 / 4), internal mixer, fx units on / off and count, deck rows (incl. grid tools, so also compact decks), browser layout, browser height, hide tree, big browser, status bar, load meters, waveform minimum height, cover in the deck, cover width, overview height, cover preview, browser preview mode. not in it: audio, controller, waveform style and colors, tags, keys.
 
 * switch: PROFILE ▾ left in the toolbar, view menu -> profile, ⌃⌥⌘1-4 (first four of the list), ⌃⌥⇥ next profile. keys assignable under ⌘, -> KEYBOARD
 * switching only sets these fields, decks are rebuilt only as far as the toolbar switches do it anyway
@@ -139,7 +139,7 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 
 * deck letter turns red while playing
 * line under the title: tags from comment 2 as chips (colors + separators like the browser, ⌘, -> TAGS), then comment in grey. one line, too long -> `…`. fixed height, also without a track. off: DECKS -> ROWS
-* ▣ cover of the loaded track (embedded in the file, else `cover` / `folder` / `front` .jpg / .png in its folder), `◆` = no cover. off: ⌘, -> BROWSER -> cover
+* ▣ cover of the loaded track (embedded in the file, else `cover` / `folder` / `front` .jpg / .png in its folder), `◆` = no cover. off: ⌘, -> BROWSER -> cover. size: ⌘, -> DECKS -> sizes
 * FX1 / FX2 (… FX4) -> deck on that fx unit
 * code readout: bar of the track in its phrase (`5/16`, phrase start = grid anchor, length = waveform phrase, ⌘, -> DISPLAY) against the bar counter. purple `◆ CODE` -> same bar and beat as the counter, red `+2 BARS` / `−3 BEATS` -> the deck is that far ahead / behind (wrapped to half a phrase), grey -> deck stopped or no counter
 * remaining time, bpm, tempo offset, key readout: open key of the track (e.g. `11m`), next to it the audible key in red as soon as it deviates (`11m → 6m`), below the deviation in semitones (`+0.60`). keylock off -> the tempo detunes, keylock on -> only the key shift counts
@@ -149,6 +149,11 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 ### rows
 
 DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, comment, tags (comment 2), phase bar, overview, transport, hotcues (with IN / OUT / RE), loop sizes, beatjump, grid tools, groove → midi (off by default), prepare (off by default, [prepare mode](#prepare-mode)), pitch fader. waveform and header always stay. `all rows` leaves prepare off.
+
+sizes (⌘, -> DECKS -> sizes, all decks, scale with the zoom):
+
+* cover width 32-200 pt (default 32). up to 40 pt the cover sits in the header. above: own square column left of the rows, next to header, waveform and the rows below as far as it reaches; the header keeps its height. at least 360 pt stay right of the cover for title and readouts, a narrower deck shrinks the cover, below 24 pt no column. also limited by the deck height
+* overview height 12-120 pt (default 18). same drawing (waveform style and preset colors, cues, cut, loop, range). image rendered at the needed height (60 px steps up to 480 px, 2× display and zoom), changing the step re-renders the waveform in the background
 
 * pitch fader off -> waveform and rows take its width
 * DECKS -> compact decks (⌥⌘K) -> pitch fader, hotcues and grid tools off / on together -> more room for waveform and beatgrid

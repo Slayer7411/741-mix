@@ -45,6 +45,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * tempo & sync: keylock on for the first load, default tempo range (±6 … ±100 %), phase lock while synced, sync mode (dynamic / fixed / tempo only), pitch bend amount, link offset (ms, ±50; constant shift to the peers after latency compensation, positive = the others play later)
 * loops & beatjump: default loop size and beatjump size, loop snap (only with snap on) to loop cues (on, window 1-8 beats, default 4) and to the 4-bar grid (on, tolerance 1-8 beats, default 1), active loop every pass / once per load, auto loop on load (`engine.autoLoopBars`: 0 = off / 4 / 8 / 16 / 32 bars, default 16; only for tracks without a stored loop, not active)
 * rows per deck (`ui.deckRows`), compact decks
+* sizes: cover width 32-200 pt (`ui.deckCoverSize`, default 32), overview height 12-120 pt (`ui.overviewHeight`, default 18), all decks, scale with the zoom -> [manual](MANUAL.md#rows)
 * master clock & metronome: metronome output pair
 * phrase anchor: off / suggest (default) / automatic -> on load the anchor is checked against the track's 8-bar structure, see manual 05
 * edit mode & tool-loops: snap when marking (`ui.editSnap`: 1 beat / 1 bar / 2 / 4 / 8 bars, default 1 bar), load the cut result into the deck (`ui.cutLoadsResult`), tool-loops into folder … (`ui.toolLoopFolder`, empty = next to the original), prepare amp: allow clipping (`ui.prepAllowClipping`, off), prepare join: match tempo within ±0.5 % (`ui.prepJoinMatchTempo`, on) -> [manual](MANUAL.md#prepare-mode)
@@ -81,7 +82,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * harmony to the master: color the key column (on) -> [manual](MANUAL.md#harmony--matching)
 * ◆ PASST (matching): which steps count besides the same key: ±1 on the wheel (on), relative major / minor (on), energy ±2 (off). bpm window ±1-10 % (±4), half / double tempo (off). `ui.harmonyColors`, `ui.match`
 * browser preview: full row, two lines (default) / own column / behind the title / off; colors spectrum red / green / blue (default) / like the waveform; compute in the background: always, throttled while a deck plays (default) / only while no deck plays / off -> [manual](MANUAL.md#preview)
-* cover: in the deck header (on), preview of the selected track below the browser tree (on). the browser column `Cover` is switched via right click on the list header
+* cover: in the deck header (on, width: DECKS -> sizes), preview of the selected track below the browser tree (on). the browser column `Cover` is switched via right click on the list header
 * collection: music folders for MUSIC FOLDERS (add / remove, empty = automatic: the folder holding 90 % of the collection's files); write browser edits into the collection file (off): backup at most once per hour into `Backup MINOS-741`, not while the library software runs -> [manual](MANUAL.md#write-into-the-collection-file)
   * with it: cuts and tool loops as new entries (on), preparation + own history + own folders / playlists as playlists in `MINOS-741` (on)
 * check collection: on start (off), scan the music folders for files without a collection entry (on) -> [manual](MANUAL.md#check-the-collection)

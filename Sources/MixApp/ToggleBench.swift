@@ -140,7 +140,8 @@ enum ToggleBench {
                         ("rows", { $0.deckRows = $1.deckRows; $0.showGridTools = $1.showGridTools }),
                         ("browser", { $0.browserLayout = $1.browserLayout; $0.browserHeight = $1.browserHeight; $0.hideTreeWithDecks = $1.hideTreeWithDecks }),
                         ("status", { $0.statusBar = $1.statusBar; $0.showMeters = $1.showMeters }),
-                        ("cover+preview", { $0.showDeckCover = $1.showDeckCover; $0.showCoverPreview = $1.showCoverPreview; $0.previewMode = $1.previewMode; $0.waveformHeight = $1.waveformHeight }),
+                        ("cover+preview", { $0.showDeckCover = $1.showDeckCover; $0.showCoverPreview = $1.showCoverPreview; $0.previewMode = $1.previewMode; $0.waveformHeight = $1.waveformHeight
+                            $0.deckCoverSize = $1.deckCoverSize; $0.overviewHeight = $1.overviewHeight }),
                     ]
                     var sums: [String: [Double]] = [:]
                     for r in 0..<6 {

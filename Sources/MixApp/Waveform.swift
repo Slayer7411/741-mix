@@ -281,10 +281,11 @@ final class RenderedWaveform: @unchecked Sendable {
 
     /// `preset` gilt für den Stil 3-Band, `blend` = nachgerechnete Hüllkurven (Analyse-Werte des Presets), sonst die der Datei
     static func render(_ a: TrackAudio, style: WaveformStyle, palette: WaveformPalette, highBoost: Double = 1,
-                       preset: WavePreset = WavePresets.standard, blend: WaveBlend? = nil, tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
+                       preset: WavePreset = WavePresets.standard, blend: WaveBlend? = nil, tune: BlendPaint.Tune? = nil,
+                       overviewHeight: Int = overviewPixels) -> RenderedWaveform {
         let colors = Colors.of(palette)
         if style == .blend, (blend ?? a.blend).count >= a.peak.count, !a.peak.isEmpty {
-            return self.blend(a, palette: preset.palette, data: blend ?? a.blend, tune: tune)
+            return self.blend(a, palette: preset.palette, data: blend ?? a.blend, tune: tune, overviewHeight: overviewHeight)
         }
         let env = envelope(a)
         let fine = style == .spectrum && a.spectrum.count >= a.peak.count && !a.peak.isEmpty ? Fine(a.spectrum, highBoost: highBoost) : nil
@@ -297,7 +298,7 @@ final class RenderedWaveform: @unchecked Sendable {
             b0 = r.upperBound
         }
         // Übersicht
-        let ow = 1600, oh = 60
+        let ow = 1600, oh = overviewHeight
         var overview: CGImage?
         if let ctx = context(width: ow, height: oh), !a.peak.isEmpty {
             let per = Double(a.peak.count) / Double(ow)
@@ -324,8 +325,19 @@ final class RenderedWaveform: @unchecked Sendable {
 }
 
 extension RenderedWaveform {
+    /// Pixelhöhe des Übersichtsbilds: Standard (bis 30 pt bei 100 %)
+    static let overviewPixels = 60
+
+    /// Pixelhöhe für eine Übersicht von `points` pt bei `zoom` (Retina 2×), in Stufen von 60 px (ein Regler-Schritt
+    /// rechnet nicht jedes Mal neu), 60…480
+    static func overviewPixels(points: Double, zoom: Double) -> Int {
+        let px = points * max(zoom, 0.1) * 2
+        return min(480, max(overviewPixels, Int((px / 60).rounded(.up)) * 60))
+    }
+
     /// 3-Band Mischung: keine Pfade, die Kacheln rastern aus den Blöcken; Übersicht gleich gerastert
-    static func blend(_ a: TrackAudio, palette: BlendPaint.Palette, data: WaveBlend, tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
+    static func blend(_ a: TrackAudio, palette: BlendPaint.Palette, data: WaveBlend, tune: BlendPaint.Tune? = nil,
+                      overviewHeight: Int = overviewPixels) -> RenderedWaveform {
         var pal = palette
         tune?.apply(to: &pal)   // Versuchswerte, nur im Selbsttest-Bild
         // Anteil gehaltener Höhen je Block aus der Höhen-Dauer des Spektrums (geschlossene Hats blau, offene hellblau)
@@ -335,7 +347,7 @@ extension RenderedWaveform {
         // gehaltene Tiefen (Bassline, Sub-Ausklang) orange, Kick-Anschläge rot: laufendes Minimum der Tief-Spitze
         let warm = BlendPaint.warmth(blend: blendData, count: n)
         let raster = Raster(peak: BlendPaint.displayPeaks(Array(a.peak)), blend: blendData, open: open, warm: warm, palette: pal)
-        let ow = 1600, oh = 60
+        let ow = 1600, oh = overviewHeight
         var overview: CGImage?
         if let ctx = CGContext(data: nil, width: ow, height: oh, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue), let data = ctx.data {
@@ -370,7 +382,8 @@ final class WaveformCache {
         let style = ui.waveformStyle, palette = ui.waveformPalette, boost = ui.waveformHighBoost
         let oid = ObjectIdentifier(audio)
         let look = style == .blend ? "\(preset.look.hashValue)-\(preset.analysis.hashValue)" : ""
-        let key = "\(oid.hashValue)-\(style.rawValue)-\(palette.rawValue)-\(boost)-\(look)"
+        let oh = RenderedWaveform.overviewPixels(points: ui.overviewHeight, zoom: ui.zoom)
+        let key = "\(oid.hashValue)-\(style.rawValue)-\(palette.rawValue)-\(boost)-\(look)-\(oh)"
         if let e = done[key], e.audio === audio { shown[oid] = key; return e.wave }
         if running[key] == nil {
             for (k, r) in running where r.audio == oid { r.task.cancel(); running[k] = nil }
@@ -392,7 +405,8 @@ final class WaveformCache {
                     }
                 }
                 guard !Task.isCancelled else { return }
-                let w = RenderedWaveform.render(audio, style: style, palette: palette, highBoost: boost, preset: preset, blend: blend)
+                let w = RenderedWaveform.render(audio, style: style, palette: palette, highBoost: boost, preset: preset, blend: blend,
+                                                overviewHeight: oh)
                 await MainActor.run {
                     guard !Task.isCancelled else { return }
                     self.done.removeAll { $0.value.audio == nil || $0.value.audio === audio }   // ältere Fassungen dieses Puffers

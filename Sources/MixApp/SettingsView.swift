@@ -403,6 +403,15 @@ struct DeckSettings: View {
                 Toggle("Kompakte Decks (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge)", isOn: $mix.prefs.ui.compactDecks)
                 Text("auch im menü decks -> zeilen / kompakte decks. ohne pitch-fader nimmt die wellenform die breite. wellenform und kopfzeile bleiben immer.").settingsHint()
             }
+            Section("Größen") {
+                sliderRow("Cover-Breite (pt)", $mix.prefs.ui.deckCoverSize, UIPrefs.deckCoverRange, step: 4, format: "%.0f", unit: "pt")
+                    .disabled(!mix.prefs.ui.showDeckCover)
+                    .background(UITestMark(name: "cover size"))
+                sliderRow("Übersicht Höhe (pt)", $mix.prefs.ui.overviewHeight, UIPrefs.overviewHeightRange, step: 2, format: "%.0f", unit: "pt")
+                    .disabled(!mix.prefs.ui.deckRows.overview)
+                    .background(UITestMark(name: "overview height"))
+                Text("für alle decks, wächst mit dem zoom. cover bis 40 pt im kopf, darüber eigene spalte links über kopf und wellenform; rechts bleiben mindestens 360 pt für titel und anzeigen, sonst wird das cover schmaler. cover an/aus: ⌘, -> browser -> cover. beide werte gehören zum ansichts-profil.").settingsHint()
+            }
             Section("Master-Clock & Metronom") {
                 Picker("Metronom auf Kanalpaar", selection: $mix.prefs.engine.metronomeChannel) {
                     ForEach(Array(stride(from: 0, to: max(2, mix.deviceChannels - 1), by: 2)), id: \.self) { c in

@@ -11,15 +11,23 @@ struct DeckView: View {
     @Environment(LibraryStore.self) private var store
     @Environment(BrowserState.self) private var browser
     let d: Int
+    /// Platz für Cover-Spalte und Zeilen (ohne Pitch-Fader): begrenzt die Cover-Breite
+    @State private var area = CGSize.zero
 
     var body: some View {
-        let rows = mix.prefs.ui.deckRows
-        let gridRow = mix.prefs.ui.showGridTools
+        let ui = mix.prefs.ui
+        let rows = ui.deckRows
+        let gridRow = ui.showGridTools
+        // großes Cover: eigene Spalte links, über Kopf und Wellenform; der Kopf behält seine Höhe
+        let coverSide = ui.deckCoverColumn
+            ? DeckCoverFit.side(wanted: ui.deckCoverSize.z, deckWidth: area.width - 4.z, deckHeight: area.height, zoom: 1.z, spacing: 6.z) : 0
         HStack(alignment: .top, spacing: 6.z) {
+          HStack(alignment: .top, spacing: 6.z) {
+            if coverSide > 0 { CoverTile(d: d, side: coverSide).background(UITestMark(name: deckLetters[d] + " cover")).padding(.leading, 4.z) }
             VStack(alignment: .leading, spacing: 4.z) {
                 // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen), am Cover und an den Zusatzinfos
                 row("header", DeckHeader(d: d).modifier(DeckDropTarget(d: d)),
-                    key: [mix.prefs.ui.showMixer ? 0 : mix.prefs.ui.fxUnitCount, mix.prefs.ui.showDeckCover ? 1 : 0, rows.info ? 1 : 0, rows.comment || rows.tags ? 1 : 0])
+                    key: [ui.showMixer ? 0 : ui.fxUnitCount, ui.deckCoverInHeader ? Int(ui.deckCoverSize) : 0, rows.info ? 1 : 0, rows.comment || rows.tags ? 1 : 0])
                 WaveformView(d: d)
                     .overlay { DeckIdleView(d: d) }   // leer: Lobster, nach Ladefehler 5 s Totenkopf
                     .frame(minHeight: mix.prefs.ui.waveformHeight.z, maxHeight: .infinity)
@@ -27,7 +35,7 @@ struct DeckView: View {
                 if rows.overview {
                     // Rahmen wie der Phasenbalken: ohne Track sähe die leere Zeile wie ein Spalt aus
                     OverviewView(d: d)
-                        .frame(height: 18.z)
+                        .frame(height: ui.overviewHeight.z)
                         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
                 }
                 // DAW-Brücke meldet einen Clip derselben Datei: Grid-Streifen mit Position der DAW
@@ -49,6 +57,8 @@ struct DeckView: View {
                 if rows.groove { row("groove", GrooveRow(d: d)) }
                 if rows.prepare { row("prepare", PrepareRow(d: d)) }
             }
+          }
+          .onGeometryChange(for: CGSize.self, of: { $0.size }) { area = $0 }
             if rows.tempo { TempoColumn(d: d).padding(.trailing, 3.z) }
         }
         .padding(.vertical, 3.z)   // seitlich nichts: die Wellenform endet am Deck-Rand (Zeilen rücken selbst ein)
@@ -329,11 +339,12 @@ struct DeckMetaRow: View {
     /// in der Mitte des Deck-Kopfs (zwei Zeilen, nimmt die freie Breite) statt als eigene Zeile
     var inline = false
 
-    struct Model: Equatable { var cover = true, comment = "", tags: [String] = [], tagHighlight = true, tagColors: [String: String] = [:] }
+    /// cover = Breite des Covers im Kopf (pt vor dem Zoom, 0 = keins)
+    struct Model: Equatable { var cover = 0.0, comment = "", tags: [String] = [], tagHighlight = true, tagColors: [String: String] = [:] }
 
     var body: some View {
         let s = mix.deck(d), ui = mix.prefs.ui
-        var m = Model(cover: ui.showDeckCover)
+        var m = Model(cover: ui.deckCoverInHeader ? ui.deckCoverSize : 0)
         if let t = s.track, !s.loading {
             if ui.deckRows.comment { m.comment = t.comment }
             if ui.deckRows.tags {
@@ -367,7 +378,7 @@ struct DeckMetaRow: View {
             HStack(spacing: 6.z) {
                 // so breit wie Buchstabe und Cover im Kopf
                 Text(deckLetters[d]).font(Theme.label(22.z, .bold)).hidden().frame(height: 0)
-                if m.cover { Color.clear.frame(width: 32.z, height: 0) }
+                if m.cover > 0 { Color.clear.frame(width: m.cover.z, height: 0) }
                 Text(text).font(Theme.mono(10.z)).lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -965,7 +976,8 @@ struct TempoColumn: View {
 /// Nur Selbsttest: MIX741_SHOT=deck:<pfad.png> rendert Deck A (Track mit Kommentar und Tags, Loop 8, Beatjump 4) ohne
 /// Fenster auf dem Bildschirm als PNG: <pfad>-640x300.png Loop aus, <pfad>-480x260.png Loop an,
 /// <pfad>-640x300-compact.png kompakt (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge), dazu im EDIT-Modus mit Schnitt und
-/// eigenem Grid und markiertem Bereich (<pfad>-edit-640x300.png, <pfad>-edit-480x260.png), und beendet sich.
+/// eigenem Grid und markiertem Bereich (<pfad>-edit-640x300.png, <pfad>-edit-480x260.png), Cover 120 pt und Übersicht
+/// 90 pt (<pfad>-sizes-900x420.png), und beendet sich.
 @MainActor
 enum DeckShot {
     static func runIfRequested() {
@@ -993,10 +1005,13 @@ enum DeckShot {
                     Cue(name: "", kind: .cue, startMs: 30000, lengthMs: 0, hotcue: 1),
                     Cue(name: "", kind: .loop, startMs: 60000, lengthMs: 3750, hotcue: 3)]
         var paths: [String] = []
-        for (w, h, loop, compact, edit) in [(640.0, 300.0, false, false, false), (480.0, 260.0, true, false, false),
-                                            (640.0, 300.0, false, true, false),
-                                            (640.0, 300.0, false, false, true), (480.0, 260.0, false, false, true)] {
+        for (w, h, loop, compact, edit, sizes) in [(640.0, 300.0, false, false, false, false), (480.0, 260.0, true, false, false, false),
+                                                   (640.0, 300.0, false, true, false, false),
+                                                   (640.0, 300.0, false, false, true, false), (480.0, 260.0, false, false, true, false),
+                                                   (900.0, 420.0, false, false, false, true)] {
             mix.prefs.ui.compactDecks = compact
+            mix.prefs.ui.deckCoverSize = sizes ? 120 : UIPrefs().deckCoverSize
+            mix.prefs.ui.overviewHeight = sizes ? 90 : UIPrefs().overviewHeight
             mix.setEditing(0, edit)
             mix.updateDeck(0) {
                 $0.track = t; $0.duration = 300; $0.grid = BeatGrid(anchor: 1, bpm: 128)
@@ -1008,7 +1023,7 @@ enum DeckShot {
                 $0.gridEdited = edit
             }
             mix.setRange(0, edit ? TrackRange(1 + 2 * 60 / 128, 1 + 6 * 60 / 128) : nil)   // markierter Bereich: Beats 3–7
-            let path = "\(base)-\(edit ? "edit-" : "")\(Int(w))x\(Int(h))\(compact ? "-compact" : "").png"
+            let path = "\(base)-\(edit ? "edit-" : "")\(sizes ? "sizes-" : "")\(Int(w))x\(Int(h))\(compact ? "-compact" : "").png"
             render(mix: mix, size: CGSize(width: w, height: h), to: path)
             paths.append(path)
         }

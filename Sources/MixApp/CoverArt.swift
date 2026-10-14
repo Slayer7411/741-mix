@@ -31,24 +31,43 @@ struct CoverImage<Placeholder: View>: View {
 struct CoverTile: View {
     @Environment(MixModel.self) private var mix
     let d: Int
+    /// Seitenlänge von außen (Spalte links neben den Zeilen); nil = im Kopf, Größe aus den Einstellungen
+    var side: CGFloat?
 
     var body: some View {
-        if mix.prefs.ui.showDeckCover {
-            DeckCover(path: mix.deck(d).track?.path).equatable()
+        let ui = mix.prefs.ui
+        if let side {
+            DeckCover(path: mix.deck(d).track?.path, side: side).equatable()
+        } else if ui.deckCoverInHeader {
+            DeckCover(path: mix.deck(d).track?.path, side: ui.deckCoverSize.z).equatable()
         }
     }
 
     private struct DeckCover: View, Equatable {
         let path: String?
+        let side: CGFloat
         var body: some View {
             CoverImage(path: path, size: .large) {
-                Text("◆").font(Theme.mono(11.z)).foregroundStyle(Theme.muted)
+                Text("◆").font(Theme.mono(max(11, side / 3))).foregroundStyle(Theme.muted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.chitin)
             }
-            .frame(width: 32.z, height: 32.z)
+            .frame(width: side, height: side)
             .clipped()
             .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
         }
+    }
+}
+
+/// Seite des Covers in der Deck-Spalte: gewünschte Breite, begrenzt durch die Deck-Höhe und die Mindestbreite des
+/// Rests (Kopf mit Titel und Anzeigen). Unter `minSide` keine Spalte (0)
+enum DeckCoverFit {
+    /// Platz rechts vom Cover mindestens (pt, vor dem Zoom): Buchstabe, Titel, Zeit, BPM, Code, Key
+    static let minRest = 360.0
+    static let minSide = 24.0
+
+    static func side(wanted: CGFloat, deckWidth: CGFloat, deckHeight: CGFloat, zoom: CGFloat, spacing: CGFloat) -> CGFloat {
+        let s = min(wanted, deckWidth - minRest * zoom - spacing, deckHeight)
+        return s >= minSide * zoom ? s.rounded(.down) : 0
     }
 }
 
