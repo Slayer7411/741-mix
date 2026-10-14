@@ -341,6 +341,28 @@ struct DeckSettings: View {
                 Text("rechtsklick auf einen loop-hotcue -> active loop (punkt auf der taste, gestrichelter rahmen in der wellenform). erreicht die position den loop-anfang, rastet der loop ein, die loop-taste verlässt ihn. gespeichert je track in den eigenen änderungen.")
                     .settingsHint()
             }
+            Section("EDIT-Modus & Tool-Loops") {
+                Picker("Raster beim Markieren", selection: $mix.prefs.ui.editSnap) {
+                    ForEach(EditSnap.allCases, id: \.self) { Text(verbatim: $0.label).tag($0) }
+                }
+                Toggle("Schneiden: Ergebnis ins Deck laden", isOn: $mix.prefs.ui.cutLoadsResult)
+                HStack {
+                    Text("Tool-Loops in Ordner …")
+                    Spacer()
+                    Text(mix.prefs.ui.toolLoopFolder.isEmpty ? String(localized: "neben dem Original") : (mix.prefs.ui.toolLoopFolder as NSString).abbreviatingWithTildeInPath)
+                        .font(Theme.mono(10)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Button("Wählen …") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.canCreateDirectories = true
+                        if panel.runModal() == .OK, let u = panel.url { mix.prefs.ui.toolLoopFolder = u.path }
+                    }
+                    if !mix.prefs.ui.toolLoopFolder.isEmpty { Button("Neben dem Original") { mix.prefs.ui.toolLoopFolder = "" } }
+                }
+                Text("edit-modus: ziehen markiert auf dem raster, klick setzt eine schnittmarke, die zeile bearbeitet die schnittliste, das deck spielt sie. render schreibt <name> [cut].m4a, tool 2 · 4 · 8 · 16 schreibt <name> [tool-loop n].m4a.")
+                    .settingsHint()
+            }
             Section("History & Preparation") {
                 sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f", unit: "s")
                 Toggle("History zusätzlich in den History-Ordner der Collection schreiben", isOn: $mix.prefs.ui.historyToExternal)

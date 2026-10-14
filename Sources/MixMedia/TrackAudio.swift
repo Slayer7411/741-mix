@@ -172,6 +172,9 @@ final class HeapPCM {
         bands?.deallocate()
     }
 
+    /// direkt beschrieben (Schnittliste): Länge setzen
+    func setFrames(_ n: Int) { frames = min(max(0, n), capacity) }
+
     /// Block an den Puffer anhängen (Mono auf beide Seiten)
     func append(_ b: AVAudioPCMBuffer, mono: Bool) {
         let n = min(Int(b.frameLength), capacity - frames)
@@ -182,8 +185,8 @@ final class HeapPCM {
     }
 
     /// Analyse rechnen und als `TrackAudio` übergeben (dieser Puffer wird ihr Eigentümer)
-    func finish(sampleRate: Double) -> TrackAudio {
-        let a = TrackAudio.analyze(left: left, right: right, frames: frames, sampleRate: sampleRate)
+    func finish(sampleRate: Double, analysis: TrackAudio.Analysis? = nil) -> TrackAudio {
+        let a = analysis ?? TrackAudio.analyze(left: left, right: right, frames: frames, sampleRate: sampleRate)
         let n = a.blocks
         let all = UnsafeMutableBufferPointer<Float>.allocate(capacity: max(1, n * 4))
         bands = all

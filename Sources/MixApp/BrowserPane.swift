@@ -593,6 +593,11 @@ struct SourceTreeFixed: View, SourceMenus {
             row("◫", "CUTS").tag(BrowserSource.cuts)
                 .help("Geschnittene Dateien (Wellenform: ⌃ + Ziehen markiert, Rechtsklick schneidet)")
                 .contextMenu { OverviewMenuButton { store.cuts } }
+            if !store.toolLoops.isEmpty {
+                row("↻", "TOOL-LOOPS").tag(BrowserSource.toolLoops)
+                    .help("Tool-Loops (EDIT-Modus: TOOL 2 · 4 · 8 · 16), Tag tool-loop")
+                    .contextMenu { OverviewMenuButton { store.toolLoops } }
+            }
         }
         row("▤", "PREPARATION").tag(BrowserSource.preparation)
             .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }

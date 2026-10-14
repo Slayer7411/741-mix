@@ -93,6 +93,11 @@ final class LibraryStore {
     private(set) var cutsRevision = 0
     @ObservationIgnored private var cutsChecked = false
     var cuts: [Track] { _ = cutsRevision; return cutStore.tracks }
+    /// Tool-Loops: geschnittene Dateien mit dem Tag `tool-loop`
+    var toolLoops: [Track] {
+        let seps = browser?.separators() ?? " "
+        return cuts.filter { ToolLoop.isToolLoop($0, separators: seps) }
+    }
 
     /// neue geschnittene Datei: in CUTS und (liegt der Ordner in MUSIC FOLDERS) im Ordner mit ihren Metadaten
     func addCut(_ t: Track, source: Track) {
@@ -130,7 +135,7 @@ final class LibraryStore {
         case .running: runningRevision
         case .preparation: preparationRevision
         case .custom: smartlistRevision
-        case .cuts: cutsRevision
+        case .cuts, .toolLoops: cutsRevision
         case let .folder(p): folders.stamp(p, recursive: subfolders)
         default: 0
         }
@@ -541,6 +546,7 @@ final class LibraryStore {
         case .preparation: return preparation.compactMap { track($0) }
         case .running: return running
         case .cuts: return cuts
+        case .toolLoops: return toolLoops
         case .history, .historyLive: return []
         case .prepArchive: return []   // löst BrowserPaneModel über den HistoryStore auf
         case let .custom(sl):
@@ -572,6 +578,8 @@ enum BrowserSource: Hashable {
     case running
     /// geschnittene Dateien (CUTS)
     case cuts
+    /// Tool-Loops (Dateien aus CUTS mit dem Tag `tool-loop`)
+    case toolLoops
     case node(PlaylistNode)
     case historyLive
     case history(HistorySession)
@@ -586,6 +594,7 @@ enum BrowserSource: Hashable {
         case .preparation: "Preparation"
         case .running: "Running Tracks"
         case .cuts: "Cuts"
+        case .toolLoops: "Tool-Loops"
         case let .node(n): n.name
         case .historyLive: "History"
         case let .history(s): "History " + (s.label ?? Theme.dateTimeFormat.string(from: s.date))

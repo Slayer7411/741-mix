@@ -164,7 +164,7 @@ DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, commen
 | REV | reverse |
 | FLUX | flux mode: loops, jumps and reverse continue in the background, release -> back where the track would be |
 | DBL | instant double: track, position, tempo, keylock, key shift, sync, loop, cues and cut of the neighbour deck (A↔B, C↔D), plays along in sync. right click -> any deck, ⌥-click -> even if this deck plays |
-| EDIT | edit mode: cut row instead of the loop sizes, grid row, handles in the waveform ([edit mode](#edit-mode)) |
+| EDIT | edit mode: edit row instead of the loop sizes, grid row, edit list in the waveform ([edit mode](#edit-mode)) |
 
 ### cues + loops
 
@@ -286,15 +286,30 @@ grid edits:
 
 `EDIT` in the transport row, ⌥⌘E (focused deck) or menu DECKS. per deck, saved in the settings, off by default.
 
-* the cut row takes the place of the loop sizes, the grid row is shown (in place of beatjump when the grid row is off). the waveform keeps its height, switching only swaps the rows (~10 ms)
-* cut = play only a part of the file, e.g. without the stray kick of the next track at the start or the end. the audio file is never changed (also on cloud drives)
+* the edit row takes the place of the loop sizes, the grid row is shown (in place of beatjump when the grid row is off). the waveform keeps its height, switching only swaps the rows (~10 ms)
+* no modifier keys needed: drag in the waveform = mark a range on the snap of the edit row, click = cut mark on the nearest beat, double click = select the segment, ⌥ = free (no snap). scrub with the overview in edit mode
+
+edit row:
 
 | button | action |
 |---|---|
+| `1 BAR` | snap for marking: 1 beat / 1 bar / 2 / 4 / 8 bars. click = next, ⌥-click = previous |
+| REMOVE | remove the range from the edit list |
+| KEEP | keep only the range |
+| DUP | range once more behind itself, the copy is marked |
+| MUTE | range silent (same length), again = audible |
+| ◀ ▶ | move the segments in the range past the neighbour segment |
+| RENDER | new file from the edit list ([full edit](#full-edit--tool-loops)) |
+| TOOL 2 4 8 16 | tool-loop of that many beats as an own file ([full edit](#full-edit--tool-loops)) |
+| ✕ | clear the range (esc) |
 | IN HERE | cut start at the play position, on the nearest beat with QUANT, ⌥-click = exact |
 | OUT HERE | cut end at the play position, same snapping |
 | CLEAR CUT | whole file again |
-| `0:01.0 → 4:50.0 · 4:49.0` | start → end · length, grey = file start / end |
+
+* actions without a range work on the segment under the play head
+* narrow decks: first without IN HERE / OUT HERE / CLEAR CUT, then without ◀ ▶ and TOOL, then REMOVE / KEEP / ✕. right click in the waveform: every action (incl. mark here, remove mark, select segment, snap, render, tool-loop, discard edit list, cut in / out, loop from range)
+
+cut (IN HERE / OUT HERE) = play only a part of the file, e.g. without the stray kick of the next track at the start or the end. the audio file is never changed (also on cloud drives). only while the deck plays the original (not the edit list):
 
 * waveform: outside the cut dimmed, in edit mode handles `IN` / `OUT` -> drag (snaps like IN HERE, ⌥ = free). overview: same, drag a handle or click to jump
 * without a cut the handles sit at the file start and end
@@ -303,11 +318,31 @@ grid edits:
 * cut start / end saved per track in `edits.json` (seconds), with the grid edits. a cut is never written into the collection
 * browser `Vorhören` plays only the cut (from the preview start share of the cut, stops at the cut end), a cut changed on a deck moves a running preview of the same track. browser preview: outside the cut dimmed, edges marked (not draggable)
 
+### full edit + tool-loops
+
+edit list = the segments of the file in play order (non-destructive, per track in `edits.json`, never in the collection).
+
+* the deck plays the edit list: the list is rendered from the decoded original in the background into an own buffer and swapped into the deck without loading (tempo, keylock, key shift, sync, mixer stay; a playing deck keeps playing at the same spot of the music, a removed spot -> where the edit was). no audible change (only marks) -> no render
+* waveform and overview show the result; cut joints red with tabs top and bottom, marks light with a tab on top, muted segments dimmed. drag a joint = move it on the beat (left segment ends later, right starts later, length stays), right click on a joint -> `remove mark` (only marks without a cut)
+* header title ` [edit]` while the deck plays the list. hotcues, grid and cue point mapped from the original; changes to hotcues / grid while the list plays are not saved
+* every edit is one ⌘Z step (marks too). edit mode off -> the deck plays the original again at the same spot; on again (or the track loaded in edit mode) -> the saved edit list plays
+* 2 ms crossfade at every cut joint, into and out of muted segments too
+* RENDER: new file `<name> [cut].m4a` next to the original (same rules as [cut audio](#cut-audio): apple lossless, metadata, grid and cues mapped through the edit list, CUTS). `load result into the deck` (right click / menu DECKS) loads it (load lock applies)
+
+tool-loop (TOOL 2 / 4 / 8 / 16 or right click):
+
+* range: from the active loop start, else from the bar start nearest to the play position, exactly n beats of the deck grid. source = what the deck plays (edit list included)
+* file: `<name> [tool-loop 8].m4a` (n = beats, taken -> `[tool-loop 8 #2]`), apple lossless. next to the original or in the folder from ⌘, -> DECKS -> `Tool-Loops in Ordner …`
+* length exactly beats · 60 / bpm · rate frames. seamless: the last 2 ms cross into the audio right before the loop start (at the file start: the first 2 ms come from the audio right after the loop end) -> end runs into the start without a click
+* label: title `<title> [tool-loop 8]`, tag `tool-loop` added to the tags (comment 2), comment `tool-loop 8 beats · 128 BPM · from <title>`, bpm and key of the original, grid anchor at 0, hotcue 1 = loop over the whole file
+* browser: CUTS and the tree entry TOOL-LOOPS (cut files with the tag)
+* keys (⌘, -> KEYBOARD, no default): remove, keep, duplicate, mute, segment left / right, mark at the play head, next snap, render, tool-loop 2 / 4 / 8 / 16
+
 ### cut audio
 
 real cut = a new audio file. the original is never changed.
 
-* ⌃ + drag in the waveform = mark a range, start and end on the nearest beat of the grid, ⌃⌥ = free. red tint, edges with tabs, label `bar.beat → bar.beat · beats B · seconds`, also in the overview
+* ⌃ + drag in the waveform = mark a range, start and end on the nearest beat of the grid, ⌃⌥ = free. in edit mode no ⌃: plain drag marks (snap of the edit row) red tint, edges with tabs, label `bar.beat → bar.beat · beats B · seconds`, also in the overview
 * drag an edge = move it (same snapping, ⌥ = free). the range stays until esc, a click outside it, a new range or another track
 * right click in the range:
 
@@ -320,7 +355,7 @@ real cut = a new audio file. the original is never changed.
 | Loop aus Bereich | loop on the range, play head jumps in when outside |
 | Bereich aufheben | range off |
 
-* edit mode: with a range the cut row shows `REMOVE` / `KEEP` / `→ CUT` / `→ LOOP` / `✕` (narrow decks: REMOVE / KEEP / ✕)
+* edit mode: REMOVE / KEEP in the edit row change the edit list (no file until RENDER), see [full edit](#full-edit--tool-loops)
 * keys (⌘, -> KEYBOARD, no default): remove range, keep range, cut in / out from range, loop from range. esc = clear range (only taken when a range exists)
 * file: `<name> [cut].m4a` next to the original, apple lossless, sample rate and channels of the original, 16 bit from 16-bit sources, else 24. name taken -> `[cut 2]`, `[cut 3]` …
 * 2 ms linear crossfade at the joint, 2 ms fade at an edge inside the track (keep). length = original minus range (remove) or range (keep), sample exact
@@ -504,7 +539,7 @@ any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect
 * one or two panes, side by side or stacked
 * each pane: own tree, search, sort, role chips, tags
 * favorites bar on top of each pane: 6 slots, source or filter. click = switch, right click = assign / rename / clear, drag a tree entry onto a slot, ⌃⌥1-6. details: [library · favorites](library.md#-favorites)
-* tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, MUSIC FOLDERS, then all playlists + smartlists of the collection
+* tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), TOOL-LOOPS (cut files with the tag `tool-loop`, see [full edit](#full-edit--tool-loops)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, MUSIC FOLDERS, then all playlists + smartlists of the collection
 * MUSIC FOLDERS = the music library on disk, folder by folder. click a folder -> its audio files (mp3, m4a, aac, aiff, wav, flac, ogg, opus)
   * files in the collection show bpm, key, tags, comments like everywhere else
   * files not in the collection are grey, no grid, load and preview anyway
@@ -717,7 +752,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | esc | clear the marked range (only when one exists, not in a search field) |
 | ⌘Z / ⇧⌘Z | undo / redo (text undo inside a text field) |
 
-no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, reconnect audio.
+no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, edit: remove / keep / duplicate / mute / segment left / right / mark at the play head / next snap / render, tool-loop 2 / 4 / 8 / 16, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, reconnect audio.
 ⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.
 
 controller mapping -> [controllers.md](controllers.md). flux on the controller = pad layer switch: tap -> pads 1-4 play hotcues 5-8 (flux led lit), tap again -> back, shift + flux = tap (grid bpm from the taps; setting: flux mode instead), shift + sync = master. old layout under ⌘, -> CONTROLLER -> flux button.
@@ -790,7 +825,7 @@ scripts/uitest.sh [--fixture] [--only <case,…>] [--limit <s>] [--no-build]   #
 ```
 
 * real main window (content view, toolbar, all environments) offscreen at −30000, transparent, app never active. synthetic `NSEvent`s through `NSWindow.sendEvent` (mouse) and `NSApp.sendEvent` (keys, local monitors see them). silent on a built-in output, saves nothing
-* cases: right click on deck A's title -> `Track bearbeiten …` -> edit sheet opens and closes · track key dropped on deck A's header -> loaded · ⌃ + drag in waveform A -> range on beats, esc -> cleared · double click on the title column divider -> width of the longest title · status bar automatic: mouse at the bottom edge -> shown, away -> still shown after 0.2 s, gone by 0.8 s · play/pause key from the settings -> deck A plays / stops; a plain play key in the search field is typed, deck A stays, space does not toggle the big browser · toolbar MIXER and decks 1 / 2 / 4 by click (deck C built, deck B gone, back) · ⌘− / ⌘+ -> zoom 0.9 / 1
+* cases: right click on deck A's title -> `Track bearbeiten …` -> edit sheet opens and closes · track key dropped on deck A's header -> loaded · ⌃ + drag in waveform A -> range on beats, esc -> cleared · double click on the title column divider -> width of the longest title · status bar automatic: mouse at the bottom edge -> shown, away -> still shown after 0.2 s, gone by 0.8 s · play/pause key from the settings -> deck A plays / stops; a plain play key in the search field is typed, deck A stays, space does not toggle the big browser · toolbar MIXER and decks 1 / 2 / 4 by click (deck C built, deck B gone, back) · ⌘− / ⌘+ -> zoom 0.9 / 1 · edit mode on deck A: plain drag -> range on the snap, click beside -> cleared, click -> cut mark, right click -> `Bereich entfernen` -> deck plays the shorter list, tool-loop 4 from it -> file in the test folder with exactly 4 beats, ⌘Z -> original
 * end: `UITEST OK` (exit 0), `UITEST ÜBERSPRUNGEN` (no audio device or no 3 local tracks with grid, exit 0), else the first error (exit 1). a missing environment crashes the process (exit ≠ 0)
 * `MIX741_UITEST_ONLY=zoom,drop` runs the cases starting with these names. no collection or `MIX741_UITEST_FIXTURE=1`: 3 generated wav files (20 s, kick per beat, 126 / 128 / 130 bpm, grid at 0) and an nml in `$TMPDIR/minos741-uitest-<pid>`, removed at the end
 * runtime (debug build, whole process): 11 s with the fixture, 18 s with a 14k collection

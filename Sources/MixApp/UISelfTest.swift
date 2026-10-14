@@ -113,6 +113,7 @@ enum UISelfTest {
             ("deck-menü", deckMenu), ("drop aufs deck", dropOnDeck), ("bereich in der wellenform", waveRange),
             ("spaltenbreite per doppelklick", fitColumn), ("statusleiste automatisch", autoStatusBar),
             ("tastenkürzel", shortcuts), ("werkzeugleiste", toolbar), ("zoom", zoom),
+            ("edit-modus", editMode),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -710,5 +711,72 @@ enum UITestFixture {
             for c in 0..<Int(file.processingFormat.channelCount) { ch[c][i] = v }
         }
         try file.write(from: buf)
+    }
+}
+
+extension UISelfTest {
+    /// EDIT-Modus auf Deck A: Ziehen ohne Taste markiert auf dem Raster, Klick setzt eine Schnittmarke, Rechtsklick ->
+    /// „Bereich entfernen“ (Deck spielt die kürzere Liste), ⌘Z zurück, Tool-Loop 4 als Datei (Test-Ordner)
+    static func editMode(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, d = 0
+        if mix.deck(d).playing { mix.togglePlay(d) }
+        let wasEditing = mix.editing(d)
+        mix.setEditing(d, true)
+        u.spin(5) { mix.editSession(d) != nil }
+        guard let session = mix.editSession(d) else { fail("EDIT: keine Sitzung auf Deck A") }
+        if session.shown.segments.count > 1 { mix.editReset(d); u.spin(5) { mix.editSession(d)?.rendering == false } }
+        guard let w = u.views.compactMap({ $0 as? WaveMouseView }).first(where: { $0.d == d }) else { fail("Wellenform A nicht gefunden") }
+        guard let g = mix.deck(d).grid else { fail("Deck A ohne Grid") }
+        mix.setRange(d, nil)
+        mix.core.seek(d, seconds: mix.deck(d).duration / 2)   // Wellenform links und rechts im Track
+        u.spin(0.2)
+        let r = u.frame(w), dur0 = mix.deck(d).duration
+        // Ziehen ohne Taste
+        u.drag(from: NSPoint(x: r.minX + r.width * 0.56, y: r.midY), to: NSPoint(x: r.minX + r.width * 0.84, y: r.midY), steps: 8)
+        guard let range = mix.range(d) else { fail("EDIT: Ziehen markiert keinen Bereich") }
+        let step = mix.prefs.ui.editSnap.beats
+        let a = g.beatPosition(at: range.start) / step, b = g.beatPosition(at: range.end) / step
+        log(String(format: "edit: bereich %.3f–%.3f s · raster %@", range.start, range.end, mix.prefs.ui.editSnap.label))
+        check(abs(a - a.rounded()) < 1e-3 && abs(b - b.rounded()) < 1e-3 || range.end >= dur0 - 1e-3, "EDIT: Bereich nicht auf dem Raster: \(a) – \(b)")
+        // Klick daneben hebt den Bereich auf, der nächste setzt eine Marke
+        let left = NSPoint(x: r.minX + r.width * 0.3, y: r.midY)
+        u.click(at: left)
+        check(mix.range(d) == nil, "EDIT: Klick daneben hebt den Bereich nicht auf")
+        let segs0 = mix.editSession(d)?.shown.segments.count ?? 0
+        u.click(at: left)
+        u.spin(WaveMouseView.markDelay + 0.3) { (mix.editSession(d)?.shown.segments.count ?? 0) > segs0 }
+        check((mix.editSession(d)?.shown.segments.count ?? 0) == segs0 + 1, "EDIT: Klick setzt keine Schnittmarke")
+        // Bereich wieder markieren, Rechtsklick -> entfernen
+        mix.setRange(d, range)
+        u.spin(0.2)
+        let inside = NSPoint(x: r.minX + r.width * 0.7, y: r.midY)
+        guard let menu = u.rightClick(at: inside) else { fail("EDIT: kein Rechtsklick-Menü") }
+        let item = String(localized: "Bereich entfernen")
+        guard let i = menu.items.firstIndex(where: { $0.title == item }) else { fail("EDIT: Menü ohne „\(item)“: \(menu.items.map(\.title))") }
+        menu.performActionForItem(at: i)
+        u.spin(10) { mix.editSession(d)?.preview != nil && mix.editSession(d)?.rendering == false }
+        let dur1 = mix.deck(d).duration
+        check(mix.editSession(d)?.preview != nil && abs(dur1 - (dur0 - range.length)) < 0.01,
+              "EDIT: Deck spielt die Liste nicht (\(dur0) -> \(dur1), Bereich \(range.length) s)")
+        // Tool-Loop 4 Beats aus der Vorschau
+        CutJob.lastResult = nil
+        mix.exportToolLoop(d, beats: 4)
+        u.spin(30) { !CutJob.running && CutJob.lastResult != nil }
+        guard let res = CutJob.lastResult else { fail("Tool-Loop: kein Ergebnis") }
+        let url = URL(fileURLWithPath: res.track.path)
+        check(FileManager.default.fileExists(atPath: url.path), "Tool-Loop: Datei fehlt \(url.path)")
+        check(url.path.hasPrefix(CutJob.selfTestDirectory.path), "Tool-Loop: nicht im Test-Ordner: \(url.path)")
+        let frames = (try? AVAudioFile(forReading: url)).map { Int($0.length) } ?? -1
+        let rate = (try? AVAudioFile(forReading: url))?.processingFormat.sampleRate ?? 0
+        check(frames == ToolLoop.frames(beats: 4, bpm: g.bpm, rate: rate), "Tool-Loop: \(frames) Frames, soll \(ToolLoop.frames(beats: 4, bpm: g.bpm, rate: rate))")
+        log("edit: tool-loop \(url.lastPathComponent) · \(frames) frames")
+        try? FileManager.default.removeItem(at: url)
+        // ⌘Z: zurück zum Original
+        guard let z = mix.prefs.keys.combo(.undo) else { fail("⌘Z nicht belegt") }
+        u.key(z)
+        u.spin(5) { mix.editSession(d)?.preview == nil && mix.editSession(d)?.rendering == false }
+        check(abs(mix.deck(d).duration - dur0) < 1e-6 && mix.editSession(d)?.preview == nil, "EDIT: ⌘Z stellt das Original nicht her")
+        mix.setRange(d, nil)
+        mix.setEditing(d, wasEditing)
     }
 }

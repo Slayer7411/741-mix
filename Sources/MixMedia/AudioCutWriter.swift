@@ -78,6 +78,11 @@ public enum AudioCutWriter {
                       owner: nil, buffers: bufs)
     }
 
+    /// Bit-Tiefe für eine neue Datei aus dieser Quelldatei (24, wenn sie sich nicht öffnen lässt)
+    public static func bitDepth(url: URL) -> Int {
+        (try? AVAudioFile(forReading: url)).map { bitDepth($0.fileFormat) } ?? 24
+    }
+
     /// 16 bei 16-Bit-PCM bzw. verlustfreien 16-Bit-Quellen, sonst 24
     static func bitDepth(_ f: AVAudioFormat) -> Int {
         let d = f.streamDescription.pointee

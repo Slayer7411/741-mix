@@ -365,6 +365,11 @@ struct MixApp: App {
                 Toggle("Schneiden: Ergebnis ins Deck laden", isOn: Binding(get: { mix.prefs.ui.cutLoadsResult },
                                                                             set: { mix.prefs.ui.cutLoadsResult = $0 }))
                 Divider()
+                ForEach([ShortcutID.editRemove, .editKeep, .editDuplicate, .editMute, .editLeft, .editRight, .editMark, .editSnap,
+                         .editRender, .toolLoop2, .toolLoop4, .toolLoop8, .toolLoop16]) { a in
+                    Button(a.title) { run(a) }.shortcut(keys.combo(a))
+                }
+                Divider()
                 Menu("Zeilen") {
                     ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
                         Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui[keyPath: row.0] },

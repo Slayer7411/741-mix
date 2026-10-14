@@ -90,6 +90,10 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case editMode = "deck.edit", cutIn = "deck.cut.in", cutOut = "deck.cut.out", gridSet = "deck.grid.set"
     case rangeRemove = "deck.range.remove", rangeKeep = "deck.range.keep", rangeTrim = "deck.range.trim", rangeLoop = "deck.range.loop"
     case rangeClear = "deck.range.clear"
+    case editRemove = "deck.edit.remove", editKeep = "deck.edit.keep", editDuplicate = "deck.edit.dup", editMute = "deck.edit.mute"
+    case editLeft = "deck.edit.left", editRight = "deck.edit.right", editMark = "deck.edit.mark", editSnap = "deck.edit.snap"
+    case editRender = "deck.edit.render"
+    case toolLoop2 = "deck.toolloop.2", toolLoop4 = "deck.toolloop.4", toolLoop8 = "deck.toolloop.8", toolLoop16 = "deck.toolloop.16"
     case keySync = "deck.keysync", instantDouble = "deck.double"
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", loadSelectedForce = "browser.load.force"
     case previewSelected = "browser.preview"
@@ -116,7 +120,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         }
     }
 
-    /// Deck-Index (Fokus), Hotcue-Index (0–7), Favoriten-Platz (0–5) bzw. Ansichts-Profil (0–3)
+    /// Deck-Index (Fokus), Hotcue-Index (0–7), Favoriten-Platz (0–5), Ansichts-Profil (0–3) bzw. Beats des Tool-Loops
     public var index: Int? {
         switch self {
         case .focusDeckA: 0
@@ -141,6 +145,10 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .profile2: 1
         case .profile3: 2
         case .profile4: 3
+        case .toolLoop2: 2
+        case .toolLoop4: 4
+        case .toolLoop8: 8
+        case .toolLoop16: 16
         default: nil
         }
     }
@@ -183,7 +191,9 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .undo: KeyCombo("z")
         case .redo: KeyCombo("z", [.shift, .command])
         case .master, .keylock, .reloop, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .reconnectAudio,
-             .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop: nil
+             .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop,
+             .editRemove, .editKeep, .editDuplicate, .editMute, .editLeft, .editRight, .editMark, .editSnap, .editRender,
+             .toolLoop2, .toolLoop4, .toolLoop8, .toolLoop16: nil
         }
     }
 }

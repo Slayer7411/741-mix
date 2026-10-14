@@ -260,6 +260,10 @@ struct UIPrefs: Codable, Equatable {
     var resetPlayedOnStart = false
     /// Schneiden (Bereich entfernen / auf Bereich kürzen): Ergebnis gleich ins selbe Deck laden (Lade-Schutz gilt)
     var cutLoadsResult = false
+    /// EDIT-Modus: Raster beim Markieren (Ziehen in der Wellenform), ⌥ = frei
+    var editSnap = EditSnap.bar
+    /// Tool-Loops: Zielordner ("" = neben dem Original)
+    var toolLoopFolder = ""
 
     /// Ansichts-Profile (Menü Darstellung -> Profil, ⌘, -> Anzeige); fehlt das Feld, legt AppPrefs.decode zwei an
     var layoutProfiles: [LayoutProfile] = []

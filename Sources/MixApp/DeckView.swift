@@ -498,19 +498,24 @@ struct GridToolsRow: View {
     }
 }
 
-/// Schnitt (EDIT-Modus): IN HERE / OUT HERE an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier), CLEAR CUT,
-/// rechts Anfang → Ende · Länge des gespielten Bereichs. Die Datei bleibt unverändert.
-/// Mit markiertem Bereich (Wellenform, ⌃ + Ziehen) rechts dessen Aktionen: REMOVE / KEEP schreiben eine neue Datei
+/// Edit-Zeile (EDIT-Modus): Raster, Schnittliste (REMOVE / KEEP / DUP / MUTE / ◀ ▶) auf dem markierten Bereich bzw. dem
+/// Stück unter dem Spielkopf, RENDER (neue Datei `[cut]`), Tool-Loop 2 / 4 / 8 / 16 Beats, ✕ = Bereich aufheben.
+/// Breit genug: dahinter IN HERE / OUT HERE / CLEAR CUT (nicht destruktiver Schnitt, nur solange das Deck das Original
+/// spielt). Schmale Decks: weniger Knöpfe, alles im Rechtsklick-Menü der Wellenform
 struct CutRow: View {
     @Environment(MixModel.self) private var mix
     let d: Int
 
-    struct Model: Equatable { var start: Double?, end: Double?, duration = 0.0, range = false }
+    struct Model: Equatable {
+        var start: Double?, end: Double?, duration = 0.0, range = false
+        var snap = EditSnap.bar, previewing = false, pending = false, segments = 1
+    }
 
     var body: some View {
-        let s = mix.deck(d)
+        let s = mix.deck(d), e = mix.decks[d].edit
         Content(d: d, m: Model(start: s.trim.start, end: s.trim.end, duration: s.track != nil ? s.duration : 0,
-                               range: mix.range(d) != nil)).equatable()
+                               range: mix.range(d) != nil, snap: mix.prefs.ui.editSnap, previewing: e?.previewing ?? false,
+                               pending: e?.pending ?? false, segments: e?.segments ?? 1)).equatable()
     }
 
     struct Content: View, Equatable {
@@ -521,65 +526,72 @@ struct CutRow: View {
 
         var body: some View {
             HStack(spacing: 3.z) {
-                Text("CUT").font(Theme.label(9.z, .bold)).foregroundStyle(m.start != nil || m.end != nil ? Theme.state : Theme.muted)
+                Text("CUT").font(Theme.label(9.z, .bold))
+                    .foregroundStyle(m.previewing || m.start != nil || m.end != nil ? Theme.state : Theme.muted)
                     .frame(width: 30.z, alignment: .leading)
-                DeckButton(title: "IN HERE", active: m.start != nil, color: Theme.state) {
-                    mix.trimHere(d, end: false, free: NSEvent.modifierFlags.contains(.option))
-                }.stable()
-                    .help("Schnitt-Anfang an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier)")
-                DeckButton(title: "OUT HERE", active: m.end != nil, color: Theme.state) {
-                    mix.trimHere(d, end: true, free: NSEvent.modifierFlags.contains(.option))
-                }.stable()
-                    .help("Schnitt-Ende an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier)")
-                DeckButton(title: "CLEAR CUT") { mix.clearTrim(d) }.stable().help("Schnitt entfernen: ganze Datei")
-                Divider().frame(height: 14.z)
-                if m.range {
-                    // schmale Decks: nur die neuen Dateien und ✕
-                    FirstFit {
-                        rangeButtons(full: true)
-                        rangeButtons(full: false)
-                        Text(" ")
-                    }
-                } else {
-                    // schmale Decks: erst nur die Länge, dann nichts
-                    FirstFit {
-                        readout(full: true)
-                        readout(full: false)
-                        Text(" ")
-                    }
+                FirstFit {
+                    row(.full)
+                    row(.medium)
+                    row(.narrow)
+                    row(.tiny)
                 }
                 Spacer(minLength: 0)
             }
         }
 
-        private func rangeButtons(full: Bool) -> some View {
+        enum Width { case full, medium, narrow, tiny }
+
+        private func row(_ w: Width) -> some View {
             HStack(spacing: 3.z) {
-                DeckButton(title: "REMOVE", active: true, color: Theme.state) { mix.cutRange(d, mode: .remove) }.stable()
-                    .help("Bereich entfernen: neue Datei ohne ihn (Original bleibt)")
-                DeckButton(title: "KEEP") { mix.cutRange(d, mode: .keep) }.stable()
-                    .help("Auf Bereich kürzen: neue Datei nur mit ihm (Original bleibt)")
-                if full {
-                    DeckButton(title: "→ CUT") { mix.rangeToTrim(d) }.stable().help("Schnitt IN/OUT aus Bereich (keine neue Datei)")
-                    DeckButton(title: "→ LOOP") { mix.rangeToLoop(d) }.stable().help("Loop aus Bereich")
+                if w != .tiny { snapButton }
+                DeckButton(title: "REMOVE", active: true, color: Theme.state) { mix.editAction(d, .remove) }.stable()
+                    .help("Bereich (sonst Segment am Spielkopf) aus der Schnittliste entfernen")
+                DeckButton(title: "KEEP") { mix.editAction(d, .keep) }.stable().help("Nur Bereich behalten")
+                if w != .tiny {
+                    DeckButton(title: "DUP") { mix.editAction(d, .duplicate) }.stable().help("Bereich duplizieren (hinter sich selbst)")
+                    DeckButton(title: "MUTE") { mix.editAction(d, .mute) }.stable().help("Bereich stumm (gleiche Länge), noch einmal = hörbar")
+                }
+                if w == .full || w == .medium {
+                    DeckButton(title: "◀") { mix.editAction(d, .left) }.stable().help("Segment nach links")
+                    DeckButton(title: "▶") { mix.editAction(d, .right) }.stable().help("Segment nach rechts")
+                }
+                if w != .tiny {
+                    Divider().frame(height: 14.z)
+                    DeckButton(title: "RENDER", active: m.previewing, color: Theme.state) { mix.editRenderFile(d) }.stable()
+                        .help("Schnittliste als neue Datei rendern (<Name> [cut].m4a, Original bleibt)")
+                }
+                if w == .full || w == .medium {
+                    Divider().frame(height: 14.z)
+                    Text("TOOL").font(Theme.label(9.z, .bold)).foregroundStyle(Theme.muted)
+                    ForEach(ToolLoop.sizes, id: \.self) { b in
+                        DeckButton(title: "\(b)") { mix.exportToolLoop(d, beats: b) }.stable()
+                            .help("Tool-Loop \(b) Beats als eigene Datei (aktiver Loop, sonst ab dem nächsten Takt)")
+                    }
                 }
                 DeckButton(title: "✕") { mix.clearRange(d) }.stable().help("Bereich aufheben (Esc)")
+                if w == .full, !m.previewing {
+                    Divider().frame(height: 14.z)
+                    DeckButton(title: "IN HERE", active: m.start != nil, color: Theme.state) {
+                        mix.trimHere(d, end: false, free: NSEvent.modifierFlags.contains(.option))
+                    }.stable()
+                        .help("Schnitt-Anfang an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier)")
+                    DeckButton(title: "OUT HERE", active: m.end != nil, color: Theme.state) {
+                        mix.trimHere(d, end: true, free: NSEvent.modifierFlags.contains(.option))
+                    }.stable()
+                        .help("Schnitt-Ende an die Position (Quantize: nächster Beat, ⌥-Klick: genau hier)")
+                    DeckButton(title: "CLEAR CUT") { mix.clearTrim(d) }.stable().help("Schnitt entfernen: ganze Datei")
+                }
             }
+            .opacity(m.pending ? 0.6 : 1)
             .fixedSize()
         }
 
-        private func readout(full: Bool) -> some View {
-            let lo = m.start ?? 0, hi = m.end ?? m.duration
-            return HStack(spacing: 4.z) {
-                if full {
-                    Text(Self.time(lo)).foregroundStyle(m.start != nil ? Theme.bone : Theme.muted)
-                    Text("→").foregroundStyle(Theme.muted)
-                    Text(Self.time(hi)).foregroundStyle(m.end != nil ? Theme.bone : Theme.muted)
-                    Text("·").foregroundStyle(Theme.muted)
-                }
-                Text(m.duration > 0 ? Self.time(max(0, hi - lo)) : "—")
+        /// Raster beim Markieren: Klick = nächstes, ⌥-Klick = voriges
+        private var snapButton: some View {
+            DeckButton(title: m.snap.label) {
+                mix.setEditSnap(NSEvent.modifierFlags.contains(.option) ? m.snap.previous : m.snap.next)
             }
-            .font(Theme.mono(10.z))
-            .fixedSize()
+            .help("Raster beim Markieren: Klick = nächstes, ⌥-Klick = voriges, ⌥ beim Ziehen = frei")
         }
 
         /// m:ss.s

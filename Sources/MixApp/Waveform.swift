@@ -400,8 +400,8 @@ struct WaveformView: View {
                                activeEnd: deck.activeLoops.contains($0.hotcue) ? ($0.startMs + $0.lengthMs) / 1000 : nil)
             },
             cuePoint: deck.cuePoint, hasTrack: deck.track != nil, zoom: 1.z, gridEdited: deck.gridEdited,
-            trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d)),
-            range: mix.range(d).map { WaveScene.Marked($0, grid: deck.grid) })
+            trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d) && !(mix.decks[d].edit?.previewing ?? false)),
+            range: mix.range(d).map { WaveScene.Marked($0, grid: deck.grid) }, edit: mix.editing(d) ? mix.decks[d].edit : nil)
         Content(d: d, scene: scene, wave: wf, waiting: deck.track != nil && wf == nil).equatable()
     }
 
@@ -438,7 +438,9 @@ struct WaveformView: View {
 
 /// Maus in der Wellenform, in AppKit: ⌃-Klick ist sonst ein Rechtsklick (SwiftUI-Kontextmenü statt Ziehen).
 /// Ziehen = Scrub, im EDIT-Modus Griffe des Schnitts; ⌃ + Ziehen markiert einen Bereich (Beatgrid, ⌥ = frei),
-/// seine Ränder lassen sich nachziehen; Rechtsklick in den Bereich = Menü (schneiden, Schnitt, Loop); Klick daneben hebt ihn auf
+/// seine Ränder lassen sich nachziehen; Rechtsklick in den Bereich = Menü (schneiden, Schnitt, Loop); Klick daneben hebt ihn auf.
+/// EDIT-Modus: Ziehen markiert ohne Taste (Raster der Edit-Zeile), Klick setzt eine Schnittmarke (nächster Beat),
+/// Doppelklick wählt das Stück, Marken lassen sich ziehen, Rechtsklick = Menü der Schnittliste
 struct WaveMouse: NSViewRepresentable {
     let mix: MixModel
     let d: Int
@@ -462,13 +464,16 @@ final class WaveMouseView: NSView {
     var d = 0
     var scene = WaveScene()
 
-    /// Scrub (letztes x), Griff des Schnitts, Bereich vom festen Rand aus (`fresh` = neu markiert, nicht nachgezogen)
-    private enum Drag { case scrub(CGFloat), trim(end: Bool), mark(anchor: Double, fresh: Bool) }
+    /// Scrub (letztes x), Griff des Schnitts, Bereich vom festen Rand aus (`fresh` = neu markiert, nicht nachgezogen),
+    /// Naht der Schnittliste
+    private enum Drag { case scrub(CGFloat), trim(end: Bool), mark(anchor: Double, fresh: Bool), joint(Int) }
     private var drag: Drag?
     private var downX: CGFloat = 0
     private var moved = false
     private var resizeCursor = false
     private var tracking: NSTrackingArea?
+    /// Klick im EDIT-Modus: Marke erst nach der Doppelklick-Zeit (ein Doppelklick wählt stattdessen das Stück)
+    private var pendingMark: DispatchWorkItem?
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -476,8 +481,16 @@ final class WaveMouseView: NSView {
     private func time(_ x: CGFloat, _ mix: MixModel) -> Double { mix.position(d) + Double(x - bounds.width / 2) * secPerPt }
     private func xOf(_ t: Double, _ mix: MixModel) -> CGFloat { CGFloat((t - mix.position(d)) / secPerPt) + bounds.width / 2 }
     private func point(_ e: NSEvent) -> CGFloat { convert(e.locationInWindow, from: nil).x }
+    private var editing: Bool { scene.edit != nil }
     private func snap(_ t: Double, _ e: NSEvent) -> Double {
-        TrackRange.snap(t, grid: scene.grid, free: e.modifierFlags.contains(.option), duration: scene.duration)
+        if editing, let mix {
+            return TrackRange.snap(t, grid: scene.grid, step: mix.prefs.ui.editSnap.beats, free: e.modifierFlags.contains(.option), duration: scene.duration)
+        }
+        return TrackRange.snap(t, grid: scene.grid, free: e.modifierFlags.contains(.option), duration: scene.duration)
+    }
+    /// Marken: nächster Beat (⌥ = frei)
+    private func snapBeat(_ t: Double, _ e: NSEvent) -> Double {
+        TrackRange.snap(t, grid: scene.grid, step: 1, free: e.modifierFlags.contains(.option), duration: scene.duration)
     }
 
     /// Rand des Bereichs unter x (false = Anfang, true = Ende), höchstens 6 pt entfernt
@@ -488,19 +501,37 @@ final class WaveMouseView: NSView {
         return b < a
     }
 
+    /// Naht der Schnittliste unter x, höchstens 6 pt entfernt
+    private func joint(at x: CGFloat, _ mix: MixModel) -> Int? {
+        guard let e = scene.edit, !e.joints.isEmpty else { return nil }
+        let dist = e.joints.map { abs(xOf($0, mix) - x) }
+        guard let k = dist.indices.min(by: { dist[$0] < dist[$1] }), dist[k] <= 6 * scene.zoom else { return nil }
+        return k
+    }
+
     override func mouseDown(with e: NSEvent) {
         guard let mix else { return }
         if mix.focusedDeck != d { mix.focusedDeck = d }
         let x = point(e)
         downX = x
         moved = false
+        pendingMark?.cancel()
+        pendingMark = nil
         guard scene.hasTrack, scene.duration > 0, bounds.width > 0 else { drag = nil; return }
+        if editing, e.clickCount == 2 {
+            mix.editSelectSegment(d, at: time(x, mix))
+            drag = nil
+            return
+        }
         if let end = edge(at: x, mix), let r = mix.range(d) {
             drag = .mark(anchor: end ? r.start : r.end, fresh: false)
-        } else if e.modifierFlags.contains(.control) {
-            drag = .mark(anchor: snap(time(x, mix), e), fresh: true)
-        } else if let h = WaveformView.trimHandle(at: x, width: bounds.width, scene: scene, position: mix.position(d)) {
+        } else if editing, let k = joint(at: x, mix) {
+            drag = .joint(k)
+        } else if !e.modifierFlags.contains(.control),
+                  let h = WaveformView.trimHandle(at: x, width: bounds.width, scene: scene, position: mix.position(d)) {
             drag = .trim(end: h == 1)
+        } else if editing || e.modifierFlags.contains(.control) {
+            drag = .mark(anchor: snap(time(x, mix), e), fresh: true)
         } else {
             drag = .scrub(x)
         }
@@ -520,6 +551,8 @@ final class WaveMouseView: NSView {
         case let .mark(anchor, _):
             let t = snap(time(x, mix), e)
             mix.setRange(d, abs(t - anchor) < 1e-6 ? nil : TrackRange(anchor, t))
+        case let .joint(k):
+            mix.editShowJoint(d, k, at: snapBeat(time(x, mix), e))
         }
     }
 
@@ -528,23 +561,50 @@ final class WaveMouseView: NSView {
         defer { drag = nil }
         switch drag {
         case let .mark(_, fresh) where fresh && !moved:
-            mix.setRange(d, nil)   // ⌃-Klick ohne Ziehen: Markierung weg
+            if editing {
+                // Klick: Bereich da -> daneben hebt ihn auf; sonst Schnittmarke am nächsten Beat
+                let t = time(point(e), mix)
+                if let r = mix.range(d) {
+                    if !(r.start...r.end).contains(t) { mix.setRange(d, nil) }
+                    return
+                }
+                let at = snapBeat(t, e), deck = d
+                let w = DispatchWorkItem { [weak self, weak mix] in
+                    self?.pendingMark = nil
+                    mix?.editMark(deck, at: at)
+                }
+                pendingMark = w
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.markDelay, execute: w)
+            } else {
+                mix.setRange(d, nil)   // ⌃-Klick ohne Ziehen: Markierung weg
+            }
+        case let .joint(k):
+            if moved { mix.editMoveJoint(d, k, to: snapBeat(time(point(e), mix), e)) }
         case .scrub where !moved:
             if let r = mix.range(d), !(r.start...r.end).contains(time(point(e), mix)) { mix.setRange(d, nil) }   // Klick daneben
         default: break
         }
     }
 
-    /// Rechtsklick (nicht ⌃-Klick) in den Bereich: Menü
+    /// Wartezeit vor einer Marke (Doppelklick-Zeit des Systems, höchstens 0,35 s)
+    static var markDelay: Double { min(0.35, NSEvent.doubleClickInterval) }
+
+    /// Rechtsklick (nicht ⌃-Klick) in den Bereich: Menü; im EDIT-Modus überall das Menü der Schnittliste
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard event.type == .rightMouseDown, let mix, let r = mix.range(d) else { return nil }
+        guard event.type == .rightMouseDown, let mix else { return nil }
         let t = time(point(event), mix)
+        if editing {
+            if mix.focusedDeck != d { mix.focusedDeck = d }
+            return EditMenu.make(mix: mix, d: d, at: t, joint: joint(at: point(event), mix),
+                                 label: mix.range(d).map { WaveScene.Marked($0, grid: scene.grid).label })
+        }
+        guard let r = mix.range(d) else { return nil }
         guard t >= r.start, t <= r.end else { return nil }
         if mix.focusedDeck != d { mix.focusedDeck = d }
         return WaveRangeMenu.make(mix: mix, d: d, label: WaveScene.Marked(r, grid: scene.grid).label)
     }
 
-    // Zeiger: über einem Rand des Bereichs oder einem Griff des Schnitts ↔
+    // Zeiger: über einem Rand des Bereichs, einer Naht oder einem Griff des Schnitts ↔
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let t = tracking { removeTrackingArea(t) }
@@ -556,7 +616,7 @@ final class WaveMouseView: NSView {
     override func mouseMoved(with e: NSEvent) {
         guard let mix else { return }
         let x = point(e)
-        let on = edge(at: x, mix) != nil
+        let on = edge(at: x, mix) != nil || joint(at: x, mix) != nil
             || WaveformView.trimHandle(at: x, width: bounds.width, scene: scene, position: mix.position(d)) != nil
         guard on != resizeCursor else { return }
         resizeCursor = on
@@ -592,6 +652,71 @@ enum WaveRangeMenu {
     }
 }
 
+/// Menü der Schnittliste (Rechtsklick in der Wellenform im EDIT-Modus): alle Aktionen, auch die, für die eine schmale
+/// Edit-Zeile keinen Platz hat
+@MainActor
+enum EditMenu {
+    static func make(mix: MixModel, d: Int, at t: Double, joint: Int?, label: String?) -> NSMenu {
+        let m = NSMenu()
+        m.autoenablesItems = false
+        let session = mix.editSession(d)
+        if let label {
+            let head = NSMenuItem(title: label, action: nil, keyEquivalent: "")
+            head.isEnabled = false
+            m.addItem(head)
+            m.addItem(.separator())
+        }
+        for op in EditOp.allCases {
+            let i = ActionItem(op.label) { mix.editAction(d, op) }
+            i.isEnabled = session != nil
+            m.addItem(i)
+        }
+        m.addItem(.separator())
+        let snapped = TrackRange.snap(t, grid: mix.deck(d).grid, step: 1, free: false, duration: mix.deck(d).duration)
+        m.addItem(ActionItem(String(localized: "Schnittmarke hier")) { mix.editMark(d, at: snapped) })
+        if let k = joint {
+            m.addItem(ActionItem(String(localized: "Schnittmarke entfernen")) { mix.editRemoveMark(d, k) })
+        }
+        m.addItem(ActionItem(String(localized: "Segment auswählen")) { mix.editSelectSegment(d, at: t) })
+        let snap = NSMenuItem(title: String(localized: "Raster"), action: nil, keyEquivalent: "")
+        let sub = NSMenu()
+        for v in EditSnap.allCases {
+            let i = ActionItem(v.label) { mix.setEditSnap(v) }
+            i.state = mix.prefs.ui.editSnap == v ? .on : .off
+            sub.addItem(i)
+        }
+        snap.submenu = sub
+        m.addItem(snap)
+        m.addItem(.separator())
+        let render = ActionItem(String(localized: "Rendern (neue Datei)")) { mix.editRenderFile(d) }
+        render.isEnabled = !(session?.shown.isPlain ?? true)
+        m.addItem(render)
+        let load = ActionItem(String(localized: "Ergebnis ins Deck laden")) { mix.prefs.ui.cutLoadsResult.toggle() }
+        load.state = mix.prefs.ui.cutLoadsResult ? .on : .off
+        m.addItem(load)
+        let reset = ActionItem(String(localized: "Schnittliste verwerfen")) { mix.editReset(d) }
+        reset.isEnabled = (session?.shown.segments.count ?? 1) > 1
+        m.addItem(reset)
+        m.addItem(.separator())
+        let tl = NSMenuItem(title: String(localized: "Tool-Loop exportieren"), action: nil, keyEquivalent: "")
+        let tsub = NSMenu()
+        for b in ToolLoop.sizes { tsub.addItem(ActionItem(String(localized: "\(b) Beats")) { mix.exportToolLoop(d, beats: b) }) }
+        tl.submenu = tsub
+        m.addItem(tl)
+        m.addItem(.separator())
+        if !(session?.preview != nil) {
+            m.addItem(ActionItem(String(localized: "Schnitt-Anfang hier")) { mix.trimHere(d, end: false) })
+            m.addItem(ActionItem(String(localized: "Schnitt-Ende hier")) { mix.trimHere(d, end: true) })
+            m.addItem(ActionItem(String(localized: "Schnitt entfernen")) { mix.clearTrim(d) })
+        }
+        if mix.range(d) != nil {
+            m.addItem(ActionItem(String(localized: "Loop aus Bereich")) { mix.rangeToLoop(d) })
+            m.addItem(ActionItem(String(localized: "Bereich aufheben")) { mix.clearRange(d) })
+        }
+        return m
+    }
+}
+
 /// Track-Übersicht: ganze Wellenform, gespielter Teil gedimmt, Cues, Loop; Klick springt.
 struct OverviewView: View {
     @Environment(MixModel.self) private var mix
@@ -613,7 +738,7 @@ struct OverviewView: View {
             WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)))
         }
         Content(d: d, m: Model(duration: deck.duration, playing: deck.playing, cues: cues,
-                               trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d)), range: mix.range(d)),
+                               trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d) && !(mix.decks[d].edit?.previewing ?? false)), range: mix.range(d)),
                 wave: wf).equatable()
     }
 

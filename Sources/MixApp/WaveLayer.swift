@@ -52,6 +52,19 @@ struct WaveScene: Equatable {
         }
     }
     var range: Marked?
+    /// EDIT-Modus mit Schnittliste (Ausgabe-Zeit): Nähte (Schnitt rot, Marke hell), stumme Stücke gedimmt
+    struct EditMarks: Equatable {
+        var joints: [Double] = []
+        var cuts: [Bool] = []
+        /// [Anfang, Ende] je stummem Stück
+        var muted: [[Double]] = []
+        /// Deck spielt die gerenderte Liste
+        var previewing = false
+        /// wird gerechnet
+        var pending = false
+        var segments = 1
+    }
+    var edit: EditMarks?
 
     /// ändert sich das, müssen die Wellenform-Kacheln neu gerechnet werden
     var tileKey: String { "\(waveID.map { "\($0)" } ?? "-")|\(duration)|\(span)|\(hasTrack)" }
@@ -97,10 +110,12 @@ final class WaveLayerNSView: NSView {
             (a.cues, a.cuePoint, b.cues, b.cuePoint) = ([], 0, [], 0)
             (a.trim, b.trim) = (WaveScene.Trim(), WaveScene.Trim())
             (a.range, b.range) = (nil, nil)
+            (a.edit, b.edit) = (nil, nil)
             if a == b, builtSize == bounds.size {
                 if scene.cues != oldValue.cues || scene.cuePoint != oldValue.cuePoint { rebuildCues() }
                 if scene.trim != oldValue.trim { layoutTrim() }
                 if scene.range != oldValue.range { layoutRange() }
+                if scene.edit != oldValue.edit { layoutEdit() }
             } else { rebuild(tiles: scene.tileKey != oldValue.tileKey) }
         }
     }
@@ -114,6 +129,8 @@ final class WaveLayerNSView: NSView {
     private let trimFlagLo = CATextLayer(), trimFlagHi = CATextLayer()
     // markierter Bereich: Fläche, Ränder mit Laschen, Beschriftung oben
     private let rangeLayer = CALayer(), rangeFill = CALayer(), rangeEdges = CAShapeLayer(), rangeLabel = CATextLayer()
+    // Schnittliste: stumme Stücke, Marken, Schnitte
+    private let editLayer = CALayer(), editMuted = CAShapeLayer(), editMarks = CAShapeLayer(), editCuts = CAShapeLayer()
     private let dim = CALayer()
     private let playhead = CALayer()
     private let countdown = CATextLayer()
@@ -183,9 +200,17 @@ final class WaveLayerNSView: NSView {
             rangeLayer.addSublayer(l)
         }
         rangeLayer.isHidden = true
-        for l in [tiles, gridLayer, loopLayer, cueLayer, trimLayer, rangeLayer] { strip.addSublayer(l) }
+        editMuted.fillColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        editMarks.fillColor = NSColor(Theme.bone).withAlphaComponent(0.85).cgColor
+        editCuts.fillColor = NSColor(Theme.state).cgColor
+        for l in [editMuted, editMarks, editCuts] as [CALayer] {
+            l.actions = Self.noAnimation
+            editLayer.addSublayer(l)
+        }
+        editLayer.isHidden = true
+        for l in [tiles, gridLayer, loopLayer, cueLayer, trimLayer, editLayer, rangeLayer] { strip.addSublayer(l) }
         for l in [strip, dim, playhead, countdown] { content.addSublayer(l) }
-        for l in [strip, tiles, gridLayer, cueLayer, loopLayer, trimLayer, rangeLayer, dim, playhead, countdown] as [CALayer] {
+        for l in [strip, tiles, gridLayer, cueLayer, loopLayer, trimLayer, editLayer, rangeLayer, dim, playhead, countdown] as [CALayer] {
             l.actions = Self.noAnimation
         }
     }
@@ -257,7 +282,41 @@ final class WaveLayerNSView: NSView {
         buildCues(h: h)
         layoutTrim()
         layoutRange()
+        layoutEdit()
         step()
+    }
+
+    /// Schnittliste: stumme Stücke gedimmt, Marken als helle Linie mit Lasche oben, Schnitte rot mit Laschen oben und unten
+    private func layoutEdit() {
+        guard let e = scene.edit, scene.hasTrack, bounds.height > 0, scene.duration > 0 else {
+            editLayer.isHidden = true
+            return
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        let h = bounds.height, z = scene.zoom, tab = 6 * z
+        editLayer.isHidden = false
+        editLayer.opacity = e.pending ? 0.5 : 1
+        editLayer.frame = strip.bounds
+        for l in [editMuted, editMarks, editCuts] { l.frame = strip.bounds }
+        let muted = CGMutablePath()
+        for m in e.muted where m.count == 2 {
+            let x0 = px(m[0] * pps), x1 = px(m[1] * pps)
+            muted.addRect(CGRect(x: x0, y: ruler, width: max(1, x1 - x0), height: h - ruler))
+        }
+        editMuted.path = muted
+        let marks = CGMutablePath(), cuts = CGMutablePath()
+        for (k, t) in e.joints.enumerated() {
+            let x = px(t * pps), cut = e.cuts.indices.contains(k) && e.cuts[k]
+            let l = line(x, width: (cut ? 2 : 1.5) * z, y: 0, height: h)
+            let p = cut ? cuts : marks
+            p.addRect(l)
+            p.addRect(CGRect(x: l.midX - tab / 2, y: 0, width: tab, height: tab))
+            if cut { p.addRect(CGRect(x: l.midX - tab / 2, y: h - tab, width: tab, height: tab)) }
+        }
+        editMarks.path = marks
+        editCuts.path = cuts
     }
 
     /// markierter Bereich: nur Rahmen verschieben (beim Ziehen je Änderung)

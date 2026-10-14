@@ -25,6 +25,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * align grid anchor to phrases: off / suggest (default) / automatic -> on load the anchor is checked against the track's 8-bar structure, see manual 05
 * history: played after x seconds audible, optional copy into the collection's history folder
 * decks shown 1 / 2 / 4 (`ui.deckCount`, older `showFourDecks` is read once), preview start position in the browser
+* edit mode & tool-loops: snap when marking (`ui.editSnap`: 1 beat / 1 bar / 2 / 4 / 8 bars, default 1 bar), load the cut result into the deck (`ui.cutLoadsResult`), tool-loops into folder … (`ui.toolLoopFolder`, empty = next to the original)
 
 ## ◆ MIXER & FX
 

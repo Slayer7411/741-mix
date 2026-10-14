@@ -108,6 +108,19 @@ public enum TrackCut {
     /// `grid` und `hotcues` vom Deck (eigene Änderungen gelten), Memory-Cues aus dem Track
     public static func track(from t: Track, key: String, path: String, grid: BeatGrid?, hotcues: [Cue], mode: Mode,
                              range r: TrackRange, duration: Double, now: Date = Date()) -> Track {
+        build(from: t, key: key, path: path, grid: grid, hotcues: hotcues, duration: duration, now: now,
+              grid: { Self.grid($0, mode: mode, range: r) }, cues: { Self.cues($0, mode: mode, range: r) })
+    }
+
+    /// Track der aus einer Schnittliste gerenderten Datei: wie `track`, Grid und Cues über die Liste
+    public static func track(from t: Track, key: String, path: String, grid: BeatGrid?, hotcues: [Cue], edl: EditList,
+                             duration: Double, now: Date = Date()) -> Track {
+        build(from: t, key: key, path: path, grid: grid, hotcues: hotcues, duration: duration, now: now,
+              grid: { edl.grid($0) }, cues: { edl.cues($0) })
+    }
+
+    private static func build(from t: Track, key: String, path: String, grid: BeatGrid?, hotcues: [Cue], duration: Double, now: Date,
+                              grid mapGrid: (BeatGrid) -> BeatGrid, cues mapCues: ([Cue]) -> [Cue]) -> Track {
         var n = t
         n.key = key
         n.path = path
@@ -120,9 +133,9 @@ public enum TrackCut {
         n.fileMissing = false
         n.ownAnalysis = false
         let memory = t.cues.filter { $0.hotcue < 0 && $0.kind != .grid }
-        var cues = Self.cues(memory + hotcues, mode: mode, range: r)
+        var cues = mapCues(memory + hotcues)
         if let g = grid, g.bpm > 0 {
-            let ng = Self.grid(g, mode: mode, range: r)
+            let ng = mapGrid(g)
             n.bpm = ng.bpm
             cues.insert(Cue(name: "Grid", kind: .grid, startMs: ng.anchor * 1000, lengthMs: 0, hotcue: -1), at: 0)
             // Grid-Marker auf einem Hotcue-Platz (oft Hotcue 1): bleibt dort, auf dem neuen Anker

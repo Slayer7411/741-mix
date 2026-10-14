@@ -83,14 +83,22 @@ enum CutJob {
     /// Hauptthread-Zeit des Abschlusses (eintragen, melden, ggf. laden)
     private(set) static var mainSeconds = 0.0
 
+    /// Bereich entfernen / behalten, Schnittliste (EDIT-Modus), Tool-Loop (n Beats, nahtlos)
+    enum Kind: Sendable {
+        case cut(TrackCut.Mode, TrackRange)
+        case edit(EditList)
+        case toolLoop(beats: Int, range: TrackRange, bpm: Double, separators: String)
+    }
+
     struct Input: Sendable {
         var deck: Int
-        var mode: TrackCut.Mode
-        var range: TrackRange
+        var kind: Kind
         var track: Track
         var grid: BeatGrid?
         var hotcues: [Cue]
         var audio: TrackAudio?
+        /// Quelle ist `audio` selbst (Deck spielt eine Schnittliste), nicht die Datei
+        var direct = false
         var load: Bool
         /// Zielordner (nil = neben dem Original)
         var directory: URL?
@@ -133,24 +141,52 @@ enum CutJob {
     /// Hintergrund: Datei schreiben, Track der neuen Datei bauen
     nonisolated private static func run(_ i: Input, report: (Double) -> Bool) throws -> Output {
         let src = URL(fileURLWithPath: i.track.path)
-        let source = try AudioCutWriter.source(url: src, deck: i.audio) { report(0.4 * $0) }
+        let source: AudioCutWriter.Source
+        if i.direct, let a = i.audio {
+            source = .audio(a, bitDepth: AudioCutWriter.bitDepth(url: src))
+        } else {
+            source = try AudioCutWriter.source(url: src, deck: i.audio) { report(0.4 * $0) }
+        }
         let rate = source.sampleRate
-        let a = Int((i.range.start * rate).rounded()), b = Int((i.range.end * rate).rounded())
         let fade = AudioSplice.fadeFrames(sampleRate: rate)
-        let splice = i.mode == .remove ? AudioSplice.removing(a..<max(a, b), frames: source.frames, fade: fade)
-                                       : AudioSplice.keeping(a..<max(a, b), frames: source.frames, fade: fade)
-        guard Double(splice.frames) >= rate * TrackTrim.minLength else { throw AudioCutWriter.CutError.empty }
         let dir = i.directory ?? src.deletingLastPathComponent()
         let fm = FileManager.default
-        let name = TrackCut.fileName(src.lastPathComponent) { fm.fileExists(atPath: dir.appendingPathComponent($0).path) }
+        let taken: (String) -> Bool = { fm.fileExists(atPath: dir.appendingPathComponent($0).path) }
+        let splice: AudioSplice, name: String
+        switch i.kind {
+        case let .cut(mode, r):
+            let a = Int((r.start * rate).rounded()), b = Int((r.end * rate).rounded())
+            splice = mode == .remove ? AudioSplice.removing(a..<max(a, b), frames: source.frames, fade: fade)
+                                     : AudioSplice.keeping(a..<max(a, b), frames: source.frames, fade: fade)
+            guard Double(splice.frames) >= rate * TrackTrim.minLength else { throw AudioCutWriter.CutError.empty }
+            name = TrackCut.fileName(src.lastPathComponent, taken: taken)
+        case let .edit(edl):
+            let f = edl.frames(rate: rate, sourceFrames: source.frames)
+            splice = AudioSplice(pieces: f.pieces, sourceFrames: source.frames, fade: fade, muted: f.muted)
+            guard Double(splice.frames) >= rate * TrackTrim.minLength else { throw AudioCutWriter.CutError.empty }
+            name = TrackCut.fileName(src.lastPathComponent, taken: taken)
+        case let .toolLoop(beats, r, bpm, _):
+            let a = Int((r.start * rate).rounded()), n = ToolLoop.frames(beats: beats, bpm: bpm, rate: rate)
+            guard n > 0, a >= 0, a + n <= source.frames else { throw AudioCutWriter.CutError.empty }
+            splice = AudioSplice.toolLoop(a..<(a + n), frames: source.frames, fade: fade)
+            name = ToolLoop.fileName(src.lastPathComponent, beats: beats, taken: taken)
+        }
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(name)
         let base = source.fromDeck ? 0 : 0.4
         try AudioCutWriter.write(splice, source: source, to: url) { report(base + (1 - base) * $0) }
         let duration = Double(splice.frames) / rate
         let vol = MusicFolder.volumeInfo(url.path)
         let key = MusicFolder.nmlKey(url.path, volume: vol.name, mount: vol.mount)
-        var t = TrackCut.track(from: i.track, key: key, path: url.path, grid: i.grid, hotcues: i.hotcues, mode: i.mode,
-                               range: i.range, duration: duration)
+        var t: Track
+        switch i.kind {
+        case let .cut(mode, r):
+            t = TrackCut.track(from: i.track, key: key, path: url.path, grid: i.grid, hotcues: i.hotcues, mode: mode, range: r, duration: duration)
+        case let .edit(edl):
+            t = TrackCut.track(from: i.track, key: key, path: url.path, grid: i.grid, hotcues: i.hotcues, edl: edl, duration: duration)
+        case let .toolLoop(beats, _, bpm, seps):
+            t = ToolLoop.track(from: i.track, key: key, path: url.path, beats: beats, bpm: bpm, duration: duration, separators: seps)
+        }
         if let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int {
             t.fileSizeKB = size / 1024
             t.bitrate = duration > 0 ? Int(Double(size) * 8 / duration / 1000) : 0
@@ -168,6 +204,9 @@ enum CutJob {
             store.addCut(t, source: i.track)
             lastResult = (seconds, t, out.fromDeck)
             var msg = String(format: String(localized: "Geschnitten: %@ · %@"), t.fileName, Theme.time(t.duration))
+            if case let .toolLoop(beats, _, _, _) = i.kind {
+                msg = String(format: String(localized: "Tool-Loop: %@ · %lld Beats"), t.fileName, beats)
+            }
             if i.load {
                 if mix.load(t, deck: i.deck, force: false) {
                     msg += " · " + String(localized: "in Deck \(deckLetters[i.deck]) geladen")
@@ -177,7 +216,7 @@ enum CutJob {
             }
             StatusCenter.post(.ok, msg, detail: t.path, key: "cut")
             if Session.isSelfTest || MixController.debug {
-                print(String(format: "[cut] %@ -> %@: %.2f s (%@)", i.mode.rawValue, t.path, seconds, out.fromDeck ? "deck-puffer" : "datei neu dekodiert"))
+                print(String(format: "[cut] %@ -> %@: %.2f s (%@)", i.kind.name, t.path, seconds, out.fromDeck ? "deck-puffer" : "datei neu dekodiert"))
             }
         case let .failure(e as AudioCutWriter.CutError) where e == .cancelled:
             StatusCenter.post(.info, String(localized: "Schneiden abgebrochen"), key: "cut")
@@ -202,8 +241,18 @@ extension MixModel {
         }
         // Selbsttest: nie neben Christians Dateien schreiben
         let dir: URL? = Session.isSelfTest ? CutJob.selfTestDirectory : nil
-        CutJob.start(.init(deck: d, mode: mode, range: r, track: t, grid: s.grid, hotcues: Array(s.hotcues.values), audio: audio,
+        CutJob.start(.init(deck: d, kind: .cut(mode, r), track: t, grid: s.grid, hotcues: Array(s.hotcues.values), audio: audio,
                            load: load ?? prefs.ui.cutLoadsResult, directory: dir), mix: self, store: store)
+    }
+}
+
+extension CutJob.Kind {
+    var name: String {
+        switch self {
+        case let .cut(m, _): m.rawValue
+        case .edit: "edit"
+        case let .toolLoop(b, _, _, _): "tool-loop \(b)"
+        }
     }
 }
 

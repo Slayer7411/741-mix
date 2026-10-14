@@ -24,6 +24,8 @@ final class DeckMirror {
     var editing = false
     /// markierter Bereich der Wellenform (⌃ + Ziehen), bis Esc, Klick daneben, neue Markierung oder anderer Track
     var range: TrackRange?
+    /// EDIT-Modus: Schnittliste, wie das Deck sie gerade spielt (Marken, Schnitte, stumme Stücke), nil = keine Sitzung
+    var edit: WaveScene.EditMarks?
 }
 
 /// FX-Unit für die Oberfläche: eigenes Observable je Unit (FXUnitView liest nur ihre Unit)
@@ -122,6 +124,10 @@ final class MixModel {
     @ObservationIgnored let edits = TrackEditStore(url: HistoryStore.baseDir.appendingPathComponent("edits.json"), writes: !Session.isSelfTest)
     @ObservationIgnored private var originals: [Int: Track] = [:]
     @ObservationIgnored private var savedEdit: [Int: TrackEdit?] = [:]
+    /// EDIT-Modus: Schnittliste je Deck (EditSession.swift)
+    @ObservationIgnored var editSessions: [Int: EditSession] = [:]
+    /// Bereich nach einer Bearbeitung, gesetzt nach dem Tausch (gehört zur neuen Liste)
+    @ObservationIgnored var pendingRange: [Int: TrackRange?] = [:]
     @ObservationIgnored private var timer: Timer?
     /// Vorhören: zählt jede Anfrage (ein spät geladener Track spielt nur, wenn danach nichts mehr kam)
     @ObservationIgnored private var previewSeq = 0
@@ -244,6 +250,7 @@ final class MixModel {
             state = s
             for d in decks.indices where s.decks[d] != decks[d].state {
                 decks[d].state = s.decks[d]
+                syncEditSession(d)
                 let key = s.decks[d].track?.key ?? ""
                 if key != decks[d].trackKey {
                     decks[d].trackKey = key
@@ -349,8 +356,10 @@ final class MixModel {
         guard !Session.isSelfTest else { return }   // Selbsttest/Messung: Christians edits.json nie anfassen
         for d in state.decks.indices {
             guard let orig = originals[d], let t = state.decks[d].track, t.key == orig.key, !state.decks[d].loading else { continue }
+            if isEditPreview(d) { continue }   // Deck spielt eine Schnittliste: Hotcues/Grid gehören zur Vorschau
             let deck = state.decks[d]
             var e = TrackEdit(trim: deck.trim)
+            e.edl = (savedEdit[d] ?? nil)?.edl
             if deck.gridEdited, let g = deck.grid { e.bpm = g.bpm; e.gridAnchorMs = g.anchor * 1000 }
             let cues = deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }
             if cues != orig.hotcues { e.hotcues = cues }
@@ -367,6 +376,21 @@ final class MixModel {
 
     /// offene Änderungen sofort schreiben (Beenden)
     func flushEdits() { edits.flush() }
+
+    /// Schnittliste eines Tracks speichern (mit seinen übrigen eigenen Änderungen), nil = keine
+    func saveEditList(_ d: Int, key: String, _ edl: EditList?) {
+        var e = (savedEdit[d] ?? nil) ?? edits.edit(for: key) ?? TrackEdit()
+        guard e.edl != edl else { return }
+        e.edl = edl
+        let n: TrackEdit? = e.isEmpty ? nil : e
+        if !Session.isSelfTest { edits.set(n, for: key) }
+        if originals[d]?.key == key { savedEdit[d] = n }
+    }
+
+    /// gespeicherte Schnittliste des Tracks im Deck
+    func savedEditList(_ d: Int, key: String) -> EditList? {
+        originals[d]?.key == key ? (savedEdit[d] ?? nil)?.edl : edits.edit(for: key)?.edl
+    }
 
     /// Rückgängig für Deck-Aktionen (Stand vorher/nachher, nur die betroffenen Teile; Trackwechsel leert das Deck)
     @ObservationIgnored private(set) lazy var deckUndo: DeckUndoRecorder = {
@@ -459,6 +483,7 @@ final class MixModel {
     func setEditing(_ d: Int, _ on: Bool) {
         guard decks.indices.contains(d), decks[d].editing != on else { return }
         decks[d].editing = on
+        syncEditSession(d)
         savePrefs()
     }
     func togglePlay(_ d: Int) { run { core.togglePlay(d) } }

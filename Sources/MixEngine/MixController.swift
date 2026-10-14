@@ -758,6 +758,52 @@ public final class MixController: @unchecked Sendable {
         return true
     }
 
+    /// EDIT-Modus: anderes Audio für den geladenen Track ohne Laden (gerenderte Schnittliste bzw. zurück zum Original).
+    /// Grid, Hotcues aus `t`, Cue-Punkt, Schnitt und Active Loops wie übergeben; Tempo, Keylock, Key-Shift, Sync, Mixer
+    /// bleiben, ein Loop geht aus. Ein spielendes Deck läuft an `position` weiter. false = Deck leer oder lädt gerade
+    @discardableResult
+    public func swapAudio(_ d: Int, track t: Track, audio a: TrackAudio, position: Double, cuePoint: Double,
+                          gridEdited: Bool = false, trim: TrackTrim = TrackTrim(), activeLoops: Set<Int> = []) -> Bool {
+        guard (0..<MixEngine.deckCount).contains(d) else { return false }
+        let r: (TrackAudio?, UInt32)? = locked {
+            guard audio[d] != nil, !state.decks[d].loading else { return nil }
+            loadSeq[d] += 1   // ein später fertiger Ladevorgang darf das Deck nicht mehr belegen
+            let old = audio[d], playing = engine.player(d).playing
+            var s = state.decks[d]
+            s.track = t
+            s.grid = BeatGrid(track: t)
+            s.gridEdited = gridEdited && s.grid != nil
+            s.phraseTarget = nil
+            s.duration = a.duration
+            s.trim = trim.normalized(duration: a.duration) ?? TrackTrim()
+            s.hotcues = Dictionary(t.hotcues.map { ($0.hotcue, $0) }, uniquingKeysWith: { x, _ in x })
+            s.cuePoint = min(max(0, cuePoint), a.duration)
+            if !s.playRange.contains(s.cuePoint) { s.cuePoint = s.playRange.lowerBound }
+            s.loopActive = false
+            s.loopIn = nil
+            s.activeLoops = activeLoops.filter { s.hotcues[$0].map(Self.isLoop) ?? false }
+            s.reverse = false
+            s.flux = false
+            s.playing = playing
+            state.decks[d] = s
+            audio[d] = a
+            loopUsed[d] = []
+            let at = min(max(0, position), a.duration)
+            armLoops(d, at: at)
+            engine.player(d).flux = false
+            engine.setLoop(d, active: false, start: 0, end: 0)
+            engine.setTrim(d, start: s.trim.start ?? 0, end: s.trim.end ?? 0)
+            let gen = engine.attach(a, deck: d, startAt: at)
+            applyRate(d)
+            engine.player(d).playing = playing   // attach stoppt das Deck: im selben Block weiter
+            applyRate(d)
+            return (old, gen)
+        }
+        guard let (old, gen) = r else { return false }
+        releaseWhenFree(old, deck: d, gen: gen)
+        return true
+    }
+
     /// alten Puffer halten, bis der Audio-Thread den neuen übernommen hat – ohne Zeitlimit
     /// (steht die Ausgabe, liest ihn niemand; hängt sie, bleibt lieber ein Puffer liegen als dass sie in freien Speicher greift)
     private func releaseWhenFree(_ old: TrackAudio?, deck d: Int, gen: UInt32) {

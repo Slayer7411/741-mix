@@ -208,6 +208,7 @@ enum SelfTest {
             await deviceProbe(core)
             await previewProbe(mix, tracks: c)
             await cutProbe(mix, tracks: c)
+            await editProbe(mix)
             await profileProbe(mix, browser: browser)
             await undoProbe(mix, store: store)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
@@ -750,5 +751,74 @@ enum WaveShot {
               let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { throw ShotError.png }
         CGImageDestinationAddImage(dest, img, nil)
         guard CGImageDestinationFinalize(dest) else { throw ShotError.png }
+    }
+}
+
+extension SelfTest {
+    /// EDIT-Modus auf Deck A (spielt): 16 Beats entfernen, Marke, Segment duplizieren -> das Deck spielt die gerenderte
+    /// Liste (Längen frame-genau), Tool-Loop 8 aus der Vorschau in den Test-Ordner (Länge = beats · 60 / bpm · rate),
+    /// alles zurück per Rückgängig, EDIT wie vorher. Nichts in edits.json, nichts neben Christians Dateien
+    static func editProbe(_ mix: MixModel) async {
+        let d = 0
+        mix.pull()
+        let s0 = mix.deck(d)
+        guard s0.track != nil, let g = s0.grid, g.bpm > 0, s0.duration > 120 else { log("EDIT: übersprungen (Deck ohne Grid)"); return }
+        let wasEditing = mix.editing(d), u = UndoStack.shared
+        func settle() async {
+            for _ in 0..<500 where mix.editSession(d)?.rendering == true { try? await Task.sleep(for: .milliseconds(20)) }
+            mix.pull()
+        }
+        mix.setEditing(d, true)
+        await settle()
+        guard let session = mix.editSession(d) else { log("EDIT FALSCH: keine Sitzung"); exit(1) }
+        if !session.shown.isPlain || session.shown.segments.count > 1 { mix.editReset(d); await settle() }
+        let n0 = u.done.count
+        let src = session.source, rate = src.sampleRate
+        let dur0 = mix.deck(d).duration
+        let a = g.time(ofBeat: (g.beatPosition(at: 40) / 4).rounded() * 4), len = 16 * g.beat
+        mix.setRange(d, TrackRange(a, a + len))
+        let t0 = CACurrentMediaTime()
+        mix.editAction(d, .remove)
+        let main = CACurrentMediaTime() - t0
+        await settle()
+        let removed = mix.deck(d).duration, preview1 = mix.core.trackAudio(d) === session.preview && session.preview != nil
+        let want1 = Double(src.frames - (Int(((a + len) * rate).rounded()) - Int((a * rate).rounded()))) / rate
+        let render1 = EditRender.lastSeconds, swap1 = EditRender.lastSwapSeconds
+        // Marke 8 Beats hinter der Naht, das Stück davor (Naht -> Marke) duplizieren
+        mix.editMark(d, at: a + 8 * g.beat)
+        let segs = mix.editSession(d)?.shown.segments.count ?? 0
+        mix.setRange(d, TrackRange(a, a + 8 * g.beat))
+        mix.editAction(d, .duplicate)
+        await settle()
+        let dup = mix.deck(d).duration
+        let want2 = want1 + Double(Int(((a + len + 8 * g.beat) * rate).rounded()) - Int(((a + len) * rate).rounded())) / rate
+        // Tool-Loop aus der Vorschau
+        CutJob.lastResult = nil
+        mix.exportToolLoop(d, beats: 8)
+        let tl0 = Date()
+        while CutJob.running, Date().timeIntervalSince(tl0) < 30 { try? await Task.sleep(for: .milliseconds(20)) }
+        var loopOK = false, loopText = "-"
+        if let r = CutJob.lastResult {
+            let url = URL(fileURLWithPath: r.track.path)
+            if let f = try? AVAudioFile(forReading: url) {
+                let want = ToolLoop.frames(beats: 8, bpm: g.bpm, rate: f.processingFormat.sampleRate)
+                loopOK = Int(f.length) == want && r.track.title.hasSuffix("[tool-loop 8]") && ToolLoop.isToolLoop(r.track, separators: mix.prefs.ui.tagSeparators)
+                loopText = String(format: "%@ · %lld / %d Frames · %.2f s", url.lastPathComponent, f.length, want, r.seconds)
+            }
+            try? FileManager.default.removeItem(at: url)
+        }
+        // alles zurück
+        while u.done.count > n0 { u.undo() }
+        await settle()
+        let back = mix.deck(d).duration, original = mix.core.trackAudio(d) === src
+        mix.setRange(d, nil)
+        mix.setEditing(d, wasEditing)
+        mix.pull()
+        let ok = preview1 && abs(removed - want1) < 1.5 / rate && segs >= 3 && abs(dup - want2) < 1.5 / rate && loopOK
+            && original && abs(back - dur0) < 1e-6
+        log(String(format: "EDIT Deck %@ (spielt %@): 16 Beats entfernt %.3f -> %.3f s (soll %.3f), Rendern %.0f ms (Hintergrund), Tausch %.1f ms, Aktion %.2f ms (Hauptthread) · Marke -> %d Stücke · DUP %.3f s (soll %.3f) · Tool-Loop %@ · Rückgängig -> Original %@ %.3f s · %@",
+                   deckLetters[d], "\(s0.playing)", dur0, removed, want1, render1 * 1000, swap1 * 1000, main * 1000, segs, dup, want2, loopText,
+                   "\(original)", back, ok ? "ok" : "FALSCH"))
+        if !ok { log("EDIT FALSCH"); exit(1) }
     }
 }
