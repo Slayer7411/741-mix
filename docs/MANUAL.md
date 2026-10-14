@@ -137,7 +137,7 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 
 * deck letter turns red while playing
 * line under the title: tags from comment 2 as chips (colors + separators like the browser, ⌘, -> TAGS), then comment in grey. one line, too long -> `…`. fixed height, also without a track. off: DECKS -> ROWS
-* ▣ cover of the loaded track (embedded in the file, else `cover` / `folder` / `front` .jpg / .png in its folder), `◆` = no cover. off: ⌘, -> DISPLAY -> cover
+* ▣ cover of the loaded track (embedded in the file, else `cover` / `folder` / `front` .jpg / .png in its folder), `◆` = no cover. off: ⌘, -> BROWSER -> cover
 * FX1 / FX2 (… FX4) -> deck on that fx unit
 * code readout: bar of the track in its phrase (`5/16`, phrase start = grid anchor, length = waveform phrase, ⌘, -> DISPLAY) against the bar counter. purple `◆ CODE` -> same bar and beat as the counter, red `+2 BARS` / `−3 BEATS` -> the deck is that far ahead / behind (wrapped to half a phrase), grey -> deck stopped or no counter
 * remaining time, bpm, tempo offset, key readout: open key of the track (e.g. `11m`), next to it the audible key in red as soon as it deviates (`11m → 6m`), below the deviation in semitones (`+0.60`). keylock off -> the tempo detunes, keylock on -> only the key shift counts
@@ -292,7 +292,7 @@ install (once):
 
 1. copy `extras/daw-bridge/MINOS741Bridge` into the DAW's user library folder `Remote Scripts` (`~/Music/<DAW>/User Library/Remote Scripts/MINOS741Bridge`)
 2. restart the DAW, preferences -> control surface: `MINOS741Bridge`, input / output: none
-3. MINOS: ⌘, -> DISPLAY -> DAW bridge on (default), port 7411. other port: same value in `MINOS741Bridge/config.json` (`{"port": 7411}`)
+3. MINOS: ⌘, -> BROWSER -> DAW bridge on (default), port 7411. other port: same value in `MINOS741Bridge/config.json` (`{"port": 7411}`)
 
 what is sent (per audio track): the playing session clip, the arrangement clip under the play head (while the song plays) and the selected clip. warp markers need DAW object model 11 or newer; older versions send clips without markers.
 
@@ -623,12 +623,13 @@ plugin chain on the sum of the decks, after the faders and the crossfader, befor
   * files not in the collection are grey, no grid, load and preview anyway
   * SUBFOLDERS in the list header -> all files below the folder
   * right click a folder -> rescan, show in finder. folders that change on disk are rescanned on their own
-  * default folder = the folder holding 90 % of the collection's files, own folders: ⌘, -> DISPLAY -> browser
+  * default folder = the folder holding 90 % of the collection's files, own folders: ⌘, -> BROWSER -> collection
 * all library columns: move by drag, hide via right click on the header, saved
 * `√` = analyzed in the collection, purple `√` = own analysis (see [analyze](#analyze)), missing files show the artist in red
 * search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match, case and accents ignored
 * right click a track -> load into deck A-D, add to / remove from preparation, preview, show in finder, reset played state
 * played column ▶: ✓ = played since the last reset. reset: right click a track or TRACK COLLECTION -> Reset Played State, or ⌥⌘P
+* `UNGESPIELT` (`UNPLAYED`) in the header -> played tracks hidden in collection, playlists, smartlists, music folders and search. history, running tracks and preparation (+ archive) keep showing them. count in the header: `812 · 14 ausgeblendet`. one setting for both panes, same as ⌘, -> BROWSER -> played tracks and browser menu -> `Gespielte Tracks ausblenden`, key assignable (no default). load lock, decks, controller browse unchanged
 * the left controller drives the left pane, the right controller the right one
 * tree can hide while decks are visible (setting)
 * cover preview below the tree: cover of the selected track, `◆ KEIN COVER` (`◆ NO COVER`) = none (setting)
@@ -650,7 +651,7 @@ reference = audible key of the master deck (track key + key shift, without keylo
 
 ### preview
 
-a mini overview of the whole track per row. modes (⌘, -> DISPLAY -> browser preview):
+a mini overview of the whole track per row. modes (⌘, -> BROWSER -> browser preview):
 
 * `Ganze Zeile (zweizeilig)` (default): rows twice as high, text on top, the overview as a band across the full row width underneath, continuous over all columns. selection and inline edit work as usual (the editor sits in the text line)
 * `Eigene Spalte`: PREVIEW column after the title
@@ -671,7 +672,7 @@ a mini overview of the whole track per row. modes (⌘, -> DISPLAY -> browser pr
 * every mode: computing waits while a deck loads and 4 s after, also in the middle of a file
 * status bar: `Vorschauen 1.234 / 14.160 · gedrosselt` (tracks with overview / tracks with a file), `pausiert (Deck lädt)`, `pausiert (Deck spielt)`, ✕ = stop the background job until the next start. right click batch: `Vorschauen 12/240`, ✕ = cancel
 * files that only exist in the cloud (placeholder, not downloaded) are skipped by the background job and counted: `12 nur online – Rechtsklick lädt`. right click -> `Vorschauen berechnen` reads them (downloads the file)
-* ⌘, -> DISPLAY -> preview colors: spectrum / like the waveform
+* ⌘, -> BROWSER -> preview colors: spectrum / like the waveform
 * overviews are checked against file size and modification time -> a retagged file gets a new one
 * reload ↻ / ⌘O during a set: parsing, file check and sorting run in the background, the decks keep drawing. the lists switch in one step when everything is ready
 
@@ -687,11 +688,11 @@ right click tracks, TRACK COLLECTION, PREPARATION, a playlist, smartlist, playli
 * right click -> `Analyse verwerfen` = back to the collection's values. a grid set by hand on the deck stays (RESET in the grid row removes it)
 * a track on a deck keeps its grid until it is loaded again
 * files from MUSIC FOLDERS without a collection entry get all four values too
-* `Änderungen in die Collection-Datei schreiben` on (⌘, -> ANZEIGE -> browser): after a batch the analyzed entries go into `collection.nml` as `TEMPO`, `LOUDNESS`, `MUSICAL_KEY` and a grid marker (`CUE_V2` type 4, an existing marker keeps its place and hotcue slot), same backup and byte-exact replacement as the metadata edits, not while the library software runs
+* `Änderungen in die Collection-Datei schreiben` on (⌘, -> BROWSER -> collection): after a batch the analyzed entries go into `collection.nml` as `TEMPO`, `LOUDNESS`, `MUSICAL_KEY` and a grid marker (`CUE_V2` type 4, an existing marker keeps its place and hotcue slot), same backup and byte-exact replacement as the metadata edits, not while the library software runs
 * values: bpm with 6 decimals, grid anchor in ms, key as `MUSICAL_KEY` 0–23 (shown as open key `1d`–`12m`), `PERCEIVED_DB` = gain to the collection's reference (positive = quiet track), `PEAK_DB` = headroom of the peak below 0 dBFS (positive = below)
-* bpm range: ⌘, -> ANZEIGE -> analyse, exactly one octave (from / to move together, default 100–200). the tempo is folded into it (100–200: 96 -> 192)
+* bpm range: ⌘, -> BROWSER -> analyse, exactly one octave (from / to move together, default 100–200). the tempo is folded into it (100–200: 96 -> 192)
 * method: one pass, mono at ~22 kHz (key, loudness) and ~11 kHz (tempo, grid) · tempo from the spectral flux: fourier tempogram with a harmonic comb over 60–200 bpm, fine search at the beat frequency to 0.001 bpm, whole beats between the start and the end of the track (constant tempo assumed), cross-check against the majority of local tempi (8 s windows, 2 s hop, ±2 %), then folded into the bpm range · grid anchor: onset envelope (bass < 150 Hz + full band) folded on the beat with 1 ms resolution over the whole track, the phrase start from the structural changes (same logic as the phrase anchor), else the first beat · key: 250 ms frames (8192 fft, 125 ms hop), level per semitone in dB, threshold 50 dB under the loud frames and up to 20 dB higher for low notes, local masking (±5 semitones), folded 55 Hz–6.6 kHz, against krumhansl and temperley profiles (better one per mode, minor +5 %) · loudness: replaygain method, power per ~70 ms weighted with the 80 phon equal-loudness curve (iso 226), 95th percentile
-* key profiles: right click TRACK COLLECTION or ⌘, -> ANZEIGE -> analyse -> `Key-Profile lernen`. up to 300 local tracks with a key from the collection (own analysis keys don't count, cloud-only files are skipped, nothing is downloaded), same background queue as the analysis, status bar `Key-Profile 12/300`, ✕ = cancel. profile = mean chroma per mode turned to C. every 5th track is held out and measured -> `Profile gelernt: 294 Tracks · exakt 55 %, vorher 31 %`. saved as `key-profiles.json` in the MINOS-741 folder, the analysis uses it from then on, else krumhansl / temperley. `Key-Profile verwerfen` deletes the file
+* key profiles: right click TRACK COLLECTION or ⌘, -> BROWSER -> analyse -> `Key-Profile lernen`. up to 300 local tracks with a key from the collection (own analysis keys don't count, cloud-only files are skipped, nothing is downloaded), same background queue as the analysis, status bar `Key-Profile 12/300`, ✕ = cancel. profile = mean chroma per mode turned to C. every 5th track is held out and measured -> `Profile gelernt: 294 Tracks · exakt 55 %, vorher 31 %`. saved as `key-profiles.json` in the MINOS-741 folder, the analysis uses it from then on, else krumhansl / temperley. `Key-Profile verwerfen` deletes the file
 * synthetic checks (`swift test`): click track -> tempo ±0.05 bpm, grid ±5 ms at 44.1 and 48 kHz, bpm range folding, chords -> key, sine -> loudness and peak, key profiles from synthetic chroma
 * against the collection (`MIX741_ANALYZE_NML=<collection.nml> MIX741_ANALYZE_N=20 swift test --filter analyzerAgainstCollection`), 20 / 96 local tracks: bpm 18 / 20 and 80 / 96 within 0.1 (misses: integer bpm in the collection = set by hand, old vinyl tracks), key 8 / 20 and 34 / 96 exact (+4 / +24 related), with profiles learned from 300 other tracks 11 / 20 and 47 / 96 (`MIX741_ANALYZE_LEARN=300`), loudness median deviation 0.32 / 0.49 dB (max 1.1 / 1.4 dB), grid within 20 ms of the collection's marker 10 / 18 and 31 / 83 (m4a 15 / 22, median −4 ms; mp3 clusters at ~+10 and ~+48 ms = different decoder start, see [troubleshooting](#-14--troubleshooting)), ~0.9 s per track (release)
 
@@ -711,7 +712,7 @@ editable: title, artist, release, mix, remixer, producer, label, catalog no, gen
 
 ### write into the collection file
 
-off by default. ⌘, -> ANZEIGE -> browser -> `Änderungen in die Collection-Datei schreiben (Backup davor)`.
+off by default. ⌘, -> BROWSER -> collection -> `Änderungen in die Collection-Datei schreiben (Backup davor)`.
 
 * on: 1.5 s after the last APPLY all pending changes go into `collection.nml` in one write
 * before that a backup: `Backup MINOS-741/collection_YYYY-MM-DD_HHMMSS.nml` next to the collection, at most one per hour
@@ -736,7 +737,7 @@ what goes into the file:
 * hotcues: the hotcues of the entry are replaced by MINOS-741's set; unchanged ones keep their text, memory cues (`HOTCUE -1`) and grid markers stay. a grid marker sitting on a hotcue slot stays where it is
 * locked entries (`LOCK="1"`): no bpm / grid written, the hand grid stays in `edits.json`
 * entries with more than one grid marker (tempo changes): only the first marker is written, the others stay; MINOS-741 plays one tempo
-* new entries have no `AUDIO_ID` (the library software computes it on its next analysis), `MODIFIED_DATE` / `MODIFIED_TIME` = now. options under ⌘, -> ANZEIGE -> browser: `Cuts und Tool-Loops als neue Einträge anlegen`, `Preparation und History als Playlists (Ordner MINOS-741)`, both on (only with writing on)
+* new entries have no `AUDIO_ID` (the library software computes it on its next analysis), `MODIFIED_DATE` / `MODIFIED_TIME` = now. options under ⌘, -> BROWSER -> collection: `Cuts und Tool-Loops als neue Einträge anlegen`, `Preparation und History als Playlists (Ordner MINOS-741)`, both on (only with writing on)
 * own playlists: only the folder `MINOS-741` directly under `$ROOT` is written, replaced as a whole, its playlist ids stay the same per path. other folders and playlists are never changed or removed. tracks not in the file are left out
 * stays in MINOS-741 only (the format has no place for it): trim (cut in / out), active loops, undo
 * preparation changes write after 10 s, history sessions go out with the next write (no write per played track)
@@ -780,11 +781,11 @@ BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION. read o
 
 * 6 files at a time. 14,160 tracks on a local drive: ~5 s
 * `NEW` needs the music folder scan (setting, on by default)
-* ⌘, -> DISPLAY -> check collection: check on start (off), scan music folders (on)
+* ⌘, -> BROWSER -> check collection: check on start (off), scan music folders (on)
 
 ## ◆ 10 · TAGS + SMARTLISTS
 
-comment 2 is split into tags at a separator (⌘, -> DISPLAY, default space, mine `·`):
+comment 2 is split into tags at a separator (⌘, -> TAGS, default space, mine `·`):
 
 ```
 K tief kurz · B sub leicht roll · H off » BASIS
@@ -813,7 +814,7 @@ full syntax -> [nml files](nml-files.md#-smartlist-queries).
 
 history:
 
-* a track counts as played after 30 s audible (setting)
+* a track counts as played after 30 s audible (⌘, -> BROWSER -> history & preparation)
 * internal mode: only with fader / crossfader open. external mode: always
 * saved as nml under `history_2026-10-10-01.nml` (day + session number), optional copy into the collection's history folder (time-stamped name)
 * quitting asks first (also the red close button and ⌘W on the main window), then session and history are written
@@ -860,7 +861,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | esc | clear the marked range (only when one exists, not in a search field) |
 | ⌘Z / ⇧⌘Z | undo / redo (text undo inside a text field) |
 
-no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, edit: remove / keep / duplicate / mute / segment left / right / mark at the play head / next snap / render, tool-loop 2 / 4 / 8 / 16, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, reconnect audio, master fx on / off.
+no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, edit: remove / keep / duplicate / mute / segment left / right / mark at the play head / next snap / render, tool-loop 2 / 4 / 8 / 16, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, browser: hide played tracks on / off, reconnect audio, master fx on / off.
 ⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.
 
 controller mapping -> [controllers.md](controllers.md). flux on the controller = pad layer switch: tap -> pads 1-4 play hotcues 5-8 (flux led lit), tap again -> back, shift + flux = tap (grid bpm from the taps; setting: flux mode instead), shift + sync = master. old layout under ⌘, -> CONTROLLER -> flux button.
@@ -901,6 +902,7 @@ backup = copy the `MINOS-741` folder.
 | ☁ in the list, set-check not clean | right click -> `Bereitmachen`, or `ALLE HOLEN` in the set-check. for good: finder -> right click the library folder -> make available offline |
 | local tracks turn ☁ again | macos evicted them (optimize storage, low disk space) -> keep local in ⌘, -> CLOUD fetches them again; pin the folder, free some space |
 | downloads don't start | a deck is loading (status bar `pausiert`), or less than the free space floor left (⌘, -> CLOUD) |
+| setting not where it was | settings tabs run general -> special: AUDIO · DISPLAY · DECKS · MIXER & FX · PLUGINS · BROWSER · TAGS · CLOUD · KEYBOARD · CONTROLLER. moved to BROWSER: history & preparation, browser preview start, cover, collection (music folders, write-back), check collection, analyse, DAW bridge. moved to DISPLAY -> layout: decks shown, deck gap, browser layout, hide tree. tab order: drag in the sidebar, right click -> `Standard-Reihenfolge` |
 | artist in red | file missing or moved -> fix the path in the collection, reload ↻. all of them at once: BROWSER -> `Collection prüfen …` |
 | check takes long | cloud drive downloads files on first access -> ABBRECHEN keeps what was found, check again later |
 | ui hangs | audio + sync keep running. report it with the version from the title bar |

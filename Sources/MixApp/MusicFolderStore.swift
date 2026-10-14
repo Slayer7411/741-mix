@@ -6,7 +6,7 @@ import MixCore
 /// und zwischengespeichert; Dateien aus der Collection zeigen deren Metadaten, alle anderen kommen als lose Tracks.
 @MainActor @Observable
 final class MusicFolderStore {
-    /// eingestellte Ordner (⌘, → anzeige → browser); leer = Standard aus der Collection
+    /// eingestellte Ordner (⌘, → browser → collection); leer = Standard aus der Collection
     var configured: [String] = []
     /// tiefster Ordner mit 90 % der vorhandenen Collection-Dateien, beim Laden der Collection berechnet
     private(set) var defaultRoot: String?
@@ -243,7 +243,7 @@ private struct MusicFolderRow: View {
     }
 }
 
-/// Einstellungen → Anzeige → Browser: Musik-Ordner hinzufügen/entfernen
+/// Einstellungen → Browser → Collection: Musik-Ordner hinzufügen/entfernen
 struct MusicFolderSettings: View {
     @Environment(MixModel.self) private var mix
     @Environment(LibraryStore.self) private var store

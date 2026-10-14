@@ -216,6 +216,7 @@ enum SelfTest {
             await grooveProbe(mix)
             await nmlProbe()
             await dawBridgeProbe(mix, store: store)
+            await hidePlayedProbe(mix, store: store, browser: browser, tracks: c)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -1124,5 +1125,34 @@ extension SelfTest {
         log(String(format: "Master-Bus (Limiter −20 dB): Master-Pegel aus %.3f · an %.3f · wieder aus %.3f · Vorhören %.3f / %.3f · %@",
                    m0, m1, m2, p0, p1, masterOK ? "OK" : "FAIL"))
         if !chainOK || !masterOK { log("FEHLER Plugin-Kette / Master-Bus"); exit(1) }
+    }
+}
+
+extension SelfTest {
+    /// gespielte ausblenden (◆ UNGESPIELT): Collection ohne die gespielten Tracks (A + die der Sitzung), Anzahl im Kopf
+    /// stimmt, History, RUNNING und Preparation zeigen sie weiter. Gespielt-Markierungen danach wie vorher
+    static func hidePlayedProbe(_ mix: MixModel, store: LibraryStore, browser: BrowserState, tracks c: [Track]) async {
+        guard let history = browser.history else { log("UNGESPIELT: keine History"); log("UNGESPIELT FALSCH"); exit(1) }
+        let played0 = history.played, live0 = history.live.count
+        history.setPlayed(played0.union([c[0].key]))
+        defer { history.setPlayed(played0) }
+        let played = history.played, seps = mix.prefs.ui.tagSeparators
+        let pane = BrowserPaneModel(name: "Selbsttest")
+        let all = pane.rows(from: store, history: history, separators: seps)
+        let t0 = CACurrentMediaTime()
+        let shown = pane.rows(from: store, history: history, separators: seps, hidePlayed: true)
+        let ms = (CACurrentMediaTime() - t0) * 1000, hidden = pane.hiddenCount
+        let expected = all.filter { played.contains($0.key) }.count
+        pane.source = .preparation
+        let prep = pane.rows(from: store, history: history, separators: seps).count
+        let prepHidden = pane.rows(from: store, history: history, separators: seps, hidePlayed: true).count
+        let exempt = [BrowserSource.historyLive, .running, .preparation].allSatisfy {
+            BrowserPaneModel.hiddenKeys(source: $0, played: played, hidePlayed: true) == nil
+        }
+        let ok = expected >= 1 && shown.count == all.count - expected && hidden == expected && pane.hiddenCount == 0 && prep == prepHidden
+            && !shown.contains { played.contains($0.key) } && exempt && history.live.count == live0
+        log(String(format: "UNGESPIELT: Collection %d -> %d (%d gespielt ausgeblendet, %.1f ms) · Preparation %d = %d · History %d Einträge · %@",
+                   all.count, shown.count, expected, ms, prep, prepHidden, history.live.count, ok ? "OK" : "FAIL"))
+        if !ok { log("UNGESPIELT FALSCH"); exit(1) }
     }
 }

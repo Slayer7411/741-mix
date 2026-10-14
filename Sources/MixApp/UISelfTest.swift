@@ -117,6 +117,7 @@ enum UISelfTest {
             ("groove", groove),
             ("daw-streifen", dawStrip),
             ("master-fx", masterFX),
+            ("ungespielt", unplayed),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -918,5 +919,69 @@ extension UISelfTest {
         mix.prefs.ui.showMixer = false
         u.spin(0.3)
         check(mix.chain(MixController.masterBus).isEmpty, "Master-Kette nicht leer")
+    }
+}
+
+/// unsichtbare Markierung hinter einem SwiftUI-Element (nur Selbsttest): Rahmen zum Klicken, selbst nie getroffen
+struct UITestMarker: NSViewRepresentable {
+    let name: String
+    func makeNSView(context: Context) -> MarkerView { let v = MarkerView(); v.name = name; return v }
+    func updateNSView(_ v: MarkerView, context: Context) { v.name = name }
+
+    final class MarkerView: NSView, UITestNamed {
+        var name = ""
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
+extension UISelfTest {
+    /// ◆ UNGESPIELT im Kopf von Bereich A: Klick blendet die gespielten Tracks aus (Zeilen sinken um die gespielten,
+    /// Anzahl „ausgeblendet“ im Kopf), History und Preparation bleiben; zweiter Klick zeigt sie wieder
+    static func unplayed(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, pane = u.browser.paneA
+        guard let history = u.browser.history else { fail("UNGESPIELT: keine History") }
+        let played0 = history.played, hide0 = mix.prefs.ui.hidePlayedTracks, source0 = pane.source
+        defer { history.setPlayed(played0); mix.prefs.ui.hidePlayedTracks = hide0; pane.source = source0; u.spin(0.5) }
+        mix.prefs.ui.hidePlayedTracks = false
+        pane.source = .collection
+        u.spin(5) { !pane.listPending && !pane.shown.isEmpty }
+        u.spin(0.3)
+        let n0 = pane.shown.count
+        check(n0 >= 3, "UNGESPIELT: Bereich A zeigt \(n0) Tracks")
+        history.setPlayed(played0.union(pane.shown.prefix(2).map(\.key)))
+        let played = history.played
+        let expected = pane.shown.filter { played.contains($0.key) }.count
+        guard let marker = u.views.compactMap({ $0 as? UITestMarker.MarkerView }).filter({ $0.name == "unplayed" })
+            .min(by: { u.frame($0).minX < u.frame($1).minX }) else { fail("Knopf UNGESPIELT nicht gefunden") }
+        let r = u.frame(marker), p = NSPoint(x: r.midX, y: r.midY)
+        check(r.width > 10 && u.window.contentView?.bounds.contains(p) == true, "UNGESPIELT liegt außerhalb: \(r)")
+        // Klick direkt an die getroffene Hosting-View (NSWindow.sendEvent kommt dort im Test nicht immer an)
+        let root = u.window.contentView?.superview ?? u.host
+        guard let hit = root.hitTest(root.convert(p, from: nil)) else { fail("UNGESPIELT: nichts unter dem Knopf") }
+        func click() {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                guard let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: u.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                                 pressure: type == .leftMouseUp ? 0 : 1) else { fail("kein Mausereignis") }
+                if type == .leftMouseDown { hit.mouseDown(with: e) } else { hit.mouseUp(with: e) }
+            }
+        }
+        func tableRows() -> Int? {
+            u.views.compactMap { $0 as? TrackHeaderView }.filter { u.frame($0).minX < u.window.frame.width / 2 }
+                .compactMap { $0.tableView?.numberOfRows }.first
+        }
+        click()
+        u.spin(5) { mix.prefs.ui.hidePlayedTracks && !pane.listPending && pane.shown.count == n0 - expected && tableRows() == n0 - expected }
+        check(mix.prefs.ui.hidePlayedTracks, "Klick auf UNGESPIELT schaltet nicht")
+        check(pane.shown.count == n0 - expected, "UNGESPIELT: \(pane.shown.count) Zeilen, soll \(n0) − \(expected)")
+        check(tableRows() == n0 - expected, "UNGESPIELT: Tabelle hat \(tableRows() ?? -1) Zeilen, soll \(n0 - expected)")
+        check(pane.hiddenCount == expected, "UNGESPIELT: \(pane.hiddenCount) ausgeblendet, soll \(expected)")
+        check(!pane.shown.contains { played.contains($0.key) }, "UNGESPIELT: gespielter Track noch in der Liste")
+        check(BrowserPaneModel.hiddenKeys(source: .historyLive, played: played, hidePlayed: true) == nil
+              && BrowserPaneModel.hiddenKeys(source: .preparation, played: played, hidePlayed: true) == nil, "UNGESPIELT wirkt auf History / Preparation")
+        click()
+        u.spin(5) { !mix.prefs.ui.hidePlayedTracks && !pane.listPending && pane.shown.count == n0 }
+        check(!mix.prefs.ui.hidePlayedTracks && pane.shown.count == n0, "zweiter Klick: \(pane.shown.count) Zeilen, soll \(n0)")
+        log("ungespielt: \(n0) -> \(n0 - expected) zeilen (\(expected) gespielt) -> \(pane.shown.count)")
     }
 }

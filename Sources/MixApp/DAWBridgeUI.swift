@@ -327,7 +327,7 @@ struct DAWClipsPanel: View {
         VStack(alignment: .leading, spacing: 3.z) {
             if bridge.clips.isEmpty {
                 Text(bridge.connected ? "DAW verbunden: kein spielender oder ausgewählter Audio-Clip"
-                                      : (bridge.port > 0 ? "Warte auf die DAW (Remote Script, UDP \(Int(bridge.port)))" : "DAW-Brücke aus (⌘, -> ANZEIGE)"))
+                                      : (bridge.port > 0 ? "Warte auf die DAW (Remote Script, UDP \(Int(bridge.port)))" : "DAW-Brücke aus (⌘, -> BROWSER)"))
                     .font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
             }
             ForEach(bridge.clips.prefix(8)) { c in
@@ -349,7 +349,7 @@ struct DAWClipsPanel: View {
     }
 }
 
-/// ⌘, -> ANZEIGE: DAW-Brücke an / aus, Port, Zustand
+/// ⌘, -> BROWSER: DAW-Brücke an / aus, Port, Zustand
 struct DAWBridgeSettings: View {
     @Environment(MixModel.self) private var mix
 

@@ -98,7 +98,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case masterFX = "mix.masterfx"
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", loadSelectedForce = "browser.load.force"
     case previewSelected = "browser.preview"
-    case reloadCollection = "browser.reload", matching = "browser.matching"
+    case reloadCollection = "browser.reload", matching = "browser.matching", hidePlayed = "browser.hideplayed"
     case favorite1 = "browser.favorite.1", favorite2 = "browser.favorite.2", favorite3 = "browser.favorite.3"
     case favorite4 = "browser.favorite.4", favorite5 = "browser.favorite.5", favorite6 = "browser.favorite.6"
     case toggleMixer = "view.mixer", toggleFourDecks = "view.fourdecks", bigBrowser = "view.bigbrowser", bigBrowserKey = "view.bigbrowser.key"
@@ -111,7 +111,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
 
     public var group: ShortcutGroup {
         switch self {
-        case .resetPlayed, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .matching,
+        case .resetPlayed, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .matching, .hidePlayed,
              .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6: .browser
         case .toggleMixer, .toggleFourDecks, .bigBrowser, .bigBrowserKey, .compactDecks, .zoomIn, .zoomOut, .zoomReset,
              .profile1, .profile2, .profile3, .profile4, .profileNext: .view
@@ -191,7 +191,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .closeWindow: KeyCombo("w")
         case .undo: KeyCombo("z")
         case .redo: KeyCombo("z", [.shift, .command])
-        case .master, .keylock, .reloop, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .reconnectAudio,
+        case .master, .keylock, .reloop, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .reconnectAudio, .hidePlayed,
              .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop, .masterFX,
              .editRemove, .editKeep, .editDuplicate, .editMute, .editLeft, .editRight, .editMark, .editSnap, .editRender,
              .toolLoop2, .toolLoop4, .toolLoop8, .toolLoop16: nil

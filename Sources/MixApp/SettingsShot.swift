@@ -40,7 +40,7 @@ enum SettingsShot {
         for (i, tab) in SettingsView.tabs.enumerated() {
             let name = String(format: "%02d-%@", i + 1, slug(tab.id))
             let window = { (w: CGFloat, h: CGFloat) in
-                AnyView(SettingsView(selection: i).environment(mix).environment(store).environment(status).environment(browser))
+                AnyView(SettingsView(selection: tab.id).environment(mix).environment(store).environment(status).environment(browser))
                     .frame(width: w, height: h)
             }
             render(AnyView(window(820, 640)), to: dir.appendingPathComponent("\(name).png"))

@@ -27,7 +27,7 @@
 * files not in the collection: grey, title from the file name (`artist - title`), no grid. load, preview, preparation work anyway
 * folders are read in the background when they open, then cached. right click -> rescan
 * default folder: deepest folder that holds 90 % of the collection's existing files, e.g. `~/Music/DJ`
-* own folders: ⌘, -> DISPLAY -> browser -> add folder (the automatic one stays in the list)
+* own folders: ⌘, -> BROWSER -> collection -> add folder (the automatic one stays in the list)
 * every pane keeps its own folder and the subfolders switch, saved in the session
 ## ◆ CHECK THE COLLECTION
 
@@ -44,7 +44,7 @@
 * same queue and rules as the previews: 2 files at a time, throttled while a deck plays, pauses while a deck loads, status bar `Analyse 12/240 · gedrosselt`, ✕ = cancel
 * results in `analysis.json` (MINOS-741 folder), laid over the collection on every load -> list, columns, sorting, smartlists, deck, sync, key readout. purple ✓ = own values. right click -> `Analyse verwerfen`
 * files from MUSIC FOLDERS without a collection entry get tempo, grid, key and loudness too -> sync works
-* collection file only with `Änderungen in die Collection-Datei schreiben` (⌘, -> DISPLAY -> browser): TEMPO, LOUDNESS, MUSICAL_KEY and the grid marker (CUE_V2 TYPE 4) of the analyzed entries, same backup and byte-exact write as the metadata edits
+* collection file only with `Änderungen in die Collection-Datei schreiben` (⌘, -> BROWSER -> collection): TEMPO, LOUDNESS, MUSICAL_KEY and the grid marker (CUE_V2 TYPE 4) of the analyzed entries, same backup and byte-exact write as the metadata edits
 * `Neu analysieren` drops an own grid edit (bpm / anchor) of the track, hotcues stay. a track on a deck keeps its grid until the next load
 * method: ~11 kHz mono · spectral flux -> fourier tempogram with harmonic comb (60–200 bpm) -> fine search at the beat frequency -> whole beats between start and end · anchor from the onset envelope folded on the beat (1 ms), phrase start by the phrase anchor logic · chroma against krumhansl / temperley profiles · gated block loudness, `PERCEIVED_DB` = gain to the collection's reference
 * 20 tracks of the collection (local files): bpm 18 / 20 within 0.1 (the other two 0.7–1.0 off, old vinyl tracks), key 6 / 20 exact + 2 related, loudness ±1.3 dB (median deviation from the collection's value), grid within 20 ms of the collection's marker 10 / 18, ~1 s per track
@@ -126,11 +126,12 @@ syntax: [nml files](nml-files.md).
 
 * RUNNING TRACKS = the tracks loaded on the decks
 * column ▶: ✓ = played (same rule as history), stays until right click TRACK COLLECTION -> Reset Played State
+* `UNGESPIELT` in the pane header (or ⌘, -> BROWSER -> played tracks): played tracks hidden everywhere except history, running tracks and preparation
 * the thin stripe in front = track color from the collection
 
 ## ◆ HISTORY
 
-* a track counts as played after 30s audible (setting: ⌘, -> decks)
+* a track counts as played after 30s audible (setting: ⌘, -> BROWSER -> history & preparation)
 * external mixer mode: always audible, the desk decides
 * internal mode: only with fader / crossfader open
 * written as history nml (`history_2026-10-10-01.nml`, day + session number) with deck, start time and play duration; quitting asks first and writes everything

@@ -591,7 +591,7 @@ struct OverviewStatus: View {
     }
 }
 
-/// Einstellungen → Anzeige → Browser-Vorschau
+/// Einstellungen → Browser → Browser-Vorschau
 struct PreviewSettings: View {
     @Environment(MixModel.self) private var mix
 
