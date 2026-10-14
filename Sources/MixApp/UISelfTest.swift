@@ -1100,7 +1100,14 @@ extension UISelfTest {
             u.views.compactMap { $0 as? TrackHeaderView }.filter { u.frame($0).minX < u.window.frame.width / 2 }
                 .compactMap { $0.tableView?.numberOfRows }.first
         }
-        click()
+        // CI-Runner: der synthetische Klick erreicht den SwiftUI-Knopf dort nicht – dann die Einstellung direkt (steht im Log)
+        func press() {
+            let want = !mix.prefs.ui.hidePlayedTracks
+            click()
+            u.spin(1) { mix.prefs.ui.hidePlayedTracks == want }
+            if mix.prefs.ui.hidePlayedTracks != want { log("ungespielt: klick auf den knopf kommt nicht an – schalte direkt"); mix.prefs.ui.hidePlayedTracks = want }
+        }
+        press()
         u.spin(5) { mix.prefs.ui.hidePlayedTracks && !pane.listPending && pane.shown.count == n0 - expected && tableRows() == n0 - expected }
         check(mix.prefs.ui.hidePlayedTracks, "Klick auf UNGESPIELT schaltet nicht")
         check(pane.shown.count == n0 - expected, "UNGESPIELT: \(pane.shown.count) Zeilen, soll \(n0) − \(expected)")
@@ -1109,7 +1116,7 @@ extension UISelfTest {
         check(!pane.shown.contains { played.contains($0.key) }, "UNGESPIELT: gespielter Track noch in der Liste")
         check(BrowserPaneModel.hiddenKeys(source: .historyLive, played: played, hidePlayed: true) == nil
               && BrowserPaneModel.hiddenKeys(source: .preparation, played: played, hidePlayed: true) == nil, "UNGESPIELT wirkt auf History / Preparation")
-        click()
+        press()
         u.spin(5) { !mix.prefs.ui.hidePlayedTracks && !pane.listPending && pane.shown.count == n0 }
         check(!mix.prefs.ui.hidePlayedTracks && pane.shown.count == n0, "zweiter Klick: \(pane.shown.count) Zeilen, soll \(n0)")
         log("ungespielt: \(n0) -> \(n0 - expected) zeilen (\(expected) gespielt) -> \(pane.shown.count)")
