@@ -33,6 +33,7 @@ extension ShortcutID: Identifiable {
         case .rangeClear: String(localized: "Bereich aufheben (Fokus-Deck)")
         case .keySync: String(localized: "Key Sync (Fokus-Deck)")
         case .instantDouble: String(localized: "Instant Double ins Fokus-Deck (vom Nachbardeck A↔B, C↔D)")
+        case .masterFX: String(localized: "Master-FX an/aus")
         case .resetPlayed: String(localized: "Reset Played State")
         case .loadSelected: String(localized: "Auswahl ins Fokus-Deck laden")
         case .loadSelectedForce: String(localized: "Auswahl ins Fokus-Deck laden (auch wenn es spielt)")
@@ -171,6 +172,7 @@ struct AppActions {
         case .rangeClear: mix.clearRange(d)
         case .keySync: mix.keySync(d)
         case .instantDouble: mix.instantDouble(from: d ^ 1, to: d, force: false)
+        case .masterFX: mix.toggleMasterFX()
         case .resetPlayed: history.resetPlayed()
         case .loadSelected: if let t = browser.selectedTrack() { mix.load(t, deck: d, force: false) }
         case .loadSelectedForce: if let t = browser.selectedTrack() { mix.load(t, deck: d, force: true) }

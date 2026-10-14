@@ -441,6 +441,21 @@ struct MixerFXSettings: View {
                     }
                 }
             }
+            Section("Gemerkte Plugin-Ketten") {
+                let chains = mix.prefs.engine.pluginChains
+                if chains.isEmpty { Text("keine – fx-unit oder master -> kette -> ketten -> kette speichern …").settingsHint() }
+                ForEach(chains.keys.sorted(), id: \.self) { k in
+                    LabeledContent {
+                        HStack(spacing: 10) {
+                            Text(verbatim: mix.effectName((chains[k] ?? []).map(\.id).joined(separator: FXCatalog.chainSeparator)))
+                                .foregroundStyle(Theme.muted).lineLimit(1)
+                            Button("Vergessen") { mix.deleteChainPreset(k) }
+                        }
+                    } label: {
+                        Text(verbatim: k)
+                    }
+                }
+            }
         }
     }
 }

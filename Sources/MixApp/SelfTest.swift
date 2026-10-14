@@ -207,6 +207,7 @@ enum SelfTest {
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
             await deviceProbe(core)
             await parallelProbe(core)
+            await chainProbe(mix, tracks: c)
             await previewProbe(mix, tracks: c)
             await cutProbe(mix, tracks: c)
             await profileProbe(mix, browser: browser)
@@ -776,5 +777,74 @@ enum WaveShot {
               let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { throw ShotError.png }
         CGImageDestinationAddImage(dest, img, nil)
         guard CGImageDestinationFinalize(dest) else { throw ShotError.png }
+    }
+}
+
+extension SelfTest {
+    /// Plugin-Ketten und Master-Bus, stumm (nur Pegel). FX 4 auf Deck A: AUHipass (3 kHz) -> AUPeakLimiter (+20 dB),
+    /// dann getauscht (nichtlinear: anderes Ergebnis). Master-Bus mit AUPeakLimiter (−20 dB vor dem Limiter): Pegel des
+    /// Master-Paars (vor MAIN) ändert sich, das Vorhören (eigenes Paar, nach dem Master) nicht. Danach alles zurück
+    static func chainProbe(_ mix: MixModel, tracks c: [Track]) async {
+        let core = mix.core, engine = mix.engine, master = MixController.masterBus
+        let wasExternal = core.snapshot().externalMixer
+        core.setExternalMixer(false)   // der Master-Bus braucht den Summenpunkt (MAIN steht auf 0: stumm)
+        if !core.snapshot().decks[0].playing { core.togglePlay(0) }
+        let assigned = core.snapshot().decks[0].fxAssign[3]
+        if !assigned { core.toggleFXAssign(0, 3) }
+        func average(_ f: () -> Float) async -> Float {
+            var acc: Float = 0
+            for _ in 0..<16 { try? await Task.sleep(for: .milliseconds(50)); acc += f() }
+            return acc / 16
+        }
+        func loaded(_ b: Int, _ n: Int) async -> Bool {
+            for _ in 0..<300 where (0..<n).contains(where: { core.pluginInstance(b, slot: $0) == nil }) {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return (0..<n).allSatisfy { core.pluginInstance(b, slot: $0) != nil }
+        }
+        let dry = await average { engine.levels[0].rms }
+        core.setPlugin(3, id: nil)
+        core.addPlugin(3, id: "aufx:hpas:appl")
+        core.addPlugin(3, id: "aufx:lmtr:appl")
+        let ok = await loaded(3, 2)
+        core.pluginInstance(3, slot: 0)?.set(0, 3000)   // Hochpass: Grenzfrequenz (Deck A rechnet mit diesen Instanzen)
+        core.pluginInstance(3, slot: 1)?.set(2, 20)     // Limiter: Vorverstärkung
+        core.updateFX(3) { $0.singleOn = true; $0.dryWet = 1 }
+        try? await Task.sleep(for: .milliseconds(600))
+        let hpLim = await average { engine.levels[0].rms }
+        let t0 = CACurrentMediaTime()
+        core.movePlugin(3, slot: 1, by: -1)
+        let moveMs = (CACurrentMediaTime() - t0) * 1000
+        try? await Task.sleep(for: .milliseconds(600))
+        let limHp = await average { engine.levels[0].rms }
+        let lat = core.chainLatency(3).total
+        core.updateFX(3) { $0.singleOn = false }
+        core.setPlugin(3, id: nil)
+        if !assigned { core.toggleFXAssign(0, 3) }
+        let chainOK = ok && hpLim > limHp * 1.5
+        log(String(format: "Plugin-Kette FX4 auf A: trocken %.3f · Hochpass>Limiter %.3f · Limiter>Hochpass %.3f (getauscht in %.2f ms) · Latenz %.1f ms · %@",
+                   dry, hpLim, limHp, moveMs, lat * 1000, chainOK ? "OK" : "FAIL"))
+        // Master-Bus: Limiter mit −20 dB Vorverstärkung = deutlich leiser; Vorhören läuft daneben
+        let pv = mix.previewer
+        if let t = c.last { mix.preview(t) }
+        for _ in 0..<1500 where mix.previewing == nil && mix.previewLoading != nil { try? await Task.sleep(for: .milliseconds(20)) }
+        let m0 = await average { engine.masterLevels.rms }, p0 = await average { pv.level.rms }
+        core.addPlugin(master, id: "aufx:lmtr:appl")
+        let mOK = await loaded(master, 1)
+        core.pluginInstance(master, slot: 0)?.set(2, -20)
+        core.setMasterFX(on: true, dryWet: 1)
+        try? await Task.sleep(for: .milliseconds(600))
+        let m1 = await average { engine.masterLevels.rms }, p1 = await average { pv.level.rms }
+        core.setMasterFX(on: false)
+        try? await Task.sleep(for: .milliseconds(300))
+        let m2 = await average { engine.masterLevels.rms }
+        core.removePlugin(master, slot: 0)
+        mix.stopPreview()
+        core.setExternalMixer(wasExternal)
+        let previewOK = p0 == 0 || abs(p1 - p0) < max(p0, p1) * 0.5
+        let masterOK = mOK && m1 < m0 * 0.5 && m2 > m1 * 1.5 && previewOK
+        log(String(format: "Master-Bus (Limiter −20 dB): Master-Pegel aus %.3f · an %.3f · wieder aus %.3f · Vorhören %.3f / %.3f · %@",
+                   m0, m1, m2, p0, p1, masterOK ? "OK" : "FAIL"))
+        if !chainOK || !masterOK { log("FEHLER Plugin-Kette / Master-Bus"); exit(1) }
     }
 }

@@ -426,7 +426,7 @@ the status bar shows device, mode and routing, preview pair as `PRE→9/10` (`PR
 * deck assign: FX1 … FX4 in the deck header or the mixer
 * default: FX1 -> A / C, FX2 -> B / D
 
-effects so far: filter, delay, reverb, gater, roll, flanger, phaser, PLUGIN. more -> [roadmap](roadmap.md).
+effects so far: filter, delay, reverb, gater, roll, flanger, phaser, PLUGIN (chain of up to 4). plugin chain on the sum -> [master bus](#master-bus). more -> [roadmap](roadmap.md).
 
 ### BEAT FX
 
@@ -463,15 +463,31 @@ D/W, knobs 1-3 and buttons 1-3 of every unit sit on any parameter of the loaded 
 
 any installed audio unit effect (apple or third-party, v2 and v3) or VST3 effect in the single mode, e.g. AUMatrixReverb or AUReverb2 instead of the built-in reverb.
 
-* SNGL -> effect menu -> PLUGIN -> the menu below lists every installed effect (`name · manufacturer`, VST3 with a small `VST3` behind)
-* knobs 1-3 -> the first three parameters of the plugin (default), labels from the plugin. any parameter -> [mapping](#mapping)
-* D/W -> dry / wet of the unit (on top of the plugin's own mix), or mapped to the plugin's mix
-* ON -> on / off. off = spillover: the plugin gets no new audio and rings out
-* EDIT -> window with the plugin's own view (or a generic one) · changes go to every deck on that unit
-* one instance per deck · loads in the background, the deck plays on dry meanwhile
-* plugin and its settings are saved with the session
+* SNGL -> effect menu -> PLUGIN -> the chain button below (`name +n`, `—` = empty) opens the chain
+* chain: up to 4 plugins in series, slot 1 first. per slot: ON (off = passed through, its tail rings out), name (click = other plugin), ▲ ▼ order, EDIT (own window), ✕. `+ PLUGIN` appends from the list of every installed effect (`name · manufacturer`, VST3 with a small `VST3` behind)
+* knobs 1-3 -> the first three parameters of the first plugin (default), labels from the plugin. any parameter of any slot -> [mapping](#mapping), grouped `<slot> <plugin>` with two or more plugins
+* D/W -> dry / wet of the unit over the whole chain (dry = input of the chain, on top of the plugins' own mix), or mapped to a plugin's mix
+* ON -> on / off of the unit. off = spillover: the chain gets no new audio and rings out
+* EDIT -> window of the first plugin · each slot has its own EDIT in the chain · changes go to every deck on that unit
+* one instance per deck and slot · loads in the background, the deck plays on through the slots already loaded
+* mapping remembered per chain (plugin ids in order, `a > b`; one plugin = its id as before). moving or removing a slot takes its values and mapped controls along
+* KETTEN -> load a remembered chain, `Kette speichern …` (name, same name overwrites; plugin states read fresh), delete. shared by every unit and the master bus, forget -> ⌘, -> MIXER & FX
+* latency: sum of the slots in the chain popover (ms), not compensated
+* chain, slot on / off and plugin states are saved with the session. older sessions: the one plugin becomes slot 1
 * newly installed plugins -> menu -> rescan plugin list (the PLUGINS tab rescans on its own)
 * the menu lists only plugins that are enabled and not blocked -> ⌘, -> PLUGINS
+
+### master bus
+
+plugin chain on the sum of the decks, after the faders and the crossfader, before MAIN and the limiter. mixer -> row `MASTER` under the crossfader.
+
+* FX -> on / off (off = spillover, tails ring out) · D/W -> dry / wet over the chain · chain button -> same chain as a unit: up to 4 plugins in series, ON, ▲ ▼, EDIT, ✕, `+ PLUGIN`, KETTEN
+* one instance per slot (not per deck), runs on the audio thread after all decks are summed
+* internal mixer only: master pair. external mixer: every deck on its own pair, no summing point -> off (`EXTERN AUS`), chain and settings stay
+* preview has its own pair after the master: never goes through the master bus
+* metronome is added after the master bus
+* key: Decks menu -> `Master-FX an/aus`, no default, assignable -> ⌘, -> KEYBOARD
+* saved with the session (on / off, D/W, chain)
 
 ### manage plugins (⌘, -> PLUGINS)
 
@@ -724,7 +740,7 @@ defaults below. every shortcut can be changed under ⌘, -> KEYBOARD: click the 
 | esc | clear the marked range (only when one exists, not in a search field) |
 | ⌘Z / ⇧⌘Z | undo / redo (text undo inside a text field) |
 
-no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, reconnect audio.
+no default, assignable: master, keylock, key sync, instant double (from the neighbour deck), reloop, cut start here, cut end here, grid beat 1 here, remove range (new file), keep range (new file), cut in / out from range, loop from range, load selection into the focused deck, load selection even if the deck plays, preview selection, reload collection, reconnect audio, master fx on / off.
 ⌘Q, ⌘H, ⌘M and ⌃⌘F stay with the system. keys without ⌘ / ⌥ / ⌃ never fire inside a search field.
 
 controller mapping -> [controllers.md](controllers.md). flux on the controller = pad layer switch: tap -> pads 1-4 play hotcues 5-8 (flux led lit), tap again -> back, shift + flux = tap (grid bpm from the taps; setting: flux mode instead), shift + sync = master. old layout under ⌘, -> CONTROLLER -> flux button.

@@ -921,3 +921,31 @@
 "Rechenkern" = "Audio core";
 "Decks parallel rechnen" = "Render decks in parallel";
 "Deck A im Audio-Thread, B–D auf eigenen Echtzeit-Threads neben dem Gerät (gleicher Klang, Summe danach). Zum Vergleich im Lasttest; bei kleinen Puffern mit 4 Decks Keylock + FX niedrigere Spitzenlast je Kern." = "Deck A on the audio thread, B-D on their own real-time threads next to the device (same sound, summed afterwards). For comparison in the load test; lower peak load per core with small buffers, 4 decks keylock + fx.";
+
+/* Plugin-Ketten, Master-Bus */
+"KETTE" = "CHAIN";
+"KETTEN" = "CHAINS";
+"leer – Plugin hinzufügen" = "empty – add a plugin";
+"Latenz der Kette (Summe der Plugins, nicht ausgeglichen)" = "Latency of the chain (sum of the plugins, not compensated)";
+"Plugin hinten an die Kette hängen (höchstens 4)" = "Append a plugin to the chain (up to 4)";
+"Gemerkte Ketten laden oder die aktuelle merken (mit den Einstellungen der Plugins)" = "Load a remembered chain or remember this one (with the plugins' settings)";
+"Kette speichern …" = "Save chain …";
+"Kette speichern" = "Save chain";
+"Gibt es den Namen schon, wird diese Kette überschrieben." = "An existing name overwrites that chain.";
+"extern: kein Summenpunkt – Master-Bus aus" = "external: no summing point – master bus off";
+"Platz an/aus (aus = durchreichen, Fahne klingt aus)" = "Slot on/off (off = pass through, tail rings out)";
+"Klick = anderes Plugin" = "click = other plugin";
+"früher in der Kette" = "earlier in the chain";
+"später in der Kette" = "later in the chain";
+"aus der Kette nehmen" = "remove from the chain";
+"Plugin-Kette: bis zu 4 Plugins in Reihe (Audio Unit oder VST3)" = "Plugin chain: up to 4 plugins in series (audio unit or VST3)";
+"Fenster des ersten Plugins der Kette öffnen" = "Open the window of the first plugin in the chain";
+"Master-Bus an/aus: Plugin-Kette nach der Summe der Decks, vor MAIN" = "Master bus on/off: plugin chain after the sum of the decks, before MAIN";
+"Extern: kein Summenpunkt – der Master-Bus wirkt nur im internen Mixer" = "External: no summing point – the master bus only works with the internal mixer";
+"EXTERN AUS" = "EXTERNAL OFF";
+"Master-FX an/aus" = "Master FX on/off";
+"Gemerkte Plugin-Ketten" = "Remembered plugin chains";
+"keine – fx-unit oder master -> kette -> ketten -> kette speichern …" = "none – fx unit or master -> chain -> chains -> save chain …";
+"Plugin nicht geladen · %@" = "plugin not loaded · %@";
+"Plugin nicht ladbar · %@" = "plugin cannot be loaded · %@";
+"MASTER: %@ antwortet nicht rechtzeitig – %lld Blöcke trocken" = "MASTER: %@ not responding in time – %lld blocks dry";

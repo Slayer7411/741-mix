@@ -350,6 +350,7 @@ struct MixApp: App {
                 ForEach([ShortcutID.play, .cue, .cup, .sync, .master, .keylock, .keySync, .instantDouble, .loop, .reloop, .beatjumpBack, .beatjumpForward]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
+                Button(ShortcutID.masterFX.title) { run(.masterFX) }.shortcut(keys.combo(.masterFX))
                 Divider()
                 ForEach([ShortcutID.hotcue1, .hotcue2, .hotcue3, .hotcue4, .hotcue5, .hotcue6, .hotcue7, .hotcue8]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))

@@ -23,6 +23,7 @@ struct MixerView: View {
             } else {
                 Text("EXTERN").font(Theme.label(9.z, .heavy)).foregroundStyle(.secondary)
             }
+            MasterFXStrip()
         }
         .padding(6.z)
         .background(Rectangle().fill(Theme.deck))
@@ -195,27 +196,12 @@ struct FXUnitView: View {
         controls
     }
 
-    /// Plugin wählen (Name · Hersteller) und sein Fenster öffnen
+    /// Plugin-Kette (Popover: Plätze, hinzufügen, Reihenfolge, Fenster) und das Fenster des ersten Platzes
     @ViewBuilder private func pluginControls(_ fx: FXUnitState) -> some View {
-        let list = mix.core.pluginList()
-        let current = list.first { $0.id == fx.pluginID } ?? fx.pluginID.flatMap(mix.core.pluginCatalog.info)   // auch abgeschaltet
-        let error = unit.pluginError
         VStack(spacing: 2.z) {
-            Menu {
-                ForEach(list) { p in
-                    Button(p.name + " · " + p.manufacturer + (p.isVST3 ? "  VST3" : "")) { mix.setPlugin(u, p.id) }
-                }
-                Divider()
-                Button("Plugin-Liste neu einlesen") { _ = mix.core.pluginList(refresh: true) }
-            } label: {
-                Text(error != nil ? "⚠︎ " + String((current?.name ?? "PLUGIN").prefix(10)) : current.map { String($0.name.prefix(12)) } ?? "—")
-            }
-            .menuStyle(.borderlessButton).controlSize(zoomed: .regular)
-            .font(Theme.label(10.z, .bold))
-            .fixedSize()
-            .help(error ?? String(localized: "Effekt-Plugin wählen (Audio Unit oder VST3)"))
+            PluginChainButton(b: u)
             DeckButton(title: "EDIT", active: false, color: Theme.state, width: 30) { PluginWindow.show(unit: u, core: mix.core) }
-                .help("Plugin-Fenster öffnen")
+                .help("Fenster des ersten Plugins der Kette öffnen")
         }
     }
 }
