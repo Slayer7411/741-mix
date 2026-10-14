@@ -679,6 +679,7 @@ plugin chain on the sum of the decks, after the faders and the crossfader, befor
 
 * one or two panes, side by side or stacked
 * each pane: own tree, search, sort, role chips, tags
+* sort by up to three columns: click a header -> that column sorts first, the previous ones stay behind it (`▼`, `▼2`, `▲3`); click the first again = reverse. right click the header -> take a column out, `Sortierung zurücksetzen`. saved with the session
 * stacked: the pane header is a column left of the list (more rows per pane)
 * favorites bar on top of each pane: 6 slots, source or filter. click = switch, right click = assign / rename / clear, drag a tree entry onto a slot, ⌃⌥1-6. details: [library · favorites](library.md#-favorites)
 * tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), TOOL-LOOPS (cut files with the tag `tool-loop`, see [full edit](#full-edit--tool-loops)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, MUSIC FOLDERS, PLAYLISTS (see [playlists](#playlists))
@@ -692,7 +693,7 @@ plugin chain on the sum of the decks, after the faders and the crossfader, befor
 * `√` = analyzed in the collection, purple `√` = own analysis (see [analyze](#analyze)), missing files show the artist in red
 * search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match, case and accents ignored
 * right click a track -> load into deck A-D, add to / remove from preparation, add to a playlist, preview, show in finder, reset played state
-* drag tracks out of the list: start sideways (a vertical drag selects rows), then onto a deck, PREPARATION, a playlist or PLAYLISTS. ⌫ in PREPARATION or an own playlist removes the selected rows
+* drag tracks out of the list in any direction: onto a deck, PREPARATION, a playlist or PLAYLISTS (several rows: select with ⇧ / ⌘ first). a deck title drags too: onto another deck, PREPARATION or a playlist. ⌫ in PREPARATION or an own playlist removes the selected rows
 * played column ▶: ✓ = played since the last reset. reset: right click a track or TRACK COLLECTION -> Reset Played State, or ⌥⌘P
 * `UNGESPIELT` (`UNPLAYED`) in the header -> played tracks hidden in collection, playlists, smartlists, music folders and search. history, running tracks and preparation (+ archive) keep showing them. count in the header: `812 · 14 ausgeblendet`. one setting for both panes, same as ⌘, -> BROWSER -> played tracks and browser menu -> `Gespielte Tracks ausblenden`, key assignable (no default). load lock, decks, controller browse unchanged
 * the left controller drives the left pane, the right controller the right one

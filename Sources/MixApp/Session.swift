@@ -12,6 +12,8 @@ struct Session: Codable {
     }
     struct Pane: Codable {
         var source: String?, sort: String?, ascending: Bool?, roles: [String]?, tags: [String]?, showTree: Bool?
+        /// alle Sortierspalten in Reihenfolge (`bpm:desc`); `sort` / `ascending` bleiben die erste (ältere Stände)
+        var sorts: [String]?
         /// MUSIC FOLDERS: Unterordner einbeziehen
         var subfolders: Bool?
         /// Favoritenleiste (6 Plätze, leer = null)
@@ -71,7 +73,9 @@ struct Session: Codable {
             let c = p.sortOrder.first
             return Pane(source: Session.sourceID(p.source), sort: c.flatMap { Session.sortName($0) },
                         ascending: c.map { $0.order == .forward }, roles: p.roles.map(\.rawValue),
-                        tags: p.tags.sorted(), showTree: p.showTree, subfolders: p.subfolders,
+                        tags: p.tags.sorted(), showTree: p.showTree,
+                        sorts: p.sortOrder.count > 1 ? p.sortOrder.compactMap { c in Session.sortName(c).map { "\($0):\(c.order == .forward ? "asc" : "desc")" } } : nil,
+                        subfolders: p.subfolders,
                         favorites: p.favorites.contains { $0 != nil } ? p.favorites : nil,
                         excludedTags: p.excludedTags.isEmpty ? nil : p.excludedTags.sorted())
         }
@@ -115,7 +119,13 @@ struct Session: Codable {
         for (i, p) in (panes ?? []).enumerated() where i < 2 {
             let pane = browser.pane(i)
             if let id = p.source, let src = Session.source(id, store: store) { pane.source = src }
-            if let n = p.sort, let c = Session.comparator(n, ascending: p.ascending ?? true) { pane.sortOrder = [c] }
+            if let sorts = p.sorts, !sorts.isEmpty {
+                let order = sorts.compactMap { s -> KeyPathComparator<Track>? in
+                    let parts = s.split(separator: ":", maxSplits: 1).map(String.init)
+                    return Session.comparator(parts[0], ascending: parts.count < 2 || parts[1] != "desc")
+                }
+                if !order.isEmpty { pane.sortOrder = Array(order.prefix(TrackTableController.maxSortKeys)) }
+            } else if let n = p.sort, let c = Session.comparator(n, ascending: p.ascending ?? true) { pane.sortOrder = [c] }
             if let r = p.roles { pane.roles = Set(r.compactMap(RoleFilter.init(rawValue:))) }
             if let t = p.tags { pane.tags = Set(t) }
             if let t = p.excludedTags { pane.excludedTags = Set(t) }

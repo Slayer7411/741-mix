@@ -5,6 +5,12 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ## ◆ [UNRELEASED]
 
+### added
+* browser: sort by up to three columns. a header click makes the column the first sort key and keeps the previous ones behind it (marks `▼`, `▼2`, `▲3`), the first one toggles; header right click -> take a column out / `Sortierung zurücksetzen`. all keys are saved with the session (`sorts`), older sessions keep their single key. ui test `mehrfach-sortierung`
+
+### fixed
+* browser: dragging a track out of the list works in any direction again (upwards onto the decks); since the playlist tree a drag had to start sideways
+
 ## ◆ [0.8.1] · 2026-10-14 · UNIVERSAL
 
 ### fixed

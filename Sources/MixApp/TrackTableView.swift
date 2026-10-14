@@ -470,7 +470,8 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         tv.registerForDraggedTypes([.string])
         tv.setDraggingSourceOperationMask(.copy, forLocal: false)
         tv.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
-        tv.verticalMotionCanBeginDrag = false
+        // Ziehen beginnt in jede Richtung (zu den Decks geht es nach oben); mehrere Zeilen über ⇧ / ⌘, nicht durch Aufziehen
+        tv.verticalMotionCanBeginDrag = true
         tv.onSeek = { [weak self] e in self?.seekClick(e) ?? false }
         (tv.headerView as? TrackHeaderView)?.onFitColumn = { [weak self] i in self?.fitColumn(i) }
         let menu = NSMenu()
@@ -634,9 +635,6 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     /// Zeilen immer aus `model.shown` (die SwiftUI-Hülle kann eine ältere Liste halten)
     func update(look l: Look) {
         guard let tv = table, let model else { return }
-        // senkrecht ziehen = Auswahl aufziehen, nur in eigenen Playlists = Reihenfolge ändern
-        let reorder = model.ownPlaylistID != nil
-        if tv.verticalMotionCanBeginDrag != reorder { tv.verticalMotionCanBeginDrag = reorder }
         let newRows = fixedRows ?? model.shown, gen = model.tableGeneration
         let first = look == nil
         if first { buildColumns(l.ui) }
@@ -828,10 +826,10 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         let want: [NSSortDescriptor] = order.compactMap { c in
             TrackColumn.all.first { $0.sort?.keyPath == c.keyPath }.map { NSSortDescriptor(key: $0.id, ascending: c.order == .forward) }
         }
-        let head = want.first
+        // Marke je Sortierspalte: erste ▲ / ▼, weitere mit Rang (▼2, ▼3)
         for c in tv.tableColumns {
             guard let h = c.headerCell as? TrackHeaderCell else { continue }
-            let m = head?.key == c.identifier.rawValue ? (head!.ascending ? "▲" : "▼") : ""
+            let m = want.firstIndex { $0.key == c.identifier.rawValue }.map { i in (want[i].ascending ? "▲" : "▼") + (i == 0 ? "" : "\(i + 1)") } ?? ""
             if h.sortMark != m { h.sortMark = m; tv.headerView?.needsDisplay = true }
         }
         if tv.sortDescriptors != want {
@@ -841,9 +839,13 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         }
     }
 
+    /// Klick auf einen Spaltenkopf: die Spalte wird erste Sortierspalte, die bisherigen bleiben dahinter (AppKit reiht
+    /// die Deskriptoren so), ein Klick auf die erste dreht die Richtung – höchstens drei Spalten
+    static let maxSortKeys = 3
+
     func tableView(_ tv: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
         guard !applying, let model else { return }
-        let order: [KeyPathComparator<Track>] = tv.sortDescriptors.compactMap { d in
+        let order: [KeyPathComparator<Track>] = tv.sortDescriptors.prefix(Self.maxSortKeys).compactMap { d in
             guard let k = d.key, var c = TrackColumn.byID[k]?.sort else { return nil }
             c.order = d.ascending ? .forward : .reverse
             return c
@@ -1275,6 +1277,24 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             item.state = c.isHidden ? .off : .on
             menu.addItem(item)
         }
+        // aktuelle Sortierung: je Spalte ein Eintrag zum Herausnehmen, dazu Zurücksetzen
+        guard let model else { return }
+        let order = model.sortOrder
+        menu.addItem(.separator())
+        let title = NSMenuItem(title: String(localized: "Sortierung (Klick auf den Kopf = erste Spalte, bisherige dahinter)"), action: nil, keyEquivalent: "")
+        title.isEnabled = false
+        menu.addItem(title)
+        for (i, c) in order.enumerated() {
+            let name = TrackColumn.all.first { $0.sort?.keyPath == c.keyPath }.map { $0.menuTitle ?? $0.title } ?? "?"
+            let mark = (c.order == .forward ? "▲" : "▼") + (i == 0 ? "" : "\(i + 1)")
+            let item = ActionItem(order.count > 1 ? String(localized: "\(name) \(mark) herausnehmen") : "\(name) \(mark)") { [weak model] in
+                guard let model, model.sortOrder.count > 1 else { return }
+                model.sortOrder.removeAll { $0 == c }
+            }
+            item.isEnabled = order.count > 1
+            menu.addItem(item)
+        }
+        menu.addItem(ActionItem(String(localized: "Sortierung zurücksetzen (Artist)")) { [weak model] in model?.sortOrder = [KeyPathComparator(\Track.artist)] })
     }
 }
 

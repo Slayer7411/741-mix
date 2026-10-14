@@ -1257,3 +1257,7 @@
 "↑ AUFSTEIGEND" = "↑ ASCENDING";
 "↓ ABSTEIGEND" = "↓ DESCENDING";
 "✎ REGELN" = "✎ RULES";
+
+"Sortierung (Klick auf den Kopf = erste Spalte, bisherige dahinter)" = "Sort order (header click = first column, previous ones behind)";
+"%@ %@ herausnehmen" = "Take out %@ %@";
+"Sortierung zurücksetzen (Artist)" = "Reset sort order (artist)";

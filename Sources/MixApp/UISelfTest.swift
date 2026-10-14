@@ -122,6 +122,7 @@ enum UISelfTest {
             ("ungespielt", unplayed),
             ("vorbereiten", prepareMode),
             ("playlist-baum", playlistTree),
+            ("mehrfach-sortierung", multiSort),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1447,4 +1448,61 @@ final class TableDragInfo: NSObject, NSDraggingInfo {
                                 using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
     var springLoadingHighlight: NSSpringLoadingHighlight { .none }
     func resetSpringLoading() {}
+}
+
+extension UISelfTest {
+    /// Mehrfach-Sortierung: Klick auf einen Spaltenkopf macht die Spalte zur ersten Sortierspalte, die bisherigen
+    /// bleiben dahinter (Kommentar ▼, dann BPM: BPM ▲ · Kommentar ▼2); zweiter Klick dreht; Liste wirklich so sortiert
+    static func multiSort(_ u: UIDriver, _ t: [Track]) {
+        let pane = u.browser.paneA
+        let order0 = pane.sortOrder
+        defer { pane.sortOrder = order0; u.spin(0.3) }
+        pane.sortOrder = [KeyPathComparator(\Track.artist)]
+        u.spin(2) { !pane.listPending }
+        guard let head = u.views.compactMap({ $0 as? TrackHeaderView }).first(where: { h in
+            guard let tv = h.tableView else { return false }
+            return tv.numberOfRows == pane.shown.count && u.frame(h).minX < u.window.frame.width / 2
+        }), let tv = head.tableView else { fail("Tabellenkopf von Bereich A nicht gefunden") }
+        func header(_ id: String) -> NSPoint {
+            guard let i = tv.tableColumns.firstIndex(where: { $0.identifier.rawValue == id && !$0.isHidden }) else { fail("Spalte \(id) fehlt") }
+            let r = head.headerRect(ofColumn: i)
+            return head.convert(NSPoint(x: r.midX, y: r.midY), to: nil)
+        }
+        func mark(_ id: String) -> String {
+            tv.tableColumns.first { $0.identifier.rawValue == id }.flatMap { ($0.headerCell as? TrackHeaderCell)?.sortMark } ?? "?"
+        }
+        u.click(at: header("comment"))   // Kommentar ▲
+        u.spin(1) { pane.sortOrder.first?.keyPath == \Track.comment }
+        u.click(at: header("comment"))   // Kommentar ▼
+        u.spin(1) { pane.sortOrder.first?.order == .reverse }
+        check(pane.sortOrder.map(\.keyPath) == [\Track.comment, \Track.artist] && pane.sortOrder.first?.order == .reverse,
+              "Kommentar ▼ (Artist dahinter) nach zwei Klicks: \(pane.sortOrder.map { "\($0.keyPath) \($0.order)" })")
+        u.click(at: header("bpm"))       // BPM ▲ davor, Kommentar ▼ dahinter
+        u.spin(2) { pane.sortOrder.count == 3 && !pane.listPending }
+        u.spin(0.3)
+        check(pane.sortOrder.map(\.keyPath) == [\Track.bpm, \Track.comment, \Track.artist], "BPM, Kommentar, Artist: \(pane.sortOrder.map { "\($0.keyPath)" })")
+        check(mark("bpm") == "▲" && mark("comment") == "▼2" && mark("artist") == "▲3", "Marken: bpm „\(mark("bpm"))“ kommentar „\(mark("comment"))“ artist „\(mark("artist"))“")
+        // Liste: BPM aufsteigend, bei gleichem BPM Kommentar absteigend
+        let rows = pane.shown
+        var ok = true, pairs = 0
+        for (a, b) in zip(rows, rows.dropFirst()) {
+            if a.bpm > b.bpm { ok = false; break }
+            if a.bpm == b.bpm { pairs += 1; if a.comment.localizedCaseInsensitiveCompare(b.comment) == .orderedAscending { ok = false; break } }
+        }
+        check(ok, "Liste nicht nach BPM ▲ / Kommentar ▼ sortiert")
+        u.click(at: header("bpm"))       // BPM ▼, Kommentar bleibt
+        u.spin(1) { pane.sortOrder.first?.order == .reverse }
+        check(pane.sortOrder.map(\.keyPath) == [\Track.bpm, \Track.comment, \Track.artist] && pane.sortOrder.first?.order == .reverse,
+              "BPM ▼ dreht nur die erste: \(pane.sortOrder.map { "\($0.keyPath) \($0.order)" })")
+        // vierte Spalte: höchstens drei bleiben
+        u.click(at: header("title"))
+        u.spin(1) { pane.sortOrder.first?.keyPath == \Track.title }
+        check(pane.sortOrder.map(\.keyPath) == [\Track.title, \Track.bpm, \Track.comment], "höchstens drei Spalten: \(pane.sortOrder.map { "\($0.keyPath)" })")
+        pane.sortOrder = [KeyPathComparator(\Track.bpm, order: .reverse), KeyPathComparator(\Track.comment, order: .reverse)]
+        u.spin(0.3)
+        // Sitzung: alle Spalten
+        let session = Session(mix: u.mix, browser: u.browser)
+        check(session.panes?.first?.sorts == ["bpm:desc", "comment:desc"], "Sitzung: \(session.panes?.first?.sorts ?? [])")
+        log("mehrfach-sortierung: \(pane.sortOrder.count) spalten, \(pairs) gleiche bpm-paare geprüft, marken \(mark("bpm")) \(mark("comment"))")
+    }
 }
