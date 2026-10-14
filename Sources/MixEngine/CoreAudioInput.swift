@@ -81,7 +81,9 @@ public final class CoreAudioInput: @unchecked Sendable {
                                               mBytesPerPacket: 4, mFramesPerPacket: 1, mBytesPerFrame: 4,
                                               mChannelsPerFrame: UInt32(channels), mBitsPerChannel: 32, mReserved: 0)
         try check(AudioUnitSetProperty(au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &fmt, asbdSize), "Format")
-        var maxFrames: UInt32 = 0, mfSize = size32
+        // größter Block fest (wie der Ausgang): sonst gilt der Gerätepuffer beim Initialisieren, ein größerer danach scheitert
+        var maxFrames = UInt32(MDSP_MAX_FRAMES), mfSize = size32
+        AudioUnitSetProperty(au, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFrames, size32)
         AudioUnitGetProperty(au, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFrames, &mfSize)
         guard let t = mdsp_input_create(Int32(channels), Int32(max(4096, Int(maxFrames)))) else { throw InputError.setup("Puffer", -1) }
         tap = t

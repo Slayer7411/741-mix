@@ -973,6 +973,10 @@
 
 "Rechenkern" = "Audio core";
 "Decks parallel rechnen" = "Render decks in parallel";
+"Decks parallel: Worker hing (%.0f ms) → seriell" = "Parallel decks: worker hung (%.0f ms) → serial";
+"Aus seit %@: Worker hing (%.0f ms) → seriell, Fristabläufe %lld. Einschalten versucht es erneut." = "Off since %@: worker hung (%.0f ms) → serial, timeouts %lld. Switch on to try again.";
+"Decks parallel: Worker hing" = "Parallel decks: worker hung";
+"Datei nicht lokal verfügbar (Cloud)" = "File not available locally (cloud)";
 "Deck A im Audio-Thread, B–D auf eigenen Echtzeit-Threads neben dem Gerät (gleicher Klang, Summe danach). Zum Vergleich im Lasttest; bei kleinen Puffern mit 4 Decks Keylock + FX niedrigere Spitzenlast je Kern." = "Deck A on the audio thread, B-D on their own real-time threads next to the device (same sound, summed afterwards). For comparison in the load test; lower peak load per core with small buffers, 4 decks keylock + fx.";
 "Abstand zwischen Decks (pt)" = "Gap between decks (pt)";
 "0 = die Wellenformen enden an den Deck-Rändern und am Fensterrand, nur die Rahmenlinie dazwischen." = "0 = the waveforms end at the deck edges and the window edge, only the frame line between.";

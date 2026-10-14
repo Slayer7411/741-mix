@@ -724,6 +724,12 @@ struct AudioSettings: View {
                 Toggle("Decks parallel rechnen", isOn: Binding(get: { mix.parallelDecks }, set: { mix.parallelDecks = $0 }))
                 Text("Deck A im Audio-Thread, B–D auf eigenen Echtzeit-Threads neben dem Gerät (gleicher Klang, Summe danach). Zum Vergleich im Lasttest; bei kleinen Puffern mit 4 Decks Keylock + FX niedrigere Spitzenlast je Kern.")
                     .settingsHint()
+                if let f = mix.parallelFallback {
+                    let w = mix.engine.parallelWatchdog
+                    Text(String(format: String(localized: "Aus seit %@: Worker hing (%.0f ms) → seriell, Fristabläufe %lld. Einschalten versucht es erneut."),
+                                f.at.formatted(date: .omitted, time: .standard), max(f.hangMs, w.lastHang * 1000), Int64(w.timeouts)))
+                        .settingsHint().foregroundStyle(Theme.state)
+                }
             }
             Section { Text(mix.engineStatus).settingsHint() }
         }

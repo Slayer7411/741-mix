@@ -47,6 +47,13 @@ public final class TrackAudio: @unchecked Sendable {
     /// Blockweise Dekodierung
     private static let chunk: AVAudioFrameCount = 1 << 16
 
+    /// Lesefehler in der letzten Sekunde = Dateiende. Bei manchen mp3 schätzt `AVAudioFile.length` einige Pakete zu viel
+    /// (gemessen: 5760 Frames); das Lesen dort wirft einen leeren Fehler (Foundation._GenericObjCError 0) statt 0 Frames
+    /// zu liefern. Davor gelesene Frames bleiben
+    public static func readFailureIsEnd(position: Int64, length: Int64, fileRate: Double) -> Bool {
+        position > 0 && length - position <= Int64(max(1, fileRate))
+    }
+
     /// Liest die Datei blockweise direkt in den Deck-Puffer (Stereo, `sampleRate`) – keine zweite Kopie des ganzen Tracks.
     /// `progress` bekommt nach jedem Block die bisher gelesenen Frames; false = abbrechen (wirft `.cancelled`)
     public static func decode(url: URL, sampleRate: Double, progress: ((Int) -> Bool)? = nil) throws -> TrackAudio {
@@ -60,7 +67,10 @@ public final class TrackAudio: @unchecked Sendable {
 
         if inFmt.sampleRate == sampleRate, inFmt.commonFormat == .pcmFormatFloat32, !inFmt.isInterleaved {
             while file.framePosition < file.length {
-                try file.read(into: inBuf, frameCount: chunk)
+                do { try file.read(into: inBuf, frameCount: chunk) } catch {
+                    if readFailureIsEnd(position: file.framePosition, length: file.length, fileRate: inFmt.sampleRate) { break }
+                    throw error
+                }
                 guard inBuf.frameLength > 0 else { break }
                 t.append(inBuf, mono: mono)
                 if let progress, !progress(t.frames) { throw DecodeError.cancelled }
@@ -79,7 +89,11 @@ public final class TrackAudio: @unchecked Sendable {
                 let status = conv.convert(to: outBuf, error: &err) { _, st in
                     // am Dateiende nicht mehr lesen (read wirft dort statt 0 Frames zu liefern)
                     if !eof, file.framePosition < file.length {
-                        do { try file.read(into: inBuf, frameCount: chunk) } catch { readError = error }
+                        do { try file.read(into: inBuf, frameCount: chunk) } catch {
+                            if readFailureIsEnd(position: file.framePosition, length: file.length, fileRate: inFmt.sampleRate) {
+                                eof = true
+                            } else { readError = error }
+                        }
                     } else { eof = true }
                     if eof || readError != nil || inBuf.frameLength == 0 { eof = true; st.pointee = .endOfStream; return nil }
                     st.pointee = .haveData

@@ -126,7 +126,29 @@ final class MixModel {
     /// Puffergröße in Frames (0 = Gerätestandard)
     var bufferSize = 0
     /// Decks parallel rechnen (Worker-Threads in der Workgroup des Geräts); MIX741_PARALLEL_DECKS=1/0 überstimmt
-    var parallelDecks = false { didSet { engine.parallelDecks = parallelDecks; saveSetup() } }
+    var parallelDecks = false {
+        didSet {
+            engine.parallelDecks = parallelDecks
+            if parallelDecks { parallelFallback = nil }
+            saveSetup()
+        }
+    }
+    /// Watchdog der parallelen Decks: ein Worker riss die Frist (Deck in dem Block still), der Kern rechnet seither seriell
+    struct ParallelFallback: Equatable { var hangMs: Double; var at: Date }
+    var parallelFallback: ParallelFallback?
+    @ObservationIgnored private var parallelTimeoutsSeen = 0
+
+    /// Fristablauf im Kern -> Statuszeile, Einstellung aus (der Kern hat schon umgeschaltet)
+    private func checkParallelWatchdog() {
+        let w = engine.parallelWatchdog
+        guard w.timeouts != parallelTimeoutsSeen else { return }
+        parallelTimeoutsSeen = w.timeouts
+        let ms = w.lastHang * 1000
+        print(String(format: "[audio] Decks parallel: Worker hing (%.0f ms) -> seriell, Fristabläufe %d", ms, w.timeouts))
+        StatusCenter.post(.warning, String(format: String(localized: "Decks parallel: Worker hing (%.0f ms) → seriell"), ms), key: "audio.parallel")
+        if parallelDecks { parallelDecks = false }
+        parallelFallback = ParallelFallback(hangMs: ms, at: Date())
+    }
 
     /// eigene Änderungen (Grid, Hotcues, Schnitt) dauerhaft je Track – die Collection bleibt unangetastet.
     /// Selbsttest/Messung: nur lesen (Christians edits.json nie schreiben)
@@ -255,6 +277,7 @@ final class MixModel {
     @ObservationIgnored private var lastReport = Date()
 
     func pull() {
+        checkParallelWatchdog()
         var s = core.snapshot()
         for i in s.decks.indices { s.decks[i].nudge = 0 }
         if s != state {

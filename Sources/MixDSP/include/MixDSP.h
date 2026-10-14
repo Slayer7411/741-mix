@@ -142,6 +142,8 @@ double mdsp_keylock_latency(MDEngine *e);
 
 /// Direkt rendern (Tests/Offline): out[ch][frame]
 void mdsp_render(MDEngine *e, float **out, int channels, int frames);
+/// gerechnete Blöcke seit dem Anlegen (Diagnose: läuft die Ausgabe?)
+uint64_t mdsp_render_count(MDEngine *e);
 
 /// Decks parallel rechnen: Deck A im Audio-Thread, B–D auf eigenen Echtzeit-Threads, Summe danach (gleiches Ergebnis
 /// wie seriell). Steuer-Thread; die Threads entstehen beim ersten Einschalten und bleiben bis mdsp_destroy
@@ -153,6 +155,13 @@ bool mdsp_parallel(MDEngine *e);
 void mdsp_render_profile(MDEngine *e, uint64_t *parts, int count, uint32_t *frames);
 /// Diagnose: Worker gestartet, davon in der Workgroup des Geräts, davon mit Echtzeit-Policy
 void mdsp_parallel_info(MDEngine *e, int *workers, int *joined, int *realtime);
+/// Watchdog der parallelen Decks: Fristabläufe seit Start, Zeitpunkt des letzten (Kern-Uhr, ns), wie lange der Worker
+/// dabei brauchte (bis fertig oder bis jetzt), Worker, die noch rechnen; `nowNs` = Kern-Uhr beim Abholen
+typedef struct { uint32_t timeouts; uint64_t lastNs, lastHangNs; int stuck; uint64_t nowNs; } MDParallelWatchdog;
+void mdsp_parallel_watchdog(MDEngine *e, MDParallelWatchdog *out);
+/// nur Tests: Worker `worker` (0 = Deck B) schläft beim nächsten Auftrag `micros` µs – vor der Übernahme (kommt zu spät
+/// dran) oder während des Rechnens (hängt)
+void mdsp_debug_stall_worker(MDEngine *e, int worker, uint32_t micros, bool beforeTaking);
 /// Workgroup des Geräte-IO-Threads für die Worker (Apple: os_workgroup_t, wird retained; sonst ignoriert) und die
 /// Blockdauer in Sekunden für ihre Echtzeit-Policy. Nach jedem Öffnen des Geräts setzen; NULL = keine Workgroup
 void mdsp_set_workgroup(MDEngine *e, void *workgroup, double periodSeconds);

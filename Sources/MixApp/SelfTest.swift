@@ -43,6 +43,7 @@ enum SelfTest {
             while store.tracks.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
             if env["MIX741_BENCH"] == "memory" { await memoryProbe(core, tracks: store.tracks); exit(0) }
             if env["MIX741_BENCH"] == "loadtest" { await LoadTest.run(core, tracks: store.tracks); exit(0) }
+            if env["MIX741_BENCH"] == "parallel-restart" { await parallelRestartBench(core, tracks: store.tracks) }
             let c = store.tracks.filter { $0.bpm > 120 && $0.bpm < 140 && $0.gridAnchorMs != nil && $0.fileExists }
             guard c.count >= 2 else { log("zu wenige Tracks"); exit(1) }
             log("A: \(c[0].artist) – \(c[0].title) \(c[0].bpm) · B: \(c[1].artist) – \(c[1].title) \(c[1].bpm)")
@@ -207,6 +208,7 @@ enum SelfTest {
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
             await deviceProbe(core)
             await parallelProbe(core)
+            if await !parallelRestartProbe(core) { log("FEHLER Decks parallel: Ausgabe nach Neustart"); exit(1) }
             await chainProbe(mix, tracks: c)
             await previewProbe(mix, tracks: c)
             await cutProbe(mix, tracks: c)
@@ -355,6 +357,96 @@ enum SelfTest {
                    ok ? "OK" : "FAIL"))
         if !ok { log("FEHLER Decks parallel: Ausgabe läuft nicht sauber"); exit(1) }
         if !wasPlaying { core.togglePlay(0) }
+    }
+
+    /// MIX741_BENCH=parallel-restart: 4 lokale Tracks mit Keylock spielen, dann `parallelRestartProbe` mit
+    /// MIX741_BENCH_N Runden (Standard 20); Ende mit Exit-Code 0/1
+    static func parallelRestartBench(_ core: MixController, tracks all: [Track]) async {
+        let n = Int(ProcessInfo.processInfo.environment["MIX741_BENCH_N"] ?? "") ?? 20
+        let pick = Array(all.filter { $0.bpm > 120 && $0.bpm < 140 && $0.fileExists && OverviewPolicy.fileState(path: $0.path) == .local }.prefix(4))
+        guard pick.count == 4 else { log("zu wenige lokale Tracks"); exit(1) }
+        for d in 0..<4 { core.load(pick[d], deck: d) }
+        for _ in 0..<200 where (0..<4).contains(where: { core.trackAudio($0) == nil }) { try? await Task.sleep(for: .milliseconds(50)) }
+        for d in 0..<4 {
+            core.updateDeck(d) { $0.keylock = true }
+            if !core.snapshot().decks[d].playing { core.togglePlay(d) }
+        }
+        let ok = await parallelRestartProbe(core, rounds: n)
+        log(ok ? "PARALLEL-RESTART OK" : "PARALLEL-RESTART FAIL")
+        exit(ok ? 0 : 1)
+    }
+
+    /// Decks parallel über Neustarts der Ausgabe: parallel an (wie der Lasttest: kurz vor dem Neustart), dann je Runde
+    /// Puffer 512/256/128 per Neustart, eingespeister Ratenwechsel (Neuöffnen), Pufferwechsel am Gerät (neue Periode).
+    /// Nach jedem Schritt müssen Blöcke laufen (Render-Zähler, Position A), 0 Fristabläufe, Worker in Workgroup + Echtzeit.
+    /// `rounds` Runden (Selbsttest 5; MIX741_BENCH=parallel-restart: MIX741_BENCH_N, Kernrate per MIX741_CORE_RATE)
+    static func parallelRestartProbe(_ core: MixController, rounds: Int = 5) async -> Bool {
+        let engine = core.engine
+        let was = engine.parallelDecks, savedBuffer = engine.bufferFrames
+        let wasPlaying = core.snapshot().decks[0].playing
+        if !wasPlaying { core.togglePlay(0) }
+        let t0 = engine.parallelWatchdog.timeouts
+        func waitRunning() async {
+            for _ in 0..<60 where engine.watch.phase != .running { try? await Task.sleep(for: .milliseconds(50)) }
+        }
+        /// läuft die Ausgabe? Render-Zähler und Position A in 400 ms (takeLoad holt die Statusleiste ab)
+        func check(_ what: String) async -> Bool {
+            let p0 = core.position(0), r0 = engine.renderCount
+            try? await Task.sleep(for: .milliseconds(400))
+            let blocks = Int(engine.renderCount - r0), moved = core.position(0) - p0, info = engine.parallelInfo
+            let wd = engine.parallelWatchdog
+            let ok = blocks > 20 && moved > 0.25 && wd.timeouts == t0 && engine.parallelDecks
+                && info.joined == info.workers && info.realtime == info.workers
+            if !ok {
+                log(String(format: "  %@: %d Blöcke in 400 ms, A lief %.2f s, Fristabläufe %d, parallel %@, Worker %d (Workgroup %d, Echtzeit %d)",
+                           what, blocks, moved, wd.timeouts - t0, "\(engine.parallelDecks)", info.workers, info.joined, info.realtime))
+            }
+            return ok
+        }
+        var ok = true, steps = 0
+        let t = Date()
+        for r in 0..<rounds where ok {
+            for frames: UInt32 in [512, 256, 128] where ok {
+                engine.parallelDecks = false
+                try? await Task.sleep(for: .milliseconds(30))
+                engine.parallelDecks = true                       // Worker starten am laufenden Gerät (alte Workgroup) …
+                engine.bufferFrames = frames
+                engine.apply(engine.routing, restart: true)       // … und joinen nach dem Neustart die neue
+                ok = await check("Runde \(r + 1) Puffer \(frames) Neustart") && ok
+                steps += 1
+            }
+            guard ok else { break }
+            engine.simulate(.rate(engine.outputRate + 1000))      // Ratenwechsel: Ausgabe neu geöffnet, Worker joinen neu
+            await waitRunning()
+            ok = await check("Runde \(r + 1) Ratenwechsel") && ok
+            let buf = engine.takeLoad().bufferFrames, want: UInt32 = buf == 256 ? 512 : 256
+            engine.setDeviceBufferForTest(want)                   // Puffer am Gerät: neue Periode für die Worker
+            for _ in 0..<20 where engine.takeLoad().bufferFrames != Int(want) { try? await Task.sleep(for: .milliseconds(50)) }
+            ok = await check("Runde \(r + 1) Puffer am Gerät \(want)") && ok
+            steps += 2
+        }
+        var wd = engine.parallelWatchdog
+        // Watchdog am Gerät: Worker B hängt 150 ms -> Block endet in der Frist, ab dann seriell, Ausgabe läuft weiter
+        var dogOK = true
+        if ok {
+            engine.parallelDecks = true
+            try? await Task.sleep(for: .milliseconds(100))
+            let r0 = engine.renderCount, p0 = core.position(0)
+            engine.stallWorkerForTest(0, seconds: 0.15)
+            try? await Task.sleep(for: .milliseconds(400))
+            let after = engine.parallelWatchdog, blocks = Int(engine.renderCount - r0), moved = core.position(0) - p0
+            dogOK = after.timeouts == wd.timeouts + 1 && !engine.parallelDecks && after.stuck == 0 && blocks > 20 && moved > 0.25
+            log(String(format: "Decks parallel Watchdog: Worker B hängt 150 ms -> Fristabläufe +%d, seriell %@, Hängedauer %.0f ms, %d Blöcke in 400 ms, A lief %.2f s · %@",
+                       after.timeouts - wd.timeouts, "\(!engine.parallelDecks)", after.lastHang * 1000, blocks, moved, dogOK ? "OK" : "FAIL"))
+            wd = engine.parallelWatchdog
+        }
+        engine.parallelDecks = was
+        engine.bufferFrames = savedBuffer
+        engine.apply(engine.routing, restart: true)
+        if !wasPlaying { core.togglePlay(0) }
+        log(String(format: "Decks parallel: Neustart der Ausgabe ×%d (Puffer 512/256/128, Ratenwechsel, Puffer am Gerät, Kern %.0f Hz): %d Schritte in %.1f s, Blöcke laufen %@, Fristabläufe %d · %@",
+                   rounds, engine.sampleRate, steps, Date().timeIntervalSince(t), "\(ok)", wd.timeouts - t0 - (dogOK && ok ? 1 : 0), ok ? "OK" : "FAIL"))
+        return ok && dogOK
     }
 
     /// MIX741_BENCH=memory: 4 lange Tracks (MIX741_BENCH_MIN Minuten, 10) laden, nur lokal vorhandene (nichts aus der
