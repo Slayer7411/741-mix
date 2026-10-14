@@ -81,6 +81,8 @@ struct WaveLayerView: NSViewRepresentable {
     /// Abspielgeschwindigkeit (s je s, 0 = steht) – Spielkopf zwischen den Meldungen des Kerns
     let speed: @MainActor () -> Double
     let loop: @MainActor () -> (active: Bool, start: Double, end: Double)
+    /// der Loop ist der Auto-Loop vom Laden: auch inaktiv gezeigt (Bone, AUTO)
+    var autoLoop: @MainActor () -> Bool = { false }
 
     func makeNSView(context: Context) -> WaveLayerNSView { WaveLayerNSView() }
 
@@ -88,6 +90,7 @@ struct WaveLayerView: NSViewRepresentable {
         v.position = position
         v.speed = speed
         v.loop = loop
+        v.autoLoop = autoLoop
         v.wave = wave
         v.scene = scene
     }
@@ -105,6 +108,7 @@ final class WaveLayerNSView: NSView {
     var position: @MainActor () -> Double = { 0 }
     var speed: @MainActor () -> Double = { 0 }
     var loop: @MainActor () -> (active: Bool, start: Double, end: Double) = { (false, 0, 0) }
+    var autoLoop: @MainActor () -> Bool = { false }
     var wave: RenderedWaveform? { didSet { if wave !== oldValue { rebuild(tiles: true) } } }
     var scene = WaveScene() {
         didSet {
@@ -128,6 +132,9 @@ final class WaveLayerNSView: NSView {
     private let strip = CALayer()
     private let tiles = CALayer(), gridLayer = CALayer(), cueLayer = CALayer()
     private let loopLayer = CALayer()
+    private let loopLabel = CATextLayer()
+    /// UI-Test: Auto-Loop-Rahmen mit AUTO sichtbar (Bereich in s)
+    private(set) var autoLoopShown: (start: Double, end: Double)?
     // Schnitt: gedimmt davor / dahinter, Ränder als Linie, im EDIT-Modus Griffe mit IN / OUT
     private let trimLayer = CALayer(), trimDimLo = CALayer(), trimDimHi = CALayer(), trimLineLo = CALayer(), trimLineHi = CALayer()
     private let trimFlagLo = CATextLayer(), trimFlagHi = CATextLayer()
@@ -141,7 +148,7 @@ final class WaveLayerNSView: NSView {
     private var link: CADisplayLink?
     private var builtSize: CGSize = .zero
     private var pps: Double = 1   // Punkte pro Sekunde bei aktuellem Zoom
-    private var lastLoop: (Bool, Double, Double) = (false, 0, 0)
+    private var lastLoop: (Bool, Double, Double, Bool) = (false, 0, 0, false)
     private var lastCountdown = ""
     private var lastPos = Double.nan
     /// Kern meldet je Audio-Block, Bilder kommen öfter oder versetzt: Spielkopf je Bild gleichmäßig weiter
@@ -174,6 +181,12 @@ final class WaveLayerNSView: NSView {
         loopLayer.borderColor = NSColor(Theme.state).cgColor
         loopLayer.borderWidth = 1.5
         loopLayer.isHidden = true
+        loopLabel.string = "AUTO"
+        loopLabel.font = Self.monoBold
+        loopLabel.foregroundColor = NSColor(Theme.bone).withAlphaComponent(0.6).cgColor
+        loopLabel.actions = Self.noAnimation
+        loopLabel.isHidden = true
+        loopLayer.addSublayer(loopLabel)
         dim.backgroundColor = NSColor.black.withAlphaComponent(0.32).cgColor
         playhead.backgroundColor = NSColor(Theme.state).cgColor
         playhead.shadowColor = NSColor.black.cgColor
@@ -265,6 +278,8 @@ final class WaveLayerNSView: NSView {
         let pw = Self.playheadWidth * scene.zoom
         playhead.frame = CGRect(x: px(Double(w / 2) - pw / 2), y: 0, width: pw, height: h)
         loopLayer.borderWidth = 1.5 * scene.zoom
+        loopLabel.fontSize = 8 * scene.zoom
+        loopLabel.contentsScale = scale
         countdown.fontSize = 10 * scene.zoom
         countdown.contentsScale = scale
         playhead.isHidden = !scene.hasTrack
@@ -281,7 +296,7 @@ final class WaveLayerNSView: NSView {
         gridLayer.frame = strip.bounds
         cueLayer.sublayers = nil
         cueLayer.frame = strip.bounds
-        lastLoop = (false, -1, -1)
+        lastLoop = (false, -1, -1, false)
         lastPos = .nan
         if scene.showGrid, let g = scene.grid, g.bpm > 0 { buildGrid(g, h: h) }
         buildCues(h: h)
@@ -694,8 +709,8 @@ final class WaveLayerNSView: NSView {
         if Self.unsmoothed { pos = raw }
         else if let t { pos = smoother.update(raw: raw, speed: speed(), at: t) }
         else { pos = smoother.shown.isNaN || CACurrentMediaTime() - lastTick > 0.05 ? raw : smoother.shown }
-        let l = loop()
-        let loopChanged = l.active != lastLoop.0 || l.start != lastLoop.1 || l.end != lastLoop.2
+        let l = loop(), auto = !l.active && l.end > l.start && autoLoop()
+        let loopChanged = l.active != lastLoop.0 || l.start != lastLoop.1 || l.end != lastLoop.2 || auto != lastLoop.3
         let x = ((Double(bounds.width / 2) - pos * pps) * scale).rounded() / scale
         if Self.benching, t != nil, speed() != 0 {
             if !benchX.isNaN { Self.bench.px.append(abs(x - benchX) * scale) }
@@ -710,11 +725,18 @@ final class WaveLayerNSView: NSView {
         strip.position = CGPoint(x: x, y: 0)
         updateTiles(pos)
         if loopChanged {
-            lastLoop = (l.active, l.start, l.end)
-            loopLayer.isHidden = !l.active
-            if l.active {
+            lastLoop = (l.active, l.start, l.end, auto)
+            loopLayer.isHidden = !l.active && !auto
+            loopLabel.isHidden = !auto
+            autoLoopShown = auto ? (l.start, l.end) : nil
+            if l.active || auto {
                 let x0 = px(l.start * pps), x1 = px(l.end * pps)
                 loopLayer.frame = CGRect(x: x0, y: 0, width: x1 - x0, height: bounds.height)
+                let c = auto ? NSColor(Theme.bone) : NSColor(Theme.state)
+                loopLayer.backgroundColor = c.withAlphaComponent(auto ? 0.06 : 0.2).cgColor
+                loopLayer.borderColor = c.withAlphaComponent(auto ? 0.6 : 1).cgColor
+                let z = scene.zoom
+                loopLabel.frame = CGRect(x: 4 * z, y: ruler + 3 * z, width: 30 * z, height: 11 * z)
             }
         }
         if !countdown.isHidden, let g = scene.grid {

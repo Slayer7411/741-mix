@@ -462,7 +462,7 @@ struct WaveformView: View {
 
         var body: some View {
             WaveLayerView(scene: scene, wave: wave, position: { [mix, d] in mix.position(d) }, speed: { [mix, d] in mix.playSpeed(d) },
-                          loop: { [mix, d] in mix.engine.loop(d) })
+                          loop: { [mix, d] in mix.engine.loop(d) }, autoLoop: { [mix, d] in mix.deck(d).autoLoop })
                 .overlay {
                     if waiting {
                         Text("Wellenform wird berechnet …").font(Theme.mono(10.z)).foregroundStyle(.secondary).allowsHitTesting(false)
@@ -800,6 +800,8 @@ struct OverviewView: View {
         var range: TrackRange?
         /// offene Befunde der Rip-Prüfung (gestreift)
         var rip: [ClosedRange<Double>] = []
+        /// Loop im Kern ist der Auto-Loop vom Laden (auch inaktiv gezeigt)
+        var autoLoop = false
     }
 
     var body: some View {
@@ -811,7 +813,8 @@ struct OverviewView: View {
         }
         Content(d: d, m: Model(duration: deck.duration, playing: deck.playing, cues: cues,
                                trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d) && !(mix.decks[d].edit?.previewing ?? false)), range: mix.range(d),
-                               rip: RipChecks.shared.revision >= 0 ? RipChecks.shared.regions(deck.track?.key ?? "", duration: deck.duration) : []),
+                               rip: RipChecks.shared.revision >= 0 ? RipChecks.shared.regions(deck.track?.key ?? "", duration: deck.duration) : [],
+                               autoLoop: deck.autoLoop),
                 wave: wf).equatable()
     }
 
@@ -844,8 +847,8 @@ struct OverviewView: View {
                     ctx.setFillColor(NSColor.black.withAlphaComponent(0.45).cgColor)
                     ctx.fill(CGRect(x: 0, y: 0, width: size.width * f, height: size.height))
                     let loop = mix.engine.loop(d)
-                    if loop.active {
-                        ctx.setFillColor(NSColor(Theme.state).withAlphaComponent(0.4).cgColor)
+                    if loop.active || m.autoLoop && loop.end > loop.start {
+                        ctx.setFillColor((loop.active ? NSColor(Theme.state).withAlphaComponent(0.4) : NSColor(Theme.bone).withAlphaComponent(0.25)).cgColor)
                         ctx.fill(CGRect(x: loop.start / m.duration * size.width, y: 0,
                                         width: max(2, (loop.end - loop.start) / m.duration * size.width), height: size.height))
                     }

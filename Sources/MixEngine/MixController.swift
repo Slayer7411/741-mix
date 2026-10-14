@@ -89,6 +89,8 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     /// Lade-Schutz: in ein spielendes Deck wird nicht geladen (⌥-Klick, Shift + LOAD laden trotzdem)
     public var loadProtection = true
     public var activeLoopMode = ActiveLoopMode.always
+    /// Auto-Loop beim Laden: so viele Takte (4 / 8 / 16 / 32), 0 = aus. Nur ohne gespeicherten Loop, nicht aktiv
+    public var autoLoopBars = 16
     public init() {}
 }
 
@@ -140,6 +142,8 @@ public struct DeckState: Equatable, Sendable {
     public var loopActive = false
     /// Active Loop: Hotcues (0–7) mit Loop, die beim Erreichen ihres Anfangs von selbst einrasten (edits.json)
     public var activeLoops: Set<Int> = []
+    /// der (inaktive) Loop im Kern ist der Auto-Loop vom Laden, kein Loop des Nutzers; jede Loop-Aktion nimmt das weg
+    public var autoLoop = false
 
     public var gainDb: Double = 0
     public var eqLow: Double = 0
@@ -640,6 +644,7 @@ public final class MixController: @unchecked Sendable {
             var s = state.decks[d]
             s.track = nil; s.grid = nil; s.duration = 0; s.hotcues = [:]; s.cuePoint = 0
             s.phraseTarget = nil; s.loopActive = false; s.loopIn = nil; s.activeLoops = []; s.reverse = false; s.flux = false
+            s.autoLoop = false
             s.loading = false; s.playing = false; s.trim = TrackTrim(); s.gridEdited = false
             s.error = String(localized: "Nicht ladbar: \(reason)")
             state.decks[d] = s
@@ -714,6 +719,7 @@ public final class MixController: @unchecked Sendable {
             s.loopActive = false
             s.loopIn = nil
             s.activeLoops = activeLoops.filter { s.hotcues[$0].map(Self.isLoop) ?? false }
+            s.autoLoop = false
             s.reverse = false
             s.keyShift = 0
             s.loading = false
@@ -743,6 +749,7 @@ public final class MixController: @unchecked Sendable {
             armLoops(d, at: s.cuePoint)
             engine.setTrim(d, start: s.trim.start ?? 0, end: s.trim.end ?? 0)   // vor dem Puffer: der erste Block kennt ihn schon
             let gen = engine.attach(a, deck: d, startAt: s.cuePoint)
+            if !placeAutoLoop(d) { engine.setLoop(d, active: false, start: 0, end: 0) }   // kein Loop vom vorigen Track
             applyRate(d)
             applyMixer(d)
             applyAllFX()
@@ -772,6 +779,7 @@ public final class MixController: @unchecked Sendable {
                     state.decks[d].phraseTarget = grid.anchor + Double(r.shiftBeats) * grid.beat
                     state.decks[d].phraseConfidence = r.confidence
                 }
+                if state.decks[d].autoLoop, !state.decks[d].loopActive { placeAutoLoop(d) }   // auf den Phrasen-Anker
                 return true
             }
             if applied {
@@ -807,7 +815,7 @@ public final class MixController: @unchecked Sendable {
             n.tempoPct = src.tempoPct; n.tempoRange = src.tempoRange; n.nudge = 0; n.bend = 0
             n.keylock = src.keylock; n.keyShift = src.keyShift; n.sync = src.sync
             n.loopSize = src.loopSize; n.jumpSize = src.jumpSize; n.loopIn = src.loopIn; n.loopActive = src.loopActive
-            n.activeLoops = src.activeLoops
+            n.activeLoops = src.activeLoops; n.autoLoop = src.autoLoop
             n.reverse = false; n.flux = false; n.cueHeld = false; n.playing = playing
             state.decks[d] = n
             audio[d] = a
@@ -844,7 +852,7 @@ public final class MixController: @unchecked Sendable {
         let r: (TrackAudio?, UInt32)? = locked {
             guard audio[d] != nil, !state.decks[d].loading else { return nil }
             loadSeq[d] += 1   // ein später fertiger Ladevorgang darf das Deck nicht mehr belegen
-            let old = audio[d], playing = engine.player(d).playing
+            let old = audio[d], playing = engine.player(d).playing, keepAuto = state.decks[d].autoLoop
             var s = state.decks[d]
             s.track = t
             s.grid = BeatGrid(track: t)
@@ -858,6 +866,7 @@ public final class MixController: @unchecked Sendable {
             s.loopActive = false
             s.loopIn = nil
             s.activeLoops = activeLoops.filter { s.hotcues[$0].map(Self.isLoop) ?? false }
+            s.autoLoop = false
             s.reverse = false
             s.flux = false
             s.playing = playing
@@ -867,9 +876,9 @@ public final class MixController: @unchecked Sendable {
             let at = min(max(0, position), a.duration)
             armLoops(d, at: at)
             engine.player(d).flux = false
-            engine.setLoop(d, active: false, start: 0, end: 0)
             engine.setTrim(d, start: s.trim.start ?? 0, end: s.trim.end ?? 0)
             let gen = engine.attach(a, deck: d, startAt: at)
+            if !(keepAuto && placeAutoLoop(d)) { engine.setLoop(d, active: false, start: 0, end: 0) }   // Auto-Loop bleibt
             applyRate(d)
             engine.player(d).playing = playing   // attach stoppt das Deck: im selben Block weiter
             applyRate(d)
@@ -1057,6 +1066,7 @@ public final class MixController: @unchecked Sendable {
         guard e > s + 0.01 else { return false }
         engine.setLoop(d, active: true, start: s, end: e)
         state.decks[d].loopActive = true
+        state.decks[d].autoLoop = false
         return true
     }
 
@@ -1110,6 +1120,50 @@ public final class MixController: @unchecked Sendable {
         guard loopOn(d, start: c.start, end: c.end) else { return }
         let beats = (c.end - c.start) / beatLength(d)
         if let s = BeatSizes.loop.first(where: { abs($0 - beats) < 0.01 }) { state.decks[d].loopSize = s }
+    }
+
+    // MARK: Auto-Loop beim Laden
+
+    /// Lage des Auto-Loops: erster voller Phrasenbeginn (8 Takte ab Phrasen-Anker, sonst Grid-Anker) an oder nach dem Anfang
+    /// des gespielten Bereichs, `bars` Takte lang, ganz im Bereich. nil = kein Grid oder kein Platz
+    public static func autoLoopRange(grid: BeatGrid?, phraseAnchor: Double? = nil, bars: Int,
+                                     range: ClosedRange<Double>) -> (start: Double, end: Double)? {
+        guard bars > 0, let g = grid, g.bpm > 0, g.bpm.isFinite else { return nil }
+        let base = BeatGrid(anchor: phraseAnchor ?? g.anchor, bpm: g.bpm)
+        let phrase = Double(PhraseAnchor.phraseBeats)
+        let n = ((base.beatPosition(at: range.lowerBound) - 1e-6) / phrase).rounded(.up) * phrase
+        let start = base.time(ofBeat: n), end = base.time(ofBeat: n + Double(bars * 4))
+        guard start >= range.lowerBound - 1e-6, end <= range.upperBound + 1e-6 else { return nil }
+        return (start, end)
+    }
+
+    /// gespeicherter Loop im Deck: Loop-Hotcue (Collection oder edits.json) oder Loop-Memory-Cue
+    private func hasStoredLoop(_ d: Int) -> Bool {
+        state.decks[d].hotcues.values.contains(where: Self.isLoop)
+            || (state.decks[d].track?.cues.contains { $0.hotcue < 0 && Self.isLoop($0) } ?? false)
+    }
+
+    /// Auto-Loop (nicht aktiv) in den Kern, wenn eingestellt, Grid da und kein gespeicherter Loop; unter der Sperre
+    @discardableResult
+    private func placeAutoLoop(_ d: Int) -> Bool {
+        let s = state.decks[d]
+        guard !s.loopActive, s.duration > 0, !hasStoredLoop(d),
+              let r = Self.autoLoopRange(grid: s.grid, phraseAnchor: s.phraseTarget, bars: state.prefs.autoLoopBars, range: s.playRange)
+        else {
+            if s.autoLoop { engine.setLoop(d, active: false, start: 0, end: 0) }   // passt nach dem Phrasen-Anker nicht mehr
+            state.decks[d].autoLoop = false
+            return false
+        }
+        engine.setLoop(d, active: false, start: r.start, end: r.end)
+        state.decks[d].autoLoop = true
+        return true
+    }
+
+    /// LOOP mit gesetztem Auto-Loop: die Position liegt darin oder bis zum Loop-Snap-Fenster davor -> dieser Loop, kein Sprung
+    private func autoLoopAhead(_ d: Int) -> (start: Double, end: Double)? {
+        guard state.decks[d].autoLoop, !state.decks[d].loopActive, !state.decks[d].reverse else { return nil }
+        let l = engine.loop(d), pos = position(d), w = state.prefs.loopSnapCueBeats * beatLength(d)
+        return pos >= l.start - w && pos < l.end ? (l.start, l.end) : nil
     }
 
     // MARK: Active Loop
@@ -1172,6 +1226,7 @@ public final class MixController: @unchecked Sendable {
             guard audio[d] != nil else { return }
             let s = size ?? state.decks[d].loopSize
             if state.decks[d].loopActive, size == nil || s == state.decks[d].loopSize { exitLoop(d); return }
+            if size == nil, let c = autoLoopAhead(d) { activateLoopCue(d, c); return }
             if !state.decks[d].loopActive, let c = nearbyLoopCue(d) { activateLoopCue(d, c); return }
             state.decks[d].loopSize = s
             let pos = position(d)
@@ -1203,8 +1258,10 @@ public final class MixController: @unchecked Sendable {
             let l = engine.loop(d)
             guard l.end > l.start else { return }
             if state.decks[d].loopActive { exitLoop(d); return }
+            let auto = state.decks[d].autoLoop
             guard loopOn(d, start: l.start, end: l.end) else { return }
             let r = engine.loop(d)
+            if auto, let s = BeatSizes.loop.first(where: { abs($0 - (r.end - r.start) / beatLength(d)) < 0.01 }) { state.decks[d].loopSize = s }
             if position(d) > r.end || position(d) < r.start { jump(d, to: r.start, "reloop") }
         }
     }
@@ -1563,6 +1620,7 @@ public final class MixController: @unchecked Sendable {
             e.grid = s.grid; e.gridEdited = s.gridEdited
             e.trim = s.trim; e.cuePoint = s.cuePoint
             e.loopActive = s.loopActive; e.loopStart = l.start; e.loopEnd = l.end; e.loopIn = s.loopIn; e.loopSize = s.loopSize
+            e.autoLoop = s.autoLoop
             e.keyShift = s.keyShift; e.keylock = s.keylock
             e.tempoPct = s.tempoPct; e.sync = s.sync; e.masterDeck = state.masterDeck
             e.flux = s.flux
@@ -1605,6 +1663,7 @@ public final class MixController: @unchecked Sendable {
                 }
                 state.decks[d].loopIn = e.loopIn
                 state.decks[d].loopSize = e.loopSize
+                state.decks[d].autoLoop = e.autoLoop && !state.decks[d].loopActive
                 if was, !state.decks[d].loopActive, state.decks[d].flux, target == nil { jump(d, to: engine.fluxPosition(d), "undo loop, flux return") }
             }
             if p.contains(.key) { state.decks[d].keyShift = e.keyShift; state.decks[d].keylock = e.keylock }

@@ -194,6 +194,11 @@ DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, commen
   * no jump: the playhead runs into the loop or is already inside. both rules and windows under ⌘, -> DECKS -> loops & beatjump
 * QUANT -> jumps keep the beat phase
 * active loop: right click a loop hotcue -> `Active Loop`. dot on the button (`3 •`), dashed frame in the waveform. the playhead reaches the loop start (forward, no other loop on) -> the loop engages, no jump. LOOP leaves it, the next pass engages again. ⌘, -> DECKS -> loops & beatjump -> every pass / once per load. saved per track with the own edits
+* auto loop on load (⌘, -> DECKS -> loops & beatjump: off / 4 / 8 / 16 / 32 bars, default 16): a track without a stored loop (loop hotcue or loop memory cue) gets a loop on load, not active
+  * start: first phrase start (8 bars from the phrase anchor, else the grid anchor) at or after the track start or cut IN. the whole loop lies inside the cut, else none. no grid -> none
+  * waveform: bone frame (60 %) with `AUTO`, overview: bone band
+  * RE jumps in and turns it on. LOOP takes it without a jump when the playhead is inside or up to the loop snap window before it, else LOOP works as usual
+  * session only, not saved in edits.json or the collection. a phrase anchor suggested after loading moves it there. any loop action replaces it, undo brings it back
 
 ### tempo
 
@@ -259,7 +264,7 @@ beatgrid:
 
 * thin beat lines, stronger bar lines with caps top and bottom, bar numbers on the ruler
 * lines (⌘, -> DISPLAY -> beatgrid): fine (default) / bold. fine: beat 0.5 pt (1 device pixel at 2×) at 35 %, bar 1 pt at 70 %, phrase 1.5 pt, markers 2 / 2.5 / 3 pt. bold: beat 1 pt at 60 %, bar 1.5 pt, phrase 2.5 pt, markers 2.5 / 3.5 / 4.5 pt. widths scale with the window zoom, lines sit on whole device pixels, caps and triangles centred on the line
-* loop: red frame + tint, cues: line in their color + numbered flag, play head red
+* loop: red frame + tint, auto loop (not active) bone frame with `AUTO`, cues: line in their color + numbered flag, play head red
 * phrases (16 / 32 / 64 / 128 beats) in purple, phrase countdown at the play head (`P3 · 16 T`)
 * magenta markers every 8 / 16 / 32 bars (setting)
 
