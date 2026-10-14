@@ -191,6 +191,7 @@ func benchRenderCPU() {
         }
         if fx {
             for u in 0..<4 {
+                setRack(c.e, Int32(u), beatRack)
                 mdsp_set_fx(c.e, Int32(u), beatFX ?? (u % 2 == 0 ? MDFX_REVERB_ON : MDFX_DELAY_ON), 1)
                 mdsp_set_fx(c.e, Int32(u), MDFX_PHASER_STAGES, 8)
                 mdsp_set_fx(c.e, Int32(u), MDFX_REVERB_TYPE, fdn ? 1 : 0)
@@ -199,8 +200,12 @@ func benchRenderCPU() {
             let fcc = { (s: String) in s.utf8.reduce(UInt32(0)) { $0 << 8 | UInt32($1) } }
             plug = mdplug_open(fcc("aufx"), fcc("mrev"), fcc("appl"), c.fs, UInt32(MDSP_MAX_FRAMES), &err, Int32(err.count))
             if let plug {
-                _ = mdsp_set_fx_plugin(c.e, 3, 3, plug)
-                mdsp_set_fx(c.e, 3, MDFX_PLUGIN_ON, 1); mdsp_set_fx(c.e, 3, MDFX_DRYWET, 0.5)
+                // Deck D / FX 4: Beat-FX, Delay, dahinter das Plugin
+                var kinds: [Int32] = (beatRack.prefix(5).map { Int32($0.rawValue) }) + [Int32(MDFX_KIND_PLUGIN.rawValue)]
+                var list: [OpaquePointer?] = [nil, nil, nil, nil, nil, plug]
+                kinds.withUnsafeMutableBufferPointer { k in list.withUnsafeMutableBufferPointer { mdsp_set_fx_rack(c.e, 3, 3, k.baseAddress, $0.baseAddress, 6) } }
+                mdsp_set_fx_slot(c.e, 3, 5, true, 1)
+                mdsp_set_fx(c.e, 3, MDFX_DRYWET, 0.5)
             }
         }
         if preview {
@@ -233,7 +238,7 @@ func benchRenderCPU() {
                      Double(times.reduce(0, +)) / Double(count) / 1000, Double(sorted[count * 99 / 100]) / 1000,
                      Double(sorted.last ?? 0) / 1000, deadline, over, count))
         if let plug {
-            _ = mdsp_set_fx_plugin(c.e, 3, 3, nil)
+            setSlotPlugin(c.e, 3, 3, nil)
             c.renderInto(&bufs, block)
             mdplug_close(plug)
         }
@@ -246,6 +251,7 @@ func benchRenderCPU() {
     c.load(deck: 0, seconds: 4) { i, t in (t > 1.0 && t < 1.01) ? .nan : Float(sin(2 * .pi * 220 * Double(i) / 44100)) * 0.5 }
     c.set(0, MD_PLAYING, 1)
     c.set(0, MD_FX1_ASSIGN, 1)
+    setRack(c.e, 0, groupRack)
     mdsp_set_fx(c.e, 0, MDFX_REVERB_ON, 1)
     mdsp_set_fx(c.e, 0, MDFX_REVERB_HP, 0.5)
     mdsp_set_fx(c.e, 0, MDFX_REVERB_LP, 0.5)

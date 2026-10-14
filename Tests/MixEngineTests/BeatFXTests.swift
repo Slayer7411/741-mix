@@ -20,6 +20,7 @@ private final class Rig {
         mdsp_set_track(e, 0, l, r, Int64(n), fs, 0)
         _ = capture(512.0 / fs)
         mdsp_set_param(e, 0, MD_FX1_ASSIGN, 1)
+        setRack(e, 0, beatRack)
         mdsp_clock_set_bpm(e, bpm)
         mdsp_clock_set_beat(e, 0)   // übernimmt der nächste Block: Sample 0 = Beat 0
     }

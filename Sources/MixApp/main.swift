@@ -530,6 +530,7 @@ MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest m
 MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=status:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { CloudShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cloud:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { ZoomShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=zoom:<ordner>, endet mit exit(0)
+MainActor.assumeIsolated { FXShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=fx:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { WindowShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=window:<png>, endet mit exit
 MainActor.assumeIsolated { PlaylistShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=playlists:<ordner>, endet mit exit
 MainActor.assumeIsolated { UISelfTest.runIfRequested() }   // nur Selbsttest mit MIX741_UITEST=1, endet mit exit

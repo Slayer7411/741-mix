@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import MixEngine
 @testable import MixApp
 
 // Gespeicherte Einstellungen (prefs.v1) von vor einer neuen Deck-Zeile laden weiter: neue Felder bekommen ihren
@@ -113,4 +114,16 @@ import Testing
     #expect(DeckCoverFit.side(wanted: 200, deckWidth: 380, deckHeight: 300, zoom: 1, spacing: 6) == 0)
     // Zoom: Rest wächst mit
     #expect(DeckCoverFit.side(wanted: 200, deckWidth: 700, deckHeight: 300, zoom: 1.5, spacing: 9) == 151)   // 700 − 540 − 9
+}
+
+/// Einstellungen von vor den Insert-Slots: gemerkte Gruppen-Belegung wird Rack-Belegung, gemerkte Plugin-Ketten bleiben (als Racks)
+@MainActor @Test func prefsMigrateFXMappingsAndChains() throws {
+    let old = """
+    {"engine": {"fxMappings": {"GROUP": {"k1": "reverb.size", "b2": "delay.time"}, "DELAY": {"k1": "rate"}},
+                "pluginChains": {"LP": [{"id": "aufx:lpas:appl", "on": false}]}}}
+    """
+    let p = AppPrefs.decode(Data(old.utf8))
+    #expect(p.engine.fxMappings["FILTER > DELAY > REVERB"]?.targets == ["k1": "s2.size", "b2": "s1.rate"])
+    #expect(p.engine.fxMappings["GROUP"] == nil && p.engine.fxMappings["DELAY"]?.targets == ["k1": "rate"])
+    #expect(p.engine.pluginChains["LP"]?.map(\.id) == ["aufx:lpas:appl"] && p.engine.pluginChains["LP"]?.first?.on == false)
 }

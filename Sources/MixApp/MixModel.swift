@@ -38,9 +38,11 @@ final class FXMirror {
     var state = FXUnitState()
     /// Bedienelemente D/W, Regler 1–3, Tasten 1–3: Ziel, Stellung, Beschriftung (Länge wie MixState.fxControls)
     var controls = Array(repeating: FXControlInfo(), count: FXControl.allCases.count)
-    /// zuweisbare Parameter des geladenen Effekts
+    /// zuweisbare Parameter aller Slots
     var params: [FXParam] = []
     var pluginError: String?
+    /// je Slot: rechnet (Plugin geladen)
+    var ready: [Bool] = []
 }
 
 /// Was die Master-Clock-Leiste zeigt – nur bei Änderung gesetzt
@@ -75,6 +77,9 @@ final class MixModel {
     /// Master-Bus (Kette, an/aus, D/W) und sein letzter Plugin-Fehler
     private(set) var masterFX = MasterFXState()
     private(set) var masterPluginError: String?
+    private(set) var masterReady: [Bool] = []
+    /// Einstellungen öffnen auf diesem Bereich (Effekt-Auswahl → PLUGINS); die Einstellungen nehmen ihn und setzen nil
+    var settingsRequest: String?
     /// Link-Teilnehmer, wie die LINK-Taste sie zeigt (0 = nur „LINK“) – Größen-Schlüssel der Master-Clock-Leiste
     private(set) var linkPeersShown = 0
     private(set) var effectiveMaster: Int?
@@ -324,10 +329,12 @@ final class MixModel {
                 if m.controls != s.fxControls[u] { m.controls = s.fxControls[u] }
                 if m.params != s.fxParams[u] { m.params = s.fxParams[u] }
                 if m.pluginError != s.pluginErrors[u] { m.pluginError = s.pluginErrors[u] }
+                if m.ready != s.slotReady[u] { m.ready = s.slotReady[u] }
             }
             if s.masterFX != masterFX { masterFX = s.masterFX }
             let me = s.pluginErrors[MixController.masterBus]
             if me != masterPluginError { masterPluginError = me }
+            if s.slotReady[MixController.masterBus] != masterReady { masterReady = s.slotReady[MixController.masterBus] }
             let c = ClockMirror(s)
             if c != clock { clock = c }
             if s.crossfader != crossfader { crossfader = s.crossfader }
@@ -648,54 +655,63 @@ final class MixModel {
         guard let p = info.param else { return "—" }
         return core.pluginText(u, p, info.value) ?? p.text(info.value)
     }
-    /// Name eines Effekts zur Kennung (Plugin: Name aus der Plugin-Liste)
+    /// Name eines Racks zur Kennung ("FILTER > DELAY > REVERB", Plugins mit ihrem Namen)
     func effectName(_ key: String) -> String {
-        switch key {
-        case FXCatalog.groupKey: String(localized: "Gruppe")
-        case _ where FXCatalog.isGroup(key):
-            String(localized: "Gruppe") + " · " + FXCatalog.groupTypes(key).map(\.name).joined(separator: " · ")
-        case _ where FXUnitState.Effect.allCases.contains { $0.name == key }: key
-        case _ where key.contains(FXCatalog.chainSeparator):   // Plugin-Kette
-            key.components(separatedBy: FXCatalog.chainSeparator).map { core.pluginCatalog.knownInfo($0)?.name ?? $0 }
-                .joined(separator: FXCatalog.chainSeparator)
-        default: core.pluginCatalog.knownInfo(key).map { "\($0.name) · \($0.manufacturer)" } ?? key
-        }
+        if key.isEmpty { return String(localized: "leer") }
+        return key.components(separatedBy: FXCatalog.rackSeparator).map { id in
+            FXUnitState.Effect(builtin: id) != nil ? id : core.pluginCatalog.knownInfo(id)?.name ?? id
+        }.joined(separator: FXCatalog.rackSeparator)
     }
-    func setPlugin(_ u: Int, _ id: String?) {
-        if id != state.fx[u].pluginID || state.fx[u].chain.count > 1 { PluginWindow.close(u) }
-        run { core.setPlugin(u, id: id) }
+    /// Name eines Slots (eingebaut: FILTER …, Plugin: Name aus der Plugin-Liste)
+    func slotName(_ s: FXSlot) -> String {
+        s.effect?.name ?? core.pluginCatalog.knownInfo(s.id)?.name ?? s.id.split(separator: ":").dropFirst().first.map(String.init) ?? s.id
     }
 
-    // MARK: Plugin-Ketten (FX-Unit 0…3, Master-Bus = MixController.masterBus)
+    // MARK: Slots (FX-Unit 0…3, Master-Bus = MixController.masterBus)
 
-    func chain(_ b: Int) -> [FXPluginSlot] { b == MixController.masterBus ? masterFX.chain : fxUnits[b].state.chain }
-    func addPlugin(_ b: Int, _ id: String) { run { core.addPlugin(b, id: id) } }
-    func replacePlugin(_ b: Int, slot: Int, _ id: String) {
-        PluginWindow.close(b, slot: slot, core: core)
-        run { core.replacePlugin(b, slot: slot, id: id) }
+    func slots(_ b: Int) -> [FXSlot] { b == MixController.masterBus ? masterFX.slots : fxUnits[b].state.slots }
+    func slotReady(_ b: Int, _ k: Int) -> Bool {
+        let r = b == MixController.masterBus ? masterReady : fxUnits[b].ready
+        return k < r.count ? r[k] : !(slots(b).indices.contains(k) && slots(b)[k].isPlugin)
     }
-    func removePlugin(_ b: Int, slot: Int) {
+    func pluginError(_ b: Int) -> String? { b == MixController.masterBus ? masterPluginError : fxUnits[b].pluginError }
+    func addSlot(_ b: Int, _ id: String) { run { core.addSlot(b, id: id) } }
+    func replaceSlot(_ b: Int, slot: Int, _ id: String) {
         PluginWindow.close(b, slot: slot, core: core)
-        run { core.removePlugin(b, slot: slot) }
+        run { core.replaceSlot(b, slot: slot, id: id) }
     }
-    func movePlugin(_ b: Int, slot: Int, by: Int) { run { core.movePlugin(b, slot: slot, by: by) } }
-    func setPluginOn(_ b: Int, slot: Int, _ on: Bool) { run { core.setPluginOn(b, slot: slot, on) } }
+    func removeSlot(_ b: Int, slot: Int) {
+        PluginWindow.close(b, slot: slot, core: core)
+        run { core.removeSlot(b, slot: slot) }
+    }
+    func moveSlot(_ b: Int, slot: Int, by: Int) { run { core.moveSlot(b, slot: slot, by: by) } }
+    func moveSlot(_ b: Int, from: Int, to: Int) { run { core.moveSlot(b, from: from, to: to) } }
+    func setSlotOn(_ b: Int, slot: Int, _ on: Bool) { run { core.setSlotOn(b, slot: slot, on) } }
+    func setSlotMix(_ b: Int, slot: Int, _ v: Double) { run { core.setSlotMix(b, slot: slot, v) } }
+    func setSlotParam(_ b: Int, slot: Int, _ id: String, _ v: Double) { run { core.setSlotParam(b, slot: slot, id, v) } }
+    func slotParam(_ b: Int, slot: Int, _ id: String) -> Double { core.slotParam(b, slot: slot, id) }
+    func applyTemplate(_ u: Int, _ t: FXTemplate) {
+        PluginWindow.close(u)
+        run { core.applyTemplate(u, t) }
+    }
     func setMasterFX(on: Bool? = nil, dryWet: Double? = nil) { run { core.setMasterFX(on: on, dryWet: dryWet) } }
     func toggleMasterFX() { run { core.toggleMasterFX() } }
-    /// gemerkte Ketten (Name → Plätze), für jede FX-Unit und den Master-Bus
-    var chainPresets: [String] { state.prefs.pluginChains.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
-    func saveChainPreset(_ b: Int, name: String) {
-        run { core.saveChainPreset(b, name: name) }
+    /// gemerkte Racks (Name → Slots), für jede FX-Unit und den Master-Bus
+    var rackNames: [String] { state.prefs.pluginChains.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
+    func saveRack(_ b: Int, name: String) {
+        run { core.saveRack(b, name: name) }
         prefs.engine.pluginChains = state.prefs.pluginChains
     }
-    func loadChainPreset(_ b: Int, name: String) {
+    func loadRack(_ b: Int, name: String) {
         PluginWindow.close(b)
-        run { core.loadChainPreset(b, name: name) }
+        run { core.loadRack(b, name: name) }
     }
-    func deleteChainPreset(_ name: String) {
-        run { core.deleteChainPreset(name) }
+    func deleteRack(_ name: String) {
+        run { core.deleteRack(name) }
         prefs.engine.pluginChains = state.prefs.pluginChains
     }
+    /// Effekt-Auswahl: Plugins (ladbar, gesperrt mit Grund, Hinweise)
+    func pluginChoices(refresh: Bool = false) -> [PluginCatalog.Choice] { core.pluginCatalog.pickerList(refresh: refresh) }
     /// Master-Bus wirkt nur im internen Mixer (extern: jedes Deck auf eigenem Paar, kein Summenpunkt)
     var masterFXActive: Bool { mixerMode == .internalMixer }
     func setMasterVolume(_ v: Double) {

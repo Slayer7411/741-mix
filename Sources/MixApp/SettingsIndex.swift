@@ -209,7 +209,7 @@ enum SettingsIndex {
     }()
 
     private static let mixerFX: [SettingsEntry] = {
-        let t = "MIXER & FX", fx = "FX-Units (Gruppenmodus: Filter · Delay · Reverb)"
+        let t = "MIXER & FX", fx = "FX-Units (Insert-Slots)"
         return [
             e(t, "Mixer", "mixer.show", "Internen Mixer anzeigen"),
             e(t, "Mixer", "mixer.autogain", "Auto-Gain (Lautheit aus der Collection)"),
@@ -220,17 +220,21 @@ enum SettingsIndex {
             e(t, "Externer Mixer", "mixer.ext.headroom", "Headroom", kw: "extern db"),
             e(t, "Externer Mixer", "mixer.ext.autogain", "Auto-Gain", kw: "extern"),
             e(t, "Externer Mixer", "mixer.ext.mainvol", "Main-Volume wirkt auch extern"),
-            e(t, fx, "fx.show", "FX-Units anzeigen", kw: "effekte effects"),
-            e(t, fx, "fx.count", "Anzahl FX-Units", kw: "effekte effects"),
-            e(t, fx, "fx.delayfb", "Delay-Feedback"),
-            e(t, fx, "fx.filterres", "FX-Filter-Resonanz"),
+            e(t, fx, "fx.show", "FX-Units anzeigen", kw: "effekte effects insert slots"),
+            e(t, fx, "fx.count", "Anzahl FX-Units", kw: "effekte effects insert slots"),
+            e(t, fx, "fx.delayfb", "Delay-Feedback", kw: "slot"),
+            e(t, fx, "fx.filterres", "FX-Filter-Resonanz",
+              hint: "delay-feedback und filter-resonanz gelten für slots ohne eigenen wert (vorlage gruppe, neue delays) und für die filter in delay und roll.",
+              kw: "slot roll"),
             e(t, fx, "fx.reverbtype", "Reverb-Typ", kw: "hall"),
             e(t, fx, "fx.reverblevel", "Reverb-Pegel (dB)", kw: "hall"),
             e(t, fx, "fx.reverbbright", "Reverb-Helligkeit", kw: "hall"),
             e(t, fx, "fx.reverbpredelay", "Reverb-Vorverzögerung (ms)", kw: "hall predelay"),
             e(t, "FX-Belegung (D/W · Regler · Tasten)", "fx.mapping", "Parameter suchen",
-              hint: "rechtsklick auf einen regler oder eine taste der fx-unit wählt den parameter direkt. gilt für die unit und wird je effekt bzw. plugin gemerkt: lädt die unit denselben effekt wieder, ist die belegung wieder da. die sitzung behält die belegung jeder unit. tasten: schalter um, listen eine stufe weiter, stufenlose zwischen min und max. d/w der unit wirkt nur, solange ein bedienelement darauf liegt.",
-              kw: "fx-belegung mapping"),
+              hint: "rechtsklick auf einen regler oder eine taste der fx-unit wählt den parameter direkt – jeder parameter jedes slots. gilt für die unit und wird je rack gemerkt (effekte in reihenfolge): hat eine unit dieselben slots wieder, ist die belegung wieder da. die sitzung behält die belegung jeder unit. tasten: schalter um, listen eine stufe weiter, stufenlose zwischen min und max. d/w der unit wirkt nur, solange ein bedienelement darauf liegt.",
+              kw: "fx-belegung mapping slot"),
+            e(t, "Gemerkte Belegungen", "fx.mappings", "Gemerkte Belegungen", kw: "mapping rack vergessen"),
+            e(t, "Gemerkte Racks", "fx.racks", "Gemerkte Racks", kw: "rack kette chain plugin vergessen"),
         ]
     }()
 

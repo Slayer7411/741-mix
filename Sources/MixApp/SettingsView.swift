@@ -66,7 +66,15 @@ struct SettingsView: View {
         .background(Theme.void)
         .background(ResizableWindow { nav.window = $0 })
         .preferredColorScheme(.dark)
-        .onAppear { SettingsNav.active = nav }
+        .onAppear { SettingsNav.active = nav; takeRequest() }
+        // Sprung aus der Effekt-Auswahl (gesperrtes Plugin → PLUGINS)
+        .onChange(of: mix.settingsRequest) { takeRequest() }
+    }
+
+    private func takeRequest() {
+        guard let t = mix.settingsRequest else { return }
+        if Self.tabs.contains(where: { $0.id == t }) { nav.select(tab: t) }
+        mix.settingsRequest = nil
     }
 
     /// zur Zeile des Treffers scrollen (ausgeblendet: zur Ersatzzeile), ~1,5 s lila
@@ -569,7 +577,7 @@ struct MixerFXSettings: View {
                 Toggle("Main-Volume wirkt auch extern", isOn: $mix.prefs.engine.masterVolumeExternal)
                     .settingsAnchor("mixer.ext.mainvol")
             }
-            Section("FX-Units (Gruppenmodus: Filter · Delay · Reverb)") {
+            Section("FX-Units (Insert-Slots)") {
                 Toggle("FX-Units anzeigen", isOn: $mix.prefs.ui.showFXUnits)
                     .settingsAnchor("fx.show")
                 Picker("Anzahl FX-Units", selection: $mix.prefs.ui.fxUnitCount) {
@@ -582,6 +590,8 @@ struct MixerFXSettings: View {
                     .settingsAnchor("fx.delayfb")
                 sliderRow("FX-Filter-Resonanz", $mix.prefs.engine.fxFilterResonance, 0...1)
                     .settingsAnchor("fx.filterres")
+                Text("delay-feedback und filter-resonanz gelten für slots ohne eigenen wert (vorlage gruppe, neue delays) und für die filter in delay und roll.")
+                    .settingsHint()
                 Picker("Reverb-Typ", selection: $mix.prefs.engine.reverbType) {
                     ForEach(ReverbType.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
@@ -611,37 +621,43 @@ struct MixerFXSettings: View {
                         LabeledContent { FXAssignRow(u: u, c: c, search: search) } label: { Text(c.title) }
                     }
                 }
-                Text("rechtsklick auf einen regler oder eine taste der fx-unit wählt den parameter direkt. gilt für die unit und wird je effekt bzw. plugin gemerkt: lädt die unit denselben effekt wieder, ist die belegung wieder da. die sitzung behält die belegung jeder unit. tasten: schalter um, listen eine stufe weiter, stufenlose zwischen min und max. d/w der unit wirkt nur, solange ein bedienelement darauf liegt.")
+                Text("rechtsklick auf einen regler oder eine taste der fx-unit wählt den parameter direkt – jeder parameter jedes slots. gilt für die unit und wird je rack gemerkt (effekte in reihenfolge): hat eine unit dieselben slots wieder, ist die belegung wieder da. die sitzung behält die belegung jeder unit. tasten: schalter um, listen eine stufe weiter, stufenlose zwischen min und max. d/w der unit wirkt nur, solange ein bedienelement darauf liegt.")
                     .settingsHint()
             }
             Section("Gemerkte Belegungen") {
                 let stored = mix.prefs.engine.fxMappings
-                if stored.isEmpty { Text("keine – alle effekte in standardbelegung").settingsHint() }
-                ForEach(stored.keys.sorted(), id: \.self) { k in
-                    LabeledContent {
-                        HStack(spacing: 10) {
-                            Text("\(stored[k]?.targets.count ?? 0) Bedienelemente").foregroundStyle(Theme.muted)
-                            Button("Vergessen") { mix.prefs.engine.fxMappings[k] = nil }
+                Group {
+                    if stored.isEmpty { Text("keine – alle racks in standardbelegung").settingsHint() }
+                    ForEach(stored.keys.sorted(), id: \.self) { k in
+                        LabeledContent {
+                            HStack(spacing: 10) {
+                                Text("\(stored[k]?.targets.count ?? 0) Bedienelemente").foregroundStyle(Theme.muted)
+                                Button("Vergessen") { mix.prefs.engine.fxMappings[k] = nil }
+                            }
+                        } label: {
+                            Text(verbatim: mix.effectName(k))
                         }
-                    } label: {
-                        Text(verbatim: mix.effectName(k))
                     }
                 }
+                .settingsAnchor("fx.mappings")
             }
-            Section("Gemerkte Plugin-Ketten") {
+            Section("Gemerkte Racks") {
                 let chains = mix.prefs.engine.pluginChains
-                if chains.isEmpty { Text("keine – fx-unit oder master -> kette -> ketten -> kette speichern …").settingsHint() }
-                ForEach(chains.keys.sorted(), id: \.self) { k in
-                    LabeledContent {
-                        HStack(spacing: 10) {
-                            Text(verbatim: mix.effectName((chains[k] ?? []).map(\.id).joined(separator: FXCatalog.chainSeparator)))
-                                .foregroundStyle(Theme.muted).lineLimit(1)
-                            Button("Vergessen") { mix.deleteChainPreset(k) }
+                Group {
+                    if chains.isEmpty { Text("keine – fx-unit oder master -> rack -> racks -> rack speichern …").settingsHint() }
+                    ForEach(chains.keys.sorted(), id: \.self) { k in
+                        LabeledContent {
+                            HStack(spacing: 10) {
+                                Text(verbatim: mix.effectName((chains[k] ?? []).map(\.id).joined(separator: FXCatalog.rackSeparator)))
+                                    .foregroundStyle(Theme.muted).lineLimit(1)
+                                Button("Vergessen") { mix.deleteRack(k) }
+                            }
+                        } label: {
+                            Text(verbatim: k)
                         }
-                    } label: {
-                        Text(verbatim: k)
                     }
                 }
+                .settingsAnchor("fx.racks")
             }
         }
     }

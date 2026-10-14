@@ -33,6 +33,7 @@ private final class FourDecks {
             mdsp_set_param(e, Int32(d), MD_PLAYING, 1)
         }
         for u in 0..<2 {
+            setRack(e, Int32(u), groupRack)
             mdsp_set_fx(e, Int32(u), MDFX_DELAY_ON, 1); mdsp_set_fx(e, Int32(u), MDFX_REVERB_ON, 1)
             mdsp_set_fx(e, Int32(u), MDFX_DRYWET, 0.5)
         }

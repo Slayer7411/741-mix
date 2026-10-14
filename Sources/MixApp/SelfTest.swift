@@ -140,19 +140,20 @@ enum SelfTest {
             }
             log("FX-Zuweisung A: \(core.snapshot().decks[0].fxAssign)")
             let dry = await level()
-            core.updateFX(0) { $0.slots[0].on = true; $0.slots[0].amount = 1.0 }
+            // FX 1: Vorlage Gruppe (Filter · Delay · Reverb)
+            core.updateFX(0) { $0.slots[0].on = true; $0.slots[0].params["cutoff"] = 1.0 }
             let hp = await level()
-            core.updateFX(0) { $0.slots[0].on = false; $0.slots[2].on = true; $0.slots[2].amount = 1.0 }
+            core.updateFX(0) { $0.slots[0].on = false; $0.slots[2].on = true; $0.slots[2].mix = 1.0 }
             let rev = await level()
             core.updateFX(0) { $0.slots[2].on = false }
-            // FX 3 im Single-Modus (Delay) auf Deck A
+            // FX 3 mit einem Slot (Delay) auf Deck A
             core.toggleFXAssign(0, 2)
-            core.updateFX(2) { $0.single = true; $0.singleType = FXUnitState.Effect.delay.rawValue; $0.singleOn = true; $0.params = [0.5, 0.7, 0.5] }
+            core.updateFX(2) { $0.slots = [FXSlot(id: "DELAY", on: true, params: ["filter": 0.5, "feedback": 0.7, "rate": 0.5])] }
             try? await Task.sleep(for: .seconds(1))
             core.togglePlay(0)                       // Deck stoppen: hörbar bleibt nur noch die Echo-Fahne
             try? await Task.sleep(for: .milliseconds(150))
             let tail = await level()
-            core.updateFX(2) { $0.singleOn = false }   // aus: Eingang zu, Echo muss weiter ausklingen
+            core.updateFX(2) { $0.slots[0].on = false }   // aus: Eingang zu, Echo muss weiter ausklingen
             try? await Task.sleep(for: .milliseconds(200))
             let spill = await level()
             try? await Task.sleep(for: .seconds(4))
@@ -163,8 +164,8 @@ enum SelfTest {
             // Reverb (FX4 Single): D/W 0 = trocken unverändert, D/W hoch = Hall aus den Höhen dazu, aus = klingt lange aus
             core.togglePlay(0)
             core.toggleFXAssign(0, 3)
-            core.updateFX(3) { $0.single = true; $0.singleType = FXUnitState.Effect.reverb.rawValue; $0.singleOn = true
-                               $0.params = [0.9, 0.75, 1.0]; $0.dryWet = 0 }
+            core.updateFX(3) { $0.slots = [FXSlot(id: "REVERB", on: true, params: ["size": 0.9, "hp": 0.75, "lp": 1.0, "send": 1])]
+                               $0.dryWet = 0 }
             let rDry = await level()
             core.updateFX(3) { $0.dryWet = 1 }
             try? await Task.sleep(for: .seconds(2))
@@ -175,7 +176,7 @@ enum SelfTest {
             let r1 = await level()
             try? await Task.sleep(for: .seconds(3))
             let r4 = await level()
-            core.updateFX(3) { $0.singleOn = false }
+            core.updateFX(3) { $0.slots[0].on = false }
             core.toggleFXAssign(0, 3)
             log(String(format: "Reverb Single HP: D/W 0 %.3f (trocken %.3f) · D/W 1 %.3f · nach Drop 1 s %.4f · 4 s %.4f",
                        rDry, dry, rWet, r1, r4))
@@ -183,26 +184,26 @@ enum SelfTest {
             // Beat-FX (FX3 Single) auf Deck A: Pegel an / nach dem Ausschalten (Roll: Deck läuft darunter weiter)
             core.toggleFXAssign(0, 2)
             for e in FXCatalog.beatFX {
-                core.updateFX(2) { $0.single = true; $0.singleType = e.rawValue; $0.singleOn = true; $0.dryWet = 1 }
+                core.updateFX(2) { var s = FXTemplate.slot(e.name); s.on = true; $0.slots = [s]; $0.dryWet = 1 }
                 let on = await level()
-                core.updateFX(2) { $0.singleOn = false }
+                core.updateFX(2) { $0.slots[0].on = false }
                 let off = await level()
                 log(String(format: "%@ Single: an %.3f · aus %.3f (trocken %.3f)", e.name, on, off, dry))
             }
             core.toggleFXAssign(0, 2)
             // Plugin (FX4 Single): Apples AUMatrixReverb, lädt im Hintergrund, Regler = erste 3 Parameter, Fahne nach Stopp
             core.toggleFXAssign(0, 3)
-            core.setPlugin(3, id: "aufx:mrev:appl")
+            core.setSlots(3, [FXSlot(id: "aufx:mrev:appl")])
             for _ in 0..<60 where core.pluginParamNames(3).isEmpty { try? await Task.sleep(for: .milliseconds(50)) }
-            core.updateFX(3) { $0.singleOn = true; $0.dryWet = 0.5 }
+            core.updateFX(3) { $0.slots[0].on = true; $0.dryWet = 0.5 }
             try? await Task.sleep(for: .seconds(1))
             let pWet = await level()
-            core.updateFX(3) { $0.singleOn = false }
+            core.updateFX(3) { $0.slots[0].on = false }
             core.togglePlay(0)
             try? await Task.sleep(for: .milliseconds(150))
             let pTail = await level()
             let pNames = core.pluginParamNames(3).joined(separator: "/"), pErr = core.snapshot().pluginErrors[3]
-            core.setPlugin(3, id: nil)
+            core.setSlots(3, [])
             core.toggleFXAssign(0, 3)
             core.togglePlay(0)
             log(String(format: "Plugin %@: Regler %@ · D/W 0.5 %.3f · Fahne nach Stopp %.4f%@",
@@ -213,6 +214,7 @@ enum SelfTest {
             await parallelProbe(core)
             if await !parallelRestartProbe(core) { log("FEHLER Decks parallel: Ausgabe nach Neustart"); exit(1) }
             await chainProbe(mix, tracks: c)
+            await insertProbe(mix)
             await previewProbe(mix, tracks: c)
             await cutProbe(mix, tracks: c)
             await editProbe(mix)
@@ -541,20 +543,18 @@ enum SelfTest {
         }
         guard core.trackAudio(2) != nil, core.trackAudio(3) != nil else { log("Lastprobe: Decks C/D nicht geladen"); return }
         for d in 0..<4 { core.updateDeck(d) { $0.keylock = true; $0.tempoPct = d % 2 == 0 ? 3 : -3 } }
-        core.updateFX(0) { $0.single = true; $0.singleType = FXUnitState.Effect.reverb.rawValue; $0.singleOn = true
-                           $0.params = [0.8, 0.3, 1.0]; $0.dryWet = 1 }
+        core.updateFX(0) { $0.slots = [FXSlot(id: "REVERB", on: true, params: ["size": 0.8, "hp": 0.3, "lp": 1.0, "send": 1])]; $0.dryWet = 1 }
         if plugin != "none" {
-            core.setPlugin(1, id: plugin)
+            core.setSlots(1, [FXSlot(id: plugin)])
             for _ in 0..<200 where core.pluginParamNames(1).isEmpty && core.snapshot().pluginErrors[1] == nil {
                 try? await Task.sleep(for: .milliseconds(50))
             }
             if let e = core.snapshot().pluginErrors[1] { log("Lastprobe: Plugin \(plugin): \(e)") }
-            core.updateFX(1) { $0.singleOn = true; $0.dryWet = 0.5 }
+            core.updateFX(1) { $0.slots[0].on = true; $0.dryWet = 0.5 }
         }
         let delayAssigned = (0..<4).map { core.snapshot().decks[$0].fxAssign[2] }
         for d in 0..<4 where !delayAssigned[d] { core.toggleFXAssign(d, 2) }
-        core.updateFX(2) { $0.single = true; $0.singleType = FXUnitState.Effect.delay.rawValue; $0.singleOn = true
-                           $0.params = [0.5, 0.6, 0.5]; $0.dryWet = 0.5 }
+        core.updateFX(2) { $0.slots = [FXSlot(id: "DELAY", on: true, params: ["filter": 0.5, "feedback": 0.6, "rate": 0.5])]; $0.dryWet = 0.5 }
         for d in 0..<4 where !core.snapshot().decks[d].playing { core.togglePlay(d) }
         let saved = engine.bufferFrames
         log(String(format: "Lastprobe: Puffer %@ je %.0f s · Hall FX1 · Plugin FX2 %@ · Delay FX3 (A–D) · Keylock A–D",
@@ -587,11 +587,10 @@ enum SelfTest {
         engine.bufferFrames = saved
         engine.apply(engine.routing, restart: true)
         for d in 0..<4 where core.snapshot().decks[d].playing { core.togglePlay(d) }
-        core.updateFX(2) { $0.singleOn = false }
+        core.updateFX(2) { $0.slots[0].on = false }
         for d in 0..<4 where !delayAssigned[d] { core.toggleFXAssign(d, 2) }
-        core.updateFX(1) { $0.singleOn = false }
-        core.setPlugin(1, id: nil)
-        core.updateFX(0) { $0.singleOn = false }
+        core.setSlots(1, [])
+        core.updateFX(0) { $0.slots[0].on = false }
     }
 
     /// Vorhören im Kern, stumm (nur Pegel): Paar wie im Extern-Modus automatisch nach den Deck-Paaren des Testgeräts
@@ -1358,23 +1357,22 @@ extension SelfTest {
             return (0..<n).allSatisfy { core.pluginInstance(b, slot: $0) != nil }
         }
         let dry = await average { engine.levels[0].rms }
-        core.setPlugin(3, id: nil)
-        core.addPlugin(3, id: "aufx:hpas:appl")
-        core.addPlugin(3, id: "aufx:lmtr:appl")
+        core.setSlots(3, [])
+        core.addSlot(3, id: "aufx:hpas:appl")
+        core.addSlot(3, id: "aufx:lmtr:appl")
         let ok = await loaded(3, 2)
         core.pluginInstance(3, slot: 0)?.set(0, 3000)   // Hochpass: Grenzfrequenz (Deck A rechnet mit diesen Instanzen)
         core.pluginInstance(3, slot: 1)?.set(2, 20)     // Limiter: Vorverstärkung
-        core.updateFX(3) { $0.singleOn = true; $0.dryWet = 1 }
+        core.updateFX(3) { for i in $0.slots.indices { $0.slots[i].on = true }; $0.dryWet = 1 }
         try? await Task.sleep(for: .milliseconds(600))
         let hpLim = await average { engine.levels[0].rms }
         let t0 = CACurrentMediaTime()
-        core.movePlugin(3, slot: 1, by: -1)
+        core.moveSlot(3, slot: 1, by: -1)
         let moveMs = (CACurrentMediaTime() - t0) * 1000
         try? await Task.sleep(for: .milliseconds(600))
         let limHp = await average { engine.levels[0].rms }
-        let lat = core.chainLatency(3).total
-        core.updateFX(3) { $0.singleOn = false }
-        core.setPlugin(3, id: nil)
+        let lat = core.rackLatency(3).total
+        core.setSlots(3, [])
         if !assigned { core.toggleFXAssign(0, 3) }
         let chainOK = ok && hpLim > limHp * 1.5
         log(String(format: "Plugin-Kette FX4 auf A: trocken %.3f · Hochpass>Limiter %.3f · Limiter>Hochpass %.3f (getauscht in %.2f ms) · Latenz %.1f ms · %@",
@@ -1384,7 +1382,7 @@ extension SelfTest {
         if let t = c.last { mix.preview(t) }
         for _ in 0..<1500 where mix.previewing == nil && mix.previewLoading != nil { try? await Task.sleep(for: .milliseconds(20)) }
         let m0 = await average { engine.masterLevels.rms }, p0 = await average { pv.level.rms }
-        core.addPlugin(master, id: "aufx:lmtr:appl")
+        core.addSlot(master, id: "aufx:lmtr:appl")
         let mOK = await loaded(master, 1)
         core.pluginInstance(master, slot: 0)?.set(2, -20)
         core.setMasterFX(on: true, dryWet: 1)
@@ -1393,7 +1391,7 @@ extension SelfTest {
         core.setMasterFX(on: false)
         try? await Task.sleep(for: .milliseconds(300))
         let m2 = await average { engine.masterLevels.rms }
-        core.removePlugin(master, slot: 0)
+        core.removeSlot(master, slot: 0)
         mix.stopPreview()
         core.setExternalMixer(wasExternal)
         let previewOK = p0 == 0 || abs(p1 - p0) < max(p0, p1) * 0.5
@@ -1405,6 +1403,62 @@ extension SelfTest {
 }
 
 extension SelfTest {
+    /// Insert-Slots, stumm (nur Pegel) auf FX 3 / Deck A: ein Slot Delay, dann drei (Delay · Filter · Reverb), Umordnen im
+    /// Betrieb (Reverb nach vorn), Plugin-Slot mit Apples AUDelay isoliert (Dienst des Systems). Danach FX 3 leer
+    static func insertProbe(_ mix: MixModel) async {
+        let core = mix.core, engine = mix.engine, u = 2, plug = "aufx:dely:appl"
+        if !core.snapshot().decks[0].playing { core.togglePlay(0) }
+        let assigned = core.snapshot().decks[0].fxAssign[u]
+        if !assigned { core.toggleFXAssign(0, u) }
+        func average() async -> (rms: Float, peak: Float) {
+            var acc: Float = 0, pk: Float = 0
+            for _ in 0..<12 { try? await Task.sleep(for: .milliseconds(50)); let l = engine.levels[0]; acc += l.rms; pk = max(pk, l.peak) }
+            return (acc / 12, pk)
+        }
+        func ids() -> [String] { core.snapshot().fx[u].slots.map(\.id) }
+        var fails: [String] = []
+        core.setSlots(u, [])
+        let dry = await average()
+        core.addSlot(u, id: "DELAY")
+        core.updateFX(u) { $0.slots[0].on = true; $0.slots[0].params["feedback"] = 0.6; $0.dryWet = 1 }
+        try? await Task.sleep(for: .milliseconds(400))
+        let one = await average()
+        if ids() != ["DELAY"] { fails.append("1 Slot: \(ids())") }
+        core.addSlot(u, id: "FILTER")
+        core.addSlot(u, id: "REVERB")
+        if core.addSlot(u, id: "DELAY") { fails.append("zweites DELAY angenommen") }
+        core.updateFX(u) { $0.slots[1].on = true; $0.slots[1].params["cutoff"] = 0.85; $0.slots[2].on = true; $0.slots[2].mix = 0.6 }
+        try? await Task.sleep(for: .milliseconds(400))
+        let three = await average()
+        if ids() != ["DELAY", "FILTER", "REVERB"] { fails.append("3 Slots: \(ids())") }
+        let load0 = engine.takeLoad()
+        core.moveSlot(u, from: 2, to: 0)
+        let moved = await average()
+        let load1 = engine.takeLoad()
+        if ids() != ["REVERB", "DELAY", "FILTER"] { fails.append("umgeordnet: \(ids())") }
+        if !moved.peak.isFinite || moved.peak > 4 || moved.rms <= 0 { fails.append(String(format: "nach dem Umordnen Pegel %.3f / Spitze %.3f", moved.rms, moved.peak)) }
+        // Plugin-Slot isoliert (nur im Speicher, der Selbsttest speichert keine Einstellungen)
+        core.pluginCatalog.setIsolation(plug, true)
+        core.addSlot(u, id: plug)
+        for _ in 0..<400 where core.pluginInstance(u, slot: 3) == nil && core.snapshot().pluginErrors[u] == nil {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        let inst = core.pluginInstance(u, slot: 3)
+        core.setSlotOn(u, slot: 3, true)
+        try? await Task.sleep(for: .milliseconds(400))
+        let withPlug = await average()
+        let failures = inst?.renderFailures.blocks ?? 0
+        if inst == nil { fails.append("AUDelay lädt nicht: \(core.snapshot().pluginErrors[u] ?? "-")") }
+        else if inst?.outOfProcess != true { fails.append("AUDelay läuft nicht isoliert") }
+        core.pluginCatalog.setIsolation(plug, nil)
+        core.setSlots(u, [])
+        if !assigned { core.toggleFXAssign(0, u) }
+        log(String(format: "Insert-Slots FX3 auf A: trocken %.3f · DELAY %.3f · DELAY>FILTER>REVERB %.3f · umgeordnet REVERB>DELAY>FILTER %.3f (Spitze %.2f, über Budget %d/%d) · + AUDelay %@ %.3f (Fehlblöcke %llu) · %@",
+                   dry.rms, one.rms, three.rms, moved.rms, moved.peak, load0.overloads, load1.overloads,
+                   inst?.outOfProcess == true ? "isoliert" : "im Prozess", withPlug.rms, failures, fails.isEmpty ? "OK" : "FAIL"))
+        if !fails.isEmpty { log("FEHLER Insert-Slots: " + fails.joined(separator: " · ")); exit(1) }
+    }
+
     /// gespielte ausblenden (◆ UNGESPIELT): Collection ohne die gespielten Tracks (A + die der Sitzung), Anzahl im Kopf
     /// stimmt, History, RUNNING und Preparation zeigen sie weiter. Gespielt-Markierungen danach wie vorher
     static func hidePlayedProbe(_ mix: MixModel, store: LibraryStore, browser: BrowserState, tracks c: [Track]) async {
