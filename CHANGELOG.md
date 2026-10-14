@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* core: render profile of the heaviest block since the last read (deck A-D, worker wait, mix + master bus, master, preview; `RenderLoad.worstParts`). load test logs it per minute and on every overload: `schwerster Block: 1.45 ms von 2.68 (54 %) · A 0.34 B 0.38 …`
 * license: dual licensing. gpl stays for open use, closed or sold products need a commercial license with a revenue share (`COMMERCIAL-LICENSE.md`), name / ◆ mark / logo reserved, pull requests need the cla (`CLA.md`, `cla: agreed` in the description)
 * donation hint on start (system language): buy me a coffee or a few tokens, paypal with any amount. `Spenden` opens paypal, `Ich habe gespendet` or `nie` ends it for good, `Später` / `einmal pro Woche`; help menu `Kauf mir einen Kaffee …` any time. never in the self test; `scripts/make-app.sh` marks its own install as donated
 * audio core: decks in parallel (⌘, -> AUDIO, default off): deck A on the audio thread, B-D on three real-time worker threads joined to the device's workgroup, woken per block by semaphores, summed after the join. bit-identical to the serial core (unit test), switchable while playing. `MIX741_PARALLEL_DECKS=1/0` overrides for one run. load test `--modes serial,parallel` runs every buffer stage with both cores (column `Kern`). self test checks blocks, overloads, position, workers in the workgroup + real-time policy

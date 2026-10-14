@@ -950,7 +950,7 @@ tail -f ~/Library/Application\ Support/MINOS-741/loadtest/latest.log
 * per stage: 4 local tracks, keylock, B-D synced to A, link on, fx 1 (A/C) + fx 2 (B/D) delay + reverb, fx 3 (all) isolated plugin (`--plugin <id>|none`, default apple matrix reverb isolated)
 * stress: track change on B / C / D every 60 s (file service), search + sort over the collection every 20 s, main thread blocked 1 s every 5 min
 * routing external A 1/2 · B 3/4 · C 5/6 · D 7/8, master 0 dB -> turn the desk down first. `--mute` silent, `--out <name>` picks the device, `--builtin` built-in output (silent)
-* log: dsp mean / peak, blocks over budget, device overloads, main-thread hitches > 16 ms, link phase every 10 s, rss, track load times, file service helpers, mlock failures. table per stage with PASS / FAIL: peak < 70 %, 0 over budget, 0 overloads, link phase < 0.02 beats. 3 device overloads -> stage FAIL, next stage runs
+* log: dsp mean / peak, blocks over budget, device overloads, main-thread hitches > 16 ms, link phase every 10 s, rss, track load times, file service helpers, mlock failures. every minute and on every overload the heaviest render block split into deck A-D, worker wait, mix + master bus, master, preview (`schwerster Block: 1.45 ms von 2.68 (54 %) · A 0.34 …`). table per stage with PASS / FAIL: peak < 70 %, 0 over budget, 0 overloads, link phase < 0.02 beats. 3 device overloads -> stage FAIL, next stage runs
 * ctrl-c -> summary so far, output off. self test mode: no settings, session or cache of yours written
 * `--debug` = debug build (dsp much slower, only to check the runner), `--no-build`
 
