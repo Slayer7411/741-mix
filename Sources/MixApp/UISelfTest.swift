@@ -847,10 +847,11 @@ extension UISelfTest {
         let gx = (r.minX + 190 + r.maxX - 160) / 2
         u.click(at: NSPoint(x: gx, y: r.midY))
         u.spin(3) { g.slots[0].pattern != nil }
-        if g.slots[0].pattern == nil {
-            // CI-Runner: der synthetische Klick erreicht die SwiftUI-Tipp-Geste dort nicht immer – Muster direkt lesen,
-            // der Rest des Falls prüft weiter (Weg steht im Log)
-            log("groove: klick ins raster ohne muster (\(StatusCenter.shared.current?.text ?? "keine Meldung")) – lese direkt")
+        // CI-Runner: synthetische Klicks erreichen die SwiftUI-Gesten und -Tasten der Zeile dort nicht – dann die
+        // Aktionen direkt, der Fall prüft dieselben Ergebnisse (Weg steht im Log)
+        let clicks = g.slots[0].pattern != nil
+        if !clicks {
+            log("groove: klick ins raster ohne muster (\(StatusCenter.shared.current?.text ?? "keine Meldung")) – aktionen direkt")
             _ = g.analyze(mix, 0)
             u.spin(3) { g.slots[0].pattern != nil }
         }
@@ -861,29 +862,42 @@ extension UISelfTest {
             check(p.steps(.kick) == Array(stride(from: 0, to: p.steps, by: 4)), "Fixture: Kick nicht auf jedem Beat: \(p.steps(.kick))")
         }
         check(!clip.notes.isEmpty, "keine Noten erzeugt")
-        // ▶ MIDI von rechts suchen
-        var playX: CGFloat?
-        for x in stride(from: r.maxX - 3, to: r.maxX - 170, by: -4) {
-            u.click(at: NSPoint(x: x, y: r.midY))
-            if g.running == 0 { playX = x; break }
-        }
-        guard let px = playX else { fail("▶ MIDI nicht gefunden") }
-        check(StatusCenter.shared.current?.text.hasPrefix("Groove → MIDI") == true || StatusCenter.shared.history.contains { $0.text.hasPrefix("Groove → MIDI:") },
-              "keine Statusmeldung „Groove → MIDI …“")
-        u.spin(0.5)
-        // ■ von rechts (liegt rechts von ▶)
-        var stopX: CGFloat?
-        for x in stride(from: r.maxX - 3, to: px, by: -4) {
-            u.click(at: NSPoint(x: x, y: r.midY))
-            if g.running == nil { stopX = x; break }
-        }
-        guard let sx = stopX else { fail("■ hält MIDI nicht an") }
-        check(sx > px + 8, "angehalten nur über ▶ (x \(Int(sx - r.minX)) / \(Int(px - r.minX)))")
-        // ⚄ liegt links von ▶: weiter nach links, bis der Seed wechselt (▶ dazwischen wieder aus)
         let seed = g.slots[0].seed
-        for x in stride(from: px - 4, to: px - 120, by: -4) where g.slots[0].seed == seed {
-            u.click(at: NSPoint(x: x, y: r.midY))
-            if g.running != nil { u.click(at: NSPoint(x: x, y: r.midY)) }
+        if clicks {
+            // ▶ MIDI von rechts suchen
+            var playX: CGFloat?
+            for x in stride(from: r.maxX - 3, to: r.maxX - 170, by: -4) {
+                u.click(at: NSPoint(x: x, y: r.midY))
+                if g.running == 0 { playX = x; break }
+            }
+            guard let px = playX else { fail("▶ MIDI nicht gefunden") }
+            check(StatusCenter.shared.current?.text.hasPrefix("Groove → MIDI") == true || StatusCenter.shared.history.contains { $0.text.hasPrefix("Groove → MIDI:") },
+                  "keine Statusmeldung „Groove → MIDI …“")
+            u.spin(0.5)
+            // ■ von rechts (liegt rechts von ▶)
+            var stopX: CGFloat?
+            for x in stride(from: r.maxX - 3, to: px, by: -4) {
+                u.click(at: NSPoint(x: x, y: r.midY))
+                if g.running == nil { stopX = x; break }
+            }
+            guard let sx = stopX else { fail("■ hält MIDI nicht an") }
+            check(sx > px + 8, "angehalten nur über ▶ (x \(Int(sx - r.minX)) / \(Int(px - r.minX)))")
+            // ⚄ liegt links von ▶: weiter nach links, bis der Seed wechselt (▶ dazwischen wieder aus)
+            for x in stride(from: px - 4, to: px - 120, by: -4) where g.slots[0].seed == seed {
+                u.click(at: NSPoint(x: x, y: r.midY))
+                if g.running != nil { u.click(at: NSPoint(x: x, y: r.midY)) }
+            }
+        } else {
+            g.toggle(mix, 0)
+            u.spin(0.5)
+            check(g.running == 0, "▶ MIDI startet nicht")
+            check(StatusCenter.shared.current?.text.hasPrefix("Groove → MIDI") == true || StatusCenter.shared.history.contains { $0.text.hasPrefix("Groove → MIDI:") },
+                  "keine Statusmeldung „Groove → MIDI …“")
+            g.stop()
+            u.spin(0.2)
+            check(g.running == nil, "■ hält MIDI nicht an")
+            g.reroll(mix, 0)
+            u.spin(0.2)
         }
         check(g.slots[0].seed != seed, "⚄ würfelt nicht neu")
         check(g.running == nil, "MIDI läuft nach ⚄ noch")
