@@ -14,6 +14,7 @@ struct CloudHook: View {
         var preparation: [String]
         var sources: [BrowserSource]
         var running: [String]
+        var own: Int
     }
 
     /// Playlists/Smartlists in den Browser-Bereichen; größere Quellen zählen als Library, nicht als Set
@@ -22,7 +23,8 @@ struct CloudHook: View {
     var body: some View {
         let loading = (0..<4).contains { mix.deck($0).loading }
         let sig = KeepSig(revision: store.revision, preparation: store.preparation,
-                          sources: [browser.paneA.source, browser.paneB.source], running: store.running.map(\.key))
+                          sources: [browser.paneA.source, browser.paneB.source], running: store.running.map(\.key),
+                          own: store.playlistRevision)
         let cloud = CloudLibrary.shared
         Color.clear.frame(width: 0, height: 0)
             .onChange(of: mix.prefs.cloud, initial: true) { cloud.apply(mix.prefs.cloud) }

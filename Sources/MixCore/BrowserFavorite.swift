@@ -8,6 +8,8 @@ public struct BrowserFavorite: Codable, Hashable, Sendable {
 
     public enum Kind: String, Sendable {
         case collection, preparation, running, history, smartlist, node, folder, filter
+        /// eigener Eintrag im Playlist-Baum (ID, [Name], Art in `node`)
+        case own
     }
 
     /// Art als Text: eine unbekannte Art (neuere Version) lässt das Laden der Sitzung nicht scheitern

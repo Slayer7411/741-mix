@@ -121,6 +121,7 @@ enum UISelfTest {
             ("gestapelt", stackedSide),
             ("ungespielt", unplayed),
             ("vorbereiten", prepareMode),
+            ("playlist-baum", playlistTree),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1217,4 +1218,205 @@ extension UISelfTest {
         check(mix.editing(d) == wasEditing, "Vorbereiten: EDIT bleibt nach dem Profilwechsel an")
         if let b = before { _ = mix.load(b, deck: d, force: true); u.spin(20) { mix.core.trackAudio(d) != nil && mix.deck(d).track?.key == b.key } }
     }
+}
+
+extension UISelfTest {
+    /// Rechtsklick auf PLAYLISTS im Baum von Bereich A → „Neue Smartlist …“ → Editor (Sheet): Feld über das Menü
+    /// Genre, Wert „Techno“ getippt → Treffer > 0 → ⏎ speichert → Eintrag im Baum, Bereich A zeigt die Treffer;
+    /// Track auf eine eigene Playlist im Baum fallen lassen, ⌫ in der Liste nimmt ihn wieder heraus.
+    /// Eigener Baum nur im Temp-Ordner des Selbsttests; ohne Techno in der Collection bekommt ein Track das Genre
+    /// (nur im Speicher)
+    static func playlistTree(_ u: UIDriver, _ t: [Track]) {
+        let pane = u.browser.paneA, store = u.store
+        let source = pane.source, showTree = pane.showTree, hide = u.mix.prefs.ui.hideTreeWithDecks
+        pane.showTree = true
+        u.mix.prefs.ui.hideTreeWithDecks = false
+        var edited: String?
+        if !store.tracks.contains(where: { SmartRules.contains(Track.fold($0.genre), Track.fold("Techno")) }) {
+            edited = t[2].key
+            store.applyEdits([t[2].key: [.genre: "Techno"]], writeBack: false)
+        }
+        defer {
+            if let k = edited { store.revertEdits([k]) }
+            pane.source = source
+            pane.showTree = showTree
+            u.mix.prefs.ui.hideTreeWithDecks = hide
+        }
+        let before = store.playlists
+        u.spin(0.5)
+        // Baum von Bereich A: SwiftUI-Liste links (keine Track-Tabelle)
+        guard let tree = u.views.compactMap({ $0 as? NSTableView }).filter({ !($0 is TrackNSTable) && $0.numberOfRows > 3 })
+            .min(by: { u.frame($0).minX < u.frame($1).minX }) else { fail("Baum von Bereich A nicht gefunden") }
+        let rows0 = tree.numberOfRows
+        let item = String(localized: "Neue Smartlist …")
+        var menu: NSMenu?
+        for r in 0..<tree.numberOfRows {
+            tree.scrollRowToVisible(r)
+            u.spin(0.02)
+            let rect = tree.convert(tree.rect(ofRow: r), to: nil)
+            if let m = u.rightClick(at: NSPoint(x: rect.minX + 60, y: rect.midY)), m.items.contains(where: { $0.title == item }) { menu = m; break }
+        }
+        guard let menu, let i = menu.items.firstIndex(where: { $0.title == item }) else { fail("Rechtsklick im Baum: kein „\(item)“") }
+        log("menü an PLAYLISTS: " + menu.items.map(\.title).joined(separator: " · "))
+        menu.performActionForItem(at: i)
+        u.spin(5) { u.window.attachedSheet != nil && SmartlistDraft.current != nil }
+        guard let sheet = u.window.attachedSheet, let draft = SmartlistDraft.current else { fail("Smartlist-Editor öffnet nicht") }
+        u.spin(0.5)
+        func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+        let views = all(sheet.contentView?.superview ?? sheet.contentView!)
+        // Feld-Menü der ersten Zeile: oberstes, linkes Menü mit „Genre“
+        let genre = SmartLabels.field(.genre), artist = SmartLabels.field(.artist)
+        guard let popup = views.compactMap({ $0 as? NSPopUpButton }).filter({ $0.itemTitles.contains(genre) })
+            .min(by: { a, b in sheet.contentView!.convert(a.bounds, from: a).minX < sheet.contentView!.convert(b.bounds, from: b).minX }) else { fail("Feld-Menü nicht gefunden") }
+        for f in [artist, genre] {
+            popup.selectItem(withTitle: f)
+            _ = popup.sendAction(popup.action, to: popup.target)
+            u.spin(0.2)
+        }
+        check(draft.rules.rules.first?.field == .genre, "Feld-Menü: \(draft.rules.rules.first.map { "\($0.field)" } ?? "-") statt genre")
+        check(draft.rules.rules.first?.op == .contains, "Operator nicht „enthält“")
+        // Wert tippen: Feld „WERT“ (Combo), Tasten an das Sheet
+        guard let field = views.compactMap({ $0 as? NSTextField }).first(where: { $0.isEditable && $0.placeholderString == String(localized: "WERT") }) else { fail("Wertfeld nicht gefunden") }
+        sheet.makeFirstResponder(field)
+        u.spin(0.1)
+        func key(_ chars: String, _ code: UInt16) {
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                         windowNumber: sheet.windowNumber, context: nil, characters: chars, charactersIgnoringModifiers: chars,
+                                         isARepeat: false, keyCode: code)!
+                sheet.sendEvent(e)
+            }
+            u.spin(0.02)
+        }
+        for ch in "Techno" { key(String(ch), 0) }
+        u.spin(3) { draft.rules.rules.first?.value == "Techno" && draft.countIsCurrent }
+        check(draft.rules.rules.first?.value == "Techno", "Wert: „\(draft.rules.rules.first?.value ?? "")“ statt „Techno“ (Feld „\(field.stringValue)“)")
+        guard draft.countIsCurrent, let n = draft.count, n > 0, n < store.tracks.count else { fail("Treffer: \(draft.count.map(String.init) ?? "keine Zahl") von \(store.tracks.count)") }
+        let want = store.tracks.filter { SmartRules.contains(Track.fold($0.genre), Track.fold("Techno")) }.count
+        check(n == want, "Treffer im Editor \(n), Genre enthält „Techno“ in der Collection \(want)")
+        log("editor: genre enthält „Techno“ -> \(n) treffer")
+        // ⏎ = SPEICHERN (Standard-Knopf), erst Feld verlassen
+        sheet.makeFirstResponder(nil)
+        let ret = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                   windowNumber: sheet.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r",
+                                   isARepeat: false, keyCode: 36)!
+        if !sheet.performKeyEquivalent(with: ret) { sheet.sendEvent(ret) }
+        u.spin(5) { u.window.attachedSheet == nil }
+        check(u.window.attachedSheet == nil, "⏎ speichert nicht (Editor bleibt offen)")
+        let added = store.playlists.all.filter { b in !before.contains(b.id) }
+        guard added.count == 1, let sl = added.first, sl.kind == .smartlist,
+              sl.rules.rules.first.map({ $0.field == .genre && $0.op == .contains && $0.value == "Techno" }) == true else {
+            fail("gespeichert: \(added.map { "\($0.kind) \($0.name)" })")
+        }
+        u.spin(3) { tree.numberOfRows == rows0 + 1 }
+        check(tree.numberOfRows == rows0 + 1, "Baum: \(tree.numberOfRows) Zeilen statt \(rows0 + 1)")
+        check(pane.source == .own(OwnRef(sl)), "Bereich A zeigt nicht die neue Smartlist")
+        u.spin(3) { pane.shown.count == n }
+        check(pane.shown.count == n, "Bereich A: \(pane.shown.count) Zeilen statt \(n)")
+        log("baum: \(rows0) -> \(tree.numberOfRows) zeilen · „\(sl.name)“ · bereich A \(pane.shown.count) tracks")
+        // Track auf eine eigene Playlist im Baum ziehen (letzte eigene Zeile = neueste Playlist), dann ⌫ in der Liste
+        let pl = store.addOwn(.playlist, into: nil, name: "UI Playlist")
+        u.spin(3) { tree.numberOfRows == rows0 + 2 }
+        let targets = u.views.filter { $0 is TreeDropView && u.frame($0).minX < u.window.frame.width / 2 && $0.window === u.window }
+        guard let last = targets.min(by: { u.frame($0).minY < u.frame($1).minY }) else { fail("keine Ablage-Ansichten im Baum") }
+        check(u.drop(string: TrackDrag.prefix + t[0].key, at: u.center(last)), "Drop auf die Playlist nicht angenommen")
+        u.spin(3) { store.playlists.item(pl.id)?.tracks == [t[0].key] }
+        check(store.playlists.item(pl.id)?.tracks == [t[0].key], "Playlist nach dem Drop: \(store.playlists.item(pl.id)?.tracks.count ?? -1) Tracks")
+        pane.source = .own(OwnRef(pl))
+        u.spin(3) { pane.shown.map(\.key) == [t[0].key] }
+        pane.selection = [t[0].key]
+        guard let table = u.views.compactMap({ $0 as? TrackNSTable }).min(by: { u.frame($0).minX < u.frame($1).minX }) else { fail("Track-Tabelle A fehlt") }
+        u.window.makeFirstResponder(table)
+        let del = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                   windowNumber: u.window.windowNumber, context: nil, characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}",
+                                   isARepeat: false, keyCode: 51)!
+        u.window.sendEvent(del)
+        u.spin(1) { store.playlists.item(pl.id)?.tracks.isEmpty == true }
+        check(store.playlists.item(pl.id)?.tracks.isEmpty == true, "⌫ entfernt den Track nicht aus der Playlist")
+        // Eintrag (wie aus dem Baum gezogen) auf einen eigenen Ordner: hinein
+        let folder = store.addOwn(.folder, into: nil, name: "UI Ordner")
+        u.spin(3) { tree.numberOfRows == rows0 + 3 }
+        let targets2 = u.views.filter { $0 is TreeDropView && u.frame($0).minX < u.window.frame.width / 2 && $0.window === u.window }
+        guard let fv = targets2.min(by: { u.frame($0).minY < u.frame($1).minY }) else { fail("Ordner-Zeile fehlt") }
+        check(u.drop(string: TreeDrag.prefix + pl.id.uuidString, at: u.center(fv)), "Drop eines Eintrags auf den Ordner nicht angenommen")
+        u.spin(1) { store.playlists.parent(of: pl.id) == .some(folder.id) }
+        check(store.playlists.parent(of: pl.id) == .some(folder.id), "Playlist nicht im Ordner")
+        log("drop auf playlist + ⌫ in der liste + eintrag in ordner ok")
+        // Tabelle: Zeile als Text ziehbar, Ablegen aus der eigenen Tabelle = Reihenfolge (zeigt die Playlist-Reihenfolge)
+        store.editPlaylists("UI") { $0.addTracks(t.map(\.key), to: pl.id) }
+        pane.sortOrder = [KeyPathComparator(\Track.title)]
+        u.spin(3) { pane.shown.count == 3 }
+        let shownKeys = pane.shown.map(\.key)
+        let w = table.dataSource?.tableView?(table, pasteboardWriterForRow: 0) as? String
+        check(w == TrackDrag.prefix + shownKeys[0], "Zeile ziehen: \(w ?? "nichts")")
+        let pb = NSPasteboard.withUniqueName()
+        pb.clearContents()
+        pb.setString(TrackDrag.prefix + t[2].key, forType: .string)
+        let info = TableDragInfo(window: u.window, pasteboard: pb, source: table)
+        let row = shownKeys.firstIndex(of: t[0].key) ?? 0
+        check(table.dataSource?.tableView?(table, validateDrop: info, proposedRow: row, proposedDropOperation: .above) == .move, "Ablegen in der eigenen Tabelle: keine Verschiebung")
+        check(table.dataSource?.tableView?(table, acceptDrop: info, row: row, dropOperation: .above) == true, "Ablegen in der Tabelle abgelehnt")
+        let order = store.playlists.item(pl.id)?.tracks ?? []
+        check(order == [t[2].key, t[0].key, t[1].key], "Reihenfolge nach dem Ziehen: \(order.map { k in t.firstIndex { $0.key == k } ?? -1 })")
+        check(pane.sortOrder.isEmpty, "Liste zeigt nach dem Ziehen nicht die Playlist-Reihenfolge")
+        u.spin(3) { pane.shown.map(\.key) == order }
+        check(pane.shown.map(\.key) == order, "Liste in Playlist-Reihenfolge")
+        // „Neue Playlist“ über das Menü: Umbenennen-Dialog, Name tippen, OK
+        // Menü von PLAYLISTS (hat „Neue Smartlist …“, aber kein „Umbenennen …“ wie ein Ordner)
+        guard let m2 = {
+            for r in 0..<tree.numberOfRows {
+                tree.scrollRowToVisible(r)
+                let rect = tree.convert(tree.rect(ofRow: r), to: nil)
+                if let m = u.rightClick(at: NSPoint(x: rect.minX + 60, y: rect.midY)), m.items.contains(where: { $0.title == String(localized: "Neue Playlist") }),
+                   m.items.contains(where: { $0.title == String(localized: "Neue Smartlist …") }), !m.items.contains(where: { $0.title == String(localized: "Umbenennen …") }) { return m }
+            }
+            return nil
+        }(), let ni = m2.items.firstIndex(where: { $0.title == String(localized: "Neue Playlist") }) else { fail("Menü „Neue Playlist“ fehlt") }
+        let known = Set(store.playlists.all.map(\.id))
+        m2.performActionForItem(at: ni)
+        u.spin(5) { u.window.attachedSheet != nil }
+        guard let alert = u.window.attachedSheet else { fail("Umbenennen-Dialog öffnet nicht") }
+        func allViews(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(allViews) }
+        let av = allViews(alert.contentView!)
+        guard let nameField = av.compactMap({ $0 as? NSTextField }).first(where: { $0.isEditable }),
+              let ok = av.compactMap({ $0 as? NSButton }).first(where: { $0.title == String(localized: "OK") }) else { fail("Umbenennen-Dialog ohne Feld / OK") }
+        alert.makeFirstResponder(nameField)
+        nameField.currentEditor()?.selectAll(nil)
+        nameField.currentEditor()?.insertText("UI Umbenannt")
+        u.spin(0.2)
+        ok.performClick(nil)
+        u.spin(3) { u.window.attachedSheet == nil }
+        let fresh = store.playlists.all.filter { !known.contains($0.id) }
+        check(fresh.count == 1 && fresh[0].kind == .playlist && fresh[0].name == "UI Umbenannt", "Neue Playlist + Umbenennen: \(fresh.map(\.name))")
+        log("tabelle: ziehen + reihenfolge ok · neue playlist über das menü + umbenennen ok")
+        store.playlists = before
+        PlaylistFile.flush()
+        PlaylistFile.removeSelfTestDir()
+    }
+}
+
+/// Ziehen-Information mit Quelle (Ablegen in derselben Tabelle = Reihenfolge)
+final class TableDragInfo: NSObject, NSDraggingInfo {
+    let draggingDestinationWindow: NSWindow?
+    let draggingPasteboard: NSPasteboard
+    let draggingSource: Any?
+    init(window: NSWindow, pasteboard: NSPasteboard, source: Any?) {
+        draggingDestinationWindow = window
+        draggingPasteboard = pasteboard
+        draggingSource = source
+    }
+    var draggingLocation: NSPoint { .zero }
+    var draggingSourceOperationMask: NSDragOperation { [.copy, .move] }
+    var draggedImageLocation: NSPoint { .zero }
+    var draggedImage: NSImage? { nil }
+    var draggingSequenceNumber: Int { 2 }
+    func slideDraggedImage(to screenPoint: NSPoint) {}
+    var draggingFormation: NSDraggingFormation = .default
+    var animatesToDestination = false
+    var numberOfValidItemsForDrop = 1
+    func enumerateDraggingItems(options enumOpts: NSDraggingItemEnumerationOptions = [], for view: NSView?, classes classArray: [AnyClass],
+                                searchOptions: [NSPasteboard.ReadingOptionKey: Any] = [:],
+                                using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
+    var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+    func resetSpringLoading() {}
 }

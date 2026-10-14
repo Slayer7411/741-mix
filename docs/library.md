@@ -12,12 +12,12 @@
 ## ◆ FAVORITES
 
 * 6 slots per pane, above the tree and the list header
-* slot = source (track collection, preparation, running tracks, history, playlist, smartlist, playlist folder, smartlists 741, music folder) or filter (tags, excluded tags, roles, search)
+* slot = source (track collection, preparation, running tracks, history, playlist, smartlist, playlist folder, own playlist / smartlist / folder, music folder) or filter (tags, excluded tags, roles, search)
 * click -> source of the pane / filter applied, active filter again -> cleared. red = active
 * right click -> `Aktuelle Quelle hier ablegen` · `Aktuellen Filter hier ablegen` · `Umbenennen …` · `Leeren`
 * drag a tree entry onto a slot
 * ⌃⌥1-6 -> last used pane
-* saved per pane in the session. playlists + smartlists by collection uuid, then path · smartlists 741 by id, then name · music folders by path
+* saved per pane in the session. playlists + smartlists by collection uuid, then path · own entries by id, then name · music folders by path
 * target gone after a reload -> slot grey, struck through
 
 ## ◆ MUSIC FOLDERS
@@ -108,8 +108,9 @@ K tief kurz · B sub leicht roll · H off » BASIS
 ## ◆ SMARTLISTS
 
 * all smartlists from the collection work as they are
-* own smartlists under "smartlists 741" in the tree -> "+ neue smartlist"
-* same syntax as the collection's smartlists, live track count
+* own smartlists, playlists and folders in one tree PLAYLISTS, folders in folders -> [manual · playlists](MANUAL.md#playlists)
+* smartlist editor: rows `field | operator | value`, all / any, sort + limit, live count, values from the collection or typed (kept as own values) -> [manual](MANUAL.md#-10--tags--smartlists)
+* the query text stays available as the row `Ausdruck`
 
 ```
 $COMMENT2 % "BASIS" & $BPM >= 128 & $IMPORTDATE >= MONTHS_AGO(6)

@@ -275,6 +275,8 @@ final class TrackHeaderView: NSTableHeaderView {
 /// Tabelle: Return = Inline-Bearbeitung (Rest wie NSTableView: Pfeile, ⇧/⌘-Auswahl, Tippen springt)
 final class TrackNSTable: NSTableView {
     var onReturn: (() -> Void)?
+    /// ⌫ / ⌦: aus eigener Playlist bzw. Preparation entfernen (false = nicht verbraucht)
+    var onDelete: (() -> Bool)?
     /// Klick ins Vorschau-Bild des vorgehörten Tracks: Sprung statt Auswahl
     var onSeek: ((NSEvent) -> Bool)?
 
@@ -288,6 +290,7 @@ final class TrackNSTable: NSTableView {
             onReturn?()
             return
         }
+        if e.keyCode == 51 || e.keyCode == 117, e.modifierFlags.intersection([.option, .control, .shift]).isEmpty, onDelete?() == true { return }
         super.keyDown(with: e)
     }
 }
@@ -462,6 +465,12 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         tv.target = self
         tv.doubleAction = #selector(doubleClicked)
         tv.onReturn = { [weak self] in self?.returnKey() }
+        tv.onDelete = { [weak self] in self?.deleteKey() ?? false }
+        // Tracks ziehen (Baum, Decks, Preparation); in eigenen Playlists auch innerhalb der Tabelle (Reihenfolge)
+        tv.registerForDraggedTypes([.string])
+        tv.setDraggingSourceOperationMask(.copy, forLocal: false)
+        tv.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
+        tv.verticalMotionCanBeginDrag = false
         tv.onSeek = { [weak self] e in self?.seekClick(e) ?? false }
         (tv.headerView as? TrackHeaderView)?.onFitColumn = { [weak self] i in self?.fitColumn(i) }
         let menu = NSMenu()
@@ -625,6 +634,9 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     /// Zeilen immer aus `model.shown` (die SwiftUI-Hülle kann eine ältere Liste halten)
     func update(look l: Look) {
         guard let tv = table, let model else { return }
+        // senkrecht ziehen = Auswahl aufziehen, nur in eigenen Playlists = Reihenfolge ändern
+        let reorder = model.ownPlaylistID != nil
+        if tv.verticalMotionCanBeginDrag != reorder { tv.verticalMotionCanBeginDrag = reorder }
         let newRows = fixedRows ?? model.shown, gen = model.tableGeneration
         let first = look == nil
         if first { buildColumns(l.ui) }
@@ -1234,6 +1246,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
                 store.editPreparation(String(localized: "Aus Preparation entfernen")) { $0.removeAll { ids.contains($0) } }
             })
         }
+        addPlaylistItems(menu, ids: ids, rows: rows)
         menu.addItem(.separator())
         if CloudLibrary.shared.hasCloudTracks {
             menu.addItem(ActionItem(String(localized: "Bereitmachen (herunterladen)")) { CloudLibrary.shared.makeReady(tracks(), label: String(localized: "Auswahl")) })

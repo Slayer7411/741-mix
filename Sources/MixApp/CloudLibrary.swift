@@ -106,6 +106,8 @@ final class CloudLibrary {
 
     /// ohne Beobachtung (Filter im Browser-Zwischenspeicher)
     func isLocal(_ path: String) -> Bool { states[path]?.state == .local }
+    /// Zustand ohne Beobachtung und ohne Nachprüfen (Smartlist-Regeln)
+    func peek(_ path: String) -> CloudState? { states[path]?.state }
     func isFetching(_ path: String) -> Bool { _ = revision; return active.contains(path) }
     func isQueued(_ path: String) -> Bool { _ = revision; return queued.contains(path) }
     var hasCloudTracks: Bool { cloudTracks > 0 }

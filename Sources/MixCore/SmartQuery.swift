@@ -10,7 +10,8 @@ public indirect enum SmartQuery: Sendable {
     case always
 
     public enum Op: String, Sendable { case contains = "%", notContains = "!%", eq = "==", ne = "!=",
-                                       ge = ">=", le = "<=", gt = ">", lt = "<", startsWith = "STARTS_WITH" }
+                                       ge = ">=", le = "<=", gt = ">", lt = "<", startsWith = "STARTS_WITH",
+                                       endsWith = "ENDS_WITH" }
     public enum Value: Sendable { case text(String), number(Double), bool(Bool), monthsAgo(Int), daysAgo(Int) }
 
     public struct ParseError: Error, CustomStringConvertible { public let description: String }
@@ -46,6 +47,8 @@ public indirect enum SmartQuery: Sendable {
         case "GENRE": .text(t.genre)
         case "REMIXER": .text(t.remixer)
         case "PRODUCER": .text(t.producer)
+        case "MIX": .text(t.mix)
+        case "CATALOG": .text(t.catalogNo)
         case "COMMENT": .text(t.comment)
         case "COMMENT2": .text(t.comment2)
         case "KEY", "KEYTEXT": .text(t.keyText)
@@ -76,6 +79,7 @@ public indirect enum SmartQuery: Sendable {
             case .eq: return a.caseInsensitiveCompare(b) == .orderedSame
             case .ne: return a.caseInsensitiveCompare(b) != .orderedSame
             case .startsWith: return a.lowercased().hasPrefix(b.lowercased())
+            case .endsWith: return a.lowercased().hasSuffix(b.lowercased())
             case .ge: return a >= b
             case .le: return a <= b
             case .gt: return a > b
@@ -105,7 +109,7 @@ public indirect enum SmartQuery: Sendable {
 
     static func cmp(_ a: Double, _ b: Double, _ op: Op) -> Bool {
         switch op {
-        case .eq, .contains, .startsWith: a == b
+        case .eq, .contains, .startsWith, .endsWith: a == b
         case .ne, .notContains: a != b
         case .ge: a >= b
         case .le: a <= b
@@ -158,7 +162,11 @@ public indirect enum SmartQuery: Sendable {
                 } else if ch.isLetter {
                     var j = i, w = ""
                     while j < c.count, c[j].isLetter || c[j] == "_" { w.append(c[j]); j += 1 }
-                    if w.uppercased() == "STARTS_WITH" { out.append(.op(.startsWith)) } else { out.append(.ident(w.uppercased())) }
+                    switch w.uppercased() {
+                    case "STARTS_WITH": out.append(.op(.startsWith))
+                    case "ENDS_WITH": out.append(.op(.endsWith))
+                    default: out.append(.ident(w.uppercased()))
+                    }
                     i = j
                 } else {
                     throw ParseError(description: "Unbekanntes Zeichen \(ch)")
