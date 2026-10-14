@@ -72,7 +72,7 @@ import Testing
     let old = #"{"ui": {"showFourDecks": false, "showMixer": true, "browserHeight": 300, "fxUnitCount": 4}}"#
     let p = AppPrefs.decode(Data(old.utf8))
     #expect(p.ui.deckCount == 2 && !p.ui.showFourDecks && p.ui.browserHeight == 300)
-    #expect(p.ui.layoutProfiles.map(\.id) == [LayoutProfile.defaultSetupID, LayoutProfile.searchID])
+    #expect(p.ui.layoutProfiles.map(\.id) == [LayoutProfile.defaultSetupID, LayoutProfile.searchID, LayoutProfile.prepareID])
     #expect(p.ui.activeLayoutProfile.isEmpty && p.ui.activeProfile == nil)
     let live = p.ui.layoutProfiles[0], search = p.ui.layoutProfiles[1]
     #expect(live.deckCount == 4 && !live.showMixer && !live.showFXUnits && live.statusBar == .auto && !live.showDeckCover)
@@ -85,7 +85,7 @@ import Testing
     // 4 Decks alt -> 4; ohne alles -> Standard 4 Decks, Standard-Profile
     #expect(AppPrefs.decode(Data(#"{"ui": {"showFourDecks": true}}"#.utf8)).ui.deckCount == 4)
     let none = AppPrefs.decode(Data(#"{"ui": {}}"#.utf8))
-    #expect(none.ui.deckCount == 4 && none.ui.layoutProfiles.count == 2)
+    #expect(none.ui.deckCount == 4 && none.ui.layoutProfiles.map(\.id) == [LayoutProfile.defaultSetupID, LayoutProfile.searchID, LayoutProfile.prepareID])
 
     // leere Liste gespeichert (alle gelöscht) bleibt leer
     let empty = AppPrefs.decode(Data(#"{"ui": {"layoutProfiles": [], "deckCount": 1}}"#.utf8))
@@ -103,7 +103,7 @@ import Testing
 @MainActor @Test func layoutProfileModified() {
     let browser = BrowserState()
     var ui = UIPrefs()
-    ui.layoutProfiles = LayoutProfile.defaults(from: ui)
+    ui.layoutProfiles = Array(LayoutProfile.defaults(from: ui).prefix(2))
     #expect(!ui.profileModified(maximized: false) && ui.nextProfileIndex == 0)
 
     ui.applyProfile(ui.layoutProfiles[1])
@@ -142,4 +142,27 @@ import Testing
     #expect(ui.layoutProfiles[1].id == p.id)
     ui.deleteProfile(p.id)
     #expect(ui.layoutProfiles.count == 2 && ui.activeProfile == nil && !ui.profileModified(maximized: false))
+}
+
+/// „Vorbereiten“: ein Deck, Browser groß, nur Kopf, Wellenform, Übersicht und die Werkzeugzeile
+@MainActor @Test func layoutProfilePrepare() throws {
+    var base = UIPrefs()
+    base.browserHeight = 300
+    let p = LayoutProfile.prepare(from: base)
+    #expect(p.id == LayoutProfile.prepareID && p.deckCount == 1 && !p.showMixer && !p.showFXUnits && !p.showGridTools)
+    let r = p.deckRows
+    #expect(r.prepare && r.overview && r.info && !r.transport && !r.loop && !r.jump && !r.hotcues && !r.tempo && !r.phaseBar)
+    #expect(p.browserHeight >= 520)
+    var ui = UIPrefs()
+    ui.applyProfile(p)
+    #expect(ui.deckRows.prepare && ui.deckCount == 1 && p.matches(ui, maximized: false))
+    // „Alle Zeilen“ lässt die Werkzeugzeile aus (sie doppelt Transport, Grid, Schnitt)
+    ui.showAllDeckRows()
+    #expect(ui.deckRows.transport && ui.deckRows.loop && ui.showGridTools && ui.deckRows.prepare)
+    var fresh = UIPrefs()
+    fresh.showAllDeckRows()
+    #expect(!fresh.deckRows.prepare)
+    // alte Deck-Zeilen ohne das Feld: aus
+    let old = try JSONDecoder().decode(DeckRows.self, from: Data(#"{"loop": false}"#.utf8))
+    #expect(!old.prepare && !old.loop)
 }

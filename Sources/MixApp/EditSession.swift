@@ -30,6 +30,8 @@ final class EditSession {
     var rendering = false
     /// Position nach einer Bearbeitung, wenn die alte nicht mehr in der Liste liegt (Ausgabe-Zeit der neuen Liste)
     var landing: Double?
+    /// Position nach dem nächsten Tausch, auch wenn die alte noch in der Liste liegt (A-B-A: Vorschau vor der Naht)
+    var seekTo: Double?
 
     init(key: String, source: TrackAudio, deck s: DeckState) {
         self.key = key
@@ -152,7 +154,7 @@ extension MixModel {
     }
 
     /// läuft das Rendern noch, wartet die nächste Bearbeitung (Bereiche gehören zur gespielten Liste)
-    private func readySession(_ d: Int) -> EditSession? {
+    func readySession(_ d: Int) -> EditSession? {
         guard let s = editSessions[d] else {
             if deck(d).track != nil, !editing(d) { StatusCenter.post(.warning, String(localized: "Nur im EDIT-Modus"), key: "edit.\(d)") }
             return nil
@@ -259,7 +261,7 @@ extension MixModel {
     func setEditSnap(_ v: EditSnap) { prefs.ui.editSnap = v }
 
     /// Liste übernehmen: Rückgängig, speichern, hörbar machen
-    private func applyEdit(_ d: Int, _ s: EditSession, _ n: EditList, range r: TrackRange?, label: String, landing: Double? = nil) {
+    func applyEdit(_ d: Int, _ s: EditSession, _ n: EditList, range r: TrackRange?, label: String, landing: Double? = nil) {
         let before = (s.shown, range(d)), after = (n, r)
         UndoStack.shared.record(DeckUndoRecorder.label(label, deck: d), deck: d, before: before, after: after) { [weak self, weak s] b, a, undo in
             guard let self, let s, self.editSessions[d] === s else { return }
@@ -321,7 +323,7 @@ extension MixModel {
         // Position: alte Ausgabe-Zeit -> Quelle -> neue Ausgabe-Zeit; liegt sie nicht mehr in der Liste, an die Stelle der Bearbeitung
         let pos = position(d)
         let srcT = s.shown.sourceTime(pos)
-        let at = max(0, srcT.flatMap { edl.outputTime($0) } ?? s.landing ?? 0)
+        let at = max(0, s.seekTo ?? srcT.flatMap { edl.outputTime($0) } ?? s.landing ?? 0)
         let r = pendingRange[d] ?? nil
         pendingRange[d] = nil
         if let a {
@@ -338,9 +340,11 @@ extension MixModel {
         }
         s.shown = edl
         s.landing = nil
+        s.seekTo = nil
         pull()
         if decks[d].range != r { decks[d].range = r }
         setEditMirror(d, s)
+        prepareAudioChanged(d)
     }
 
     // MARK: Datei

@@ -134,6 +134,8 @@ struct DeckRows: Codable, Equatable {
     var tempo = true
     /// Groove → MIDI (Hats / Bass zum laufenden Track)
     var groove = false
+    /// Vorbereiten: eine Werkzeugzeile (Play, Grid, Schnitt, Amp, Join, Split, Render), Deck dabei im EDIT-Modus
+    var prepare = false
 
     /// Reihenfolge für Menü und Einstellungen: wie im Deck von oben nach unten, Pitch-Fader zuletzt.
     /// Grid-Werkzeuge liegen (älter) in UIPrefs, deshalb Pfade ab UIPrefs
@@ -142,7 +144,8 @@ struct DeckRows: Codable, Equatable {
         (\.deckRows.tags, "Tags (Kommentar 2)"), (\.deckRows.phaseBar, "Phasenbalken"), (\.deckRows.overview, "Übersicht"),
         (\.deckRows.transport, "Transport (CUE, PLAY, SYNC …)"), (\.deckRows.hotcues, "Hotcues (mit IN / OUT / RE)"),
         (\.deckRows.loop, "Loop-Größen"), (\.deckRows.jump, "Beatjump"), (\.showGridTools, "Grid-Werkzeuge"),
-        (\.deckRows.groove, "Groove → MIDI"), (\.deckRows.tempo, "Pitch-Fader"),
+        (\.deckRows.groove, "Groove → MIDI"), (\.deckRows.prepare, "Vorbereiten (Grid, Schnitt, Amp, Join, Split)"),
+        (\.deckRows.tempo, "Pitch-Fader"),
     ]
 }
 
@@ -155,6 +158,7 @@ extension DeckRows {
         info = v(.info, info); comment = v(.comment, comment); tags = v(.tags, tags); phaseBar = v(.phaseBar, phaseBar)
         overview = v(.overview, overview); transport = v(.transport, transport); hotcues = v(.hotcues, hotcues)
         loop = v(.loop, loop); jump = v(.jump, jump); tempo = v(.tempo, tempo); groove = v(.groove, groove)
+        prepare = v(.prepare, prepare)
     }
 }
 
@@ -275,8 +279,12 @@ struct UIPrefs: Codable, Equatable {
     var editSnap = EditSnap.bar
     /// Tool-Loops: Zielordner ("" = neben dem Original)
     var toolLoopFolder = ""
+    /// Vorbereiten AMP: über 0 dBFS anheben erlaubt (Spitzen werden hart begrenzt), Standard aus
+    var prepAllowClipping = false
+    /// Vorbereiten JOIN: Tempo der zweiten Datei angleichen, wenn es bis ±0,5 % gleich ist
+    var prepJoinMatchTempo = true
 
-    /// Ansichts-Profile (Menü Darstellung -> Profil, ⌘, -> Anzeige); fehlt das Feld, legt AppPrefs.decode zwei an
+    /// Ansichts-Profile (Menü Darstellung -> Profil, ⌘, -> Anzeige); fehlt das Feld, legt AppPrefs.decode drei an
     var layoutProfiles: [LayoutProfile] = []
     /// zuletzt angewendetes Profil (LayoutProfile.id, "" = keins)
     var activeLayoutProfile = ""
@@ -293,8 +301,8 @@ struct UIPrefs: Codable, Equatable {
         set { deckRows.tempo = !newValue; deckRows.hotcues = !newValue; showGridTools = !newValue }
     }
 
-    /// alle Zeilen aus DeckRows.all an
-    mutating func showAllDeckRows() { for (k, _) in DeckRows.all { self[keyPath: k] = true } }
+    /// alle Zeilen aus DeckRows.all an (ohne Vorbereiten: die Zeile doppelt Transport, Grid und Schnitt)
+    mutating func showAllDeckRows() { for (k, _) in DeckRows.all where k != \UIPrefs.deckRows.prepare { self[keyPath: k] = true } }
 
     /// EDIT-Modus je Deck A–D (Schnitt + Grid statt Loop / Beatjump), Standard aus
     var editDecks = [false, false, false, false]
@@ -346,6 +354,14 @@ struct AppPrefs: Codable, Equatable {
             if d.data(forKey: key) != nil, !p.ui.previewBackground { p.ui.previewFill = .off; p.save() }
             d.set(true, forKey: "migrated.preview-fill")
         }
+        // Profil „Vorbereiten“ zu schon gespeicherten Profilen (einmalig; erster Start: LayoutProfile.defaults)
+        if !Session.isSelfTest, !d.bool(forKey: "migrated.prepare-profile") {
+            if d.data(forKey: key) != nil, !p.ui.layoutProfiles.contains(where: { $0.id == LayoutProfile.prepareID }) {
+                p.ui.layoutProfiles.append(LayoutProfile.prepare(from: p.ui))
+                p.save()
+            }
+            d.set(true, forKey: "migrated.prepare-profile")
+        }
         return p
     }
 
@@ -369,7 +385,7 @@ struct AppPrefs: Codable, Equatable {
         if ui["deckCount"] == nil, let four = ui["showFourDecks"] as? Bool { ui["deckCount"] = four ? 4 : 2; saved["ui"] = ui }
         let hadProfiles = ui["layoutProfiles"] != nil
         var p = merged(saved, over: defaults)
-        // noch keine Profile gespeichert -> „Default Setup“ und „Musik suchen“ aus der gespeicherten Ansicht
+        // noch keine Profile gespeichert -> „Default Setup“, „Musik suchen“, „Vorbereiten“ aus der gespeicherten Ansicht
         if !hadProfiles { p.ui.layoutProfiles = LayoutProfile.defaults(from: p.ui) }
         return p
     }

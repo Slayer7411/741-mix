@@ -26,6 +26,8 @@ final class DeckMirror {
     var range: TrackRange?
     /// EDIT-Modus: Schnittliste, wie das Deck sie gerade spielt (Marken, Schnitte, stumme Stücke), nil = keine Sitzung
     var edit: WaveScene.EditMarks?
+    /// Vorbereiten: Gain, Spitze, Analyse (PrepareMode.swift)
+    var prep = PrepMirror()
 }
 
 /// FX-Unit für die Oberfläche: eigenes Observable je Unit (FXUnitView liest nur ihre Unit)
@@ -89,8 +91,9 @@ final class MixModel {
             savePrefs()
             if prefs.engine != oldValue.engine { core.setPrefs(prefs.engine) }
             if prefs.ui.previewVolume != oldValue.ui.previewVolume { previewer.setVolume(prefs.ui.previewVolume) }
-            // 1 Deck: Tasten und Doppelklick laden ins sichtbare Deck A
-            if prefs.ui.deckCount <= 1, oldValue.ui.deckCount > 1, focusedDeck != 0 { focusedDeck = 0 }
+            // 1 Deck (umgeschaltet oder ein Profil mit 1 Deck angewendet): Tasten und Doppelklick laden ins sichtbare Deck A
+            if prefs.ui.deckCount <= 1, oldValue.ui.deckCount > 1 || oldValue.ui.activeLayoutProfile != prefs.ui.activeLayoutProfile,
+               focusedDeck != 0 { focusedDeck = 0 }
         }
     }
 

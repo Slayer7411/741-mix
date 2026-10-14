@@ -80,6 +80,10 @@ enum CutJob {
     private(set) static var running = false
     /// Selbsttest: letzter Schnitt (Dauer, Datei) zum Prüfen
     static var lastResult: (seconds: Double, track: Track, fromDeck: Bool)?
+    /// alle Dateien des letzten Durchgangs (SPLIT: zwei), Hinweis (Gain begrenzt, Tempo), angewendeter Gain (dB)
+    static var lastTracks: [Track] = []
+    static var lastNote: String?
+    static var lastGain: Double?
     /// Hauptthread-Zeit des Abschlusses (eintragen, melden, ggf. laden)
     private(set) static var mainSeconds = 0.0
 
@@ -88,6 +92,12 @@ enum CutJob {
         case cut(TrackCut.Mode, TrackRange)
         case edit(EditList)
         case toolLoop(beats: Int, range: TrackRange, bpm: Double, separators: String)
+        /// Vorbereiten RENDER: Schnittliste + Gain in einem Durchgang
+        case prepare(EditList, amp: AmpRequest, allowClipping: Bool)
+        /// Vorbereiten SPLIT: zwei Dateien, geteilt an der Ausgabe-Zeit der Schnittliste
+        case split(EditList, at: Double)
+        /// Vorbereiten JOIN: zweite Datei (mit eigenen Änderungen) ans Ende der Schnittliste, am Grid
+        case join(EditList, second: Track, matchTempo: Bool)
     }
 
     struct Input: Sendable {
@@ -136,7 +146,13 @@ enum CutJob {
         }
     }
 
-    private struct Output: Sendable { var track: Track; var fromDeck: Bool }
+    struct Output: Sendable {
+        var tracks: [Track]
+        var fromDeck: Bool
+        var note: String?
+        var gain: Double?
+        var track: Track { tracks[0] }
+    }
 
     /// Hintergrund: Datei schreiben, Track der neuen Datei bauen
     nonisolated private static func run(_ i: Input, report: (Double) -> Bool) throws -> Output {
@@ -154,6 +170,8 @@ enum CutJob {
         let taken: (String) -> Bool = { fm.fileExists(atPath: dir.appendingPathComponent($0).path) }
         let splice: AudioSplice, name: String
         switch i.kind {
+        case .prepare, .split, .join:
+            return try PrepareRender.run(i, source: source, report: report)
         case let .cut(mode, r):
             let a = Int((r.start * rate).rounded()), b = Int((r.end * rate).rounded())
             splice = mode == .remove ? AudioSplice.removing(a..<max(a, b), frames: source.frames, fade: fade)
@@ -186,12 +204,19 @@ enum CutJob {
             t = TrackCut.track(from: i.track, key: key, path: url.path, grid: i.grid, hotcues: i.hotcues, edl: edl, duration: duration)
         case let .toolLoop(beats, _, bpm, seps):
             t = ToolLoop.track(from: i.track, key: key, path: url.path, beats: beats, bpm: bpm, duration: duration, separators: seps)
+        case .prepare, .split, .join:
+            throw AudioCutWriter.CutError.format
         }
-        if let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int {
+        fileInfo(&t)
+        return Output(tracks: [t], fromDeck: source.fromDeck)
+    }
+
+    /// Größe und Bitrate der neuen Datei
+    nonisolated static func fileInfo(_ t: inout Track) {
+        if let size = (try? FileManager.default.attributesOfItem(atPath: t.path))?[.size] as? Int {
             t.fileSizeKB = size / 1024
-            t.bitrate = duration > 0 ? Int(Double(size) * 8 / duration / 1000) : 0
+            t.bitrate = t.duration > 0 ? Int(Double(size) * 8 / t.duration / 1000) : 0
         }
-        return Output(track: t, fromDeck: source.fromDeck)
     }
 
     private static func finish(_ i: Input, _ r: Result<Output, Error>, seconds: Double, mix: MixModel, store: LibraryStore) {
@@ -201,13 +226,21 @@ enum CutJob {
         switch r {
         case let .success(out):
             let t = out.track
-            store.addCut(t, source: i.track)
+            for x in out.tracks { store.addCut(x, source: i.track) }
             lastResult = (seconds, t, out.fromDeck)
+            lastTracks = out.tracks
+            lastNote = out.note
+            lastGain = out.gain
             var msg = String(format: String(localized: "Geschnitten: %@ · %@"), t.fileName, Theme.time(t.duration))
-            if case let .toolLoop(beats, _, _, _) = i.kind {
-                msg = String(format: String(localized: "Tool-Loop: %@ · %lld Beats"), t.fileName, beats)
+            switch i.kind {
+            case let .toolLoop(beats, _, _, _): msg = String(format: String(localized: "Tool-Loop: %@ · %lld Beats"), t.fileName, beats)
+            case .prepare: msg = String(format: String(localized: "Gerendert: %@ · %@"), t.fileName, Theme.time(t.duration))
+            case .split: msg = String(format: String(localized: "Geteilt: %@"), out.tracks.map(\.fileName).joined(separator: " · "))
+            case .join: msg = String(format: String(localized: "Zusammengefügt: %@ · %@"), t.fileName, Theme.time(t.duration))
+            default: break
             }
-            if i.load {
+            if let n = out.note { msg += " · " + n }
+            if i.load, i.kind.loadsResult {
                 if mix.load(t, deck: i.deck, force: false) {
                     msg += " · " + String(localized: "in Deck \(deckLetters[i.deck]) geladen")
                 } else {
@@ -222,6 +255,8 @@ enum CutJob {
             StatusCenter.post(.info, String(localized: "Schneiden abgebrochen"), key: "cut")
         case let .failure(e as AudioCutWriter.CutError) where e == .empty:
             StatusCenter.post(.warning, String(localized: "Ergebnis zu kurz (mindestens 1 s)"), key: "cut")
+        case let .failure(e as PrepareRender.Failure):
+            StatusCenter.post(.warning, e.text, key: "cut")
         case let .failure(e):
             StatusCenter.post(.error, String(localized: "Schneiden fehlgeschlagen: \(e.localizedDescription)"), detail: i.track.path, key: "cut")
         }
@@ -252,8 +287,14 @@ extension CutJob.Kind {
         case let .cut(m, _): m.rawValue
         case .edit: "edit"
         case let .toolLoop(b, _, _, _): "tool-loop \(b)"
+        case .prepare: "prepare"
+        case .split: "split"
+        case .join: "join"
         }
     }
+
+    /// Ergebnis darf ins Deck (SPLIT: zwei Dateien, keine)
+    var loadsResult: Bool { if case .split = self { false } else { true } }
 }
 
 extension CutJob {

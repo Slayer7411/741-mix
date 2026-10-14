@@ -40,5 +40,5 @@ import Testing
     all.groove = true   // Standard aus, „alle Zeilen“ schaltet sie mit ein
     #expect(ui.deckRows == all && ui.showGridTools && !ui.compactDecks)
     // jede Zeile genau einmal in Menü und Einstellungen
-    #expect(Set(DeckRows.all.map(\.1)).count == DeckRows.all.count && DeckRows.all.count == 12)
+    #expect(Set(DeckRows.all.map(\.1)).count == DeckRows.all.count && DeckRows.all.count == 13)   // mit Vorbereiten (bleibt bei „alle Zeilen“ aus)
 }

@@ -88,6 +88,29 @@ struct LayoutProfile: Codable, Equatable, Identifiable {
 
     static let defaultSetupID = UUID(uuidString: "741D0000-0000-4000-8000-000000000001")!
     static let searchID = UUID(uuidString: "741D0000-0000-4000-8000-000000000002")!
+    static let prepareID = UUID(uuidString: "741D0000-0000-4000-8000-000000000003")!
+
+    /// „Vorbereiten“: ein Deck über die volle Breite, Browser groß, Deck = Kopf, Wellenform, Übersicht und eine
+    /// Werkzeugzeile (Play, Grid, Schnitt, Amp, Join, Split, Render); das Deck geht dabei in den EDIT-Modus
+    static func prepare(from ui: UIPrefs) -> LayoutProfile {
+        var p = LayoutProfile(name: String(localized: "Vorbereiten"), ui: ui)
+        p.id = prepareID
+        p.deckCount = 1
+        p.showMixer = false
+        p.showFXUnits = false
+        var r = DeckRows()
+        r.comment = false; r.tags = false; r.phaseBar = false; r.transport = false; r.hotcues = false
+        r.loop = false; r.jump = false; r.tempo = false; r.groove = false
+        r.prepare = true
+        p.deckRows = r
+        p.showGridTools = false
+        p.browserHeight = max(ui.browserHeight, 520)
+        p.hideTreeWithDecks = false
+        p.previewMode = .fullRow
+        p.showDeckCover = true
+        p.statusBar = .always
+        return p
+    }
 
     /// erste Profile, aus der vorhandenen Ansicht abgeleitet (FX-Anzahl, Browser-Höhe … bleiben)
     static func defaults(from ui: UIPrefs) -> [LayoutProfile] {
@@ -119,7 +142,7 @@ struct LayoutProfile: Codable, Equatable, Identifiable {
         search.showCoverPreview = true
         search.showDeckCover = true
         search.statusBar = .always
-        return [live, search]
+        return [live, search, prepare(from: ui)]
     }
 }
 
@@ -215,6 +238,7 @@ enum LayoutProfiles {
         mix.prefs.ui = ui
         if browser.maximized != p.browserMaximized { browser.maximized = p.browserMaximized }
     }
+
 
     static func apply(at i: Int, mix: MixModel, browser: BrowserState, announce: Bool = true) {
         let list = mix.prefs.ui.layoutProfiles
