@@ -95,6 +95,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case editRender = "deck.edit.render"
     case toolLoop2 = "deck.toolloop.2", toolLoop4 = "deck.toolloop.4", toolLoop8 = "deck.toolloop.8", toolLoop16 = "deck.toolloop.16"
     case keySync = "deck.keysync", instantDouble = "deck.double"
+    case masterFX = "mix.masterfx"
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", loadSelectedForce = "browser.load.force"
     case previewSelected = "browser.preview"
     case reloadCollection = "browser.reload", matching = "browser.matching"
@@ -191,7 +192,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .undo: KeyCombo("z")
         case .redo: KeyCombo("z", [.shift, .command])
         case .master, .keylock, .reloop, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .reconnectAudio,
-             .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop,
+             .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop, .masterFX,
              .editRemove, .editKeep, .editDuplicate, .editMute, .editLeft, .editRight, .editMark, .editSnap, .editRender,
              .toolLoop2, .toolLoop4, .toolLoop8, .toolLoop16: nil
         }

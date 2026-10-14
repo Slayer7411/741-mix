@@ -68,6 +68,9 @@ final class MixModel {
     @ObservationIgnored let fxUnits = (0..<MixEngine.fxUnitCount).map { _ in FXMirror() }
     private(set) var clock = ClockMirror()
     private(set) var crossfader = 0.0
+    /// Master-Bus (Kette, an/aus, D/W) und sein letzter Plugin-Fehler
+    private(set) var masterFX = MasterFXState()
+    private(set) var masterPluginError: String?
     /// Link-Teilnehmer, wie die LINK-Taste sie zeigt (0 = nur „LINK“) – Größen-Schlüssel der Master-Clock-Leiste
     private(set) var linkPeersShown = 0
     private(set) var effectiveMaster: Int?
@@ -277,6 +280,9 @@ final class MixModel {
                 if m.params != s.fxParams[u] { m.params = s.fxParams[u] }
                 if m.pluginError != s.pluginErrors[u] { m.pluginError = s.pluginErrors[u] }
             }
+            if s.masterFX != masterFX { masterFX = s.masterFX }
+            let me = s.pluginErrors[MixController.masterBus]
+            if me != masterPluginError { masterPluginError = me }
             let c = ClockMirror(s)
             if c != clock { clock = c }
             if s.crossfader != crossfader { crossfader = s.crossfader }
@@ -600,13 +606,49 @@ final class MixModel {
         case _ where FXCatalog.isGroup(key):
             String(localized: "Gruppe") + " · " + FXCatalog.groupTypes(key).map(\.name).joined(separator: " · ")
         case _ where FXUnitState.Effect.allCases.contains { $0.name == key }: key
+        case _ where key.contains(FXCatalog.chainSeparator):   // Plugin-Kette
+            key.components(separatedBy: FXCatalog.chainSeparator).map { core.pluginCatalog.knownInfo($0)?.name ?? $0 }
+                .joined(separator: FXCatalog.chainSeparator)
         default: core.pluginCatalog.knownInfo(key).map { "\($0.name) · \($0.manufacturer)" } ?? key
         }
     }
     func setPlugin(_ u: Int, _ id: String?) {
-        if id != state.fx[u].pluginID { PluginWindow.close(u) }
+        if id != state.fx[u].pluginID || state.fx[u].chain.count > 1 { PluginWindow.close(u) }
         run { core.setPlugin(u, id: id) }
     }
+
+    // MARK: Plugin-Ketten (FX-Unit 0…3, Master-Bus = MixController.masterBus)
+
+    func chain(_ b: Int) -> [FXPluginSlot] { b == MixController.masterBus ? masterFX.chain : fxUnits[b].state.chain }
+    func addPlugin(_ b: Int, _ id: String) { run { core.addPlugin(b, id: id) } }
+    func replacePlugin(_ b: Int, slot: Int, _ id: String) {
+        PluginWindow.close(b, slot: slot, core: core)
+        run { core.replacePlugin(b, slot: slot, id: id) }
+    }
+    func removePlugin(_ b: Int, slot: Int) {
+        PluginWindow.close(b, slot: slot, core: core)
+        run { core.removePlugin(b, slot: slot) }
+    }
+    func movePlugin(_ b: Int, slot: Int, by: Int) { run { core.movePlugin(b, slot: slot, by: by) } }
+    func setPluginOn(_ b: Int, slot: Int, _ on: Bool) { run { core.setPluginOn(b, slot: slot, on) } }
+    func setMasterFX(on: Bool? = nil, dryWet: Double? = nil) { run { core.setMasterFX(on: on, dryWet: dryWet) } }
+    func toggleMasterFX() { run { core.toggleMasterFX() } }
+    /// gemerkte Ketten (Name → Plätze), für jede FX-Unit und den Master-Bus
+    var chainPresets: [String] { state.prefs.pluginChains.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
+    func saveChainPreset(_ b: Int, name: String) {
+        run { core.saveChainPreset(b, name: name) }
+        prefs.engine.pluginChains = state.prefs.pluginChains
+    }
+    func loadChainPreset(_ b: Int, name: String) {
+        PluginWindow.close(b)
+        run { core.loadChainPreset(b, name: name) }
+    }
+    func deleteChainPreset(_ name: String) {
+        run { core.deleteChainPreset(name) }
+        prefs.engine.pluginChains = state.prefs.pluginChains
+    }
+    /// Master-Bus wirkt nur im internen Mixer (extern: jedes Deck auf eigenem Paar, kein Summenpunkt)
+    var masterFXActive: Bool { mixerMode == .internalMixer }
     func setMasterVolume(_ v: Double) {
         run { core.setMasterVolume(v) }
         if !Session.isSelfTest { UserDefaults.standard.set(v, forKey: "masterVolume") }

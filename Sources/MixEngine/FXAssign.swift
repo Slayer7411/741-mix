@@ -88,8 +88,9 @@ public struct FXParam: Equatable, Sendable, Identifiable {
     /// Standardstellung (normalisiert)
     public var defaultValue = 0.0
     public var bipolar = false
-    /// Parameter-ID im Plugin (nil = eigener Effekt)
+    /// Parameter-ID im Plugin (nil = eigener Effekt) und Platz des Plugins in der Kette
     public var pluginParam: UInt32?
+    public var pluginSlot = 0
     /// Bereich normalisiert (VST3): Anzeige-Text kommt vom Plugin
     public var normalized = false
 
@@ -101,17 +102,30 @@ public struct FXParam: Equatable, Sendable, Identifiable {
     }
 
     /// Parameter eines Plugins (AU: Bereich in Einheiten, VST3: normalisiert)
-    public init(plugin p: PluginInstance.Parameter, normalized: Bool = false) {
-        self.init(id: Self.pluginKey(p.id), name: p.name, short: Self.shortName(p.name), group: p.group, unit: p.units,
+    public init(plugin p: PluginInstance.Parameter, normalized: Bool = false, slot: Int = 0) {
+        self.init(id: Self.pluginKey(p.id, slot: slot), name: p.name, short: Self.shortName(p.name), group: p.group, unit: p.units,
                   min: Double(p.min), max: Double(p.max), steps: p.steps, valueNames: p.valueNames)
         curve = p.curve
         pluginParam = p.id
+        pluginSlot = slot
         self.normalized = normalized
         bipolar = self.min < 0 && abs(self.min + self.max) < 1e-6 * Swift.max(1, abs(self.min))
         defaultValue = position(Double(p.defaultValue))
     }
 
-    public static func pluginKey(_ id: UInt32) -> String { "p\(id)" }
+    /// Schlüssel eines Plugin-Parameters: Platz 0 "p<id>" (wie mit einem Plugin je Unit), sonst "s<Platz>.p<id>"
+    public static func pluginKey(_ id: UInt32, slot: Int = 0) -> String { pluginKey("p\(id)", slot: slot) }
+    public static func pluginKey(_ base: String, slot: Int) -> String { slot == 0 ? base : "s\(slot).\(base)" }
+
+    /// Platz und Grundschlüssel eines Plugin-Schlüssels ("s2.p7" → (2, "p7"), "p7"/"@1" → (0, …)); nil = eigener Parameter
+    public static func pluginSlot(of key: String) -> (Int, String)? {
+        var k = 0, base = Substring(key)
+        if key.hasPrefix("s"), let dot = key.firstIndex(of: "."), let n = Int(key[key.index(after: key.startIndex)..<dot]) {
+            k = n; base = key[key.index(after: dot)...]
+        }
+        guard base.count > 1, base.first == "p" || base.first == "@", base.dropFirst().allSatisfy(\.isNumber) else { return nil }
+        return (k, String(base))
+    }
 
     public var isSwitch: Bool { steps >= 1 }
 
@@ -200,6 +214,8 @@ public struct FXControlInfo: Equatable, Sendable {
 /// Parameter, Standardbelegung und Felder der eigenen Effekte (Gruppe, Filter, Delay, Reverb, Gater, Roll, Flanger, Phaser)
 public enum FXCatalog {
     public static let groupKey = "GROUP"
+    /// trennt die Plugin-IDs in der Kennung einer Kette
+    public static let chainSeparator = " > "
     public typealias Effect = FXUnitState.Effect
 
     /// Beat-Teiler als Text ("1/4", "3/2", "8")
@@ -424,8 +440,11 @@ extension FXUnitState {
             return FXCatalog.groupKey + ":" + slotTypes.compactMap { Effect(rawValue: $0)?.name }.joined(separator: "/")
         }
         let e = Effect(rawValue: singleType) ?? .delay
-        return e == .plugin ? (pluginID ?? e.name) : e.name
+        return e == .plugin ? (chainKey ?? e.name) : e.name
     }
+
+    /// Kennung der Plugin-Kette: Plugin-IDs in Reihenfolge ("aufx:mrev:appl > aufx:dely:appl"), ein Plugin = seine ID
+    public var chainKey: String? { chain.isEmpty ? nil : chain.map(\.id).joined(separator: FXCatalog.chainSeparator) }
 
     public var pluginActive: Bool { single && singleType == Effect.plugin.rawValue }
 

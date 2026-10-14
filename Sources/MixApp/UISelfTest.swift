@@ -116,6 +116,7 @@ enum UISelfTest {
             ("edit-modus", editMode),
             ("groove", groove),
             ("daw-streifen", dawStrip),
+            ("master-fx", masterFX),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -889,5 +890,33 @@ extension UISelfTest {
         u.spin(3) { u.named("A daw") == nil }
         check(u.named("A daw") == nil && bridge.clips.isEmpty, "Streifen bleibt nach dem Abmelden")
         log(String(format: "daw: streifen %.0f × %.0f pt, grid %.2f bpm übernommen + rückgängig", u.frame(strip).width, u.frame(strip).height, bpm))
+    }
+
+    /// Master-FX: belegtes Tastenkürzel schaltet den Master-Bus an und aus; Kette im Master-Bus lädt, Mixer zeigt sie
+    static func masterFX(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix
+        let keys = mix.prefs.keys
+        guard let combo = [KeyCombo("f", [.control, .option]), KeyCombo("g", [.control, .option])].first(where: { keys.action(for: $0) == nil })
+        else { fail("keine freie Taste für Master-FX") }
+        mix.prefs.keys.set(.masterFX, combo)
+        defer { mix.prefs.keys = keys }
+        mix.prefs.ui.showMixer = true
+        u.window.makeFirstResponder(nil)
+        u.spin(0.3)
+        let on0 = mix.masterFX.on
+        u.key(combo)
+        u.spin(1) { mix.masterFX.on != on0 }
+        check(mix.masterFX.on != on0, "\(combo.symbols): Master-FX schaltet nicht")
+        u.key(combo)
+        u.spin(1) { mix.masterFX.on == on0 }
+        check(mix.masterFX.on == on0, "\(combo.symbols): Master-FX schaltet nicht zurück")
+        mix.addPlugin(MixController.masterBus, "aufx:lpas:appl")
+        u.spin(10) { mix.core.pluginInstance(MixController.masterBus, slot: 0) != nil }
+        check(mix.chain(MixController.masterBus).map(\.id) == ["aufx:lpas:appl"], "Master-Kette: \(mix.chain(MixController.masterBus).map(\.id))")
+        check(mix.core.pluginInstance(MixController.masterBus, slot: 0) != nil, "Master-Kette: AULowpass lädt nicht")
+        mix.removePlugin(MixController.masterBus, slot: 0)
+        mix.prefs.ui.showMixer = false
+        u.spin(0.3)
+        check(mix.chain(MixController.masterBus).isEmpty, "Master-Kette nicht leer")
     }
 }

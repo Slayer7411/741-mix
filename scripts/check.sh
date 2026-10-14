@@ -11,8 +11,8 @@ swift build 2>&1 | grep -E "error:|warning:.*Sources/|Build complete" | grep -v 
 swift build >/dev/null 2>&1
 if [ $quick = 0 ]; then
   echo "== swift test"
-  swift test 2>&1 | grep -E "✘|Test run with" || true
-  swift test >/dev/null 2>&1 || { echo "FEHLER: Unit-Tests rot"; exit 1; }
+  swift test --no-parallel 2>&1 | grep -E "✘|Test run with" || true
+  swift test --no-parallel >/dev/null 2>&1 || { echo "FEHLER: Unit-Tests rot"; exit 1; }
 fi
 echo "== selftest"
 MIX741_SELFTEST=1 MIX741_NOEXT=1 .build/debug/minos741 2>&1 | grep -E "SELFTEST|FAIL|Fehler" | tail -3 | grep -q "SELFTEST OK" || { echo "FEHLER: Selbsttest"; exit 1; }

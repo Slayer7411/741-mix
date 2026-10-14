@@ -1044,3 +1044,31 @@
 "verbunden: %lld Clips" = "connected: %lld clips";
 "keine Verbindung" = "not connected";
 "remote script aus extras/daw-bridge in den ordner „Remote Scripts“ der DAW kopieren und dort als control surface wählen. nur 127.0.0.1, port gleich in config.json des scripts." = "copy the remote script from extras/daw-bridge into the DAW's \"Remote Scripts\" folder and pick it there as control surface. 127.0.0.1 only, same port in the script's config.json.";
+
+/* Plugin-Ketten, Master-Bus */
+"KETTE" = "CHAIN";
+"KETTEN" = "CHAINS";
+"leer – Plugin hinzufügen" = "empty – add a plugin";
+"Latenz der Kette (Summe der Plugins, nicht ausgeglichen)" = "Latency of the chain (sum of the plugins, not compensated)";
+"Plugin hinten an die Kette hängen (höchstens 4)" = "Append a plugin to the chain (up to 4)";
+"Gemerkte Ketten laden oder die aktuelle merken (mit den Einstellungen der Plugins)" = "Load a remembered chain or remember this one (with the plugins' settings)";
+"Kette speichern …" = "Save chain …";
+"Kette speichern" = "Save chain";
+"Gibt es den Namen schon, wird diese Kette überschrieben." = "An existing name overwrites that chain.";
+"extern: kein Summenpunkt – Master-Bus aus" = "external: no summing point – master bus off";
+"Platz an/aus (aus = durchreichen, Fahne klingt aus)" = "Slot on/off (off = pass through, tail rings out)";
+"Klick = anderes Plugin" = "click = other plugin";
+"früher in der Kette" = "earlier in the chain";
+"später in der Kette" = "later in the chain";
+"aus der Kette nehmen" = "remove from the chain";
+"Plugin-Kette: bis zu 4 Plugins in Reihe (Audio Unit oder VST3)" = "Plugin chain: up to 4 plugins in series (audio unit or VST3)";
+"Fenster des ersten Plugins der Kette öffnen" = "Open the window of the first plugin in the chain";
+"Master-Bus an/aus: Plugin-Kette nach der Summe der Decks, vor MAIN" = "Master bus on/off: plugin chain after the sum of the decks, before MAIN";
+"Extern: kein Summenpunkt – der Master-Bus wirkt nur im internen Mixer" = "External: no summing point – the master bus only works with the internal mixer";
+"EXTERN AUS" = "EXTERNAL OFF";
+"Master-FX an/aus" = "Master FX on/off";
+"Gemerkte Plugin-Ketten" = "Remembered plugin chains";
+"keine – fx-unit oder master -> kette -> ketten -> kette speichern …" = "none – fx unit or master -> chain -> chains -> save chain …";
+"Plugin nicht geladen · %@" = "plugin not loaded · %@";
+"Plugin nicht ladbar · %@" = "plugin cannot be loaded · %@";
+"MASTER: %@ antwortet nicht rechtzeitig – %lld Blöcke trocken" = "MASTER: %@ not responding in time – %lld blocks dry";

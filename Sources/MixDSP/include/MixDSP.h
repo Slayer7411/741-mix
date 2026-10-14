@@ -17,6 +17,8 @@ extern "C" {
 #define MDSP_DECKS 4
 #define MDSP_FX_UNITS 4
 #define MDSP_MAX_FRAMES 4096   // größter Block je Durchlauf (größere Puffer rechnet mdsp_render in Teilen)
+#define MDSP_FX_CHAIN 4        // Plugins in Reihe je FX-Unit und im Master-Bus
+#define MDSP_MASTER_UNIT (-1)  // `unit` der Kette des Master-Busses (mdsp_set_fx_chain & Co., `deck` egal)
 
 typedef struct MDEngine MDEngine;
 typedef struct MDPlugin MDPlugin;   // Effekt-Plugin (Backend-Datei, z. B. MixDSPAUHost.h)
@@ -84,14 +86,31 @@ void mdsp_set_param(MDEngine *e, int deck, MDParam p, float v);
 void mdsp_set_fx(MDEngine *e, int unit, MDFXParam p, float v);
 void mdsp_set_master(MDEngine *e, float volume);
 
-/// Plugin für FX-Unit × Deck setzen (NULL = keins). Liefert das vorherige; das darf erst geschlossen werden,
+/// erstes Plugin der Kette von FX-Unit × Deck setzen (NULL = keins). Liefert das vorherige; das darf erst geschlossen werden,
 /// wenn mdsp_fx_plugin_released() true liefert (Audio-Thread hat einen ganzen Block ohne es gerechnet).
 MDPlugin *mdsp_set_fx_plugin(MDEngine *e, int unit, int deck, MDPlugin *p);
+/// steht `old` in keinem Platz der Kette mehr und hat der Audio-Thread seitdem einen ganzen Block gerechnet?
 bool mdsp_fx_plugin_released(MDEngine *e, int unit, int deck, MDPlugin *old);
-/// NaN im Deck: das Plugin der Unit wird nicht mehr gerechnet, bis der Steuer-Thread es zurückgesetzt hat
-/// (mdplug_reset) und mdsp_fx_plugin_reset_done() meldet
+/// wie mdsp_fx_chain_needs_reset/_reset_done für Platz 0
 bool mdsp_fx_plugin_needs_reset(MDEngine *e, int unit, int deck);
 void mdsp_fx_plugin_reset_done(MDEngine *e, int unit, int deck);
+
+/// Plugin-Kette von FX-Unit × Deck (unit = MDSP_MASTER_UNIT: Master-Bus) in einem Schritt setzen: bis zu MDSP_FX_CHAIN
+/// Plugins in Reihe (Platz 0 zuerst), NULL = Platz leer. Ein herausgenommenes Plugin erst schließen, wenn
+/// mdsp_fx_plugin_released() true liefert. D/W der Unit wirkt auf die ganze Kette (trocken = Eingang der Kette)
+void mdsp_set_fx_chain(MDEngine *e, int unit, int deck, MDPlugin *const *plugins, int count);
+/// Platz an/aus (gilt für alle Decks der Unit); aus = durchreichen, die Fahne des Plugins klingt aus. Standard an
+void mdsp_set_fx_chain_on(MDEngine *e, int unit, int slot, bool on);
+/// NaN im Deck oder aus dem Plugin: der Platz wird durchgereicht, bis der Steuer-Thread das Plugin zurückgesetzt hat
+/// (mdplug_reset) und mdsp_fx_chain_reset_done() meldet
+bool mdsp_fx_chain_needs_reset(MDEngine *e, int unit, int deck, int slot);
+void mdsp_fx_chain_reset_done(MDEngine *e, int unit, int deck, int slot);
+/// Master-Bus: Kette nach der Summe der Decks, vor Master-Lautstärke und Begrenzung. Aus = Eingang zu, Fahnen klingen aus
+void mdsp_set_master_fx(MDEngine *e, bool on, float dryWet);
+/// Kanalpaar des Master-Busses (erster Kanal, -1 = aus – externer Mixer hat keinen Summenpunkt)
+void mdsp_set_master_fx_channel(MDEngine *e, int firstChannel);
+/// Pegel des Master-Paars nach dem Master-Bus, vor der Master-Lautstärke (0, solange kein Paar gesetzt ist)
+void mdsp_master_levels(MDEngine *e, float *rms, float *peak);
 
 void mdsp_seek(MDEngine *e, int deck, double seconds);
 void mdsp_set_loop(MDEngine *e, int deck, bool active, double startSeconds, double endSeconds);
