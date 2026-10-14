@@ -16,6 +16,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * beatgrid: fine lines by default (beat 1 device pixel at 35 %, bar 1 pt at 70 %, phrase 1.5 pt, markers 2 / 2.5 / 3 pt), caps and triangles centred on the line and on device pixels, ruler labels on device pixels. ⌘, -> DISPLAY -> beatgrid -> lines fine / bold (`ui.gridLineWeight`, bold = previous widths). self test logs tile times, ui test `linien`
 
 ### fixed
+* link: the link timeline is set again only on real jumps (> 0.25 beats) or, with the clock on the master deck, from 0.02 beats drift (was 0.01, ≈ 5 ms). a free clock is trimmed by minos itself from 0.005 beats, link stays untouched -> no more slight wobble in the peers. audio stamp = hal output time + device latency instead of callback time (less jitter). AUTO clock follows the deck tempo to 0.0005 bpm (was 0.005, the clock drifted off and every jump back reset link). diagnosis: LINK tooltip (resets), right click -> `Link-Diagnose` in the status line, load test per stage phase max / σ, resets, clock trims; self test 10 s dry run; unit tests with a fake timeline; ui test `link`
 * browser: dragging a track out of the list works in any direction again (upwards onto the decks); since the playlist tree a drag had to start sideways
 
 ## ◆ [0.8.1] · 2026-10-14 · UNIVERSAL

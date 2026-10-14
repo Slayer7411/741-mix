@@ -22,13 +22,16 @@ enum LoadTest {
         var busy = 0.0, blocks = 0, peak = 0.0
         var overloads = 0, deviceOverloads = 0, reconnects = 0
         var hitches = 0, worstHitchMs = 0.0
-        var linkMax: Double?, linkPeers = 0
+        /// Link (nur mit Teilnehmern): Phase max/σ über alle Steuerticks der Stufe, Neusetzungen, Clock-Trims
+        var linkMax: Double?, linkSigma = 0.0, linkPeers = 0, linkForces = 0, linkTrims = 0
         var loads: [Double] = [], loadFailures = 0
         var rssMax: UInt64 = 0
         var aborted = false
         var mean: Double { busy / Double(max(1, blocks)) }
+        /// Toleranz der Nachführung (0,02 Beats) + Stempel-Jitter: jeder Tick zählt, nicht nur Stichproben
+        static let linkLimit = 0.03
         var pass: Bool {
-            peak < 0.7 && overloads == 0 && deviceOverloads == 0 && (linkMax.map { $0 < 0.02 } ?? true) && !aborted
+            peak < 0.7 && overloads == 0 && deviceOverloads == 0 && (linkMax.map { $0 < Self.linkLimit } ?? true) && !aborted
         }
     }
 
@@ -191,6 +194,7 @@ enum LoadTest {
             let info = engine.takeLoad()
             current = Stage(frames: frames, parallel: parallel, deviceFrames: info.bufferFrames, latencyMs: info.outputLatency * 1000)
             let r0 = engine.watch.reconnects
+            let link0 = core.linkStats(resetWindow: true)
             log(String(format: "Stufe Puffer %d %@: Gerät %d Frames, Latenz %.1f ms, %.0f min", frames, parallel ? "Decks parallel" : "seriell",
                        info.bufferFrames, info.outputLatency * 1000, minutes))
             let start = Date()
@@ -215,10 +219,12 @@ enum LoadTest {
                 if el >= minutes * 60 { break }
                 if el - lastLink >= 10 {
                     lastLink = el
-                    if let lp = core.linkPhase() {
-                        current!.linkPeers = max(current!.linkPeers, lp.peers)
-                        if lp.peers > 0 { current!.linkMax = max(current!.linkMax ?? 0, abs(lp.error)) }
-                        log(String(format: "  Link Phase %+.4f Beats · %d Teilnehmer", lp.error, lp.peers), stdout: false)
+                    let ls = core.linkStats()
+                    if let d = ls.lastDiff {
+                        current!.linkPeers = max(current!.linkPeers, ls.peers)
+                        log(String(format: "  Link Phase %+.4f Beats · Drift %+.4f · Fenster max %.4f / σ %.4f · Neusetzungen %d · Clock-Trims %d · Tempo %d · %d Teilnehmer",
+                                   d, ls.drift, ls.windowMax, ls.windowSigma, ls.forces - link0.forces, ls.trims - link0.trims,
+                                   ls.tempoSets - link0.tempoSets, ls.peers), stdout: false)
                     }
                 }
                 if el - lastSearch >= 20 {
@@ -269,6 +275,10 @@ enum LoadTest {
                     worstSeen = (0, [], 0)
                 }
             }
+            let link1 = core.linkStats(resetWindow: true)
+            current!.linkForces = max(0, link1.forces - link0.forces); current!.linkTrims = max(0, link1.trims - link0.trims)
+            current!.linkPeers = max(current!.linkPeers, link1.peers)
+            if current!.linkPeers > 0, link1.windowCount > 0 { current!.linkMax = link1.windowMax; current!.linkSigma = link1.windowSigma }
             stages.append(current!)
             log(summaryLine(current!))
             current = nil
@@ -295,21 +305,22 @@ enum LoadTest {
         let loads = c.loads.isEmpty ? "–" : String(format: "%.2f / %.2f s", c.loads.reduce(0, +) / Double(c.loads.count), c.loads.max() ?? 0)
         return String(format: "Stufe %d %@ %@: %.1f min · DSP %.1f %% · Spitze %.0f %% · über Budget %d · Gerät überlastet %d · Hänger %d (max %.0f ms) · Link %@ · Laden Mittel/Max %@ (%d fehlgeschlagen) · RSS max %@ · neu verbunden %d",
                       c.frames, c.parallel ? "parallel" : "seriell", c.pass ? "PASS" : "FAIL", c.seconds / 60, c.mean * 100, c.peak * 100, c.overloads, c.deviceOverloads,
-                      c.hitches, c.worstHitchMs, c.linkMax.map { String(format: "%.4f Beats", $0) } ?? "keine Teilnehmer",
+                      c.hitches, c.worstHitchMs, c.linkMax.map { String(format: "Phase max %.4f / σ %.4f Beats, Neusetzungen %d, Clock-Trims %d", $0, c.linkSigma, c.linkForces, c.linkTrims) } ?? "keine Teilnehmer",
                       loads, c.loadFailures, Mem.gb(c.rssMax), c.reconnects)
     }
 
-    /// Tabelle je Stufe; Kriterien: Spitze < 70 %, 0 über Budget, 0 Geräte-Überlastungen, Link-Phase < 0,02 Beats
+    /// Tabelle je Stufe; Kriterien: Spitze < 70 %, 0 über Budget, 0 Geräte-Überlastungen, Link-Phase < 0,03 Beats
     private static func table() -> String {
-        var s = "\nPuffer | Kern | Gerät | Latenz ms | Min | DSP % | Spitze % | über Budget | Overloads | Hänger | Link max | Laden max s | Ergebnis\n"
-        s += "---|---|---|---|---|---|---|---|---|---|---|---|---\n"
+        var s = "\nPuffer | Kern | Gerät | Latenz ms | Min | DSP % | Spitze % | über Budget | Overloads | Hänger | Link max | Link σ | Neusetzungen | Laden max s | Ergebnis\n"
+        s += "---|---|---|---|---|---|---|---|---|---|---|---|---|---|---\n"
         for c in stages {
-            s += String(format: "%d | %@ | %d | %.1f | %.1f | %.1f | %.0f | %d | %d | %d | %@ | %@ | %@\n", c.frames, c.parallel ? "parallel" : "seriell", c.deviceFrames, c.latencyMs,
+            s += String(format: "%d | %@ | %d | %.1f | %.1f | %.1f | %.0f | %d | %d | %d | %@ | %@ | %@ | %@ | %@\n", c.frames, c.parallel ? "parallel" : "seriell", c.deviceFrames, c.latencyMs,
                         c.seconds / 60, c.mean * 100, c.peak * 100, c.overloads, c.deviceOverloads, c.hitches,
-                        c.linkMax.map { String(format: "%.4f", $0) } ?? "–", c.loads.max().map { String(format: "%.2f", $0) } ?? "–",
+                        c.linkMax.map { String(format: "%.4f", $0) } ?? "–", c.linkMax.map { _ in String(format: "%.4f", c.linkSigma) } ?? "–",
+                        c.linkMax.map { _ in "\(c.linkForces)" } ?? "–", c.loads.max().map { String(format: "%.2f", $0) } ?? "–",
                         c.pass ? "PASS" : (c.aborted ? "FAIL (abgebrochen)" : "FAIL"))
         }
-        return s + "Kriterien: Spitze < 70 % · 0 über Budget · 0 Overloads · Link-Phase < 0,02 Beats (nur mit Teilnehmern)"
+        return s + "Kriterien: Spitze < 70 % · 0 über Budget · 0 Overloads · Link-Phase < 0,03 Beats (nur mit Teilnehmern)"
     }
 
     private static func finish(_ core: MixController, interrupted: Bool = false) {

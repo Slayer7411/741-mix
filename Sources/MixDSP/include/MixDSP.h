@@ -132,7 +132,9 @@ void mdsp_levels(MDEngine *e, int deck, float *rms, float *peak);
 void mdsp_clock_set_bpm(MDEngine *e, double bpm);
 void mdsp_clock_set_beat(MDEngine *e, double beat);   // Phase neu setzen (übernimmt der nächste Block)
 double mdsp_clock_beat(MDEngine *e);
-/// Beat am Anfang des zuletzt gerenderten Blocks und dessen Host-Zeit (mach_absolute_time, ohne Ausgabelatenz)
+/// Phase der Clock um `delta` Beats verschieben (Steuer-Thread; der Audio-Thread addiert beim nächsten Block)
+void mdsp_clock_trim(MDEngine *e, double delta);
+/// Beat am Anfang des zuletzt gerenderten Blocks und dessen HAL-Ausgabezeit (mach_absolute_time, ohne Geräte-/Sicherheits-/Stream-Latenz)
 bool mdsp_clock_stamp(MDEngine *e, double *beat, uint64_t *hostTime);
 void mdsp_set_render_host(MDEngine *e, uint64_t hostTime);
 void mdsp_metronome(MDEngine *e, bool on, float volume, int firstChannel);

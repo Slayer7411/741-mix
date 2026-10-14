@@ -87,6 +87,7 @@ enum SelfTest {
             try? await Task.sleep(for: .seconds(3))
             log(String(format: "Clock-Master 126: B %.2f BPM, Phase zur Clock %.4f Beats, Clock-Beat %.2f",
                        core.snapshot().decks[1].bpm, core.phaseError(1) ?? .nan, core.engine.clockBeat))
+            await linkDryRun(core)
             core.setClockMaster(false)
             // Semi-Sync-Start: B ungesynct stoppen und neu starten, A ist Master -> B springt beim Start in Phase,
             // Tempo (von Sync übernommen) und Sync-Zustand bleiben; danach wieder Sync wie zuvor
@@ -400,6 +401,34 @@ enum SelfTest {
     /// (B/D, MIX741_BENCH_PLUGIN=<id>, Standard AUMatrixReverb, "none" = ohne), Delay auf FX 3 (alle 4 Decks).
     /// Puffer MIX741_BENCH_BUFFERS (512,256,128) je MIX741_BENCH_SECS s (8; live 600 = 30 min): DSP-Last (Mittel,
     /// Spitze), Blöcke über Budget (eigene Messung), Überlastmeldungen des Geräts, Zwischenstand jede Minute.
+    /// Link-Nachführung ohne Netz: 10 s freie Clock (Clock-Master) gegen eine lokale Link-Zeitachse, angelegt am ersten
+    /// Stempel; Policy wie im Steuertick, Clock hängt am Deck (nur Neusetzungen, keine Trims). Soll: 0 Neusetzungen.
+    private static func linkDryRun(_ core: MixController) async {
+        let e = core.engine
+        guard let first = e.clockStamp else { log("Link trocken: kein Clock-Stempel"); return }
+        let bps = core.clockTempo / 60, t0 = LinkSession.seconds(hostTicks: first.hostTime)
+        var anchor = first.beat, policy = LinkLeadPolicy(), stats = LinkStats(), forces = 0, last: UInt64 = 0
+        let end = Date().addingTimeInterval(10)
+        while Date() < end {
+            try? await Task.sleep(for: .milliseconds(5))
+            guard let st = e.clockStamp, st.hostTime != last else { continue }
+            last = st.hostTime
+            let t = LinkSession.seconds(hostTicks: st.hostTime) - t0
+            var diff = (st.beat - (anchor + bps * t)).truncatingRemainder(dividingBy: 4)
+            if diff > 2 { diff -= 4 } else if diff < -2 { diff += 4 }
+            stats.record(diff)
+            if policy.step(diff: diff, canTrim: false) == .force { forces += 1; anchor = st.beat - bps * t }
+        }
+        let buf = Double(e.deviceBufferFrames) / max(1, e.outputRate) * 1000
+        log(String(format: "Link trocken 10 s: %d Stempel · Phase max %.5f / σ %.5f Beats · Drift %+.5f · Neusetzungen %d (soll 0) · Stempel-Vorlauf %.2f ms (Puffer %.2f ms) · Präsentationslatenz %.2f ms",
+                   stats.windowCount, stats.windowMax, stats.windowSigma, policy.drift, forces, e.renderLead * 1000, buf, e.presentationLatency * 1000))
+        if core.snapshot().linkEnabled {
+            let ls = core.linkStats()
+            log(String(format: "Link echt: Neusetzungen %d · Clock-Trims %d · Tempo %d · Teilnehmer %d · Drift %+.4f",
+                       ls.forces, ls.trims, ls.tempoSets, ls.peers, ls.drift))
+        }
+    }
+
     /// Stumm (Master 0); ohne MIX741_NOEXT auf dem externen Interface. Puffergröße wird danach zurückgestellt.
     /// Die Statusleiste holt dieselben Werte (4 Hz) ab: die Blockzahl zeigt, wie viel die Probe davon gesehen hat
     static func loadProbe(_ core: MixController, tracks c: [Track]) async {

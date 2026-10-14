@@ -473,7 +473,9 @@ struct MasterClockPanel: View {
         HStack(spacing: 6.z) {
             DeckButton(title: s.linkEnabled && s.linkPeers > 0 ? "LINK \(s.linkPeers)" : "LINK", active: s.linkEnabled,
                        color: Theme.secondary, width: 38) { mix.toggleLink() }
-                .help("Link: MINOS gibt das Tempo vor")
+                .help(s.linkEnabled ? Text("Link: MINOS gibt das Tempo vor · Neusetzungen \(s.linkForces) · Rechtsklick: Diagnose")
+                                    : Text("Link: MINOS gibt das Tempo vor"))
+                .contextMenu { Button("Link-Diagnose") { mix.showLinkDiagnosis() } }
             VStack(spacing: 2.z) {
                 DeckButton(title: "AUTO", active: !s.clockMaster, width: 40) { mix.setClockMaster(false) }
                     .help("Ein Deck ist Master (automatisch oder per MASTER-Taste)")

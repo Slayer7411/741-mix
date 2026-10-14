@@ -42,7 +42,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 ## ◆ DECKS
 
 * play: snap (cues, loops) and quant (jumps keep the phase), hotcue jump keeps the beat phase, load position (load cue / grid, track start or hotcue 1), track end warning (seconds, 0 = off), load lock while a deck plays
-* tempo & sync: keylock on for the first load, default tempo range (±6 … ±100 %), phase lock while synced, sync mode (dynamic / fixed / tempo only), pitch bend amount, link offset (ms)
+* tempo & sync: keylock on for the first load, default tempo range (±6 … ±100 %), phase lock while synced, sync mode (dynamic / fixed / tempo only), pitch bend amount, link offset (ms, ±50; constant shift to the peers after latency compensation, positive = the others play later)
 * loops & beatjump: default loop size and beatjump size, loop snap (only with snap on) to loop cues (on, window 1-8 beats, default 4) and to the 4-bar grid (on, tolerance 1-8 beats, default 1), active loop every pass / once per load
 * rows per deck (`ui.deckRows`), compact decks
 * master clock & metronome: metronome output pair

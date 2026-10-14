@@ -33,6 +33,8 @@ void mdsp_load_record(uint64_t start, uint64_t end, uint32_t frames);
 /// Werte seit dem letzten Aufruf abholen (Mittel und Spitze werden dabei zurückgesetzt)
 MDLoad mdsp_load_take(void);
 void mdsp_load_reset_overloads(void);
+/// Ausgabezeit des letzten Blocks (HAL-Stempel) minus Callback-Beginn, Sekunden
+double mdsp_render_lead(void);
 /// Eingang (eigenes AUHAL nur mit Eingang): Callback holt das Eingangspaar per AudioUnitRender (Bus 1) in vorab angelegte
 /// Puffer und schreibt es in den Ring. Kein Speicher, keine Sperre im Callback. Kanäle/Frames = Größe der Puffer
 typedef struct MDInput MDInput;

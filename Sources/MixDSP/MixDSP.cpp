@@ -985,6 +985,7 @@ struct Deck {
 
 struct Clock {
     std::atomic<double> bpm{128}, setBeat{NAN}, beatOut{0};
+    std::atomic<double> trim{0};   // Phasen-Trim (Beats), vom Audio-Thread einmal addiert
     std::atomic<bool> metroOn{false};
     std::atomic<float> metroVol{0.5f};
     std::atomic<int> metroCh{0};
@@ -1716,6 +1717,8 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
     Clock &k = e->clock;
     double sb = k.setBeat.exchange(NAN);
     if (!std::isnan(sb)) k.beat = sb;
+    double tr = k.trim.exchange(0);
+    if (tr != 0) k.beat += tr;
     double beatStart = k.beat;
     double perSample = k.bpm.load() / 60.0 / e->fs;
     int done = 0;
@@ -1856,6 +1859,12 @@ bool mdsp_clock_stamp(MDEngine *e, double *beat, uint64_t *hostTime) {
 void mdsp_clock_set_bpm(MDEngine *e, double bpm) { if (std::isfinite(bpm)) e->clock.bpm.store(std::clamp(bpm, 20.0, 300.0)); }
 void mdsp_clock_set_beat(MDEngine *e, double beat) { if (std::isfinite(beat)) { e->clock.setBeat.store(beat); e->clock.beatOut.store(beat); } }
 double mdsp_clock_beat(MDEngine *e) { return e->clock.beatOut.load(); }
+void mdsp_clock_trim(MDEngine *e, double delta) {
+    if (!std::isfinite(delta)) return;
+    auto &t = e->clock.trim;
+    double cur = t.load();
+    while (!t.compare_exchange_weak(cur, cur + delta)) {}
+}
 double mdsp_keylock_latency(MDEngine *e) { return e->decks[0].stretch.outputLatency() / e->fs; }
 void mdsp_metronome(MDEngine *e, bool on, float volume, int ch) {
     e->clock.metroOn.store(on); e->clock.metroVol.store(volume); e->clock.metroCh.store(ch);

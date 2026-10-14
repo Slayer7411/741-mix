@@ -14,6 +14,8 @@ struct LoadStats {
     std::atomic<double> ticksPerFrame{0};
 };
 LoadStats gLoad;
+// Ausgabezeit des Blocks (HAL-Stempel) minus Callback-Beginn, Host-Ticks – Diagnose für den Link-Stempel
+std::atomic<int64_t> gRenderLead{0};
 }
 
 extern "C" void mdsp_load_set_rate(double fps) {
@@ -47,13 +49,23 @@ extern "C" MDLoad mdsp_load_take(void) {
     return r;
 }
 
+extern "C" double mdsp_render_lead(void) {
+    mach_timebase_info_data_t tb;
+    mach_timebase_info(&tb);
+    return double(gRenderLead.load(std::memory_order_relaxed)) * double(tb.numer) / double(tb.denom) / 1e9;
+}
+
 extern "C" void mdsp_load_reset_overloads(void) { gLoad.over.store(0, std::memory_order_relaxed); }
 
-extern "C" OSStatus mdsp_au_render(void *ref, AudioUnitRenderActionFlags *, const AudioTimeStamp *, UInt32, UInt32 frames,
+extern "C" OSStatus mdsp_au_render(void *ref, AudioUnitRenderActionFlags *, const AudioTimeStamp *ts, UInt32, UInt32 frames,
                                    AudioBufferList *io) {
     auto *e = static_cast<MDEngine *>(ref);
     uint64_t t0 = mach_absolute_time();
-    mdsp_set_render_host(e, t0);
+    // Ausgabezeit des Blocks laut HAL (geglättet, folgt der Geräteuhr); ohne gültigen Stempel Callback-Zeit + ein Puffer
+    bool valid = ts && (ts->mFlags & kAudioTimeStampHostTimeValid) && ts->mHostTime != 0;
+    uint64_t outHost = valid ? ts->mHostTime : t0 + uint64_t(double(frames) * gLoad.ticksPerFrame.load(std::memory_order_relaxed));
+    gRenderLead.store(int64_t(outHost) - int64_t(t0), std::memory_order_relaxed);
+    mdsp_set_render_host(e, outHost);
     float *out[64];
     int ch = 0;
     for (UInt32 b = 0; b < io->mNumberBuffers && ch < 64; b++) out[ch++] = static_cast<float *>(io->mBuffers[b].mData);

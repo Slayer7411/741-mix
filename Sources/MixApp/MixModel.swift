@@ -45,13 +45,13 @@ final class FXMirror {
 struct ClockMirror: Equatable {
     var clockMaster = false, semiSync = false, metronome = false, linkEnabled = false
     var metronomeVolume = 0.5, masterVolume = 0.85, masterTempo = 128.0
-    var linkPeers = 0
+    var linkPeers = 0, linkForces = 0
 
     init() {}
     init(_ s: MixState) {
         clockMaster = s.clockMaster; semiSync = s.semiSync; metronome = s.metronome; linkEnabled = s.linkEnabled
         metronomeVolume = s.metronomeVolume; masterVolume = s.masterVolume; masterTempo = s.masterTempo
-        linkPeers = s.linkPeers
+        linkPeers = s.linkPeers; linkForces = s.linkForces
     }
 }
 
@@ -679,6 +679,14 @@ final class MixModel {
     func tap() { run { core.tap() } }
     func setMetronome(_ on: Bool, volume: Double? = nil) { run { core.setMetronome(on, volume: volume) } }
     func toggleLink() { run { core.setLinkEnabled(!state.linkEnabled) } }
+    /// Link-Diagnose in die Statusleiste (Rechtsklick auf LINK)
+    func showLinkDiagnosis() {
+        guard state.linkEnabled else { StatusCenter.shared.post(.info, String(localized: "Link ist aus"), key: "link"); return }
+        let st = core.linkStats(), ms = 60_000 / max(1, clock.masterTempo)
+        let dev = st.lastDiff.map { String(format: "%+.1f", $0 * ms) } ?? "–", drift = String(format: "%+.1f", st.drift * ms)
+        let offset = String(format: "%+.0f", prefs.engine.linkOffsetMs)
+        StatusCenter.shared.post(.info, String(localized: "Link: Abweichung \(dev) ms · Drift \(drift) ms · Neusetzungen \(st.forces) · Clock-Trims \(st.trims) · Tempo-Setzungen \(st.tempoSets) · Teilnehmer \(st.peers) · Versatz \(offset) ms"), key: "link")
+    }
 
     // MARK: - Audio-Setup
 
