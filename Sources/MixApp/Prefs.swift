@@ -168,6 +168,8 @@ struct UIPrefs: Codable, Equatable {
     /// sichtbare Decks: 1 (nur A, volle Breite), 2 (A, B) oder 4; die übrigen spielen unsichtbar weiter.
     /// Ersetzt `showFourDecks` (alte Einstellungen: AppPrefs.decode)
     var deckCount = 4
+    /// Abstand zwischen den Decks und zum Fensterrand in pt (0 = keiner: die Wellenformen enden am Rand)
+    var deckGap = 0.0
     var showFXUnits = true
     /// Maßstab der oberen Leiste (FX, Clock): 0,6…1,3, Griff unter der Leiste
     var topBarScale = 1.0

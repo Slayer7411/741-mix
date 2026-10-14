@@ -41,9 +41,9 @@ struct DeckView: View {
                 }
                 if gridRow { row("grid", GridToolsRow(d: d)) }
             }
-            if rows.tempo { TempoColumn(d: d) }
+            if rows.tempo { TempoColumn(d: d).padding(.trailing, 3.z) }
         }
-        .padding(6.z)
+        .padding(.vertical, 3.z)   // seitlich nichts: die Wellenform endet am Deck-Rand (Zeilen rücken selbst ein)
         .frame(maxHeight: .infinity)
         .background(Frame(d: d, border: false))
         .overlay(Frame(d: d, border: true))
@@ -74,6 +74,7 @@ struct DeckView: View {
         // eigene Hosting-View erbt keine Umgebung: Library und Browser mitgeben (Menü „Track bearbeiten“, Drop-Ziel im Kopf)
         Isolated(deckLetters[d] + " " + name, sizeKey: key, fillWidth: true) {
             v.environment(mix).environment(store).environment(browser).foregroundStyle(Theme.bone).tint(Theme.state)
+                .padding(.horizontal, 4.z)
         }
     }
 

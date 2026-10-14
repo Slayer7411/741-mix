@@ -354,6 +354,8 @@ struct DeckSettings: View {
                     Text("4 Decks").tag(4)
                 }
                 sliderRow("Vorhören im Browser ab (Anteil)", $mix.prefs.ui.previewStart, 0...0.9, format: "%.1f")
+                sliderRow("Abstand zwischen Decks (pt)", $mix.prefs.ui.deckGap, 0...12, step: 1, format: "%.0f")
+                Text("0 = die Wellenformen enden an den Deck-Rändern und am Fensterrand, nur die Rahmenlinie dazwischen.").settingsHint()
             }
             Section("Zeilen je Deck") {
                 ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in

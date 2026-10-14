@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* decks without gaps: no space between the decks and none to the window edge, the waveform ends at the deck frame (rows keep a 4 pt inset). ⌘, -> DISPLAY -> view -> `Abstand zwischen Decks` 0-12 pt (0 default)
 * beatjump with an active loop jumps by the loop length (in the jump's direction) and takes the loop along: same spot inside the loop, nothing to hear
 * browser height snaps to whole table rows while dragging the divider (⌘, -> BROWSER -> rows, on by default; not with browsers stacked)
 * `scripts/coverage.sh`: line coverage per target from the unit tests and the self test (unit tests alone: MixApp 2 %, with the self test 38 %, overall 56 %)
