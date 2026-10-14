@@ -36,7 +36,9 @@ import Testing
     #expect(ui.deckRows.comment && ui.deckRows.tags && ui.deckRows.loop)
     ui.deckRows.info = false
     ui.showAllDeckRows()
-    #expect(ui.deckRows == DeckRows() && ui.showGridTools && !ui.compactDecks)
+    var all = DeckRows()
+    all.groove = true   // Standard aus, „alle Zeilen“ schaltet sie mit ein
+    #expect(ui.deckRows == all && ui.showGridTools && !ui.compactDecks)
     // jede Zeile genau einmal in Menü und Einstellungen
-    #expect(Set(DeckRows.all.map(\.1)).count == DeckRows.all.count && DeckRows.all.count == 11)
+    #expect(Set(DeckRows.all.map(\.1)).count == DeckRows.all.count && DeckRows.all.count == 12)
 }
