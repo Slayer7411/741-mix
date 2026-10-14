@@ -490,6 +490,7 @@ struct PrepareRow: View {
                 DeckButton(title: "RENDER", active: m.previewing || m.prep.shownGain > 0, color: Theme.state) { mix.prepareRender(d) }.stable()
                     .help("Schnittliste + AMP als neue Datei rendern (Original bleibt)")
                     .uiTestFrame("\(d).render", on: !compact)
+                RipDeckButton(d: d)
             }
             .opacity(m.pending ? 0.6 : 1)
             .disabled(!m.hasTrack)

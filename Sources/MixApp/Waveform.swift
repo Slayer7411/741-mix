@@ -765,6 +765,8 @@ struct OverviewView: View {
         var cues: [WaveScene.Mark] = []
         var trim = WaveScene.Trim()
         var range: TrackRange?
+        /// offene Befunde der Rip-Prüfung (gestreift)
+        var rip: [ClosedRange<Double>] = []
     }
 
     var body: some View {
@@ -775,7 +777,8 @@ struct OverviewView: View {
             WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)))
         }
         Content(d: d, m: Model(duration: deck.duration, playing: deck.playing, cues: cues,
-                               trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d) && !(mix.decks[d].edit?.previewing ?? false)), range: mix.range(d)),
+                               trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d) && !(mix.decks[d].edit?.previewing ?? false)), range: mix.range(d),
+                               rip: RipChecks.shared.revision >= 0 ? RipChecks.shared.regions(deck.track?.key ?? "", duration: deck.duration) : []),
                 wave: wf).equatable()
     }
 
@@ -812,6 +815,23 @@ struct OverviewView: View {
                         ctx.setFillColor(NSColor(Theme.state).withAlphaComponent(0.4).cgColor)
                         ctx.fill(CGRect(x: loop.start / m.duration * size.width, y: 0,
                                         width: max(2, (loop.end - loop.start) / m.duration * size.width), height: size.height))
+                    }
+                    for r in m.rip {   // offener Rip-Befund: gestreift wie der markierte Bereich
+                        let x0 = r.lowerBound / m.duration * size.width, w = max(2, (r.upperBound - r.lowerBound) / m.duration * size.width)
+                        let box = CGRect(x: x0, y: 0, width: w, height: size.height)
+                        ctx.saveGState()
+                        ctx.clip(to: box)
+                        ctx.setFillColor(NSColor(Theme.state).withAlphaComponent(0.12).cgColor)
+                        ctx.fill(box)
+                        ctx.setStrokeColor(NSColor(Theme.state).withAlphaComponent(0.55).cgColor)
+                        ctx.setLineWidth(1)
+                        var x = x0 - size.height
+                        while x < x0 + w {
+                            ctx.move(to: CGPoint(x: x, y: size.height)); ctx.addLine(to: CGPoint(x: x + size.height, y: 0))
+                            x += 6
+                        }
+                        ctx.strokePath()
+                        ctx.restoreGState()
                     }
                     if let r = m.range {   // markierter Bereich
                         ctx.setFillColor(NSColor(Theme.state).withAlphaComponent(0.35).cgColor)

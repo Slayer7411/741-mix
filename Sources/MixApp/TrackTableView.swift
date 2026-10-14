@@ -9,7 +9,7 @@ import MixEngine
 
 /// Spalte der Track-Tabelle. `id` = Schlüssel in der gespeicherten Anordnung (`columns.<bereich>`), Breiten bei 100 %
 struct TrackColumn {
-    enum Kind { case played, cloud, analyzed, info, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file }
+    enum Kind { case played, cloud, analyzed, info, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file, rip }
     let id: String
     let title: String
     let kind: Kind
@@ -63,6 +63,7 @@ struct TrackColumn {
         .fixed("bitrate", "Bitrate", .bitrate, 44, hidden: true, sort: KeyPathComparator(\Track.bitrate)),
         .flex("file", "File Name", .file, min: 80, ideal: 220, hidden: true, sort: KeyPathComparator(\Track.fileName)),
         .flex("mix", "Mix", .field(.mix), min: 60, ideal: 110, hidden: true, sort: KeyPathComparator(\Track.mix)),
+        .fixed("rip", "Rip", .rip, 92, hidden: true, menu: String(localized: "Rip (Befund der Rip-Prüfung)")),
     ]
     static let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 }
@@ -424,6 +425,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         var inline: InlineEdit?
         var played: Set<String>
         var cloud: Int
+        var rip = 0
         var tick: Int
         /// vorgehörter Track (Strich in Vorschau-Spalte bzw. hinter dem Titel)
         var preview: String?
@@ -608,6 +610,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         case .importDate: t.importText
         case .bitrate: t.bitrate > 0 ? "\(t.bitrate)" : ""
         case .file: t.fileName
+        case .rip: RipChecks.shared.columnText(t.key)
         case .played, .cloud, .analyzed, .info, .color, .cover, .preview: nil
         }
     }
@@ -919,7 +922,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             f.origin.x -= origin.x
             f.origin.y -= origin.y
             let id = col.identifier.rawValue
-            if id == "cloud" || id == "analyzed" || id == "info" { tips.append(f) }
+            if id == "cloud" || id == "analyzed" || id == "info" || id == "rip" { tips.append(f) }
             guard f.intersects(dirty), let d = TrackColumn.byID[id] else { continue }
             if let editing, InlineEditController.columnFields[id] == editing { continue }
             ctx.saveGState()
@@ -952,6 +955,9 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             let parts = [CloudCell.badge(t.path).help, Self.analyzedHelp(t)].compactMap { $0 }
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
         case "analyzed": return Self.analyzedHelp(t)
+        case "rip":
+            let o = RipChecks.shared.open(t.key)
+            return o.isEmpty ? nil : o.map { RipChecks.text($0) + " – " + RipChecks.reasons($0) }.joined(separator: "\n")
         default: return nil
         }
     }
@@ -1024,6 +1030,8 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             draw(t.bitrate > 0 ? "\(t.bitrate)" : "", TableStyle.bone, l, ctx)
         case .file:
             draw(t.fileName, TableStyle.bone, l, ctx)
+        case .rip:
+            draw(RipChecks.shared.columnText(t.key), TableStyle.state, l, ctx)
         }
     }
 
@@ -1241,6 +1249,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         menu.addItem(ActionItem(String(localized: "Analysieren")) { Analyses.shared.enqueue(tracks(), refresh: false) })
         menu.addItem(ActionItem(String(localized: "Neu analysieren")) { Analyses.shared.enqueue(tracks(), refresh: true) })
         if store.hasAnalysis(ids) { menu.addItem(ActionItem(String(localized: "Analyse verwerfen")) { store.discardAnalysis(Array(ids)) }) }
+        RipChecks.shared.addMenuItems(menu, tracks: tracks, single: ids.count == 1 ? ids.first.flatMap { store.track($0) } : nil)
         menu.addItem(.separator())
         menu.addItem(ActionItem(String(localized: "An Preparation anhängen")) { store.appendToPreparation(ids) })
         if case .preparation = model.source {

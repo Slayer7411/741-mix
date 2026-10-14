@@ -126,6 +126,7 @@ enum UISelfTest {
             ("wellenform-preset", wavePreset),
             ("aufnahme", recording),
             ("linien", gridLines),
+            ("rip", ripCheck),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1692,5 +1693,57 @@ extension UISelfTest {
         check(text.contains(url?.lastPathComponent ?? "?"), "Statuszeile ohne „\(want)“: \(StatusCenter.shared.history.prefix(3).map(\.text))")
         check(url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false, "Datei fehlt")
         log(String(format: "aufnahme: %@ · %.1f s · %@", url?.lastPathComponent ?? "?", ran, text))
+    }
+    /// Rip-Prüfung: Befund (fremder Anfang 4 s) für Track C im Speicher -> Spalte „▸ 4,0 s“, Klick auf ◆ RIP filtert
+    /// Bereich A auf genau diesen Track, Quelle ZU BEARBEITEN enthält ihn; Rechtsklick-Eintrag „Schnitt IN auf 4,0 s
+    /// setzen“ -> trimStart 4 s in edits (nur Speicher), Befund erledigt, Liste leer. Danach alles zurück
+    static func ripCheck(_ u: UIDriver, _ t: [Track]) {
+        let pane = u.browser.paneA, rips = RipChecks.shared, track = t[2]
+        let mix0 = rips.mix, lib0 = rips.library, source0 = pane.source, edit0 = u.mix.edits.edit(for: track.key)
+        rips.mix = u.mix
+        rips.library = u.store
+        defer {
+            rips.store.remove([track.key]); u.mix.edits.set(edit0, for: track.key)
+            rips.mix = mix0; rips.library = lib0; pane.ripOnly = false; pane.source = source0; u.spin(0.5)
+        }
+        u.mix.edits.set(nil, for: track.key)
+        let f = RipCheck.Finding(kind: .foreign, edge: .start, time: 4, confidence: 0.8, cues: [.key])
+        rips.store.put(RipCheck.Result(findings: [f], duration: track.duration), for: track.key)
+        u.spin(2) { rips.openKeys.contains(track.key) }
+        check(rips.openKeys == [track.key], "RIP: offene Befunde \(rips.openKeys)")
+        check(rips.columnText(track.key) == "▸ 4,0 s", "RIP: Spalte „\(rips.columnText(track.key))“")
+        check(u.store.tracks(for: .ripTodo).map(\.key) == [track.key], "RIP: ZU BEARBEITEN \(u.store.tracks(for: .ripTodo).map(\.title))")
+        pane.source = .collection
+        u.spin(5) { !pane.listPending && !pane.shown.isEmpty }
+        guard let marker = u.views.compactMap({ $0 as? UITestMark.V }).filter({ $0.name == "rip chip" })
+            .min(by: { u.frame($0).minX < u.frame($1).minX }) else { fail("Knopf ◆ RIP nicht gefunden") }
+        let r = u.frame(marker), p = NSPoint(x: r.midX, y: r.midY)
+        check(r.width > 10 && u.window.contentView?.bounds.contains(p) == true, "◆ RIP liegt außerhalb: \(r)")
+        let root = u.window.contentView?.superview ?? u.host
+        if let hit = root.hitTest(root.convert(p, from: nil)) {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                guard let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: u.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                                 pressure: type == .leftMouseUp ? 0 : 1) else { fail("kein Mausereignis") }
+                if type == .leftMouseDown { hit.mouseDown(with: e) } else { hit.mouseUp(with: e) }
+            }
+        }
+        u.spin(1) { pane.ripOnly }
+        if !pane.ripOnly { log("rip: klick auf den knopf kommt nicht an – schalte direkt"); pane.ripOnly = true }
+        u.spin(5) { !pane.listPending && pane.shown.map(\.key) == [track.key] }
+        check(pane.shown.map(\.key) == [track.key], "◆ RIP: \(pane.shown.count) Zeilen, soll nur \(track.title)")
+        // Rechtsklick-Menü des Tracks: Eintrag ausführen
+        let menu = NSMenu()
+        rips.addMenuItems(menu, tracks: { [track] }, single: track)
+        guard let i = menu.items.firstIndex(where: { $0.title == String(localized: "Schnitt IN auf \(RipCheck.shortTime(4)) setzen") }) else {
+            fail("RIP: Menü ohne Schnitt IN: \(menu.items.map(\.title))")
+        }
+        menu.performActionForItem(at: i)
+        u.spin(2) { !rips.openKeys.contains(track.key) }
+        check(u.mix.edits.edit(for: track.key)?.trimStart == 4, "RIP: Schnitt IN \(String(describing: u.mix.edits.edit(for: track.key)?.trimStart))")
+        check(rips.open(track.key).isEmpty && !rips.openKeys.contains(track.key), "RIP: Befund nach Schnitt IN noch offen")
+        u.spin(5) { !pane.listPending && pane.shown.isEmpty }
+        check(pane.shown.isEmpty, "◆ RIP nach Schnitt IN: \(pane.shown.count) Zeilen")
+        log("rip: spalte ▸ 4,0 s · ◆ RIP 1 zeile · schnitt IN gesetzt · erledigt")
     }
 }

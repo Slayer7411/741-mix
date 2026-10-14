@@ -22,7 +22,7 @@ extension BrowserFavorite {
         case let .own(r): BrowserFavorite(.own, name: r.name, id: r.id.uuidString, path: [r.name], node: r.kind.rawValue)
         case let .node(n): BrowserFavorite.node(n, in: store.root)
         case let .folder(p): BrowserFavorite(.folder, name: s.title, path: [p])
-        case .history, .prepArchive, .cuts, .toolLoops: nil
+        case .history, .prepArchive, .cuts, .toolLoops, .ripTodo: nil
         case .history, .prepArchive, .cuts, .daw: nil
         }
     }

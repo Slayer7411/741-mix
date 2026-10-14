@@ -85,7 +85,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * collection: music folders for MUSIC FOLDERS (add / remove, empty = automatic: the folder holding 90 % of the collection's files); write browser edits into the collection file (off): backup at most once per hour into `Backup MINOS-741`, not while the library software runs -> [manual](MANUAL.md#write-into-the-collection-file)
   * with it: cuts and tool loops as new entries (on), preparation + own history + own folders / playlists as playlists in `MINOS-741` (on)
 * check collection: on start (off), scan the music folders for files without a collection entry (on) -> [manual](MANUAL.md#check-the-collection)
-* analyse: bpm range (one octave, default 100-200), learn / discard key profiles
+* analyse: bpm range (one octave, default 100-200), learn / discard key profiles, rip check with every analysis (`ui.ripWithAnalysis`, on) -> [manual](MANUAL.md#rip-check)
 * DAW bridge: receive warp markers and position from the DAW's remote script (on), udp port 7411 (127.0.0.1 only). `ui.dawBridge`, `ui.dawBridgePort` -> [manual](MANUAL.md#grid-from-the-daw-live-bridge)
 
 ## ◆ TAGS

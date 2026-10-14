@@ -554,6 +554,7 @@ struct OverviewHook: View {
                 a.library = store
                 a.writeBack = { [mix] in mix.prefs.ui.writeCollection }
                 a.bpmLow = { [mix] in mix.prefs.ui.analysisBpmLow }
+                a.ripWithAnalysis = { [mix] in mix.prefs.ui.ripWithAnalysis }
             }
             .onChange(of: fill, initial: true) { ov.setMode(fill) }
             .onChange(of: sig.keys, initial: true) {

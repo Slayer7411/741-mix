@@ -8,16 +8,21 @@ import MixEngine
 /// (Analysieren = fehlende Werte dazu, Neu analysieren = alles ersetzen)
 final class AnalysisJobHandler: OverviewJobHandler, @unchecked Sendable {
     let store: AnalysisStore
+    let rips: RipCheckStore
     private let lock = NSLock()
     private var wanted: [String: Wanted] = [:]
-    struct Wanted { var fields: TrackAnalysis.Fields; var replace: Bool; var octave: ClosedRange<Double> }
+    /// `rip`: Rip-Prüfung mit; `grid`: Grid des Tracks dafür (nil = das der Analyse)
+    struct Wanted {
+        var fields: TrackAnalysis.Fields; var replace: Bool; var octave: ClosedRange<Double>
+        var rip = false; var grid: (bpm: Double, anchor: Double)?
+    }
 
     /// Key-Profile lernen: Job-Schlüssel -> Tonart der Collection; gesammelte Chroma (Track-Schlüssel, Chroma, Tonart)
     private var learning: [String: Int] = [:]
     private var samples: [(key: String, chroma: [Double], code: Int)] = []
     private var profiles: TrackAnalyzer.KeyProfiles?
 
-    init(store: AnalysisStore) { self.store = store }
+    init(store: AnalysisStore, rips: RipCheckStore) { self.store = store; self.rips = rips }
 
     static func learnKey(_ track: String) -> String { "learn:" + track }
 
@@ -48,14 +53,23 @@ final class AnalysisJobHandler: OverviewJobHandler, @unchecked Sendable {
         guard let w = take(job.key) else { return }
         lock.lock(); let p = profiles; lock.unlock()
         let t0 = Date()
-        let r = try TrackAnalyzer.analyze(url: URL(fileURLWithPath: job.path), octave: w.octave, profiles: p, checkpoint: checkpoint)
-        if MixController.debug {
+        // Grid der Prüfung: neu gerechnetes Tempo, sonst das des Tracks
+        let grid = w.fields.contains(.tempo) ? nil : w.grid
+        let out = try TrackAnalyzer.analyzeAndCheck(url: URL(fileURLWithPath: job.path), analyze: !w.fields.isEmpty, octave: w.octave,
+                                                     profiles: p, rip: w.rip, grid: grid, checkpoint: checkpoint)
+        if MixController.debug, let r = out.analysis {
             print(String(format: "[analyze] %.1f s · bpm %.3f (%.2f) · anchor %.3f (phrase %.2f) · key %@ (%.2f) · loud %+.2f dB · %@",
                          Date().timeIntervalSince(t0), r.bpm, r.tempoConfidence, r.anchor, r.phraseConfidence,
                          r.musicalKey >= 0 ? Track.openKey(code: r.musicalKey) : "-", r.keyClarity, r.perceivedDb, job.path))
             fflush(stdout)
         }
-        store.put(r.analysis.restricted(to: w.fields), for: job.key, replace: w.replace)
+        if MixController.debug, let r = out.rip {
+            print(String(format: "[ripcheck] %.1f s · %@ · %@", Date().timeIntervalSince(t0),
+                         r.findings.map { "\($0.id) \(String(format: "%.2f", $0.time)) (\(String(format: "%.2f", $0.confidence)))" }.joined(separator: ", "), job.path))
+            fflush(stdout)
+        }
+        if let r = out.analysis { store.put(r.analysis.restricted(to: w.fields), for: job.key, replace: w.replace) }
+        if let r = out.rip { rips.put(r, for: job.key) }
         lock.lock(); wanted[job.key] = nil; lock.unlock()
     }
 }
@@ -90,8 +104,12 @@ final class Analyses {
     /// höchstens so viele Tracks je Lernlauf, gleichmäßig über die Liste verteilt
     static let learnLimit = 300
 
+    /// Einstellung: Rip-Prüfung mit jeder Analyse
+    @ObservationIgnored var ripWithAnalysis: () -> Bool = { true }
+    @ObservationIgnored private var ripOnly = 0
+
     private init() {
-        handler = AnalysisJobHandler(store: store)
+        handler = AnalysisJobHandler(store: store, rips: RipChecks.shared.store)
         jobs.handler = handler
         jobs.setMode(.off)   // nur der Rechtsklick-Stapel
         store.onChange = { key in
@@ -160,25 +178,44 @@ final class Analyses {
         StatusCenter.post(.info, String(localized: "Key-Profile verworfen"), key: "analysis")
     }
 
-    /// Rechtsklick -> Analysieren (fehlende Werte) / Neu analysieren (alles; gesperrte Tracks: nur fehlende)
+    /// Rechtsklick -> Analysieren (fehlende Werte) / Neu analysieren (alles; gesperrte Tracks: nur fehlende).
+    /// Rip-Prüfung mit (Einstellung): Analysieren nur ohne aktuelle Prüfung, Neu analysieren immer
     func enqueue(_ tracks: [Track], refresh: Bool) {
+        let rip = ripWithAnalysis()
+        let checked = RipChecks.shared.store.all
+        enqueue(tracks, refresh: refresh) { t in
+            let full = refresh && !t.locked
+            let fields: TrackAnalysis.Fields = full ? .all : TrackAnalysis.missing(in: t)
+            let r = rip && (refresh || checked[t.key].map { $0.version < RipCheck.version } ?? true)
+            return fields.isEmpty && !r ? nil : (fields, full, r)
+        }
+    }
+
+    /// Rechtsklick -> Rip prüfen: nur die Prüfung (Grid des Tracks, ohne Grid wird das Tempo dafür gerechnet)
+    func enqueueRip(_ tracks: [Track]) {
+        enqueue(tracks, refresh: true, ripOnly: true) { _ in ([], false, true) }
+    }
+
+    private func enqueue(_ tracks: [Track], refresh: Bool, ripOnly: Bool = false,
+                         _ want: (Track) -> (fields: TrackAnalysis.Fields, replace: Bool, rip: Bool)?) {
         var list: [OverviewJobs.Job] = []
         var seen: Set<String> = []
         let lo = bpmLow()
         let octave = TrackAnalyzer.octaveRange(lo...(2 * lo))
         for t in tracks where !t.path.isEmpty && t.fileExists && seen.insert(t.key).inserted {
-            let full = refresh && !t.locked
-            let fields: TrackAnalysis.Fields = full ? .all : TrackAnalysis.missing(in: t)
-            guard !fields.isEmpty else { continue }
-            handler.set(t.key, .init(fields: fields, replace: full, octave: octave))
+            guard let w = want(t) else { continue }
+            let grid = RipChecks.shared.grid(of: t)
+            handler.set(t.key, .init(fields: w.fields, replace: w.replace, octave: octave, rip: w.rip, grid: grid))
             list.append(.init(key: t.key, path: t.path, explicit: true, refresh: refresh))
         }
         guard !list.isEmpty else {
-            StatusCenter.post(.info, String(localized: "Nichts zu analysieren: Tempo, Grid, Tonart und Lautheit sind vorhanden"), key: "analysis")
+            StatusCenter.post(.info, ripOnly ? String(localized: "Nichts zu prüfen: keine lokalen Dateien")
+                                : String(localized: "Nichts zu analysieren: Tempo, Grid, Tonart und Lautheit sind vorhanden"), key: "analysis")
             return
         }
-        if batchTotal == 0 { batchFailed = progress.failed; cancelled = false; jobs.forgetFailures() }
+        if batchTotal == 0 { batchFailed = progress.failed; cancelled = false; jobs.forgetFailures(); self.ripOnly = 0 }
         batchTotal += list.count
+        if ripOnly { self.ripOnly += list.count }
         jobs.enqueue(list)
     }
 
@@ -201,10 +238,14 @@ final class Analyses {
         guard batchTotal > 0 else { batchTotal = 0; return }
         let failed = p.failed - batchFailed
         let done = max(0, batchTotal - failed)
-        var msg = cancelled ? String(localized: "Analyse abgebrochen") : String(localized: "Analysiert: \(done) Tracks")
+        let allRip = ripOnly == batchTotal
+        var msg = cancelled ? String(localized: "Analyse abgebrochen")
+            : allRip ? String(localized: "Rip geprüft: \(done) Tracks") : String(localized: "Analysiert: \(done) Tracks")
+        if !cancelled { let n = RipChecks.shared.openCount; if n > 0 { msg += " · " + String(localized: "\(n) zu bearbeiten") } }
         if failed > 0 { msg += " · " + String(localized: "\(failed) nicht lesbar") }
         StatusCenter.post(cancelled ? .info : failed > 0 ? .warning : .ok, msg, key: "analysis")
         batchTotal = 0
+        ripOnly = 0
         flush()
         if !cancelled, writeBack() { library?.scheduleWriteBack() }
     }
@@ -237,6 +278,7 @@ struct AnalysisMenuButtons: View {
     var body: some View {
         Button("Analysieren") { Analyses.shared.enqueue(tracks(), refresh: false) }
         Button("Neu analysieren") { Analyses.shared.enqueue(tracks(), refresh: true) }
+        Button("Rip prüfen") { Analyses.shared.enqueueRip(tracks()) }
     }
 }
 

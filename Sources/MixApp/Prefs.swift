@@ -270,6 +270,8 @@ struct UIPrefs: Codable, Equatable {
     var zoom = 1.0
     /// eigene Analyse: BPM-Bereich genau eine Oktave, Untergrenze (Obergrenze = 2 ×)
     var analysisBpmLow = 100.0
+    /// Rip-Prüfung (Stille, fremder Anfang / fremdes Ende, Grid-Verdacht) mit jeder Analyse
+    var ripWithAnalysis = true
     /// DAW-Brücke: Pakete des Remote Scripts auf 127.0.0.1 empfangen (UDP)
     var dawBridge = true
     var dawBridgePort = 7411

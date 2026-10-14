@@ -944,6 +944,9 @@ struct BrowserSettings: View {
                 }
                 Text("genau eine oktave: das tempo wird in den bereich gefaltet (z. b. 100–200: 96 -> 192). gilt für analysieren / neu analysieren.")
                     .settingsHint()
+                Toggle("Rip-Prüfung bei der Analyse mit", isOn: $mix.prefs.ui.ripWithAnalysis)
+                Text("prüft anfang und ende: stille, rest eines anderen tracks (tonart, tempo), grid. ergebnis: spalte rip, ◆ RIP, ZU BEARBEITEN. rechtsklick -> rip prüfen geht immer.")
+                    .settingsHint()
                 KeyProfileSettings()
             }
             DAWBridgeSettings()
