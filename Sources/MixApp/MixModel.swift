@@ -122,6 +122,8 @@ final class MixModel {
     @ObservationIgnored let edits = TrackEditStore(url: HistoryStore.baseDir.appendingPathComponent("edits.json"), writes: !Session.isSelfTest)
     @ObservationIgnored private var originals: [Int: Track] = [:]
     @ObservationIgnored private var savedEdit: [Int: TrackEdit?] = [:]
+    /// Grid, das aus Warp-Markern der DAW übernommen wurde (Herkunft `.daw` beim Speichern, solange es unverändert ist)
+    @ObservationIgnored private var dawGrid: [Int: BeatGrid] = [:]
     @ObservationIgnored private var timer: Timer?
     /// Vorhören: zählt jede Anfrage (ein spät geladener Track spielt nur, wenn danach nichts mehr kam)
     @ObservationIgnored private var previewSeq = 0
@@ -253,6 +255,7 @@ final class MixModel {
                     if !key.isEmpty, originals[d]?.key != key, let e = originals.first(where: { $0.value.key == key })?.key {
                         originals[d] = originals[e]
                         savedEdit[d] = savedEdit[e]
+                        dawGrid[d] = dawGrid[e]
                     }
                 }
             }
@@ -334,6 +337,7 @@ final class MixModel {
         originals[d] = t
         let e = edits.edit(for: t.key)
         savedEdit[d] = e
+        dawGrid[d] = e.flatMap { e in e.gridSource == .daw ? BeatGrid(track: e.apply(to: t)) : nil }
         core.load(e?.apply(to: t) ?? t, deck: d, trim: e?.trim ?? TrackTrim(), gridEdited: e?.hasGrid ?? false,
                   activeLoops: Set(e?.activeLoops ?? []))
         UndoStack.shared.clear(deck: d)   // Trackwechsel: kein Rückgängig, die Schritte passen nicht zum neuen Track
@@ -348,10 +352,14 @@ final class MixModel {
     private func persistEdits() {
         guard !Session.isSelfTest else { return }   // Selbsttest/Messung: Christians edits.json nie anfassen
         for d in state.decks.indices {
-            guard let orig = originals[d], let t = state.decks[d].track, t.key == orig.key, !state.decks[d].loading else { continue }
+            guard let orig = originals[d], let t = state.decks[d].track, t.key == orig.key, !state.decks[d].loading,
+                  !orig.key.hasPrefix(DAWBridgeModel.keyPrefix) else { continue }   // DAW-Clip: Grid kommt jedes Mal aus der DAW
             let deck = state.decks[d]
             var e = TrackEdit(trim: deck.trim)
-            if deck.gridEdited, let g = deck.grid { e.bpm = g.bpm; e.gridAnchorMs = g.anchor * 1000 }
+            if deck.gridEdited, let g = deck.grid {
+                e.bpm = g.bpm; e.gridAnchorMs = g.anchor * 1000
+                if let w = dawGrid[d], abs(w.bpm - g.bpm) < 1e-9, abs(w.anchor - g.anchor) < 1e-9 { e.gridSource = .daw }
+            }
             let cues = deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }
             if cues != orig.hotcues { e.hotcues = cues }
             if !deck.activeLoops.isEmpty { e.activeLoops = deck.activeLoops.sorted() }
@@ -387,6 +395,11 @@ final class MixModel {
     func applyPhraseAnchor(_ d: Int) { edit(d, String(localized: "Phrasen-Anker übernehmen"), .grid) { core.applyPhraseAnchor(d) } }
     func resetGrid(_ d: Int) {
         if let o = originals[d] { edit(d, String(localized: "Grid zurücksetzen"), .grid) { core.resetGrid(d, original: o) } }
+    }
+    /// Grid aus Warp-Markern der DAW (Rückgängig wie jede Grid-Änderung, gespeichert mit Herkunft DAW)
+    func applyDAWGrid(_ d: Int, _ g: BeatGrid) {
+        edit(d, String(localized: "Grid aus der DAW übernehmen"), .grid) { core.setGrid(d, g) }
+        if deck(d).grid == g { dawGrid[d] = g }
     }
     func tapGrid(_ d: Int) { edit(d, String(localized: "Grid tappen"), .grid, coalesce: "grid.tap", window: 2.5) { core.tapGrid(d) } }
 

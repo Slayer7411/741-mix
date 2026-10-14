@@ -282,6 +282,38 @@ grid edits:
 * `Analysieren` / `Neu analysieren` never replace it, only RESET does
 * shown in red: `GRID` label, anchor flag `G` in the waveform, `◆` before the tempo in the header
 
+### grid from the daw (live bridge)
+
+a remote script in the DAW sends the warp markers, loop and play position of its audio clips to MINOS (udp, 127.0.0.1 only). the grid of a clip shows up the way the DAW has it.
+
+install (once):
+
+1. copy `extras/daw-bridge/MINOS741Bridge` into the DAW's user library folder `Remote Scripts` (`~/Music/<DAW>/User Library/Remote Scripts/MINOS741Bridge`)
+2. restart the DAW, preferences -> control surface: `MINOS741Bridge`, input / output: none
+3. MINOS: ⌘, -> DISPLAY -> DAW bridge on (default), port 7411. other port: same value in `MINOS741Bridge/config.json` (`{"port": 7411}`)
+
+what is sent (per audio track): the playing session clip, the arrangement clip under the play head (while the song plays) and the selected clip. warp markers need DAW object model 11 or newer; older versions send clips without markers.
+
+in MINOS:
+
+* status bar `DAW-Brücke: 3 Spuren · 4 Clips`, no packet for 2 s -> `keine Verbindung`, the list empties
+* tree entry `DAW` (only while connected): the clips as tracks (title = clip, artist = DAW track, collection values when the file is in the collection), bpm + grid from the warp markers. above the list one row per clip: grid strip (bars, beats, DAW loop, DAW position in purple). double click / load = deck with that grid (load lock applies); the grid is not saved, it comes from the DAW each time
+* deck with the same file (path) as a reported clip: strip below the overview, grid lines from the warp markers, DAW position purple, deck position red, `Δ ms` = deck minus DAW
+* right click on the deck title -> `Grid des DAW-Clips übernehmen`: warp markers -> grid of the deck, undo like every grid edit, saved in `edits.json` with source `daw`
+* warp markers -> grid: MINOS has one tempo per track. the longest stretch of markers with the same tempo (±0.5 %) gives bpm and phase (least squares), anchor = beat 0 of the clip (bar one), before the file start -> the first bar one in the file. tempo changes inside the clip: grid off outside that stretch (status bar shows `min–max BPM, Grid x`)
+* position between packets: last DAW position + elapsed time × DAW tempo (at most 0.5 s ahead). with link on, DAW and MINOS share tempo and phase anyway
+* `.asd` clip analysis files: reader in MixCore (`ClipAnalysisFile`, warp markers saved with the clip), not yet in the ui
+
+protocol v1 (json, one object per datagram, ≤ 8 kb, field list in `Sources/MixCore/DAWBridge.swift`):
+
+| type | when | fields |
+|---|---|---|
+| `song` | every ~100 ms | `tempo`, `playing`, `beat`, `sig`, `clips` (ids), `pos` (id -> [playing 0/1, position]) |
+| `clip` | on change, every clip again round robin (one per 200 ms) | `id`, `track`, `trackName`, `name`, `file`, `warping`, `markers` [[beat, sec] …], `truncated`, `loop`, `looping`, `start`, `end`, `playing`, `selected`, `where` |
+| `bye` | script stops | – |
+
+position: clip beats (warped) or file seconds (not warped). script checks without a DAW: `python3 -m unittest discover -s extras/daw-bridge/tests`.
+
 ### edit mode
 
 `EDIT` in the transport row, ⌥⌘E (focused deck) or menu DECKS. per deck, saved in the settings, off by default.

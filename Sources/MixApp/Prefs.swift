@@ -248,6 +248,9 @@ struct UIPrefs: Codable, Equatable {
     var zoom = 1.0
     /// eigene Analyse: BPM-Bereich genau eine Oktave, Untergrenze (Obergrenze = 2 ×)
     var analysisBpmLow = 100.0
+    /// DAW-Brücke: Pakete des Remote Scripts auf 127.0.0.1 empfangen (UDP)
+    var dawBridge = true
+    var dawBridgePort = 7411
     /// Browser: Key-Spalte nach Harmonie zum Master färben (◆ gleich, ▲▼ ±1, ◇ Relativ)
     var harmonyColors = true
     /// Browser-Filter „passt zum Master“ (◆ PASST, ⌘, -> BROWSER)
