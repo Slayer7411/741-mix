@@ -358,17 +358,27 @@ final class MixModel {
             if cues != orig.hotcues { e.hotcues = cues }
             if !deck.activeLoops.isEmpty { e.activeLoops = deck.activeLoops.sorted() }
             let old = savedEdit[d] ?? nil
+            // Stand des Collection-Eintrags, ab dem Hotcues / Grid offen sind (Konfliktprüfung beim Neu-Laden)
+            if e.hasNMLPart { e.stamp = old?.hasNMLPart == true ? old?.stamp : (orig.entryStamp.isEmpty ? nil : orig.entryStamp) }
             if !e.same(as: old) {
                 let newEdit: TrackEdit? = e.isEmpty ? nil : e
                 edits.set(newEdit, for: orig.key)
                 savedEdit[d] = newEdit
                 if previewing?.key == orig.key { previewCutChanged(newEdit?.trim) }
+                if prefs.ui.writeCollection, newEdit?.hasNMLPart == true || old?.hasNMLPart == true { library?.scheduleWriteBack() }
             }
         }
     }
 
     /// offene Änderungen sofort schreiben (Beenden)
     func flushEdits() { edits.flush() }
+
+    /// Tracks stehen nach dem Schreiben neu in der Collection-Datei (Hotcues, Grid): geladene Decks vergleichen ihre
+    /// Hotcues ab jetzt mit diesem Stand (sonst bliebe das Zurücksetzen auf den alten Collection-Stand ungespeichert)
+    func collectionUpdated(_ list: [Track]) {
+        let byKey = Dictionary(list.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+        for (d, o) in originals { if let t = byKey[o.key] { originals[d] = t } }
+    }
 
     /// Rückgängig für Deck-Aktionen (Stand vorher/nachher, nur die betroffenen Teile; Trackwechsel leert das Deck)
     @ObservationIgnored private(set) lazy var deckUndo: DeckUndoRecorder = {

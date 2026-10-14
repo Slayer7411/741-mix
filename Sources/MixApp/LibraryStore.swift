@@ -61,6 +61,8 @@ final class LibraryStore {
             guard !Session.isSelfTest else { return }
             UserDefaults.standard.set(preparation, forKey: "prep.current")
             UserDefaults.standard.set(Date(), forKey: "prep.date")
+            let ui = uiPrefs()
+            if ui.writeCollection, ui.writePlaylists { scheduleWriteBack(after: 10) }
         }
     }
     private(set) var preparationRevision = 0
@@ -99,6 +101,8 @@ final class LibraryStore {
         cutStore.add(CutEntry(track: t, source: source.key, sourcePath: source.path))
         cutsRevision += 1
         folders.fileAdded(t.path)
+        let ui = uiPrefs()
+        if ui.writeCollection, ui.writeCuts { scheduleWriteBack() }
     }
 
     /// einmal nach dem Laden der Collection: fehlen Dateien in CUTS (im Hintergrund, Datei-Dienst wie die Collection)
@@ -145,6 +149,23 @@ final class LibraryStore {
     @ObservationIgnored private var position: [String: Int] = [:]
     @ObservationIgnored private var writeTask: Task<Void, Never>?
     @ObservationIgnored private var writing = false
+    /// eigene Hotcues / Grid / Schnitt (MixModel.edits): Schreiben in die Collection-Datei, Konfliktprüfung beim Laden
+    @ObservationIgnored var edits: TrackEditStore?
+    /// Einstellungen (Schreiben in die Collection-Datei, Playlists, Cuts)
+    @ObservationIgnored var uiPrefs: () -> UIPrefs = { AppPrefs.load().ui }
+    /// eigene History-Sitzungen (Playlists in der Collection-Datei)
+    @ObservationIgnored weak var history: HistoryStore?
+    /// Tracks nach dem Schreiben neu aus der Datei (Decks: Vergleichsstand für eigene Hotcues)
+    @ObservationIgnored var onRefreshed: (([Track]) -> Void)?
+    /// Größe + Änderungszeit der Collection-Datei beim letzten Lesen / eigenen Schreiben
+    @ObservationIgnored private var loadedStamp: FileStamp?
+    /// nach dem nächsten Laden schreiben (Datei war extern geändert)
+    @ObservationIgnored private var writeAfterLoad = false
+    /// eigene Playlists, wie sie zuletzt in der Datei standen
+    @ObservationIgnored private var writtenPlaylists: [NMLOwnNode]?
+    /// umbenannte Dateien (alter Schlüssel -> neuer Ort), bis sie in der Collection-Datei stehen
+    @ObservationIgnored private var pendingMoves: [String: NMLLocation] = LibraryStore.loadMoves()
+    static var movesURL: URL { HistoryStore.baseDir.appendingPathComponent("collection-moves.json") }
 
     /// Laden/Neu-Laden: alles Teure im Hintergrund (Parsen, Datei-Check, eigene Änderungen, Indizes, Sortierung
     /// der sichtbaren Listen), auf dem Hauptthread nur noch eine Übergabe. Vorher hingen ↻ und ⌘O im Set
@@ -152,7 +173,8 @@ final class LibraryStore {
     func load(_ url: URL = LibraryStore.defaultNML) {
         status = "Lade \(url.lastPathComponent) …"
         StatusCenter.post(.info, String(localized: "Collection wird geladen: \(url.lastPathComponent)"), detail: url.path, key: "collection")
-        let meta = meta, analysis = analysis
+        let meta = meta, analysis = analysis, edits = edits, moves = pendingMoves
+        let conflictDir: URL? = Session.isSelfTest ? nil : HistoryStore.baseDir
         let first = tracks.isEmpty
         loadGeneration += 1
         let generation = loadGeneration
@@ -160,7 +182,18 @@ final class LibraryStore {
         Task.detached(priority: first ? .userInitiated : .utility) {
             do {
                 let start = CACurrentMediaTime()
+                let fileStamp = FileStamp(url: url)
                 var c = try NMLParser.parse(url: url)
+                // umbenannte Dateien, die noch nicht in der Datei stehen: neuer Schlüssel + Pfad
+                if !moves.isEmpty {
+                    for i in c.tracks.indices {
+                        guard let l = moves[c.tracks[i].key] else { continue }
+                        c.tracks[i].key = l.key
+                        c.tracks[i].path = NMLParser.plainDir(l.dir) + l.file
+                    }
+                }
+                // Konflikt: Eintrag in der Datei seit der eigenen Änderung geändert -> Datei gewinnt, eigener Stand gesichert
+                let conflicts = Self.takeConflicts(c.tracks, meta: meta, edits: edits, backupDir: conflictDir)
                 // Datei-Existenz einmal parallel prüfen (statt pro Tabellenzeile). Mit Datei-Dienst im Helfer (hängt der
                 // Cloud-Anbieter, wird der Helfer abgeschossen, unbekannte Pfade gelten als vorhanden)
                 let paths = c.tracks.map(\.path)
@@ -261,8 +294,18 @@ final class LibraryStore {
                     if self.root !== newRoot { self.root = newRoot }
                     self.nodes = newNodes
                     self.sourceURL = url
+                    self.loadedStamp = fileStamp
+                    self.writtenPlaylists = nil
                     self.status = "\(newTracks.count) Tracks · \(url.lastPathComponent) · \(String(format: "%.1f", parsed - start)) s"
                     StatusCenter.post(.ok, String(localized: "Collection geladen: \(newTracks.count) Tracks"), detail: url.path, key: "collection")
+                    if conflicts > 0 {
+                        self.status = String(localized: "Konflikt: \(conflicts) Tracks in der Collection-Datei geändert – die Datei gilt, MINOS-Stand in metadata-konflikt.json / edits-konflikt.json")
+                        StatusCenter.post(.warning, self.status, detail: HistoryStore.baseDir.path, key: "conflict")
+                    }
+                    if self.writeAfterLoad {
+                        self.writeAfterLoad = false
+                        self.scheduleWriteBack()
+                    }
                     if Self.debug {
                         print(String(format: "[load] %d tracks · parsen+indizes %.0f ms · vorsortieren %d listen %.0f ms (hintergrund) · übergabe %.1f ms (hauptthread)",
                                      newTracks.count, (parsed - start) * 1000, pre.lists.count, (sorted - parsed) * 1000, (CACurrentMediaTime() - t0) * 1000))
@@ -397,7 +440,7 @@ final class LibraryStore {
         UndoStack.shared.record(String(localized: "Metadaten: \(applied.count) Tracks"), before: previous, after: applied) { [weak self] b, a, undo in
             self?.applyEdits(undo ? b : a, writeBack: writeBack, exact: true)
         }
-        meta.merge(applied, base: collectionBase)
+        meta.merge(applied, base: collectionBase, stamps: applied.keys.reduce(into: [:]) { $0[$1] = collectionBase[$1]?.entryStamp })
         replaceRunning(applied.keys)
         smartCache = [:]
         customCache = [:]
@@ -485,54 +528,224 @@ final class LibraryStore {
     }
 
     /// Schreiben in die Collection-Datei gesammelt nach kurzer Pause (mehrere Übernahmen = ein Schreibvorgang)
-    func scheduleWriteBack() {
+    func scheduleWriteBack(after delay: Double = 1.5) {
         writeTask?.cancel()
         writeTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(1.5))
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             self?.flushWriteBack()
         }
     }
 
-    /// alle noch nicht geschriebenen Änderungen in die Collection-Datei: Sicherung, textgenaues Ersetzen der
-    /// ENTRY-Blöcke, atomar. Geschriebene Felder verlassen danach metadata.json (die Datei hat sie jetzt).
+    /// Konflikte beim Laden (Hintergrund): eigene Änderungen, deren Eintrag sich in der Datei seit der Änderung
+    /// geändert hat, weichen der Datei; der eigene Stand kommt in `metadata-konflikt.json` / `edits-konflikt.json`
+    nonisolated private static func takeConflicts(_ tracks: [Track], meta: MetadataStore, edits: TrackEditStore?, backupDir: URL?) -> Int {
+        let current = Dictionary(tracks.map { ($0.key, $0.entryStamp) }, uniquingKeysWith: { a, _ in a })
+        let m = meta.takeConflicts(current: current)
+        let e = edits?.takeConflicts(current: current) ?? [:]
+        guard !m.isEmpty || !e.isEmpty else { return 0 }
+        if let backupDir {
+            try? ConflictBackup.save(m, to: backupDir.appendingPathComponent("metadata-konflikt.json"))
+            try? ConflictBackup.save(e, to: backupDir.appendingPathComponent("edits-konflikt.json"))
+        }
+        return Set(m.keys).union(e.keys).count
+    }
+
+    /// eigene Hotcues / Grid, die noch nicht in der Datei stehen (gesperrte Einträge: ohne Grid)
+    private func pendingCues() -> [String: TrackEdit] {
+        guard let edits else { return [:] }
+        var out: [String: TrackEdit] = [:]
+        for (k, e) in edits.all where e.hasNMLPart {
+            guard let i = position[k], i < tracks.count, tracks[i].key == k else { continue }
+            var w = e
+            if tracks[i].locked { w.bpm = nil; w.gridAnchorMs = nil }
+            if w.hasNMLPart { out[k] = w }
+        }
+        return out
+    }
+
+    /// Preparation und eigene History-Sitzungen (neueste zuerst) als Playlists unter `$ROOT/MINOS-741`
+    func ownPlaylists() -> [NMLOwnNode] {
+        var nodes: [NMLOwnNode] = [.playlist("Preparation", preparation)]
+        guard let h = history else { return nodes }
+        var sessions: [NMLOwnNode] = []
+        if !h.live.isEmpty {
+            let s = HistorySession(url: h.liveURL, date: h.sessionStart, source: .live)
+            sessions.append(.playlist("History " + (s.label ?? HistorySession.dayString(s.date)), h.live.map(\.key)))
+        }
+        for s in h.archive where s.source == .live {
+            sessions.append(.playlist("History " + (s.label ?? HistorySession.dayString(s.date)), h.entries(s).map(\.key)))
+        }
+        if !sessions.isEmpty { nodes.append(.folder("History", sessions)) }
+        return nodes
+    }
+
+    /// alle noch nicht geschriebenen Änderungen in die Collection-Datei: Metadaten, Analysen, Hotcues / Grid,
+    /// umbenannte Dateien, neue Einträge (Cuts), eigene Playlists. Sicherung, textgenaues Ersetzen, Prüfung, atomar.
+    /// Was geschrieben ist, verlässt metadata.json / edits.json (die Datei hat es jetzt). Datei seit dem letzten Lesen
+    /// geändert -> erst neu laden (Konfliktprüfung), dann schreiben
     func flushWriteBack() {
         guard !Session.isSelfTest, let url = sourceURL else { return }
         guard !writing else { scheduleWriteBack(); return }
-        let pending = meta.all.mapValues(\.values).filter { position[$0.key] != nil }
-        let analyses = analysis.unwritten.filter { position[$0.key] != nil }
-        guard !pending.isEmpty || !analyses.isEmpty else { return }
+        let ui = uiPrefs()
+        guard ui.writeCollection else { return }
+        var job = CollectionWriter.Job(changes: meta.all.mapValues(\.values).filter { position[$0.key] != nil },
+                                       analyses: analysis.unwritten.filter { position[$0.key] != nil })
+        job.cues = pendingCues()
+        job.moves = pendingMoves.filter { entryIndex.raw[$0.key] != nil }
+        if ui.writeCuts { job.newEntries = cutStore.tracks.filter { entryIndex.raw[$0.key] == nil && $0.fileExists } }
+        if ui.writePlaylists {
+            let own = ownPlaylists()
+            if own != writtenPlaylists { job.playlists = own }
+        }
+        guard !job.isEmpty else { return }
+        // umbenannte Tracks stehen in MINOS-741 schon unter dem neuen Schlüssel, in der Datei noch unter dem alten
+        if !job.moves.isEmpty {
+            let old = Dictionary(job.moves.map { ($0.value.key, $0.key) }, uniquingKeysWith: { a, _ in a })
+            func rekey<V>(_ d: [String: V]) -> [String: V] { Dictionary(d.map { (old[$0.key] ?? $0.key, $0.value) }, uniquingKeysWith: { a, _ in a }) }
+            job.changes = rekey(job.changes)
+            job.analyses = rekey(job.analyses)
+            job.cues = rekey(job.cues)
+        }
         if Self.collectionSoftwareRunning() {
             status = String(localized: "Collection-Datei nicht geschrieben: die Collection-Software läuft. Änderungen bleiben in MINOS-741.")
             StatusCenter.post(.warning, status, key: "writeback")
             return
         }
+        if let s = loadedStamp, FileStamp(url: url) != s {
+            writeAfterLoad = true
+            status = String(localized: "Collection-Datei inzwischen geändert: erst neu laden, dann schreiben")
+            StatusCenter.post(.info, status, detail: url.path, key: "writeback")
+            load(url)
+            return
+        }
+        job.expected = loadedStamp
         writing = true
         let index = entryIndex
         let backupDir = url.deletingLastPathComponent().appendingPathComponent("Backup MINOS-741")
+        let sent = job
         Task.detached(priority: .utility) {
-            let result = Result { try CollectionWriter.write(url: url, changes: pending, analyses: analyses, index: index, backupDir: backupDir) }
-            await MainActor.run {
-                self.writing = false
-                switch result {
-                case let .success(r):
-                    self.entryIndex.update(r.blocks)
-                    self.meta.clear(written: r.written)
-                    self.analysis.markWritten(r.writtenAnalyses)
-                    for k in r.written.keys where self.analysis.entry(for: k) == nil { self.collectionBase[k] = nil }
-                    var msg = String(localized: "Collection-Datei geschrieben: \(Set(r.written.keys).union(r.writtenAnalyses).count) Tracks")
-                    if let b = r.backup { msg += " · " + String(localized: "Sicherung \(b.lastPathComponent)") }
-                    if !r.missing.isEmpty {
-                        msg += " · " + String(localized: "\(r.missing.count) nicht gefunden (Datei inzwischen geändert -> ↻ neu laden)")
-                    }
-                    self.status = msg
-                    StatusCenter.post(r.missing.isEmpty ? .ok : .warning, msg, detail: url.path, key: "writeback")
-                case let .failure(e):
-                    self.status = String(localized: "Collection-Datei nicht geschrieben: \(String(describing: e))")
-                    StatusCenter.post(.error, self.status, detail: url.path, key: "writeback")
-                }
-            }
+            let result = Result { try CollectionWriter.write(url: url, job: sent, index: index, backupDir: backupDir) }
+            await MainActor.run { self.finishWrite(result, url: url) }
         }
+    }
+
+    private func finishWrite(_ result: Result<CollectionWriter.Result, Error>, url: URL) {
+        writing = false
+        switch result {
+        case var .success(r):
+            // Schlüssel wie in MINOS-741 (umbenannt = neuer Schlüssel)
+            if !r.moved.isEmpty {
+                func rekey<V>(_ d: [String: V]) -> [String: V] { Dictionary(d.map { (r.moved[$0.key] ?? $0.key, $0.value) }, uniquingKeysWith: { a, _ in a }) }
+                r.written = rekey(r.written)
+                r.writtenCues = rekey(r.writtenCues)
+                r.writtenAnalyses = r.writtenAnalyses.map { r.moved[$0] ?? $0 }
+            }
+            entryIndex.remove(r.moved.keys)
+            entryIndex.update(r.blocks)
+            if let s = r.stamp { loadedStamp = s }
+            meta.clear(written: r.written)
+            analysis.markWritten(r.writtenAnalyses)
+            for k in r.written.keys where analysis.entry(for: k) == nil { collectionBase[k] = nil }
+            let ownGrid = Set(r.writtenCues.keys.filter { k in analysis.entry(for: k).map { $0.bpm != nil || $0.gridAnchorMs != nil } ?? false })
+            edits?.clearWritten(r.writtenCues, keepGrid: ownGrid)
+            refreshFromFile(r.writtenCues.keys)
+            if !r.moved.isEmpty {
+                for k in r.moved.keys { pendingMoves[k] = nil }
+                saveMoves()
+            }
+            if r.playlists != nil { writtenPlaylists = r.playlists }
+            let n = Set(r.written.keys).union(r.writtenAnalyses).union(r.writtenCues.keys).union(r.moved.keys).count
+            var msg = String(localized: "Collection-Datei geschrieben: \(n) Tracks")
+            if !r.added.isEmpty { msg += " · " + String(localized: "\(r.added.count) neu") }
+            if r.playlistsChanged { msg += " · " + String(localized: "Playlists MINOS-741") }
+            if !r.changed { msg = String(localized: "Collection-Datei: schon aktuell") }
+            if let b = r.backup { msg += " · " + String(localized: "Sicherung \(b.lastPathComponent)") }
+            if !r.missing.isEmpty {
+                msg += " · " + String(localized: "\(r.missing.count) nicht gefunden (Datei inzwischen geändert -> ↻ neu laden)")
+            }
+            status = msg
+            StatusCenter.post(r.missing.isEmpty ? .ok : .warning, msg, detail: url.path, key: "writeback")
+            // neue / umbenannte Einträge: Liste und Playlists aus der Datei neu
+            if !r.added.isEmpty || !r.moved.isEmpty { load(url) }
+        case let .failure(e) where e as? CollectionWriter.Refusal == .changedOnDisk:
+            writeAfterLoad = true
+            load(url)
+        case let .failure(e):
+            status = String(localized: "Collection-Datei nicht geschrieben: \(String(describing: e))")
+            StatusCenter.post(.error, status, detail: url.path, key: "writeback")
+        }
+    }
+
+    /// Tracks nach dem Schreiben aus ihrem neuen ENTRY-Block (Cues, Grid), darüber die eigenen Werte wie beim Laden
+    private func refreshFromFile(_ keys: some Sequence<String>) {
+        var list = tracks
+        var hit: [Track] = []
+        for k in keys {
+            guard let i = position[k], i < list.count, list[i].key == k, let block = entryIndex.raw[k],
+                  let parsed = try? NMLParser.parse(data: Data(("<NML><COLLECTION>" + block + "</COLLECTION></NML>").utf8)).tracks.first
+            else { continue }
+            var t = parsed
+            t.fileMissing = list[i].fileMissing
+            if collectionBase[k] != nil { collectionBase[k] = t }
+            if let e = meta.edit(for: k) { t = e.apply(to: t) }
+            if let a = analysis.entry(for: k) { t = a.apply(to: t) }
+            guard t != list[i] else { continue }
+            list[i] = t
+            byKey[k] = t
+            hit.append(t)
+        }
+        guard !hit.isEmpty else { return }
+        replaceRunning(hit.map(\.key))
+        smartCache = [:]
+        customCache = [:]
+        tracks = list
+        onRefreshed?(hit)
+    }
+
+    // MARK: - Datei umbenannt
+
+    /// Datei eines Collection-Tracks hat einen neuen Pfad (z. B. andere Endung nach dem Schneiden): Schlüssel und Pfad
+    /// wechseln sofort in MINOS-741 (Metadaten, Analyse, Hotcues, Preparation wandern mit); mit „in die Collection-Datei
+    /// schreiben“ ändert der nächste Schreibvorgang LOCATION des Eintrags, sonst bleibt die Umbenennung in
+    /// `collection-moves.json` und gilt bei jedem Laden
+    func pathChanged(old: String, new: String) {
+        guard old != new, let i = tracks.firstIndex(where: { $0.path == old }) else { return }
+        let oldKey = tracks[i].key
+        let origin = pendingMoves.first { $0.value.key == oldKey }?.key ?? oldKey   // schon einmal umbenannt
+        let loc = CollectionWriter.pathChanged(old: old, new: new, oldBlock: entryIndex.raw[origin])
+        guard loc.key != oldKey else { return }
+        pendingMoves[origin] = loc
+        saveMoves()
+        meta.rename(from: oldKey, to: loc.key)
+        analysis.rename(from: oldKey, to: loc.key)
+        edits?.rename(from: oldKey, to: loc.key)
+        if collectionBase[oldKey] != nil { collectionBase[loc.key] = collectionBase.removeValue(forKey: oldKey) }
+        var list = tracks
+        list[i].key = loc.key
+        list[i].path = new
+        byKey[oldKey] = nil
+        byKey[loc.key] = list[i]
+        position[oldKey] = nil
+        position[loc.key] = i
+        smartCache = [:]
+        customCache = [:]
+        tracks = list
+        if preparation.contains(oldKey) { preparation = preparation.map { $0 == oldKey ? loc.key : $0 } }
+        if running.contains(where: { $0.key == oldKey }) { running = running.map { $0.key == oldKey ? list[i] : $0 } }
+        if uiPrefs().writeCollection { scheduleWriteBack() }
+    }
+
+    private static func loadMoves() -> [String: NMLLocation] {
+        guard !Session.isSelfTest, let d = try? Data(contentsOf: movesURL),
+              let m = try? JSONDecoder().decode([String: NMLLocation].self, from: d) else { return [:] }
+        return m
+    }
+
+    private func saveMoves() {
+        guard !Session.isSelfTest else { return }
+        if pendingMoves.isEmpty { try? FileManager.default.removeItem(at: Self.movesURL); return }
+        try? JSONEncoder().encode(pendingMoves).write(to: Self.movesURL, options: .atomic)
     }
 
     func tracks(for source: BrowserSource) -> [Track] {

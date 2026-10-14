@@ -102,8 +102,14 @@ public final class NMLParser: NSObject, XMLParserDelegate {
         return Collection(tracks: d.tracks, root: d.root.children.first ?? d.root)
     }
 
+    /// Stand eines ENTRY aus MODIFIED_DATE + MODIFIED_TIME (leer, wenn beide fehlen)
+    public static func stamp(_ a: [String: String]) -> String {
+        let d = a["MODIFIED_DATE"] ?? "", t = a["MODIFIED_TIME"] ?? ""
+        return d.isEmpty && t.isEmpty ? "" : d + " " + t
+    }
+
     /// NML-Pfad "/:Users/:x/:" → "/Users/x/"
-    static func plainDir(_ dir: String) -> String { dir.replacingOccurrences(of: "/:", with: "/") }
+    public static func plainDir(_ dir: String) -> String { dir.replacingOccurrences(of: "/:", with: "/") }
 
     static func date(_ s: String?) -> Date? {
         guard let s, !s.isEmpty else { return nil }
@@ -121,6 +127,7 @@ public final class NMLParser: NSObject, XMLParserDelegate {
             current?.title = a["TITLE"] ?? ""
             current?.artist = a["ARTIST"] ?? ""
             current?.locked = a["LOCK"] == "1"
+            current?.entryStamp = Self.stamp(a)
         case "LOCATION" where current != nil:
             let vol = a["VOLUME"] ?? "", dir = a["DIR"] ?? "", file = a["FILE"] ?? ""
             current?.key = vol + dir + file

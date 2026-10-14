@@ -218,6 +218,10 @@ struct UIPrefs: Codable, Equatable {
     var musicFolders: [String] = []
     /// Metadaten-Änderungen aus dem Browser auch in die Collection-Datei schreiben (mit Sicherung davor)
     var writeCollection = false
+    /// mit `writeCollection`: Cut-Kopien und Tool-Loop-Dateien (cuts.json) als neue Einträge in die Collection-Datei
+    var writeCuts = true
+    /// mit `writeCollection`: Preparation und eigene History-Sitzungen als Playlists unter `$ROOT/MINOS-741`
+    var writePlaylists = true
     /// Browser-Vorschau (Mini-Wellenform + Grid + Cues): ganze Zeile (zweizeilig), eigene Spalte, hinter dem Titel oder aus
     var previewMode = PreviewMode.fullRow
     /// Farben der Vorschau: Spektrum (rot/grün/blau) oder wie die Wellenform

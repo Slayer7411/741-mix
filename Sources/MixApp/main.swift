@@ -96,6 +96,10 @@ struct ContentView: View {
         .background(CloudHook())      // Cloud-Library: Prüfen, Lokal-halten, Pause beim Laden
         .onChange(of: mix.prefs.ui.musicFolders, initial: true) { _, f in store.folders.configured = f }
         .onAppear {
+            // Collection-Datei: eigene Hotcues / Grid schreiben und beim Laden auf Konflikte prüfen
+            store.edits = mix.edits
+            store.uiPrefs = { [mix] in mix.prefs.ui }
+            store.onRefreshed = { [mix] t in mix.collectionUpdated(t) }
             if store.tracks.isEmpty { store.load() }
             // MIX741_LAYOUT=nomixer,1deck,2decks,nobrowser: Teile der Oberfläche für Layout-Messungen abschalten (nur Selbsttest)
             if Session.isSelfTest, let l = ProcessInfo.processInfo.environment["MIX741_LAYOUT"] {
@@ -410,6 +414,7 @@ extension MixApp {
         browser.history = history
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
         history.start(store: store, mix: mix)
+        store.history = history
         appDelegate.onQuit = { [mix, browser, history] in
             Session.saveNow(mix: mix, browser: browser)
             mix.flushEdits()

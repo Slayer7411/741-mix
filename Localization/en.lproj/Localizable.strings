@@ -963,3 +963,12 @@
 "2 Takte" = "2 bars";
 "Versatz (ms): %lld" = "Offset (ms): %lld";
 "deck-zeile groove: muster des tracks am grid lesen (aktiver loop, sonst ab der nächsten eins), hats / bass dazu erzeugen. ▶ midi = virtuelle midi-quelle im takt der clock, in der daw als midi-eingang wählen. bass = grundton aus dem key, kanal 10 = drums (42 / 46 hats). ziehen aus dem raster oder .mid = midi-datei." = "deck row groove: reads the track's pattern on the grid (active loop, else from the next bar start), generates hats / bass for it. ▶ midi = virtual midi source in time with the clock, pick it as midi input in the daw. bass = root from the key, channel 10 = drums (42 / 46 hats). drag from the grid or .mid = midi file.";
+"aus: änderungen (inline, ⌘E, hotcues, loops, grid) liegen nur in MINOS-741 (metadata.json, edits.json). an: gesammelt in die collection.nml, sicherung höchstens stündlich in „Backup MINOS-741“ neben der datei. nicht, solange die collection-software läuft. schnitt und active loops bleiben in MINOS-741." = "off: changes (inline, ⌘E, hotcues, loops, grid) stay in MINOS-741 only (metadata.json, edits.json). on: collected into collection.nml, a backup at most once per hour in “Backup MINOS-741” next to the file. never while the library software is running. trim and active loops stay in MINOS-741.";
+"Cuts und Tool-Loops als neue Einträge anlegen" = "Add cuts and tool loops as new entries";
+"Preparation und History als Playlists (Ordner MINOS-741)" = "Preparation and history as playlists (folder MINOS-741)";
+"eigene playlists stehen nur im ordner MINOS-741 und werden bei jedem schreiben ersetzt, andere playlists bleiben unberührt." = "own playlists live only in the folder MINOS-741 and are replaced on every write, other playlists stay untouched.";
+"Konflikt: %lld Tracks in der Collection-Datei geändert – die Datei gilt, MINOS-Stand in metadata-konflikt.json / edits-konflikt.json" = "Conflict: %lld tracks changed in the collection file – the file wins, MINOS state in metadata-konflikt.json / edits-konflikt.json";
+"Collection-Datei inzwischen geändert: erst neu laden, dann schreiben" = "Collection file changed meanwhile: reloading first, then writing";
+"%lld neu" = "%lld new";
+"Playlists MINOS-741" = "Playlists MINOS-741";
+"Collection-Datei: schon aktuell" = "Collection file: already up to date";
