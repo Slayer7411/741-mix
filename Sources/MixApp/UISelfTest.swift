@@ -113,6 +113,7 @@ enum UISelfTest {
             ("deck-menü", deckMenu), ("drop aufs deck", dropOnDeck), ("bereich in der wellenform", waveRange),
             ("spaltenbreite per doppelklick", fitColumn), ("statusleiste automatisch", autoStatusBar),
             ("tastenkürzel", shortcuts), ("werkzeugleiste", toolbar), ("zoom", zoom),
+            ("groove", groove),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -710,5 +711,57 @@ enum UITestFixture {
             for c in 0..<Int(file.processingFormat.channelCount) { ch[c][i] = v }
         }
         try file.write(from: buf)
+    }
+}
+
+extension UISelfTest {
+    /// Deck-Zeile GROOVE an Deck A: Klick ins Raster liest das Muster (Fixture: Kick auf jedem Beat), ▶ MIDI startet
+    /// (Quelle im Test versteckt), ■ hält an, ⚄ würfelt neu. Tasten von rechts gesucht (.mid schreibt im Test nur in den
+    /// temporären Ordner), die Menüs links werden nie angeklickt
+    static func groove(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, g = GrooveCenter.shared
+        mix.prefs.ui.deckRows.groove = true
+        defer { g.stop(); mix.prefs.ui.deckRows.groove = false; u.spin(0.3) }
+        u.spin(2) { u.named("A groove") != nil }
+        guard let row = u.named("A groove") else { fail("Groove-Zeile A nicht gefunden") }
+        let r = u.frame(row)
+        guard r.width >= 360, mix.core.trackAudio(0) != nil else { log("groove: zeile \(Int(r.width)) pt / ohne audio – fall übersprungen"); return }
+        // Raster: zwischen Menüs (≤ 190 pt) und Tasten (≤ 160 pt)
+        let gx = (r.minX + 190 + r.maxX - 160) / 2
+        u.click(at: NSPoint(x: gx, y: r.midY))
+        u.spin(1) { g.slots[0].pattern != nil }
+        guard let p = g.slots[0].pattern, let clip = g.slots[0].clip else { fail("Klick ins Raster: kein Muster") }
+        check(g.running == nil, "Klick ins Raster startet MIDI")
+        log("groove muster: \(p.steps) schritte · kick \(p.steps(.kick)) · hats \(p.hatSteps.sorted()) · \(clip.notes.count) noten")
+        if UITestFixture.dir != nil {
+            check(p.steps(.kick) == Array(stride(from: 0, to: p.steps, by: 4)), "Fixture: Kick nicht auf jedem Beat: \(p.steps(.kick))")
+        }
+        check(!clip.notes.isEmpty, "keine Noten erzeugt")
+        // ▶ MIDI von rechts suchen
+        var playX: CGFloat?
+        for x in stride(from: r.maxX - 3, to: r.maxX - 170, by: -4) {
+            u.click(at: NSPoint(x: x, y: r.midY))
+            if g.running == 0 { playX = x; break }
+        }
+        guard let px = playX else { fail("▶ MIDI nicht gefunden") }
+        check(StatusCenter.shared.current?.text.hasPrefix("Groove → MIDI") == true || StatusCenter.shared.history.contains { $0.text.hasPrefix("Groove → MIDI:") },
+              "keine Statusmeldung „Groove → MIDI …“")
+        u.spin(0.5)
+        // ■ von rechts (liegt rechts von ▶)
+        var stopX: CGFloat?
+        for x in stride(from: r.maxX - 3, to: px, by: -4) {
+            u.click(at: NSPoint(x: x, y: r.midY))
+            if g.running == nil { stopX = x; break }
+        }
+        guard let sx = stopX else { fail("■ hält MIDI nicht an") }
+        check(sx > px + 8, "angehalten nur über ▶ (x \(Int(sx - r.minX)) / \(Int(px - r.minX)))")
+        // ⚄ liegt links von ▶: weiter nach links, bis der Seed wechselt (▶ dazwischen wieder aus)
+        let seed = g.slots[0].seed
+        for x in stride(from: px - 4, to: px - 120, by: -4) where g.slots[0].seed == seed {
+            u.click(at: NSPoint(x: x, y: r.midY))
+            if g.running != nil { u.click(at: NSPoint(x: x, y: r.midY)) }
+        }
+        check(g.slots[0].seed != seed, "⚄ würfelt nicht neu")
+        check(g.running == nil, "MIDI läuft nach ⚄ noch")
     }
 }

@@ -51,7 +51,8 @@ enum WindowShot {
             let paths: [String: WritableKeyPath<UIPrefs, Bool>] = [
                 "info": \.deckRows.info, "comment": \.deckRows.comment, "tags": \.deckRows.tags, "phaseBar": \.deckRows.phaseBar,
                 "overview": \.deckRows.overview, "transport": \.deckRows.transport, "hotcues": \.deckRows.hotcues,
-                "loop": \.deckRows.loop, "jump": \.deckRows.jump, "tempo": \.deckRows.tempo, "grid": \.showGridTools]
+                "loop": \.deckRows.loop, "jump": \.deckRows.jump, "tempo": \.deckRows.tempo, "grid": \.showGridTools,
+                "groove": \.deckRows.groove]
             for p in paths.values { mix.prefs.ui[keyPath: p] = false }
             for n in rows.split(separator: ",") { if let p = paths[String(n)] { mix.prefs.ui[keyPath: p] = true } }
         }

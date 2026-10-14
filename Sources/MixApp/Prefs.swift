@@ -132,6 +132,8 @@ struct DeckRows: Codable, Equatable {
     var jump = true
     /// Pitch-Fader rechts
     var tempo = true
+    /// Groove → MIDI (Hats / Bass zum laufenden Track)
+    var groove = false
 
     /// Reihenfolge für Menü und Einstellungen: wie im Deck von oben nach unten, Pitch-Fader zuletzt.
     /// Grid-Werkzeuge liegen (älter) in UIPrefs, deshalb Pfade ab UIPrefs
@@ -140,7 +142,7 @@ struct DeckRows: Codable, Equatable {
         (\.deckRows.tags, "Tags (Kommentar 2)"), (\.deckRows.phaseBar, "Phasenbalken"), (\.deckRows.overview, "Übersicht"),
         (\.deckRows.transport, "Transport (CUE, PLAY, SYNC …)"), (\.deckRows.hotcues, "Hotcues (mit IN / OUT / RE)"),
         (\.deckRows.loop, "Loop-Größen"), (\.deckRows.jump, "Beatjump"), (\.showGridTools, "Grid-Werkzeuge"),
-        (\.deckRows.tempo, "Pitch-Fader"),
+        (\.deckRows.groove, "Groove → MIDI"), (\.deckRows.tempo, "Pitch-Fader"),
     ]
 }
 
@@ -152,7 +154,7 @@ extension DeckRows {
         func v(_ k: CodingKeys, _ cur: Bool) -> Bool { ((try? c.decodeIfPresent(Bool.self, forKey: k)) ?? nil) ?? cur }
         info = v(.info, info); comment = v(.comment, comment); tags = v(.tags, tags); phaseBar = v(.phaseBar, phaseBar)
         overview = v(.overview, overview); transport = v(.transport, transport); hotcues = v(.hotcues, hotcues)
-        loop = v(.loop, loop); jump = v(.jump, jump); tempo = v(.tempo, tempo)
+        loop = v(.loop, loop); jump = v(.jump, jump); tempo = v(.tempo, tempo); groove = v(.groove, groove)
     }
 }
 
@@ -301,6 +303,8 @@ struct AppPrefs: Codable, Equatable {
     var controller = ControllerPrefs()
     /// Cloud-Library: lokal halten, Downloads (⌘, -> CLOUD)
     var cloud = CloudPrefs()
+    /// Groove → MIDI (⌘, -> DECKS)
+    var groove = GroovePrefs()
     /// eigene Tastenkürzel: Aktion-ID -> Kombination als Text ("" = frei), sonst Standard (ShortcutID.defaultCombo)
     var shortcuts: [String: String] = [:]
 
@@ -399,4 +403,21 @@ struct AppPrefs: Codable, Equatable {
         guard !Session.isSelfTest else { return }   // Selbsttest darf Christians Einstellungen nicht überschreiben
         if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.key) }
     }
+}
+
+/// Groove → MIDI: Quelle, Kanäle, Bass-Oktave, Auswahl der Deck-Zeile
+struct GroovePrefs: Codable, Equatable {
+    /// Name der virtuellen MIDI-Quelle
+    var sourceName = "MINOS-741 Groove"
+    /// Kanäle 1–16
+    var bassChannel = 1
+    var drumChannel = 10
+    /// Oktave des Grundtons (C3 = 60): 1 -> 36–47
+    var bassOctave = 1
+    /// Zeitstempel verschieben (ms, positiv = später)
+    var offsetMs = 0.0
+    /// Takte ab der nächsten Eins (ohne Loop)
+    var bars = 2
+    var instrument = GrooveInstrument.both
+    var style = GrooveStyle.off
 }

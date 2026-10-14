@@ -40,6 +40,7 @@ struct DeckView: View {
                     if gridRow { row("jump", JumpRow(d: d)) } else { row("jump", Slot(d: d, normal: JumpRow(d: d), edit: GridToolsRow(d: d))) }
                 }
                 if gridRow { row("grid", GridToolsRow(d: d)) }
+                if rows.groove { row("groove", GrooveRow(d: d)) }
             }
             if rows.tempo { TempoColumn(d: d).padding(.trailing, 3.z) }
         }

@@ -146,7 +146,7 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 
 ### rows
 
-DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, comment, tags (comment 2), phase bar, overview, transport, hotcues (with IN / OUT / RE), loop sizes, beatjump, grid tools, pitch fader. waveform and header always stay.
+DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, comment, tags (comment 2), phase bar, overview, transport, hotcues (with IN / OUT / RE), loop sizes, beatjump, grid tools, groove → midi (off by default), pitch fader. waveform and header always stay.
 
 * pitch fader off -> waveform and rows take its width
 * DECKS -> compact decks (⌥⌘K) -> pitch fader, hotcues and grid tools off / on together -> more room for waveform and beatgrid
@@ -361,6 +361,27 @@ link (network tempo sync):
 * offset setting for latency between the two apps
 
 bar counter (top right): runs from the first play, 4 / 8 / 16 bars, the big number counts within the phrase (⌘, -> DISPLAY, default 16 bars) and starts over, double click or ↺ = back to bar 1. next to it the time of day and a stopwatch (from the first play, click = restart at 0). the whole top bar scales 60-130 % by dragging the grip below it (double click = 100 %), fx units sit 10 pt flatter. bar 1 of the counter = bar 1 of a phrase (the code). each deck header shows `◆ CODE` or how far the deck is off (`+2 BARS`) -> a beatjump of that size the other way brings it back in.
+
+### groove to midi
+
+deck row GROOVE (off by default, DECKS -> ROWS): hats and / or a bass line for the running track, as midi to a daw or as a file.
+
+```
+GROOVE  HATS+BASS ▾  OFF ▾  [ 16-step grid ]  ⚄  ▶ MIDI  ■  .MID
+```
+
+* click the grid -> reads the pattern: active loop (1-8 beats), else the next 1 or 2 bars from the next bar start (⌘, -> DECKS). source: the fine spectrum of the waveform (300 blocks/s) on the beat grid, 16th steps
+* kick = rise of sub + bass. kicks on the quarters -> other steps count only as loud as those (offbeat bass stays out). clap / snare = mids on 2 and 4 louder than on 1 and 3. hats = rise of highs + air, open = held highs. no spectrum -> kick on every beat
+* grid lanes top to bottom: kick, clap, hats, bass. track hits light, generated hats red (open gold), bass purple bars
+* HATS / BASS / HATS+BASS, style TIGHT / OFF / ROLLING:
+  * hats only on 16ths without a hat in the track. tight = offbeats, off = offbeats + open hat on the last offbeat of the bar + 1-2 ghost 16ths, rolling = all free 16ths with accents. all taken -> quiet 16ths in the gaps
+  * bass root from the track key + key shift (and tempo without keylock), octave setting (C3 = 60, octave 1 = 36-47). tight = with the kicks, off = offbeat after each kick, rolling = 16ths between the kicks. fifth / octave / third as variation, bar 2 repeats bar 1 with a new turnaround. length = 85 % up to the next note. no key -> A minor
+* ⚄ -> new seed, same seed = same result
+* ▶ MIDI -> virtual midi source `MINOS-741 Groove` (name in ⌘, -> DECKS). in the daw: midi track, input = this source, monitor or record. notes follow the master clock (same clock as link and metronome): step 0 of the pattern sits on the deck's beat; channel 1 = bass, channel 10 = drums (42 closed hat, 46 open hat). one deck at a time, ▶ on another deck takes over. changes (style, ⚄, settings) swap the pattern without a gap
+* ■ -> note offs + all notes off on the used channels
+* .MID -> save dialog in the track's folder: standard midi file type 1, tempo = deck tempo, tracks bass / drums, 480 ppq, track end = loop length. drag from the grid -> same file from a temporary folder
+* timing: own queue every 10 ms, events planned 25 ms ahead with host time stamps (time the clock beat is audible), offset in ⌘, -> DECKS. nothing in the audio thread. measured (self test, debug build): time stamps within 0.02 ms of the clock's 16th grid, delivered at their time stamp
+* status bar: `Groove → MIDI: Hats + Bass, 2 Takte`
 
 ## ◆ 07 · MIXER + AUDIO
 

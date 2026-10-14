@@ -25,6 +25,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * align grid anchor to phrases: off / suggest (default) / automatic -> on load the anchor is checked against the track's 8-bar structure, see manual 05
 * history: played after x seconds audible, optional copy into the collection's history folder
 * decks shown 1 / 2 / 4 (`ui.deckCount`, older `showFourDecks` is read once), preview start position in the browser
+* groove → midi (`groove`): midi source name (default `MINOS-741 Groove`), channel bass (1) / drums (10), bass octave 0-3 (C3 = 60, default 1), length without loop 1 / 2 bars (default 2), offset −100…100 ms. instrument and style of the deck row are saved here too
 
 ## ◆ MIXER & FX
 
