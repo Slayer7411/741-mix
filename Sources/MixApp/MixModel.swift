@@ -163,7 +163,11 @@ final class MixModel {
     /// Plugin-Verwaltung (⌘, → PLUGINS); teilt die Liste mit dem Kern
     @ObservationIgnored lazy var plugins = PluginManager(catalog: core.pluginCatalog)
 
+    /// Wellenform-Presets (eingebaut + `wave-presets.json`), Auswahl in `prefs.ui.wavePreset`
+    @ObservationIgnored let wavePresets: WavePresetStore
+
     init() {
+        wavePresets = WavePresetStore()
         // gespeicherte Plugin-Einstellungen + Absturz-Markierung vom letzten Lauf, bevor eine Sitzung Plugins lädt.
         // Selbsttest: nur lesen (keine Markierung, keine Änderungen)
         VST3Thread.useMain = true   // VST3: Laden, Zustand, Controller, Ansicht immer auf dem Haupt-Thread
@@ -180,6 +184,7 @@ final class MixModel {
         }
         loadSetup()
         for d in decks.indices { decks[d].editing = prefs.ui.editing(d) }
+        migrateWavePreset()
         core.setPrefs(prefs.engine)
         previewer.setVolume(prefs.ui.previewVolume)
         outputDevices = MixEngine.outputDevices()

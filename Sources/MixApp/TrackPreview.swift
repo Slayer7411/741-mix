@@ -167,6 +167,8 @@ struct PreviewSpec: Hashable, Sendable {
     var cutStart: Double?
     var cutEnd: Double?
     var palette: WaveformPalette
+    /// Farben Tief / Mitte / Hoch „wie Wellenform“ (r, g, b je Band): 3-Band aus dem Preset, sonst aus `palette`
+    var tint: [Float]
     var style: WaveformStyle
     var colors: PreviewColors
     /// ganze Zeile: breiteres Bild
@@ -176,15 +178,26 @@ struct PreviewSpec: Hashable, Sendable {
     @MainActor init(_ track: Track, mix: MixModel) {
         let e = mix.edits.edit(for: track.key)
         let t = e?.apply(to: track) ?? track
-        self.init(t, ui: mix.prefs.ui, controller: mix.prefs.controller, info: Overviews.shared.store.info(t.key), trim: e?.trim)
+        self.init(t, ui: mix.prefs.ui, controller: mix.prefs.controller, info: Overviews.shared.store.info(t.key), trim: e?.trim,
+                  preset: mix.wavePreset)
     }
 
     /// ohne Modell (Selbsttest-Bilder): Übersicht direkt übergeben
     init(_ t: Track, ui: UIPrefs, controller: ControllerPrefs, overview: TrackOverview, trim: TrackTrim? = nil) {
-        self.init(t, ui: ui, controller: controller, info: (gen: 1, duration: overview.duration), trim: trim)
+        self.init(t, ui: ui, controller: controller, info: (gen: 1, duration: overview.duration), trim: trim,
+                  preset: WavePresetList(builtIn: WavePresets.builtIn).resolved(ui.wavePreset))
     }
 
-    private init(_ t: Track, ui: UIPrefs, controller c: ControllerPrefs, info: (gen: Int, duration: Double)?, trim: TrackTrim?) {
+    /// Farben der Vorschau „wie Wellenform“: 3-Band aus dem Preset (RGB direkt = Spektrum-Palette), sonst die Palette
+    static func tint(_ ui: UIPrefs, preset: WavePreset) -> [Float] {
+        if ui.waveformStyle == .blend, !preset.look.direct {
+            return [preset.look.low, preset.look.mid, preset.look.high].flatMap { [$0.r, $0.g, $0.b] }
+        }
+        let c = RenderedWaveform.Colors.of(ui.waveformStyle == .blend ? .rgb : ui.waveformPalette)
+        return [c.low, c.mid, c.high].flatMap { [Float($0.r), Float($0.g), Float($0.b)] }
+    }
+
+    private init(_ t: Track, ui: UIPrefs, controller c: ControllerPrefs, info: (gen: Int, duration: Double)?, trim: TrackTrim?, preset: WavePreset) {
         key = t.key
         path = t.path
         gen = info?.gen ?? 0
@@ -200,6 +213,7 @@ struct PreviewSpec: Hashable, Sendable {
         anchor = grid?.anchor ?? 0
         phraseBeats = max(4, ui.phraseBeats)
         palette = ui.waveformPalette
+        tint = Self.tint(ui, preset: preset)
         style = ui.waveformStyle
         colors = ui.previewColors
         let startMs = Theme.startCueMs(t)
@@ -314,7 +328,8 @@ enum PreviewRenderer {
             drawSpectrum(ctx, o, width: w, height: h, pps: pps)
         } else if let o = overview, o.count > 0 {
             // wie Wellenform (gedämpft, Farben aus den Einstellungen)
-            let colors = RenderedWaveform.Colors.of(s.palette)
+            let band = { (i: Int) in RenderedWaveform.RGB(r: CGFloat(s.tint[i * 3]), g: CGFloat(s.tint[i * 3 + 1]), b: CGFloat(s.tint[i * 3 + 2])) }
+            let colors = (low: band(0), mid: band(1), high: band(2))
             let cg = { (c: RenderedWaveform.RGB) in rgb(c.r, c.g, c.b, 0.6) }
             var lo: [CGRect] = [], mi: [CGRect] = [], hi: [CGRect] = []
             lo.reserveCapacity(w); mi.reserveCapacity(w); hi.reserveCapacity(w)

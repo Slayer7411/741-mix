@@ -123,6 +123,7 @@ enum UISelfTest {
             ("vorbereiten", prepareMode),
             ("playlist-baum", playlistTree),
             ("mehrfach-sortierung", multiSort),
+            ("wellenform-preset", wavePreset),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1512,5 +1513,94 @@ extension UISelfTest {
         let session = Session(mix: u.mix, browser: u.browser)
         check(session.panes?.first?.sorts == ["bpm:desc", "comment:desc"], "Sitzung: \(session.panes?.first?.sorts ?? [])")
         log("mehrfach-sortierung: \(pane.sortOrder.count) spalten, \(pairs) gleiche bpm-paare geprüft, marken \(mark("bpm")) \(mark("comment"))")
+    }
+}
+
+extension UISelfTest {
+    /// ⌘, -> ANZEIGE -> Wellenform (eigenes Fenster, offscreen): KOPIEREN legt eine eigene Kopie des eingebauten Presets
+    /// an und wählt sie, der Regler Trennfrequenz Tief ändert sie (Deck A rechnet nach), die Kopie steht im Preset-Menü.
+    /// Danach gelöscht, Auswahl wie vorher
+    static func wavePreset(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, store = mix.wavePresets
+        let style0 = mix.prefs.ui.waveformStyle, preset0 = mix.prefs.ui.wavePreset, n0 = store.list.custom.count
+        mix.prefs.ui.waveformStyle = .blend
+        mix.selectWavePreset("blend.a")
+        let root = SettingsView(selection: "ANZEIGE").environment(mix).environment(u.browser).environment(u.store)
+        let host = NSHostingView(rootView: root)
+        let size = NSSize(width: 900, height: 4000)
+        let w = UITestWindow(contentRect: NSRect(origin: UITestWindow.origin, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        w.alphaValue = 0
+        w.ignoresMouseEvents = true
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.contentView = host
+        w.setContentSize(size)
+        w.orderFrontRegardless()
+        defer {
+            if mix.wavePreset.builtIn == false { mix.deleteWavePreset() }
+            mix.prefs.ui.wavePreset = preset0
+            mix.prefs.ui.waveformStyle = style0
+            w.orderOut(nil)
+            u.spin(0.3)
+        }
+        func views() -> [NSView] {
+            func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+            return all(w.contentView?.superview ?? host)
+        }
+        func mark(_ name: String) -> NSView? { views().first { ($0 as? UITestMark.V)?.name == name } }
+        func frame(_ v: NSView) -> NSRect { v.convert(v.bounds, to: nil) }
+        u.spin(5) { mark("wave copy") != nil && mark("wave low") != nil }
+        guard let copyMark = mark("wave copy") else { fail("Wellenform: Taste KOPIEREN nicht gefunden") }
+        // Klick direkt an die getroffene Ansicht; kommt er nicht an (CI-Runner), die Aktion direkt (steht im Log)
+        let r = frame(copyMark), p = NSPoint(x: r.midX, y: r.midY)
+        let top = w.contentView?.superview ?? host
+        if let hit = top.hitTest(top.convert(p, from: nil)) {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                guard let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                                 pressure: type == .leftMouseUp ? 0 : 1) else { fail("kein Mausereignis") }
+                if type == .leftMouseDown { hit.mouseDown(with: e) } else { hit.mouseUp(with: e) }
+            }
+        }
+        u.spin(1) { store.list.custom.count == n0 + 1 }
+        if store.list.custom.count == n0 {
+            log("wellenform-preset: klick auf KOPIEREN kommt nicht an – kopiere direkt")
+            mix.copyWavePreset()
+        }
+        let copy = mix.wavePreset
+        check(store.list.custom.count == n0 + 1 && !copy.builtIn && copy.base == "blend.a", "KOPIEREN legt keine eigene Kopie an")
+        check(copy.look == WavePresets.builtIn[0].look && copy.analysis == .standard, "Kopie hat andere Werte als A")
+        // Regler Trennfrequenz Tief: NSSlider in der Zeile auf 3/4 (log 40…400 Hz -> 225 Hz)
+        u.spin(1)
+        let row = mark("wave low").map(frame)
+        let slider = row.flatMap { rr in views().compactMap { $0 as? NSSlider }.first { frame($0).intersects(rr) } }
+        if let slider {
+            slider.doubleValue = slider.minValue + (slider.maxValue - slider.minValue) * 0.75
+            _ = slider.sendAction(slider.action, to: slider.target)
+            u.spin(0.5) { mix.wavePreset.analysis.low != 150 }
+        }
+        if mix.wavePreset.analysis.low == 150 {
+            log("wellenform-preset: regler \(slider == nil ? "nicht gefunden" : "reagiert nicht") – setze direkt")
+            mix.editWavePreset { $0.analysis.low = 225 }
+        }
+        let low = mix.wavePreset.analysis.low
+        check(mix.wavePreset.id == copy.id && abs(low - 225) < 15, "Regler Tief: \(low) Hz, soll ≈ 225 (Preset \(mix.wavePreset.name))")
+        check(store.list.preset(copy.id)?.analysis.low == low && store.list.builtIn[0].analysis.low == 150, "Änderung nicht in der Kopie")
+        // Kopie steht im Preset-Menü
+        u.spin(0.5)
+        let popup = mark("wave picker").map(frame).flatMap { pr in views().compactMap { $0 as? NSPopUpButton }.first { frame($0).intersects(pr) } }
+        if let popup {
+            check(popup.itemTitles.contains(copy.name), "Preset-Menü ohne „\(copy.name)“: \(popup.itemTitles)")
+        } else {
+            check(store.all.contains { $0.id == copy.id }, "Kopie nicht in der Liste")
+            log("wellenform-preset: preset-menü nicht als NSPopUpButton gefunden – liste geprüft")
+        }
+        // Deck A rechnet mit der neuen Trennfrequenz nach
+        let cache = WaveformCache()
+        if let a = mix.core.trackAudio(0) {
+            u.spin(30) { cache.waveform(for: a, ui: mix.prefs.ui, preset: mix.wavePreset) != nil }
+            check(cache.waveform(for: a, ui: mix.prefs.ui, preset: mix.wavePreset) != nil && cache.reanalyzed == 1, "keine Nachanalyse für Deck A")
+        }
+        log(String(format: "wellenform-preset: „%@“ · tief %.0f Hz · nachanalyse %.2f s", copy.name, low, cache.lastReanalysis))
     }
 }

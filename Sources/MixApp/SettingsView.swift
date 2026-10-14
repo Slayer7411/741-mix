@@ -605,20 +605,19 @@ struct DisplaySettings: View {
                 Picker("Stil", selection: $mix.prefs.ui.waveformStyle) {
                     ForEach(WaveformStyle.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
-                let fine = mix.prefs.ui.waveformStyle == .spectrum
-                Picker("Farben", selection: $mix.prefs.ui.waveformPalette) {
-                    ForEach(WaveformPalette.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
-                }
-                .disabled(fine)
-                if mix.prefs.ui.waveformStyle != .mono {
-                    sliderRow("Höhen-Betonung", $mix.prefs.ui.waveformHighBoost, 0...3, step: 0.25, format: "%.2f")
-                }
-                if mix.prefs.ui.waveformStyle == .blend {
-                    Picker("Variante", selection: $mix.prefs.ui.blendPreset) {
-                        ForEach(Array(BlendPreset.all.enumerated()), id: \.offset) { i, p in Text(verbatim: p.name).tag(i) }
+                let fine = mix.prefs.ui.waveformStyle == .spectrum, blend = mix.prefs.ui.waveformStyle == .blend
+                if blend {
+                    WavePresetSettings()
+                    Text("je pixelzeile gemischt: tiefen als körper von der mitte, mitten als ring, höhen außen an den spitzen, helligkeit nach oben weich auslaufend. gehaltener bass / sub-ausklang orange, gehaltene höhen (offene hats, ride) hellblau. höhen-betonung 1 = standard, 3 = höhen ×4.")
+                        .settingsHint()
+                } else {
+                    Picker("Farben", selection: $mix.prefs.ui.waveformPalette) {
+                        ForEach(WaveformPalette.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                     }
-                    Text("Je Pixelzeile gemischt: Tiefen (< 150 Hz) als Körper von der Mitte, Mitten (um 670 Hz) als Ring, Höhen (> 3 kHz) außen an den Spitzen, Helligkeit nach oben weich auslaufend. Spektrum (RGB): Kick-Anschlag rot, gehaltener Bass / Sub-Ausklang orange, Mitten grün, kurze Höhen (geschlossene Hats) blau, gehaltene Höhen (offene Hats, Ride) hellblau. Höhen-Betonung 1 = Standard, 3 = Höhen ×4.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    .disabled(fine)
+                    if fine {
+                        sliderRow("Höhen-Betonung", $mix.prefs.ui.waveformHighBoost, 0...3, step: 0.25, format: "%.2f")
+                    }
                 }
                 if fine {
                     Text("Sub orange · Bass/Kick rot · Mitten grün, obere Mitten gelbgrün · kurze Höhen (geschlossene Hats) blau · gehaltene Höhen (offene Hats, Ride) hellblau. Jedes Band gegen den eigenen Track normiert, Höhe = echter Pegel.")

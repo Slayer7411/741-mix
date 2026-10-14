@@ -138,6 +138,13 @@ plugin list and loading (`PluginCatalog`, `PluginInstaller`, `PluginValidator` i
 * `MixCore/SpectrumColors.swift` -> color per block: band level minus track reference (95th percentile, kept within -10 / +6 dB of a typical club track), +boost for highs, weight 10^(d / 3.5 dB), mix pulled to full saturation. returns body color, high layer height and color, dominant band
 * `MixApp/Waveform.swift` -> chunks of rects per quantized color (8 steps per channel, ~110 paths per 2048 blocks) + high layer, overview columns from mean band energy
 
+## ◆ WAVEFORM BLEND PRESETS
+
+* `MixCore/WavePreset.swift` -> `WavePreset` (analysis `BlendParams` + display `Look` -> `BlendPaint.Palette`), `WavePresetList` (built in + own, copy / rename / delete / reset, json)
+* `MixMedia/BlendAnalyzer.swift` -> `analyze(…, params:, cancelled:)`, `Params.standard` = values the file service writes into `.mtrk`. the file service and the in-process decoder always use the standard values
+* `MixApp/WavePresets.swift` -> built-in list (A-K, four palettes), migration of `ui.blendPreset` / `waveformPalette` / `waveformHighBoost`, `WavePresetStore` (`wave-presets.json`, atomic writes on a utility queue), settings editor
+* `WaveformCache` key = track buffer + style + hash of look and analysis. analysis ≠ standard -> detached task (user-initiated) runs `BlendAnalyzer` over the mapped samples, checks cancellation every 512 blocks; a newer request for the same buffer cancels it. last params per buffer are kept, the previous waveform stays visible until the new one is done. nothing on the audio thread
+
 ## ◆ FILE SERVICE
 
 step (a) of the process split: every syscall on a music path (`stat`, `open`, decoder) runs in a helper process that can be killed. a thread blocked inside a cloud file provider can't be cancelled, a process can.

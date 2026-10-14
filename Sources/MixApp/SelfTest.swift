@@ -219,6 +219,7 @@ enum SelfTest {
             await hidePlayedProbe(mix, store: store, browser: browser, tracks: c)
             await prepareProbe(mix)
             await playlistTreeProbe(store: store)
+            await wavePresetProbe(mix)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -719,13 +720,20 @@ enum WaveShot {
             ? (active: true, start: grid!.time(ofBeat: 4), end: grid!.time(ofBeat: 8)) : (active: false, start: 0.0, end: 0.0)
         var looks = (env["MIX741_SHOT_STYLE"] ?? "settings").split(separator: ",").map { look(String($0), ui) }
         // Versuchswerte der Mischung je Zeile: MIX741_SHOT_TUNE="sat,win,gl,gm,gh,base,fade,stack,warm,open;…" (eine Zeile je Eintrag,
-        // Stil der ersten Zeile); MIX741_SHOT_PRESET=all|0,3,5: Varianten A…K der Mischung, eine Zeile je Variante
+        // Stil der ersten Zeile); MIX741_SHOT_PRESET=all|0,3,blend.f,<Name>: eingebaute Presets (Index, ID) oder eigene
+        // (Name), eine Zeile je Preset; ohne: Preset der Einstellungen (MIX741_SHOT_PALETTE / _BOOST: wie früher Farben + Variante)
         let tunes = (env["MIX741_SHOT_TUNE"] ?? "").split(separator: ";").compactMap { BlendPaint.Tune(String($0)) }
         if !tunes.isEmpty, let first = looks.first { looks = tunes.map { (first.0, first.1 + " · " + $0.label) } }
-        var presets: [Int] = [ui.blendPreset]
+        let list = WavePresetList(builtIn: WavePresets.builtIn, custom: (try? Data(contentsOf: HistoryStore.baseDir.appendingPathComponent("wave-presets.json")))
+            .flatMap { try? WavePresetList.decodeCustom($0) } ?? [])
+        let legacy = WavePresets.migrate(palette: ui.waveformPalette, highBoost: ui.waveformHighBoost, variant: ui.blendPreset)
+        var presets: [WavePreset] = [env["MIX741_SHOT_PALETTE"] != nil || env["MIX741_SHOT_BOOST"] != nil || ui.wavePreset.isEmpty
+                                     ? legacy.created ?? list.resolved(legacy.id) : list.resolved(ui.wavePreset)]
         if let ps = env["MIX741_SHOT_PRESET"] {
-            presets = ps == "all" ? Array(BlendPreset.all.indices) : ps.split(separator: ",").compactMap { Int($0) }.map(BlendPreset.clamp)
-            looks = presets.map { (WaveformStyle.blend, BlendPreset.all[$0].name) }
+            presets = ps == "all" ? list.builtIn : ps.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }.compactMap { k in
+                Int(k).map { list.builtIn[max(0, min(list.builtIn.count - 1, $0))] } ?? list.all.first { $0.id == k || $0.name == k }
+            }
+            looks = presets.map { (WaveformStyle.blend, $0.name) }
         }
         let w: CGFloat = 1200, h: CGFloat = 180, gap: CGFloat = 8, label: CGFloat = 18, scale: CGFloat = 2, oh: CGFloat = 48
         let rowH = (label + h * 2 + oh + gap * 3)
@@ -740,8 +748,11 @@ enum WaveShot {
         for (row, lk) in looks.enumerated() {
             WaveLayerNSView.tileTime.withLock { $0 = (0, 0) }
             let tr = Date()
+            let preset = presets.count > 1 ? presets[row] : presets[0]
+            let blend = preset.analysis == .standard ? nil
+                : BlendAnalyzer.analyze(left: audio.left, right: audio.right, frames: audio.frames, sampleRate: audio.sampleRate, blocks: audio.peak.count, params: preset.analysis)
             let wf = RenderedWaveform.render(audio, style: lk.0, palette: ui.waveformPalette, highBoost: ui.waveformHighBoost,
-                                             preset: presets.count > 1 ? presets[row] : presets[0], tune: tunes.isEmpty ? nil : tunes[row])
+                                             preset: preset, blend: blend, tune: tunes.isEmpty ? nil : tunes[row])
             SelfTest.log(String(format: "%@: Wellenform gerechnet in %.2f s, %.0f Pfade je Abschnitt", lk.1, Date().timeIntervalSince(tr), Double(wf.chunks.reduce(0) { $0 + $1.layers.count }) / Double(max(1, wf.chunks.count))))
             let view = WaveLayerNSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
             view.position = { pos }
@@ -1325,5 +1336,51 @@ extension SelfTest {
         PlaylistFile.removeSelfTestDir()
         log(String(format: "Playlist-Baum: Ordner in Ordner, Playlist %d Tracks, Smartlist Genre enthält „%@“ %d Treffer (%.1f ms über %d Tracks), Verschieben + Rückgängig, Reihenfolge, Spiegel, Datei-Rundreise · OK",
                    order.count, genre, hits.count, ms, store.tracks.count))
+    }
+
+    /// Wellenform-Presets (Datei nur im Temp-Ordner): eingebautes kopieren, Änderung an einem eingebauten legt eine
+    /// Kopie an, umbenennen, Datei-Rundreise; Trennfrequenz Tief 250 Hz -> Deck A wird im Hintergrund nachanalysiert
+    /// (andere Hüllkurven als die der Datei); löschen, Auswahl wie vorher
+    static func wavePresetProbe(_ mix: MixModel) async {
+        func fail(_ s: String) -> Never { log("Wellenform-Presets: \(s)"); log("WELLENFORM-PRESETS FALSCH"); exit(1) }
+        let store = mix.wavePresets
+        let tmp = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path
+        guard store.url.resolvingSymlinksInPath().path.hasPrefix(tmp) else { fail("Datei nicht im Temp-Ordner: \(store.url.path)") }
+        let before = mix.prefs.ui.wavePreset, n0 = store.list.custom.count
+        defer { mix.prefs.ui.wavePreset = before }
+        mix.selectWavePreset("blend.d")
+        guard let copy = mix.copyWavePreset(), let c = store.list.preset(copy), !c.builtIn, c.base == "blend.d",
+              c.look == WavePresets.builtIn[3].look, mix.prefs.ui.wavePreset == copy else { fail("Kopieren") }
+        mix.selectWavePreset("blend.a")
+        mix.editWavePreset { $0.analysis.low = 250 }
+        let edited = mix.wavePreset
+        guard !edited.builtIn, edited.id != "blend.a", edited.analysis.low == 250, edited.base == "blend.a",
+              WavePresets.builtIn[0].analysis == .standard, store.list.custom.count == n0 + 2 else { fail("Ändern eines eingebauten legt keine Kopie an") }
+        store.rename(edited.id, to: "ST Preset")
+        mix.editWavePreset { $0.look.gain.mid = 0.7 }
+        guard mix.wavePreset.name == "ST Preset", mix.wavePreset.look.gain.mid == 0.7, store.list.custom.count == n0 + 2 else { fail("Umbenennen / eigenes ändern") }
+        WavePresetStore.flush()
+        guard let d = try? Data(contentsOf: store.url), let back = try? WavePresetList.decodeCustom(d), back == store.list.custom else { fail("Datei-Rundreise") }
+        // Nachanalyse von Deck A mit Tief 250 Hz
+        if let audio = mix.core.trackAudio(0) {
+            let cache = WaveformCache(), t0 = Date()
+            var wave: RenderedWaveform?
+            while Date().timeIntervalSince(t0) < 20 {
+                wave = cache.waveform(for: audio, ui: mix.prefs.ui, preset: mix.wavePreset)
+                if wave != nil { break }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            guard let r = wave?.raster else { fail("keine Wellenform nach der Nachanalyse") }
+            guard cache.reanalyzed == 1, r.blend != Array(audio.blend.data.prefix(r.blend.count)) else { fail("Hüllkurven nicht nachgerechnet") }
+            log(String(format: "Wellenform-Presets: Nachanalyse Tief 250 Hz %.2f s für %.0f s Audio, fertig nach %.2f s", cache.lastReanalysis, audio.duration, Date().timeIntervalSince(t0)))
+        }
+        mix.deleteWavePreset()
+        guard store.list.preset(edited.id) == nil, mix.prefs.ui.wavePreset == "blend.a" else { fail("Löschen") }
+        mix.selectWavePreset(copy)
+        mix.deleteWavePreset()
+        guard store.list.custom.count == n0, mix.prefs.ui.wavePreset == "blend.d" else { fail("Löschen der Kopie") }
+        WavePresetStore.flush()
+        store.removeSelfTestDir()
+        log("Wellenform-Presets: kopieren, Kopie beim Ändern, umbenennen, Datei-Rundreise, Nachanalyse, löschen · OK")
     }
 }

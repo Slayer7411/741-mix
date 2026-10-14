@@ -244,11 +244,12 @@ final class RenderedWaveform: @unchecked Sendable {
         return (CGFloat(pk), fine.color(L, sustain: sus / c))
     }
 
-    static func render(_ a: TrackAudio, style: WaveformStyle, palette: WaveformPalette, highBoost: Double = 1, preset: Int = 0,
-                       tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
+    /// `preset` gilt für den Stil 3-Band, `blend` = nachgerechnete Hüllkurven (Analyse-Werte des Presets), sonst die der Datei
+    static func render(_ a: TrackAudio, style: WaveformStyle, palette: WaveformPalette, highBoost: Double = 1,
+                       preset: WavePreset = WavePresets.standard, blend: WaveBlend? = nil, tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
         let colors = Colors.of(palette)
-        if style == .blend, a.blend.count >= a.peak.count, !a.peak.isEmpty {
-            return blend(a, palette: palette, highBoost: highBoost, preset: preset, tune: tune)
+        if style == .blend, (blend ?? a.blend).count >= a.peak.count, !a.peak.isEmpty {
+            return self.blend(a, palette: preset.palette, data: blend ?? a.blend, tune: tune)
         }
         let env = envelope(a)
         let fine = style == .spectrum && a.spectrum.count >= a.peak.count && !a.peak.isEmpty ? Fine(a.spectrum, highBoost: highBoost) : nil
@@ -287,48 +288,15 @@ final class RenderedWaveform: @unchecked Sendable {
     }
 }
 
-/// Varianten der Mischung zum Durchschalten (⌘, -> Anzeige -> Variante): jede ändert nur wenige Werte gegenüber A
-enum BlendPreset {
-    struct Item { let name: String; let apply: @Sendable (inout BlendPaint.Palette) -> Void }
-    static let all: [Item] = [
-        Item(name: "A · Standard") { _ in },
-        Item(name: "B · Mitten +") { $0.gain.g = 0.85 },
-        Item(name: "C · Mitten ++, Höhen +") { $0.gain.g = 1.2; $0.gain.b *= 1.3 },
-        Item(name: "D · klare Stapel") { $0.base = 0.15 },
-        Item(name: "E · nur Stapel") { $0.base = 0; $0.gain.g = 0.75 },
-        Item(name: "F · harte Kanten") { $0.fade = 0.05; $0.base = 0.25; $0.gain.g = 0.75 },
-        Item(name: "G · leise Bänder höher") { $0.stackCurve = 0.45; $0.gain.g = 0.75 },
-        Item(name: "H · nach Pegel") { $0.stackCurve = 0.85; $0.base = 0.25; $0.gain.g = 0.85 },
-        Item(name: "I · ohne Orange") { $0.warmth = 0; $0.gain.g = 0.8 },
-        Item(name: "J · Energie-Mischung, ohne Stapel") { $0.base = 1; $0.saturation = 1.2; $0.gain.g = 0.8 },
-        Item(name: "K · weich") { $0.saturation = 1.0; $0.base = 0.5; $0.gain.g = 0.8 },
-    ]
-    static func clamp(_ i: Int) -> Int { max(0, min(all.count - 1, i)) }
-}
-
 extension RenderedWaveform {
-    /// Palette der Mischung: RGB = Bandanteile direkt, sonst die drei Palettenfarben; `preset` = Variante A…K
-    static func blendPalette(_ p: WaveformPalette, highBoost: Double, preset: Int = 0) -> BlendPaint.Palette {
-        let k = Float(pow(2, highBoost - 1))   // Höhen-Betonung 0…3: Gewicht der Höhen ×0,5…×4 (Farbe und Stapelhöhe)
-        var pal: BlendPaint.Palette
-        if p == .rgb { pal = .rgb } else {
-            let c = Colors.of(p)
-            let f = { (v: RGB) in (r: Float(v.r), g: Float(v.g), b: Float(v.b)) }
-            pal = BlendPaint.Palette(low: f(c.low), mid: f(c.mid), high: f(c.high))   // gehaltene Höhen: halb zu Weiß
-        }
-        pal.gain.b *= k
-        BlendPreset.all[BlendPreset.clamp(preset)].apply(&pal)
-        return pal
-    }
-
     /// 3-Band Mischung: keine Pfade, die Kacheln rastern aus den Blöcken; Übersicht gleich gerastert
-    static func blend(_ a: TrackAudio, palette: WaveformPalette, highBoost: Double, preset: Int = 0, tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
-        var pal = blendPalette(palette, highBoost: highBoost, preset: preset)
+    static func blend(_ a: TrackAudio, palette: BlendPaint.Palette, data: WaveBlend, tune: BlendPaint.Tune? = nil) -> RenderedWaveform {
+        var pal = palette
         tune?.apply(to: &pal)   // Versuchswerte, nur im Selbsttest-Bild
         // Anteil gehaltener Höhen je Block aus der Höhen-Dauer des Spektrums (geschlossene Hats blau, offene hellblau)
         let n = a.peak.count
         let open: [UInt8] = a.spectrum.count >= n ? (0..<n).map { UInt8((SpectrumColors.openness(a.spectrum.sustain($0)) * 255).rounded()) } : []
-        let blendData = Array(a.blend.data.prefix(n * WaveBlend.stride))
+        let blendData = Array(data.data.prefix(n * WaveBlend.stride))
         // gehaltene Tiefen (Bassline, Sub-Ausklang) orange, Kick-Anschläge rot: laufendes Minimum der Tief-Spitze
         let warm = BlendPaint.warmth(blend: blendData, count: n)
         let raster = Raster(peak: Array(a.peak), blend: blendData, open: open, warm: warm, palette: pal)
@@ -346,30 +314,63 @@ extension RenderedWaveform {
 /// Hält fertige Wellenformen je Track-Puffer und rechnet neue im Hintergrund.
 /// Schlüssel ist die Speicheradresse des Puffers – der Eintrag hält ihn schwach und gilt nur, solange genau dieser
 /// Puffer lebt (ein neuer Track an derselben Adresse bekäme sonst die Wellenform des alten).
-/// Wellenformen entladener Tracks fallen beim nächsten Eintrag weg.
+/// Wellenformen entladener Tracks fallen beim nächsten Eintrag weg. Bis die neue fertig ist, bleibt die zuletzt
+/// gezeigte desselben Puffers stehen (Preset-Wechsel ohne Lücke).
+/// Stil 3-Band mit anderen Analyse-Werten als denen der Datei: Hüllkurven im Hintergrund aus den Samples nachrechnen
+/// (je Puffer die letzten Werte gemerkt); ein neuerer Auftrag für denselben Puffer bricht den laufenden ab
 @MainActor @Observable
 final class WaveformCache {
     private struct Entry { weak var audio: TrackAudio?; let wave: RenderedWaveform }
+    private struct Reblend { weak var audio: TrackAudio?; let params: BlendParams; let blend: WaveBlend }
     private var done: [String: Entry] = [:]
-    @ObservationIgnored private var running: Set<String> = []
+    @ObservationIgnored private var running: [String: (audio: ObjectIdentifier, task: Task<Void, Never>)] = [:]
+    @ObservationIgnored private var shown: [ObjectIdentifier: String] = [:]
+    @ObservationIgnored private var reblends: [ObjectIdentifier: Reblend] = [:]
+    /// Nachanalysen (Selbsttest): Anzahl und letzte Dauer
+    @ObservationIgnored private(set) var reanalyzed = 0
+    @ObservationIgnored private(set) var lastReanalysis = 0.0
 
-    func waveform(for audio: TrackAudio?, ui: UIPrefs) -> RenderedWaveform? {
+    func waveform(for audio: TrackAudio?, ui: UIPrefs, preset: WavePreset) -> RenderedWaveform? {
         guard let audio else { return nil }
-        let style = ui.waveformStyle, palette = ui.waveformPalette, boost = ui.waveformHighBoost, preset = ui.blendPreset
-        let key = "\(ObjectIdentifier(audio).hashValue)-\(style.rawValue)-\(palette.rawValue)-\(boost)-\(preset)"
-        if let e = done[key], e.audio === audio { return e.wave }
-        if !running.contains(key) {
-            running.insert(key)
-            Task.detached(priority: .userInitiated) {
-                let w = RenderedWaveform.render(audio, style: style, palette: palette, highBoost: boost, preset: preset)
+        let style = ui.waveformStyle, palette = ui.waveformPalette, boost = ui.waveformHighBoost
+        let oid = ObjectIdentifier(audio)
+        let look = style == .blend ? "\(preset.look.hashValue)-\(preset.analysis.hashValue)" : ""
+        let key = "\(oid.hashValue)-\(style.rawValue)-\(palette.rawValue)-\(boost)-\(look)"
+        if let e = done[key], e.audio === audio { shown[oid] = key; return e.wave }
+        if running[key] == nil {
+            for (k, r) in running where r.audio == oid { r.task.cancel(); running[k] = nil }
+            let params = style == .blend && preset.analysis != .standard ? preset.analysis : nil
+            let cached = params.flatMap { p in reblends[oid].flatMap { $0.audio === audio && $0.params == p ? $0.blend : nil } }
+            let task = Task.detached(priority: .userInitiated) {
+                var blend = cached
+                if let p = params, blend == nil {
+                    let t0 = Date()
+                    guard let b = BlendAnalyzer.analyze(left: audio.left, right: audio.right, frames: audio.frames, sampleRate: audio.sampleRate,
+                                                        blocks: audio.peak.count, params: p, cancelled: { Task.isCancelled }) else { return }
+                    blend = b
+                    let dt = Date().timeIntervalSince(t0)
+                    await MainActor.run {
+                        self.reblends = self.reblends.filter { $0.value.audio != nil }
+                        self.reblends[oid] = Reblend(audio: audio, params: p, blend: b)
+                        self.reanalyzed += 1
+                        self.lastReanalysis = dt
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                let w = RenderedWaveform.render(audio, style: style, palette: palette, highBoost: boost, preset: preset, blend: blend)
                 await MainActor.run {
-                    self.done.removeAll { $0.value.audio == nil }
+                    guard !Task.isCancelled else { return }
+                    self.done.removeAll { $0.value.audio == nil || $0.value.audio === audio }   // ältere Fassungen dieses Puffers
                     self.done[key] = Entry(audio: audio, wave: w)
-                    self.running.remove(key)
+                    self.shown[oid] = key
+                    self.running[key] = nil
                     if self.done.count > 16 { self.done.removeAll { $0.key != key } }
+                    self.shown = self.shown.filter { self.done[$0.value] != nil }
                 }
             }
+            running[key] = (oid, task)
         }
+        if let k = shown[oid], let e = done[k], e.audio === audio { return e.wave }
         return nil
     }
 }
@@ -390,7 +391,7 @@ struct WaveformView: View {
     var body: some View {
         let ui = mix.prefs.ui
         let deck = mix.deck(d)
-        let wf = cache.waveform(for: mix.audio(d), ui: ui)
+        let wf = cache.waveform(for: mix.audio(d), ui: ui, preset: mix.wavePreset)
         let scene = WaveScene(
             waveID: wf.map { ObjectIdentifier($0) }, duration: deck.duration, grid: deck.grid, span: ui.waveformSeconds,
             showGrid: ui.showBeatgrid, colorful: ui.colorfulGrid, phraseBeats: ui.phraseBeats, barNumbers: ui.showBarNumbers, barMarkers: ui.barMarkers,
@@ -733,7 +734,7 @@ struct OverviewView: View {
     var body: some View {
         let ui = mix.prefs.ui
         let deck = mix.deck(d)
-        let wf = cache.waveform(for: mix.audio(d), ui: ui)
+        let wf = cache.waveform(for: mix.audio(d), ui: ui, preset: mix.wavePreset)
         let cues = deck.hotcues.values.map {
             WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)))
         }

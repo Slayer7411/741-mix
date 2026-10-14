@@ -182,10 +182,12 @@ struct UIPrefs: Codable, Equatable {
     var waveformSeconds = 4.0
     var waveformStyle = WaveformStyle.blend
     var waveformPalette = WaveformPalette.rgb
-    /// Höhen-Betonung (0 = neutral, 1 = Standard, 3 = sehr stark): Spektrum 0…15 dB, 3-Band Höhen-Gewicht ×0,5…×4
+    /// Höhen-Betonung (0 = neutral, 1 = Standard, 3 = sehr stark) der Stile Spektrum (0…15 dB) und Einfarbig; 3-Band: im Preset
     var waveformHighBoost = 1.0
-    /// Variante der 3-Band-Mischung (Index in BlendPreset.all, 0 = Standard)
+    /// alt: Variante der 3-Band-Mischung (Index A…K) – nur noch für die Umstellung auf `wavePreset`
     var blendPreset = 0
+    /// Wellenform-Preset des Stils 3-Band (WavePreset.id, "" = noch nicht aus `blendPreset` / `waveformPalette` umgestellt)
+    var wavePreset = ""
     var showBeatgrid = true
     var showBarNumbers = true
     var dimPlayed = true
