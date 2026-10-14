@@ -1072,3 +1072,10 @@
 "Plugin nicht geladen · %@" = "plugin not loaded · %@";
 "Plugin nicht ladbar · %@" = "plugin cannot be loaded · %@";
 "MASTER: %@ antwortet nicht rechtzeitig – %lld Blöcke trocken" = "MASTER: %@ not responding in time – %lld blocks dry";
+
+"BUY ME A BEER 🍺 … ODER EIN PAAR TOKENS" = "BUY ME A BEER 🍺 … OR A FEW TOKENS";
+"MINOS-741 entsteht nachts: aus Kaffee, Bier und einer beängstigenden Menge KI-Tokens. Keine Firma, kein Abo, kein Tracking, kein Investor, der ein Dashboard will.\n\nWenn dir die App ein Set gerettet hat: Gib einen aus. Ein Bier für mich oder ein paar Tokens für den nächsten Bug, der vor deinem Gig sterben soll. Betrag frei, PayPal an %@." = "MINOS-741 is built at night, out of coffee, beer and a frightening amount of AI tokens. No company, no subscription, no tracking, no investor asking for a dashboard.\n\nIf the app saved your set: buy a round. A beer for me, or a few tokens for the next bug that should die before your gig. Any amount, PayPal to %@.";
+"🍺 EINEN AUSGEBEN" = "🍺 BUY A ROUND";
+"SPÄTER, BIN IM MIX" = "LATER, I'M MIXING";
+"Nerven lassen:" = "Nag me:";
+"Instanz %@" = "Instance %@";

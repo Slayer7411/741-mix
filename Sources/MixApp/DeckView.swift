@@ -929,7 +929,7 @@ struct TempoColumn: View {
                         let v = max(0, min(1, g.location.y / h)) * 2 - 1
                         mix.setTempo(d, v * m.range)
                     })
-                    .onTapGesture(count: 2) { mix.setTempo(d, 0) }
+                    .onDoubleClick(name: "dbl TEMPO") { mix.setTempo(d, 0) }
                 }
                 .frame(width: 22.z)
                 HStack(spacing: 1.z) {

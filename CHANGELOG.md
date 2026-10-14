@@ -6,6 +6,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* defaults: compact decks (readouts, comment, tags, phase bar, overview, transport, loop sizes; hotcues, beatjump, grid tools, pitch fader, groove off)
+* donation panel: new text (beer or tokens), only `buy a round` and `later`, nag every start or weekly; the install id travels as item_number / custom in the paypal link so a payment can be matched to the instance later
 * core: render profile of the heaviest block since the last read (deck A-D, worker wait, mix + master bus, master, preview; `RenderLoad.worstParts`). load test logs it per minute and on every overload: `schwerster Block: 1.45 ms von 2.68 (54 %) · A 0.34 B 0.38 …`
 * license: dual licensing. gpl stays for open use, closed or sold products need a commercial license with a revenue share (`COMMERCIAL-LICENSE.md`), name / ◆ mark / logo reserved, pull requests need the cla (`CLA.md`, `cla: agreed` in the description)
 * donation hint on start (system language): buy me a coffee or a few tokens, paypal with any amount. `Spenden` opens paypal, `Ich habe gespendet` or `nie` ends it for good, `Später` / `einmal pro Woche`; help menu `Kauf mir einen Kaffee …` any time. never in the self test; `scripts/make-app.sh` marks its own install as donated
@@ -251,6 +253,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * stopped deck keeps rendering until echo / reverb are really silent (was cut after 4 s)
 
 ### fixed
+* double click on knobs, channel faders, crossfader and pitch fader resets to the default again (an appkit overlay takes only the second click of a double click; the swiftui tap gesture never fired next to the drag gesture or over the slider)
 * ci: `swift test --no-parallel` (the runner has few cores; in parallel the blocking channel and load tests starved each other, callbacks arrived 20-90 s late and the run was red since 2026-10-11); a cut writer test now compiles within the runner's type-check limit
 * test `fxMappingDrivesAudioUnitParameterTree` expected a fixed 22050 Hz upper bound; it now takes the plugin's own range (the bound follows the plugin's sample rate)
 * deck: right click on the title (`Edit track …`) and dropping a track on a deck crashed in 42acab0 (the deck's own hosting view had no library / browser environment)

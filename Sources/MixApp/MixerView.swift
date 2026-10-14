@@ -19,7 +19,7 @@ struct MixerView: View {
                         .controlSize(zoomed: .mini)
                     Text("B").font(Theme.label(9.z, .bold)).foregroundStyle(.secondary)
                 }
-                .onTapGesture(count: 2) { mix.setCrossfader(0) }
+                .onDoubleClick(name: "dbl XFADE") { mix.setCrossfader(0) }
             } else {
                 Text("EXTERN").font(Theme.label(9.z, .heavy)).foregroundStyle(.secondary)
             }
@@ -100,7 +100,7 @@ struct LevelFader: View {
             .gesture(DragGesture(minimumDistance: 0).onChanged { g in
                 value = max(0, min(1, 1 - g.location.y / h))
             })
-            .onTapGesture(count: 2) { value = 1 }
+            .onDoubleClick(name: "dbl FADER") { value = 1 }
         }
     }
 }

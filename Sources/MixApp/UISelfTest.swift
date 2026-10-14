@@ -117,6 +117,7 @@ enum UISelfTest {
             ("groove", groove),
             ("daw-streifen", dawStrip),
             ("master-fx", masterFX),
+            ("doppelklick", doubleClickReset),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -478,10 +479,11 @@ final class UIDriver {
     }
 
     /// Klick: Loslassen vorab in die Warteschlange (Steuerelemente verfolgen die Maus in einer eigenen Schleife bis dahin),
-    /// dann Drücken über das Fenster
+    /// dann Drücken über die App (setzt NSApp.currentEvent wie ein echter Klick, z. B. für den Doppelklick-Fänger der Regler)
     func click(at p: NSPoint, modifiers: NSEvent.ModifierFlags = [], count: Int = 1) {
+        // beide über die Warteschlange: die App holt sie wie echte Ereignisse (setzt NSApp.currentEvent) und stellt sie zu
+        NSApp.postEvent(mouse(.leftMouseDown, p, modifiers, clicks: count), atStart: false)
         NSApp.postEvent(mouse(.leftMouseUp, p, modifiers, clicks: count), atStart: false)
-        window.sendEvent(mouse(.leftMouseDown, p, modifiers, clicks: count))
         spin(0.05)
     }
 
@@ -919,4 +921,34 @@ extension UISelfTest {
         u.spin(0.3)
         check(mix.chain(MixController.masterBus).isEmpty, "Master-Kette nicht leer")
     }
+
+    /// Doppelklick auf Regler und Fader = Standardwert: GAIN-Knopf im Mixer (Kanalzug C·A·B·D: der erste ist Deck C),
+    /// Crossfader (NSSlider) und Kanalfader; Ziehen bleibt davon unberührt
+    static func doubleClickReset(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix
+        let showMixer = mix.prefs.ui.showMixer, mode = mix.mixerMode
+        mix.prefs.ui.showMixer = true; mix.mixerMode = .internalMixer
+        u.spin(0.4)
+        defer { mix.prefs.ui.showMixer = showMixer; mix.mixerMode = mode }
+        guard let gain = u.named("dbl GAIN") else { fail("GAIN-Knopf nicht gefunden") }
+        let f = u.frame(gain), c = NSPoint(x: f.midX, y: f.midY)
+        func gains() -> [Double] { (0..<4).map { mix.deck($0).gainDb } }
+        // synthetische Drags erreichen SwiftUI-DragGestures nicht (nur AppKit-Handler wie die Wellenform), deshalb Werte setzen
+        for d in 0..<4 { mix.updateDeck(d) { $0.gainDb = 6 } }
+        u.doubleClick(at: c)
+        u.spin(0.2)
+        let after = gains()
+        check(after.filter { $0 == 0 }.count == 1 && after.filter { $0 == 6 }.count == 3, "GAIN nach Doppelklick: \(after)")
+        u.doubleClick(at: c)   // noch einmal: bleibt 0, kein zweiter Kanal
+        u.spin(0.2)
+        check(gains() == after, "zweiter Doppelklick: \(gains())")
+        // Crossfader (NSSlider)
+        mix.setCrossfader(0.7)
+        guard let xf = u.named("dbl XFADE") else { fail("Crossfader nicht gefunden") }
+        u.doubleClick(at: NSPoint(x: u.frame(xf).midX, y: u.frame(xf).midY))
+        u.spin(0.2)
+        check(mix.crossfader == 0, "Crossfader nach Doppelklick: \(mix.crossfader)")
+        log("doppelklick: GAIN 6 → \(after), Crossfader 0.7 → \(mix.crossfader)")
+    }
+
 }

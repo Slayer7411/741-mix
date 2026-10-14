@@ -1,4 +1,48 @@
+import AppKit
 import SwiftUI
+
+/// Doppelklick auf Regler und Fader: ein durchsichtiges AppKit-Overlay merkt sich nur seine Fläche; ein lokaler
+/// Ereignis-Monitor fängt den zweiten Klick eines Doppelklicks (clickCount 2) über einer dieser Flächen ab und ruft die
+/// Aktion, bevor Geste oder NSSlider ihn sehen. Einzelklicks und Ziehen gehen unverändert durch. SwiftUI-Tap-Gesten neben
+/// einer DragGesture(minimumDistance: 0) oder über einem NSSlider kommen sonst nie an
+struct DoubleClickCatcher: NSViewRepresentable {
+    let name: String   // UI-Test: „dbl GAIN“, „dbl XFADE“ …
+    let action: () -> Void
+
+    final class V: NSView, UITestNamed {
+        var name = ""
+        var action: () -> Void = {}
+        nonisolated(unsafe) static let all = NSHashTable<V>.weakObjects()
+        nonisolated(unsafe) static var monitor: Any?
+        nonisolated(unsafe) static var swallowUp = false   // das Loslassen des abgefangenen Klicks auch schlucken
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }   // nie im Weg
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            Self.all.add(self)
+            if Self.monitor == nil {
+                Self.monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { e in
+                    if e.type == .leftMouseUp { if Self.swallowUp { Self.swallowUp = false; return nil }; return e }
+                    guard e.clickCount == 2, let w = e.window else { return e }
+                    for v in Self.all.allObjects where v.window === w && !v.isHiddenOrHasHiddenAncestor {
+                        if v.bounds.contains(v.convert(e.locationInWindow, from: nil)) { v.action(); Self.swallowUp = true; return nil }
+                    }
+                    return e
+                }
+            }
+        }
+    }
+
+    func makeNSView(context: Context) -> V { let v = V(); v.name = name; v.action = action; return v }
+    func updateNSView(_ v: V, context: Context) { v.name = name; v.action = action }
+}
+
+extension View {
+    /// Doppelklick = `action` (Standardwert), Ziehen und Einzelklick bleiben bei der Ansicht
+    func onDoubleClick(name: String = "", _ action: @escaping () -> Void) -> some View {
+        overlay(DoubleClickCatcher(name: name, action: action))
+    }
+}
 
 /// Drehregler: vertikal ziehen, Doppelklick = Standardwert. `bipolar` zeichnet den Bogen ab der Mitte.
 struct Knob: View {
@@ -42,7 +86,7 @@ struct Knob: View {
                     set(min(range.upperBound, max(range.lowerBound, v)))
                 }
                 .onEnded { _ in dragStart = nil })
-            .onTapGesture(count: 2) { set(defaultValue) }
+            .onDoubleClick(name: "dbl " + label) { set(defaultValue) }
             if !label.isEmpty {
                 Text(label).font(Theme.label(8 * zoom, .semibold)).foregroundStyle(Theme.muted).lineLimit(1).fixedSize()
             }

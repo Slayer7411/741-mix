@@ -126,12 +126,12 @@ struct DeckRows: Codable, Equatable {
     var phaseBar = true
     var overview = true
     var transport = true
-    /// Hotcues mit IN / OUT / RE
-    var hotcues = true
+    /// Hotcues mit IN / OUT / RE (Standard aus: kompakte Decks)
+    var hotcues = false
     var loop = true
-    var jump = true
-    /// Pitch-Fader rechts
-    var tempo = true
+    var jump = false
+    /// Pitch-Fader rechts (Standard aus: kompakte Decks)
+    var tempo = false
     /// Groove → MIDI (Hats / Bass zum laufenden Track)
     var groove = false
 
@@ -203,7 +203,7 @@ struct UIPrefs: Codable, Equatable {
     /// Tag → Farbe (hex), sonst Standardfarbe aus dem Namen
     var tagColors: [String: String] = [:]
     /// Grid-Werkzeuge am Deck zeigen
-    var showGridTools = true
+    var showGridTools = false
     /// Zeilen des Decks einzeln ein-/ausblenden (Menü DECKS -> Zeilen, ⌘, -> Decks)
     var deckRows = DeckRows()
     /// History zusätzlich in den History-Ordner der Collection schreiben (dort im Archiv sichtbar)

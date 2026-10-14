@@ -30,15 +30,19 @@ import Testing
 
 @MainActor @Test func compactDecksAndAllRows() {
     var ui = UIPrefs()
-    #expect(!ui.compactDecks)
+    #expect(ui.compactDecks)   // Standard: kompakte Decks (Readouts, Kommentar, Tags, Phase, Übersicht, Transport, Loop)
+    #expect(ui.deckRows.info && ui.deckRows.comment && ui.deckRows.tags && ui.deckRows.phaseBar && ui.deckRows.overview
+            && ui.deckRows.transport && ui.deckRows.loop && !ui.deckRows.jump && !ui.deckRows.groove)
+    ui.compactDecks = false
+    #expect(ui.deckRows.tempo && ui.deckRows.hotcues && ui.showGridTools)
     ui.compactDecks = true
     #expect(!ui.deckRows.tempo && !ui.deckRows.hotcues && !ui.showGridTools)
     #expect(ui.deckRows.comment && ui.deckRows.tags && ui.deckRows.loop)
     ui.deckRows.info = false
     ui.showAllDeckRows()
-    var all = DeckRows()
-    all.groove = true   // Standard aus, „alle Zeilen“ schaltet sie mit ein
-    #expect(ui.deckRows == all && ui.showGridTools && !ui.compactDecks)
+    let r = ui.deckRows   // „alle Zeilen“: wirklich alle, auch die im Standard ausgeschalteten
+    #expect(r.info && r.comment && r.tags && r.phaseBar && r.overview && r.transport && r.hotcues && r.loop && r.jump && r.tempo && r.groove)
+    #expect(ui.showGridTools && !ui.compactDecks)
     // jede Zeile genau einmal in Menü und Einstellungen
     #expect(Set(DeckRows.all.map(\.1)).count == DeckRows.all.count && DeckRows.all.count == 12)
 }
