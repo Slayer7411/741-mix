@@ -56,44 +56,6 @@ extension TrackTableController {
         }
         return false
     }
-
-    /// Kontextmenü: Zur Playlist hinzufügen (eigene Playlists mit Ordnerpfad, neue Playlist), aus dieser entfernen
-    func addPlaylistItems(_ menu: NSMenu, ids: Set<String>, rows: [Track]) {
-        guard let store, let model else { return }
-        let ordered = rows.map(\.key).filter { ids.contains($0) }
-        let keys = ordered.isEmpty ? Array(ids) : ordered
-        let sub = NSMenu()
-        func walk(_ items: [PlaylistItem], _ depth: Int) {
-            for it in items {
-                switch it.kind {
-                case .folder:
-                    let head = NSMenuItem(title: String(repeating: "   ", count: depth) + OwnGlyph.folder + " " + it.name, action: nil, keyEquivalent: "")
-                    head.isEnabled = false
-                    sub.addItem(head)
-                    walk(it.children, depth + 1)
-                case .playlist:
-                    let id = it.id
-                    sub.addItem(ActionItem(String(repeating: "   ", count: depth) + OwnGlyph.playlist + " " + it.name) { store.addToPlaylist(keys, id) })
-                case .smartlist: break
-                }
-            }
-        }
-        walk(store.playlists.items, 0)
-        if !sub.items.isEmpty { sub.addItem(.separator()) }
-        sub.addItem(ActionItem(String(localized: "Neue Playlist mit der Auswahl")) {
-            let it = store.addOwn(.playlist, into: nil, tracks: keys)
-            model.source = .own(OwnRef(it))
-        })
-        let add = NSMenuItem(title: String(localized: "Zur Playlist hinzufügen"), action: nil, keyEquivalent: "")
-        add.submenu = sub
-        menu.addItem(add)
-        if let id = model.ownPlaylistID {
-            let rm = ActionItem(String(localized: "Aus Playlist entfernen")) { store.removeFromPlaylist(ids, id) }
-            rm.keyEquivalent = "\u{8}"
-            rm.keyEquivalentModifierMask = []
-            menu.addItem(rm)
-        }
-    }
 }
 
 extension BrowserPaneModel {

@@ -498,19 +498,7 @@ public final class MixController: @unchecked Sendable {
         let r: (TrackAudio?, UInt32)? = locked {
             guard seq == loadSeq[d] else { return nil }
             loadSeq[d] += 1   // ein später fertiger Dekoder darf das Deck nicht mehr belegen
-            let old = audio[d]
-            audio[d] = nil
-            var s = state.decks[d]
-            s.track = nil; s.grid = nil; s.duration = 0; s.hotcues = [:]; s.cuePoint = 0
-            s.phraseTarget = nil; s.loopActive = false; s.loopIn = nil; s.activeLoops = []; s.reverse = false; s.flux = false
-            s.autoLoop = false
-            s.loading = false; s.playing = false; s.trim = TrackTrim(); s.gridEdited = false
-            s.error = String(localized: "Nicht ladbar: \(reason)")
-            state.decks[d] = s
-            playedTime[d] = 0; playedLogged[d] = false; playStart[d] = nil
-            engine.setLoop(d, active: false, start: 0, end: 0)
-            engine.setTrim(d, start: 0, end: 0)
-            return (old, engine.attach(nil, deck: d, startAt: 0))
+            return emptyDeck(d, error: String(localized: "Nicht ladbar: \(reason)"))
         }
         guard let (old, gen) = r else { return }
         releaseWhenFree(old, deck: d, gen: gen)
@@ -519,6 +507,38 @@ public final class MixController: @unchecked Sendable {
             ?? String(localized: "Track nicht ladbar: \(name) · \(reason)")
         onNotice?(EngineNotice(.error, key: "load.\(d)", text, detail: t.path))
         if Self.debug { print("[load] deck \(d): \(text)"); fflush(stdout) }
+    }
+
+    /// Deck leeren (unter der Sperre): Track, Grid, Cues, Loop, Schnitt weg; liefert den alten Puffer zum Freigeben
+    private func emptyDeck(_ d: Int, error: String?) -> (TrackAudio?, UInt32) {
+        let old = audio[d]
+        audio[d] = nil
+        var s = state.decks[d]
+        s.track = nil; s.grid = nil; s.duration = 0; s.hotcues = [:]; s.cuePoint = 0
+        s.phraseTarget = nil; s.loopActive = false; s.loopIn = nil; s.activeLoops = []; s.reverse = false; s.flux = false
+        s.autoLoop = false
+        s.loading = false; s.playing = false; s.trim = TrackTrim(); s.gridEdited = false
+        s.error = error
+        state.decks[d] = s
+        playedTime[d] = 0; playedLogged[d] = false; playStart[d] = nil
+        engine.setLoop(d, active: false, start: 0, end: 0)
+        engine.setTrim(d, start: 0, end: 0)
+        return (old, engine.attach(nil, deck: d, startAt: 0))
+    }
+
+    /// Auswerfen: Deck leer (auch ein laufendes Laden oder eine Fehlermeldung), nur wenn es nicht spielt
+    @discardableResult
+    public func eject(_ d: Int) -> Bool {
+        guard (0..<MixEngine.deckCount).contains(d) else { return false }
+        let r: (TrackAudio?, UInt32)? = locked {
+            let s = state.decks[d]
+            guard !engine.player(d).playing, !s.cueHeld, s.track != nil || s.loading || s.error != nil else { return nil }
+            loadSeq[d] += 1   // laufendes Laden verwerfen
+            return emptyDeck(d, error: nil)
+        }
+        guard let (old, gen) = r else { return false }
+        releaseWhenFree(old, deck: d, gen: gen)
+        return true
     }
 
     static func displayName(_ t: Track) -> String {

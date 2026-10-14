@@ -312,8 +312,15 @@ struct Isolated<Content: View>: NSViewRepresentable {
 /// Hosting-View als Layout-Grenze: meldet keine Größenänderung nach außen. NSHostingView ruft nach jedem Update
 /// invalidateIntrinsicContentSize auf (auch ohne sizingOptions) – das ließ SwiftUI außen jedes Mal das ganze Fenster
 /// neu messen. Unter MIX741_BENCH misst sie ihre Layout-Zeit (ohne darin verschachtelte Grenzen).
-final class BoundaryHostingView<Content: View>: NSHostingView<Content> {
+final class BoundaryHostingView<Content: View>: NSHostingView<Content>, AreaMenuHost {
     var name = "?"
+    /// Menü der ganzen Fläche (Deck): wo SwiftUI kein eigenes Kontextmenü hat, auch für verschachtelte Hosting-Views
+    var areaMenu: ((NSEvent) -> NSMenu?)?
+
+    override func menu(for e: NSEvent) -> NSMenu? {
+        if let m = super.menu(for: e) { return m }
+        return areaMenu?(e) ?? enclosingAreaMenu(for: e)
+    }
 
     override func invalidateIntrinsicContentSize() {}
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
@@ -327,6 +334,23 @@ final class BoundaryHostingView<Content: View>: NSHostingView<Content> {
         let nested = TimedLayout.stack.removeLast()
         TimedLayout.times[name, default: 0] += dt - nested
         if !TimedLayout.stack.isEmpty { TimedLayout.stack[TimedLayout.stack.count - 1] += dt }
+    }
+}
+
+/// Ansicht mit Menü für ihre ganze Fläche (Rechtsklick auf Unteransichten ohne eigenes Menü)
+@MainActor protocol AreaMenuHost: AnyObject {
+    var areaMenu: ((NSEvent) -> NSMenu?)? { get }
+}
+
+extension NSView {
+    /// Menü der nächsten umgebenden Fläche, die eines anbietet
+    @MainActor func enclosingAreaMenu(for e: NSEvent) -> NSMenu? {
+        var v = superview
+        while let x = v {
+            if let f = (x as? AreaMenuHost)?.areaMenu { return f(e) }
+            v = x.superview
+        }
+        return nil
     }
 }
 

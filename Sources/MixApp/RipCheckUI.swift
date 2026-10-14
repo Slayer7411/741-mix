@@ -179,26 +179,30 @@ final class RipChecks {
 
     /// Rechtsklick auf Tracks: Rip prüfen, bei einem Track mit offenem Befund die Aktionen
     func addMenuItems(_ menu: NSMenu, tracks: @escaping () -> [Track], single: Track?) {
-        menu.addItem(ActionItem(String(localized: "Rip prüfen")) { Analyses.shared.enqueueRip(tracks()) })
-        guard let t = single else { return }
+        for i in menuItems(tracks: tracks, single: single) { menu.addItem(i.make()) }
+    }
+
+    /// Rip prüfen; bei einem Track seine offenen Befunde mit Aktionen
+    func menuItems(tracks: @escaping () -> [Track], single: Track?) -> [TrackMenuItem] {
+        var m: [TrackMenuItem] = [.action(String(localized: "Rip prüfen")) { Analyses.shared.enqueueRip(tracks()) }]
+        guard let t = single else { return m }
         let o = open(t.key)
-        guard !o.isEmpty else { return }
+        guard !o.isEmpty else { return m }
         for f in o {
-            let head = NSMenuItem(title: Self.text(f) + " – " + Self.reasons(f), action: nil, keyEquivalent: "")
-            head.isEnabled = false
-            menu.addItem(head)
+            m.append(.label(Self.text(f) + " – " + Self.reasons(f)))
             if f.cuts {
-                menu.addItem(ActionItem(f.edge == .start ? String(localized: "Schnitt IN auf \(RipCheck.shortTime(f.time)) setzen")
-                                                         : String(localized: "Schnitt OUT auf \(RipCheck.shortTime(f.time)) setzen")) { [weak self] in
+                m.append(.action(f.edge == .start ? String(localized: "Schnitt IN auf \(RipCheck.shortTime(f.time)) setzen")
+                                                  : String(localized: "Schnitt OUT auf \(RipCheck.shortTime(f.time)) setzen")) { [weak self] in
                     self?.applyCut(t.key, f)
                 })
-                menu.addItem(ActionItem(String(localized: "Bereich entfernen (neue Datei)")) { [weak self] in self?.removeRegion(t, f) })
+                m.append(.action(String(localized: "Bereich entfernen (neue Datei)")) { [weak self] in self?.removeRegion(t, f) })
                 if let d = loadedDeck(t.key), let mix {
-                    menu.addItem(ActionItem(String(localized: "Befund als Bereich markieren")) { mix.markRip(d, f) })
+                    m.append(.action(String(localized: "Befund als Bereich markieren")) { mix.markRip(d, f) })
                 }
             }
         }
-        menu.addItem(ActionItem(String(localized: "Befund verwerfen")) { [weak self] in self?.dismiss(t.key, o) })
+        m.append(.action(String(localized: "Befund verwerfen")) { [weak self] in self?.dismiss(t.key, o) })
+        return m
     }
 }
 

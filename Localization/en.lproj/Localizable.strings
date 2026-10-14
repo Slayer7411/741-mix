@@ -1453,3 +1453,13 @@
 "lädt ein deck einen track mit offenem befund, wird der vorgeschlagene teil als bereich markiert (RIP · …). geschnitten wird nichts: rechtsklick -> markierten bereich entfernen." = "when a deck loads a track with an open finding, the proposed part is marked as range (RIP · …). nothing is cut: right click -> remove marked range.";
 "Auto-Loop beim Laden" = "Auto loop on load";
 "nur wenn der track keinen loop hat (loop-hotcue, loop-memory-cue). beginnt am ersten phrasenanfang (phrasen-anker, sonst grid-anker) im schnitt, nicht aktiv, rahmen mit AUTO in der wellenform. reloop springt hinein, loop übernimmt ihn ohne sprung, wenn die position darin oder kurz davor liegt. nicht gespeichert." = "only if the track has no loop (loop hotcue, loop memory cue). starts on the first phrase start (phrase anchor, else grid anchor) inside the cut, not active, frame with AUTO in the waveform. reloop jumps in, loop takes it without a jump when the playhead is inside or just before it. not saved.";
+"Track" = "Track";
+"Track laden …" = "Load track …";
+"Auf Deck %@ kopieren" = "Copy to deck %@";
+"Auswerfen" = "Eject";
+"Auswerfen (Deck spielt)" = "Eject (deck playing)";
+"Deck %@ spielt · Auswerfen gesperrt" = "Deck %@ playing · eject locked";
+"Vorschau berechnen" = "Compute preview";
+"Bewertung" = "Rating";
+"Keine" = "None";
+"UNGESPIELT aus: der Track ist gespielt" = "UNPLAYED off: the track is played";
