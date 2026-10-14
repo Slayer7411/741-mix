@@ -26,6 +26,7 @@ struct ContentView: View {
     /// Höhe der Deck-Fläche vor dem Zuklappen – ohne Beobachtung, Messen löst kein neues Layout aus
     private final class Height { var value: CGFloat = 0 }
     @State private var deckAreaHeight = Height()
+    @State private var donate = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -91,10 +92,15 @@ struct ContentView: View {
             if (n.object as? NSWindow) === MainWindow.window { ZoomControl.fit(mix: mix) }   // gespeicherter Zoom zu groß für den Bildschirm
         }
         .background(RunningTracks())
+        .background(DAWBridgeHook())   // DAW-Brücke: Empfänger nach Einstellung, Clip je Deck
         .background(OverviewHook())   // Browser-Vorschau: Deck-Tracks, Pause-Regel, Leerlauf
         .background(CloudHook())      // Cloud-Library: Prüfen, Lokal-halten, Pause beim Laden
         .onChange(of: mix.prefs.ui.musicFolders, initial: true) { _, f in store.folders.configured = f }
         .onAppear {
+            // Collection-Datei: eigene Hotcues / Grid schreiben und beim Laden auf Konflikte prüfen
+            store.edits = mix.edits
+            store.uiPrefs = { [mix] in mix.prefs.ui }
+            store.onRefreshed = { [mix] t in mix.collectionUpdated(t) }
             if store.tracks.isEmpty { store.load() }
             // MIX741_LAYOUT=nomixer,1deck,2decks,nobrowser: Teile der Oberfläche für Layout-Messungen abschalten (nur Selbsttest)
             if Session.isSelfTest, let l = ProcessInfo.processInfo.environment["MIX741_LAYOUT"] {
@@ -105,7 +111,10 @@ struct ContentView: View {
             }
             mix.library = store   // Schneiden trägt neue Dateien in CUTS ein
             SelfTest.run(store: store, mix: mix, browser: browserState)
+            if DonateHint.dueNow { DonateHint.lastShown = Date(); donate = true }
         }
+        .sheet(isPresented: $donate) { DonateView(shown: $donate) }
+        .onReceive(NotificationCenter.default.publisher(for: .showDonate)) { _ in donate = true }
     }
 
     /// RUNNING TRACKS im Browser nachführen – eigene leere Ansicht: liest alle vier Decks, ohne dass
@@ -154,7 +163,8 @@ struct ContentView: View {
     }
 
     private var deckArea: some View {
-        VStack(spacing: 6.z) {
+        let gap = max(0, min(12, mix.prefs.ui.deckGap)).z
+        return VStack(spacing: 2.z) {
             TopBarHost()
             // Decks mit fester Höhe: zwei flexible Decks übereinander ließen SwiftUI jede Zustandsänderung
             // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks); jedes Deck in eigener
@@ -163,15 +173,15 @@ struct ContentView: View {
             GeometryReader { geo in
                 let n = mix.deckCount
                 let rows: CGFloat = n >= 4 ? 2 : 1
-                let deckH = max(120.z, (geo.size.height - (rows - 1) * 6.z) / rows)
-                HStack(alignment: .top, spacing: 6.z) {
-                    VStack(spacing: 6.z) {
+                let deckH = max(120.z, (geo.size.height - (rows - 1) * gap) / rows)
+                HStack(alignment: .top, spacing: gap) {
+                    VStack(spacing: gap) {
                         DeckHost(d: 0).frame(height: deckH)
                         if n >= 4 { DeckHost(d: 2).frame(height: deckH) }
                     }
                     if mix.prefs.ui.showMixer { MixerView().fixedSize(horizontal: true, vertical: false) }
                     if n >= 2 {
-                        VStack(spacing: 6.z) {
+                        VStack(spacing: gap) {
                             DeckHost(d: 1).frame(height: deckH)
                             if n >= 4 { DeckHost(d: 3).frame(height: deckH) }
                         }
@@ -179,8 +189,9 @@ struct ContentView: View {
                 }
             }
         }
-        .padding([.horizontal, .top], 6.z)
-        .padding(.bottom, 1.z)
+        .padding(.horizontal, gap)
+        .padding(.top, max(gap, 2.z))
+        .padding(.bottom, gap)
     }
 
     @ViewBuilder private var browsers: some View {
@@ -285,6 +296,9 @@ struct MixApp: App {
             CommandGroup(replacing: .appSettings) {
                 SettingsLink { Text(ShortcutID.settings.title) }
                     .shortcut(keys.combo(.settings))
+            }
+            CommandGroup(after: .help) {
+                Button(String(localized: "Kauf mir einen Kaffee …")) { NotificationCenter.default.post(name: .showDonate, object: nil) }
             }
             CommandGroup(replacing: .saveItem) {
                 Button(String(localized: "Fenster schließen")) { run(.closeWindow) }
@@ -406,6 +420,7 @@ extension MixApp {
         browser.history = history
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
         history.start(store: store, mix: mix)
+        store.history = history
         appDelegate.onQuit = { [mix, browser, history] in
             Session.saveNow(mix: mix, browser: browser)
             mix.flushEdits()
@@ -471,6 +486,7 @@ default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
 Theme.registerFonts()
 if !Session.isSelfTest { MainActor.assumeIsolated { ZoomControl.apply(AppPrefs.load().ui.zoom) } }   // Zoom vor dem ersten Layout, Selbsttest 100 %
 MainActor.assumeIsolated { DeckShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=deck:…, kehrt dann nicht zurück
+MainActor.assumeIsolated { GrooveShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=groove:…
 
 // Selbsttest, nur Bild: MIX741_SHOT=wave:<png> | header:<png> rendert offscreen und beendet – kein Fenster
 if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("header:") {
@@ -523,4 +539,9 @@ enum BrowserSnap {
         let rows = max(1, ((h - chrome) / row).rounded())
         return chrome + rows * row
     }
+}
+
+extension Notification.Name {
+    /// Spenden-Hinweis aus dem Hilfe-Menü öffnen
+    static let showDonate = Notification.Name("minos741.showDonate")
 }

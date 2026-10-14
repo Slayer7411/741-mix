@@ -30,6 +30,10 @@ struct DeckView: View {
                         .frame(height: 18.z)
                         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
                 }
+                // DAW-Brücke meldet einen Clip derselben Datei: Grid-Streifen mit Position der DAW
+                if DAWBridgeModel.shared.deckClip[d] != nil {
+                    row("daw", DAWClipStrip(d: d).frame(height: 12.z).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1)))
+                }
                 if rows.transport { row("transport", TransportRow(d: d)) }
                 if rows.hotcues { row("cues", CueRow(d: d)) }
                 // EDIT: Schnitt an der Stelle der Loop-Größen, Grid an der von Beatjump, falls die Grid-Zeile aus ist.
@@ -40,10 +44,11 @@ struct DeckView: View {
                     if gridRow { row("jump", JumpRow(d: d)) } else { row("jump", Slot(d: d, normal: JumpRow(d: d), edit: GridToolsRow(d: d))) }
                 }
                 if gridRow { row("grid", GridToolsRow(d: d)) }
+                if rows.groove { row("groove", GrooveRow(d: d)) }
             }
-            if rows.tempo { TempoColumn(d: d) }
+            if rows.tempo { TempoColumn(d: d).padding(.trailing, 3.z) }
         }
-        .padding(6.z)
+        .padding(.vertical, 3.z)   // seitlich nichts: die Wellenform endet am Deck-Rand (Zeilen rücken selbst ein)
         .frame(maxHeight: .infinity)
         .background(Frame(d: d, border: false))
         .overlay(Frame(d: d, border: true))
@@ -74,6 +79,7 @@ struct DeckView: View {
         // eigene Hosting-View erbt keine Umgebung: Library und Browser mitgeben (Menü „Track bearbeiten“, Drop-Ziel im Kopf)
         Isolated(deckLetters[d] + " " + name, sizeKey: key, fillWidth: true) {
             v.environment(mix).environment(store).environment(browser).foregroundStyle(Theme.bone).tint(Theme.state)
+                .padding(.horizontal, 4.z)
         }
     }
 
@@ -158,6 +164,12 @@ struct DeckTrackMenu: View {
                 let pane = browserState.activePane
                 let rows = pane.shown.contains(where: { $0.key == t.key }) ? pane.shown : [store.track(t.key) ?? t]
                 pane.openEditor([t.key], rows: rows, store: store)
+            }
+            if let c = DAWBridgeModel.shared.clip(deck: d) {
+                Button("Grid des DAW-Clips übernehmen (\(c.trackName.isEmpty ? c.name : c.trackName))") {
+                    DAWBridgeModel.shared.applyGrid(deck: d, mix: mix)
+                }
+                .disabled(!c.warping || c.markers.count < 2)
             }
         }
     }

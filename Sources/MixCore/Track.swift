@@ -48,6 +48,8 @@ public struct Track: Identifiable, Hashable, Sendable {
     public var playCount: Int = 0
     /// NML ENTRY LOCK="1": BPM, Grid und Key in der Collection gesperrt
     public var locked = false
+    /// NML ENTRY MODIFIED_DATE + MODIFIED_TIME („2025/5/30 46086“, leer = fehlt): Stand des Eintrags in der Datei
+    public var entryStamp = ""
     public var importDate: Date?
     public var releaseDate: Date?
     public var lastPlayed: Date?

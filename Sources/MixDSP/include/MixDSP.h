@@ -124,6 +124,16 @@ double mdsp_keylock_latency(MDEngine *e);
 /// Direkt rendern (Tests/Offline): out[ch][frame]
 void mdsp_render(MDEngine *e, float **out, int channels, int frames);
 
+/// Decks parallel rechnen: Deck A im Audio-Thread, B–D auf eigenen Echtzeit-Threads, Summe danach (gleiches Ergebnis
+/// wie seriell). Steuer-Thread; die Threads entstehen beim ersten Einschalten und bleiben bis mdsp_destroy
+void mdsp_set_parallel(MDEngine *e, bool on);
+bool mdsp_parallel(MDEngine *e);
+/// Diagnose: Worker gestartet, davon in der Workgroup des Geräts, davon mit Echtzeit-Policy
+void mdsp_parallel_info(MDEngine *e, int *workers, int *joined, int *realtime);
+/// Workgroup des Geräte-IO-Threads für die Worker (Apple: os_workgroup_t, wird retained; sonst ignoriert) und die
+/// Blockdauer in Sekunden für ihre Echtzeit-Policy. Nach jedem Öffnen des Geräts setzen; NULL = keine Workgroup
+void mdsp_set_workgroup(MDEngine *e, void *workgroup, double periodSeconds);
+
 #ifdef __cplusplus
 }
 #endif

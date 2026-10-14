@@ -132,6 +132,8 @@ struct DeckRows: Codable, Equatable {
     var jump = true
     /// Pitch-Fader rechts
     var tempo = true
+    /// Groove → MIDI (Hats / Bass zum laufenden Track)
+    var groove = false
 
     /// Reihenfolge für Menü und Einstellungen: wie im Deck von oben nach unten, Pitch-Fader zuletzt.
     /// Grid-Werkzeuge liegen (älter) in UIPrefs, deshalb Pfade ab UIPrefs
@@ -140,7 +142,7 @@ struct DeckRows: Codable, Equatable {
         (\.deckRows.tags, "Tags (Kommentar 2)"), (\.deckRows.phaseBar, "Phasenbalken"), (\.deckRows.overview, "Übersicht"),
         (\.deckRows.transport, "Transport (CUE, PLAY, SYNC …)"), (\.deckRows.hotcues, "Hotcues (mit IN / OUT / RE)"),
         (\.deckRows.loop, "Loop-Größen"), (\.deckRows.jump, "Beatjump"), (\.showGridTools, "Grid-Werkzeuge"),
-        (\.deckRows.tempo, "Pitch-Fader"),
+        (\.deckRows.groove, "Groove → MIDI"), (\.deckRows.tempo, "Pitch-Fader"),
     ]
 }
 
@@ -152,7 +154,7 @@ extension DeckRows {
         func v(_ k: CodingKeys, _ cur: Bool) -> Bool { ((try? c.decodeIfPresent(Bool.self, forKey: k)) ?? nil) ?? cur }
         info = v(.info, info); comment = v(.comment, comment); tags = v(.tags, tags); phaseBar = v(.phaseBar, phaseBar)
         overview = v(.overview, overview); transport = v(.transport, transport); hotcues = v(.hotcues, hotcues)
-        loop = v(.loop, loop); jump = v(.jump, jump); tempo = v(.tempo, tempo)
+        loop = v(.loop, loop); jump = v(.jump, jump); tempo = v(.tempo, tempo); groove = v(.groove, groove)
     }
 }
 
@@ -168,6 +170,8 @@ struct UIPrefs: Codable, Equatable {
     /// sichtbare Decks: 1 (nur A, volle Breite), 2 (A, B) oder 4; die übrigen spielen unsichtbar weiter.
     /// Ersetzt `showFourDecks` (alte Einstellungen: AppPrefs.decode)
     var deckCount = 4
+    /// Abstand zwischen den Decks und zum Fensterrand in pt (0 = keiner: die Wellenformen enden am Rand)
+    var deckGap = 0.0
     var showFXUnits = true
     /// Maßstab der oberen Leiste (FX, Clock): 0,6…1,3, Griff unter der Leiste
     var topBarScale = 1.0
@@ -214,6 +218,10 @@ struct UIPrefs: Codable, Equatable {
     var musicFolders: [String] = []
     /// Metadaten-Änderungen aus dem Browser auch in die Collection-Datei schreiben (mit Sicherung davor)
     var writeCollection = false
+    /// mit `writeCollection`: Cut-Kopien und Tool-Loop-Dateien (cuts.json) als neue Einträge in die Collection-Datei
+    var writeCuts = true
+    /// mit `writeCollection`: Preparation und eigene History-Sitzungen als Playlists unter `$ROOT/MINOS-741`
+    var writePlaylists = true
     /// Browser-Vorschau (Mini-Wellenform + Grid + Cues): ganze Zeile (zweizeilig), eigene Spalte, hinter dem Titel oder aus
     var previewMode = PreviewMode.fullRow
     /// Farben der Vorschau: Spektrum (rot/grün/blau) oder wie die Wellenform
@@ -248,6 +256,9 @@ struct UIPrefs: Codable, Equatable {
     var zoom = 1.0
     /// eigene Analyse: BPM-Bereich genau eine Oktave, Untergrenze (Obergrenze = 2 ×)
     var analysisBpmLow = 100.0
+    /// DAW-Brücke: Pakete des Remote Scripts auf 127.0.0.1 empfangen (UDP)
+    var dawBridge = true
+    var dawBridgePort = 7411
     /// Browser: Key-Spalte nach Harmonie zum Master färben (◆ gleich, ▲▼ ±1, ◇ Relativ)
     var harmonyColors = true
     /// Browser-Filter „passt zum Master“ (◆ PASST, ⌘, -> BROWSER)
@@ -303,6 +314,8 @@ struct AppPrefs: Codable, Equatable {
     var controller = ControllerPrefs()
     /// Cloud-Library: lokal halten, Downloads (⌘, -> CLOUD)
     var cloud = CloudPrefs()
+    /// Groove → MIDI (⌘, -> DECKS)
+    var groove = GroovePrefs()
     /// eigene Tastenkürzel: Aktion-ID -> Kombination als Text ("" = frei), sonst Standard (ShortcutID.defaultCombo)
     var shortcuts: [String: String] = [:]
 
@@ -401,4 +414,21 @@ struct AppPrefs: Codable, Equatable {
         guard !Session.isSelfTest else { return }   // Selbsttest darf Christians Einstellungen nicht überschreiben
         if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.key) }
     }
+}
+
+/// Groove → MIDI: Quelle, Kanäle, Bass-Oktave, Auswahl der Deck-Zeile
+struct GroovePrefs: Codable, Equatable {
+    /// Name der virtuellen MIDI-Quelle
+    var sourceName = "MINOS-741 Groove"
+    /// Kanäle 1–16
+    var bassChannel = 1
+    var drumChannel = 10
+    /// Oktave des Grundtons (C3 = 60): 1 -> 36–47
+    var bassOctave = 1
+    /// Zeitstempel verschieben (ms, positiv = später)
+    var offsetMs = 0.0
+    /// Takte ab der nächsten Eins (ohne Loop)
+    var bars = 2
+    var instrument = GrooveInstrument.both
+    var style = GrooveStyle.off
 }

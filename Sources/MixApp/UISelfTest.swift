@@ -114,6 +114,8 @@ enum UISelfTest {
             ("spaltenbreite per doppelklick", fitColumn), ("statusleiste automatisch", autoStatusBar),
             ("tastenkürzel", shortcuts), ("werkzeugleiste", toolbar), ("zoom", zoom),
             ("edit-modus", editMode),
+            ("groove", groove),
+            ("daw-streifen", dawStrip),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -778,5 +780,114 @@ extension UISelfTest {
         check(abs(mix.deck(d).duration - dur0) < 1e-6 && mix.editSession(d)?.preview == nil, "EDIT: ⌘Z stellt das Original nicht her")
         mix.setRange(d, nil)
         mix.setEditing(d, wasEditing)
+    }
+
+    /// Deck-Zeile GROOVE an Deck A: Klick ins Raster liest das Muster (Fixture: Kick auf jedem Beat), ▶ MIDI startet
+    /// (Quelle im Test versteckt), ■ hält an, ⚄ würfelt neu. Tasten von rechts gesucht (.mid schreibt im Test nur in den
+    /// temporären Ordner), die Menüs links werden nie angeklickt
+    static func groove(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, g = GrooveCenter.shared
+        mix.prefs.ui.deckRows.groove = true
+        defer { g.stop(); mix.prefs.ui.deckRows.groove = false; u.spin(0.3) }
+        u.spin(2) { u.named("A groove") != nil }
+        guard let row = u.named("A groove") else { fail("Groove-Zeile A nicht gefunden") }
+        let r = u.frame(row)
+        guard r.width >= 360, mix.core.trackAudio(0) != nil else { log("groove: zeile \(Int(r.width)) pt / ohne audio – fall übersprungen"); return }
+        // Raster: zwischen Menüs (≤ 190 pt) und Tasten (≤ 160 pt)
+        let gx = (r.minX + 190 + r.maxX - 160) / 2
+        u.click(at: NSPoint(x: gx, y: r.midY))
+        u.spin(1) { g.slots[0].pattern != nil }
+        guard let p = g.slots[0].pattern, let clip = g.slots[0].clip else { fail("Klick ins Raster: kein Muster") }
+        check(g.running == nil, "Klick ins Raster startet MIDI")
+        log("groove muster: \(p.steps) schritte · kick \(p.steps(.kick)) · hats \(p.hatSteps.sorted()) · \(clip.notes.count) noten")
+        if UITestFixture.dir != nil {
+            check(p.steps(.kick) == Array(stride(from: 0, to: p.steps, by: 4)), "Fixture: Kick nicht auf jedem Beat: \(p.steps(.kick))")
+        }
+        check(!clip.notes.isEmpty, "keine Noten erzeugt")
+        // ▶ MIDI von rechts suchen
+        var playX: CGFloat?
+        for x in stride(from: r.maxX - 3, to: r.maxX - 170, by: -4) {
+            u.click(at: NSPoint(x: x, y: r.midY))
+            if g.running == 0 { playX = x; break }
+        }
+        guard let px = playX else { fail("▶ MIDI nicht gefunden") }
+        check(StatusCenter.shared.current?.text.hasPrefix("Groove → MIDI") == true || StatusCenter.shared.history.contains { $0.text.hasPrefix("Groove → MIDI:") },
+              "keine Statusmeldung „Groove → MIDI …“")
+        u.spin(0.5)
+        // ■ von rechts (liegt rechts von ▶)
+        var stopX: CGFloat?
+        for x in stride(from: r.maxX - 3, to: px, by: -4) {
+            u.click(at: NSPoint(x: x, y: r.midY))
+            if g.running == nil { stopX = x; break }
+        }
+        guard let sx = stopX else { fail("■ hält MIDI nicht an") }
+        check(sx > px + 8, "angehalten nur über ▶ (x \(Int(sx - r.minX)) / \(Int(px - r.minX)))")
+        // ⚄ liegt links von ▶: weiter nach links, bis der Seed wechselt (▶ dazwischen wieder aus)
+        let seed = g.slots[0].seed
+        for x in stride(from: px - 4, to: px - 120, by: -4) where g.slots[0].seed == seed {
+            u.click(at: NSPoint(x: x, y: r.midY))
+            if g.running != nil { u.click(at: NSPoint(x: x, y: r.midY)) }
+        }
+        check(g.slots[0].seed != seed, "⚄ würfelt nicht neu")
+        check(g.running == nil, "MIDI läuft nach ⚄ noch")
+    }
+
+    /// DAW-Brücke: Testpaket mit einem Clip der Datei in Deck A an den Empfänger -> Streifen unter der Übersicht, Baum
+    /// zeigt DAW, Rechtsklick auf den Decktitel übernimmt das Grid der Warp-Marker, Rückgängig, Abmelden nimmt den Streifen
+    static func dawStrip(_ u: UIDriver, _ t: [Track]) {
+        let bridge = DAWBridgeModel.shared
+        if bridge.port == 0 { bridge.configure(enabled: true, port: 0) }
+        check(bridge.port > 0, "DAW-Brücke: Empfänger nicht gestartet")
+        guard let path = u.mix.deck(0).track?.path else { fail("Deck A leer") }
+        let bpm = 131.0, beat = 60 / bpm, anchor = 0.125
+        func send(_ o: [String: Any]) {
+            guard let d = try? JSONSerialization.data(withJSONObject: o) else { fail("JSON") }
+            check(DAWBridgeReceiver.send(d, port: bridge.port), "senden")
+        }
+        send(["v": 1, "t": "clip", "id": "ui", "track": 2, "trackName": "UI", "name": "Clip", "file": path, "warping": true,
+              "markers": [[0, anchor], [32, anchor + 32 * beat]], "loop": [4, 8], "looping": true, "playing": true, "where": "session"])
+        send(["v": 1, "t": "song", "seq": 1, "tempo": bpm, "playing": true, "beat": 0, "sig": 4, "clips": ["ui"], "pos": ["ui": [1, 2.0]]])
+        u.spin(3) { u.named("A daw") != nil }
+        check(bridge.deckClip[0] == "ui", "Clip nicht Deck A zugeordnet")
+        guard let strip = u.named("A daw") else { fail("DAW-Streifen unter Deck A fehlt") }
+        check(u.frame(strip).height > 4, "DAW-Streifen ohne Höhe")
+        check(u.store.tracks(for: .daw).map(\.key) == [DAWBridgeModel.keyPrefix + "ui"], "Quelle DAW ohne den Clip")
+        let before = u.mix.deck(0).grid
+        guard let hdr = u.named("A header") else { fail("Deck-Kopf A nicht gefunden") }
+        let r = u.frame(hdr)
+        var found: NSMenu?
+        for x in stride(from: r.minX + 2, to: r.minX + min(400, r.width), by: 6) {
+            if let m = u.rightClick(at: NSPoint(x: x, y: r.midY)), m.items.contains(where: { $0.title.hasPrefix(String(localized: "Grid des DAW-Clips übernehmen")) }) {
+                found = m; break
+            }
+        }
+        guard let menu = found, let i = menu.items.firstIndex(where: { $0.title.hasPrefix(String(localized: "Grid des DAW-Clips übernehmen")) })
+        else { fail("Deck-Menü ohne „Grid des DAW-Clips übernehmen“") }
+        menu.performActionForItem(at: i)
+        u.spin(1) { u.mix.deck(0).grid?.bpm == bpm }
+        guard let g = u.mix.deck(0).grid else { fail("Deck A ohne Grid") }
+        check(abs(g.bpm - bpm) < 1e-9 && abs(g.anchor - anchor) < 1e-9 && u.mix.deck(0).gridEdited, "Grid nicht aus der DAW: \(g)")
+        UndoStack.shared.undo()
+        u.mix.pull()
+        check(u.mix.deck(0).grid == before, "Rückgängig stellt das Grid nicht her")
+        if let out = ProcessInfo.processInfo.environment["MIX741_UITEST_DAWSHOT"], let v = u.window.contentView?.superview, let layer = v.layer {
+            // Bild des Fensters mit Streifen (zum Ansehen), Zeiger der DAW läuft 1 s
+            u.spin(1)
+            let w = Int(v.bounds.width * 2), h = Int(v.bounds.height * 2)
+            if let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                ctx.scaleBy(x: 2, y: 2)
+                if v.isFlipped { ctx.translateBy(x: 0, y: v.bounds.height); ctx.scaleBy(x: 1, y: -1) }
+                layer.render(in: ctx)
+                if let img = ctx.makeImage(), let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) {
+                    try? png.write(to: URL(fileURLWithPath: out))
+                    log("daw: bild \(out)")
+                }
+            }
+        }
+        send(["v": 1, "t": "bye"])
+        u.spin(3) { u.named("A daw") == nil }
+        check(u.named("A daw") == nil && bridge.clips.isEmpty, "Streifen bleibt nach dem Abmelden")
+        log(String(format: "daw: streifen %.0f × %.0f pt, grid %.2f bpm übernommen + rückgängig", u.frame(strip).width, u.frame(strip).height, bpm))
     }
 }

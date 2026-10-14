@@ -313,6 +313,7 @@ struct BrowserPane: View {
                 .frame(minWidth: tree ? 170.z : 0, idealWidth: tree ? 210.z : 0, maxWidth: tree ? 320.z : 0)
             VStack(spacing: 0) {
                 PaneHeader(model: model)
+                if model.source == .daw { DAWClipsPanel() }
                 if model.source.isHistory {
                     HistoryTable(entries: Self.historyEntries(model.source, history), model: model)
                 } else {
@@ -589,6 +590,10 @@ struct SourceTreeFixed: View, SourceMenus {
             }
         row("▶", "RUNNING TRACKS").tag(BrowserSource.running)
             .favoriteDrag { BrowserFavorite.source(.running, store: store) }
+        if DAWBridgeModel.shared.connected || !DAWBridgeModel.shared.clips.isEmpty {
+            row("◇", "DAW").tag(BrowserSource.daw)
+                .help("Spielende und ausgewählte Audio-Clips der DAW (Remote Script); Doppelklick lädt mit dem Grid aus den Warp-Markern")
+        }
         if !store.cuts.isEmpty {
             row("◫", "CUTS").tag(BrowserSource.cuts)
                 .help("Geschnittene Dateien (Wellenform: ⌃ + Ziehen markiert, Rechtsklick schneidet)")

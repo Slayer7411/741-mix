@@ -118,6 +118,8 @@ final class MixModel {
     var sampleRate = 0.0
     /// Puffergröße in Frames (0 = Gerätestandard)
     var bufferSize = 0
+    /// Decks parallel rechnen (Worker-Threads in der Workgroup des Geräts); MIX741_PARALLEL_DECKS=1/0 überstimmt
+    var parallelDecks = false { didSet { engine.parallelDecks = parallelDecks; saveSetup() } }
 
     /// eigene Änderungen (Grid, Hotcues, Schnitt) dauerhaft je Track – die Collection bleibt unangetastet.
     /// Selbsttest/Messung: nur lesen (Christians edits.json nie schreiben)
@@ -128,6 +130,8 @@ final class MixModel {
     @ObservationIgnored var editSessions: [Int: EditSession] = [:]
     /// Bereich nach einer Bearbeitung, gesetzt nach dem Tausch (gehört zur neuen Liste)
     @ObservationIgnored var pendingRange: [Int: TrackRange?] = [:]
+    /// Grid, das aus Warp-Markern der DAW übernommen wurde (Herkunft `.daw` beim Speichern, solange es unverändert ist)
+    @ObservationIgnored private var dawGrid: [Int: BeatGrid] = [:]
     @ObservationIgnored private var timer: Timer?
     /// Vorhören: zählt jede Anfrage (ein spät geladener Track spielt nur, wenn danach nichts mehr kam)
     @ObservationIgnored private var previewSeq = 0
@@ -260,6 +264,7 @@ final class MixModel {
                     if !key.isEmpty, originals[d]?.key != key, let e = originals.first(where: { $0.value.key == key })?.key {
                         originals[d] = originals[e]
                         savedEdit[d] = savedEdit[e]
+                        dawGrid[d] = dawGrid[e]
                     }
                 }
             }
@@ -341,6 +346,7 @@ final class MixModel {
         originals[d] = t
         let e = edits.edit(for: t.key)
         savedEdit[d] = e
+        dawGrid[d] = e.flatMap { e in e.gridSource == .daw ? BeatGrid(track: e.apply(to: t)) : nil }
         core.load(e?.apply(to: t) ?? t, deck: d, trim: e?.trim ?? TrackTrim(), gridEdited: e?.hasGrid ?? false,
                   activeLoops: Set(e?.activeLoops ?? []))
         UndoStack.shared.clear(deck: d)   // Trackwechsel: kein Rückgängig, die Schritte passen nicht zum neuen Track
@@ -355,21 +361,28 @@ final class MixModel {
     private func persistEdits() {
         guard !Session.isSelfTest else { return }   // Selbsttest/Messung: Christians edits.json nie anfassen
         for d in state.decks.indices {
-            guard let orig = originals[d], let t = state.decks[d].track, t.key == orig.key, !state.decks[d].loading else { continue }
-            if isEditPreview(d) { continue }   // Deck spielt eine Schnittliste: Hotcues/Grid gehören zur Vorschau
+            guard let orig = originals[d], let t = state.decks[d].track, t.key == orig.key, !state.decks[d].loading,
+                  !orig.key.hasPrefix(DAWBridgeModel.keyPrefix) else { continue }   // DAW-Clip: Grid kommt jedes Mal aus der DAW
             let deck = state.decks[d]
+            if isEditPreview(d) { continue }   // Deck spielt eine Schnittliste: Hotcues/Grid gehören zur Vorschau
             var e = TrackEdit(trim: deck.trim)
             e.edl = (savedEdit[d] ?? nil)?.edl
-            if deck.gridEdited, let g = deck.grid { e.bpm = g.bpm; e.gridAnchorMs = g.anchor * 1000 }
+            if deck.gridEdited, let g = deck.grid {
+                e.bpm = g.bpm; e.gridAnchorMs = g.anchor * 1000
+                if let w = dawGrid[d], abs(w.bpm - g.bpm) < 1e-9, abs(w.anchor - g.anchor) < 1e-9 { e.gridSource = .daw }
+            }
             let cues = deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }
             if cues != orig.hotcues { e.hotcues = cues }
             if !deck.activeLoops.isEmpty { e.activeLoops = deck.activeLoops.sorted() }
             let old = savedEdit[d] ?? nil
+            // Stand des Collection-Eintrags, ab dem Hotcues / Grid offen sind (Konfliktprüfung beim Neu-Laden)
+            if e.hasNMLPart { e.stamp = old?.hasNMLPart == true ? old?.stamp : (orig.entryStamp.isEmpty ? nil : orig.entryStamp) }
             if !e.same(as: old) {
                 let newEdit: TrackEdit? = e.isEmpty ? nil : e
                 edits.set(newEdit, for: orig.key)
                 savedEdit[d] = newEdit
                 if previewing?.key == orig.key { previewCutChanged(newEdit?.trim) }
+                if prefs.ui.writeCollection, newEdit?.hasNMLPart == true || old?.hasNMLPart == true { library?.scheduleWriteBack() }
             }
         }
     }
@@ -392,6 +405,13 @@ final class MixModel {
         originals[d]?.key == key ? (savedEdit[d] ?? nil)?.edl : edits.edit(for: key)?.edl
     }
 
+    /// Tracks stehen nach dem Schreiben neu in der Collection-Datei (Hotcues, Grid): geladene Decks vergleichen ihre
+    /// Hotcues ab jetzt mit diesem Stand (sonst bliebe das Zurücksetzen auf den alten Collection-Stand ungespeichert)
+    func collectionUpdated(_ list: [Track]) {
+        let byKey = Dictionary(list.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+        for (d, o) in originals { if let t = byKey[o.key] { originals[d] = t } }
+    }
+
     /// Rückgängig für Deck-Aktionen (Stand vorher/nachher, nur die betroffenen Teile; Trackwechsel leert das Deck)
     @ObservationIgnored private(set) lazy var deckUndo: DeckUndoRecorder = {
         let r = DeckUndoRecorder(core: core)
@@ -411,6 +431,11 @@ final class MixModel {
     func applyPhraseAnchor(_ d: Int) { edit(d, String(localized: "Phrasen-Anker übernehmen"), .grid) { core.applyPhraseAnchor(d) } }
     func resetGrid(_ d: Int) {
         if let o = originals[d] { edit(d, String(localized: "Grid zurücksetzen"), .grid) { core.resetGrid(d, original: o) } }
+    }
+    /// Grid aus Warp-Markern der DAW (Rückgängig wie jede Grid-Änderung, gespeichert mit Herkunft DAW)
+    func applyDAWGrid(_ d: Int, _ g: BeatGrid) {
+        edit(d, String(localized: "Grid aus der DAW übernehmen"), .grid) { core.setGrid(d, g) }
+        if deck(d).grid == g { dawGrid[d] = g }
     }
     func tapGrid(_ d: Int) { edit(d, String(localized: "Grid tappen"), .grid, coalesce: "grid.tap", window: 2.5) { core.tapGrid(d) } }
 
@@ -711,6 +736,7 @@ final class MixModel {
         bufferSize = d.integer(forKey: "bufferSize")
         engine.deviceRate = sampleRate > 0 ? sampleRate : nil
         engine.bufferFrames = bufferSize > 0 ? UInt32(bufferSize) : nil
+        parallelDecks = ProcessInfo.processInfo.environment["MIX741_PARALLEL_DECKS"].map { $0 == "1" } ?? d.bool(forKey: "parallelDecks")
     }
 
     /// Samplerate/Puffer setzen und die Ausgabe neu starten
@@ -736,6 +762,7 @@ final class MixModel {
         d.set(previewPair, forKey: "previewPair")
         d.set(sampleRate, forKey: "sampleRate")
         d.set(bufferSize, forKey: "bufferSize")
+        d.set(parallelDecks, forKey: "parallelDecks")
     }
 
     // MARK: - Vorhören im Browser

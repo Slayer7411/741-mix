@@ -2,6 +2,7 @@
 #include <mach/mach_time.h>
 #include <algorithm>
 #include <atomic>
+#include <os/workgroup.h>
 
 namespace {
 // DSP-Last: Summen je Abhol-Fenster, Spitze in Promille, Überläufe fortlaufend
@@ -60,3 +61,11 @@ extern "C" OSStatus mdsp_au_render(void *ref, AudioUnitRenderActionFlags *, cons
 }
 
 extern "C" AURenderCallback mdsp_render_callback(void) { return mdsp_au_render; }
+
+extern "C" void mdsp_au_join_workgroup(MDEngine *e, AudioUnit au, double periodSeconds) {
+    os_workgroup_t wg = nullptr;
+    UInt32 size = sizeof(wg);
+    if (au && AudioUnitGetProperty(au, kAudioOutputUnitProperty_OSWorkgroup, kAudioUnitScope_Global, 0, &wg, &size) != noErr) wg = nullptr;
+    mdsp_set_workgroup(e, wg, periodSeconds);   // Kern hält seine eigene Referenz
+    if (wg) os_release(wg);
+}

@@ -4,7 +4,8 @@ import MixCore
 import MixEngine
 
 /// MIX741_BENCH=loadtest (Selbsttest-Modus, schreibt keine Einstellungen): Live-Lasttest in Stufen.
-/// Je Stufe (Puffer MIX741_BENCH_BUFFERS, Standard 512,256,128; Dauer MIX741_LOADTEST_MIN, Standard 10 min):
+/// Je Stufe (Puffer MIX741_BENCH_BUFFERS, Standard 512,256,128; Dauer MIX741_LOADTEST_MIN, Standard 10 min; Rechenkern
+/// MIX741_BENCH_MODES=serial,parallel -> alle Puffer erst seriell, dann mit parallelen Decks):
 /// 4 Decks Keylock, B–D Sync auf A, Link an, FX 1 (A/C) und FX 2 (B/D) Gruppe Delay + Hall, FX 3 isoliertes Plugin
 /// (MIX741_BENCH_PLUGIN, Standard AUMatrixReverb isoliert, "none" = ohne) auf allen Decks. Störlast: alle 60 s
 /// Track-Wechsel (erstmals nach 45 s; B, C, D reihum, Datei-Dienst), alle 20 s Suche + Sortierung über die Collection auf dem Hauptthread,
@@ -15,6 +16,7 @@ import MixEngine
 enum LoadTest {
     struct Stage {
         var frames: UInt32
+        var parallel = false
         var deviceFrames = 0, latencyMs = 0.0
         var seconds = 0.0
         var busy = 0.0, blocks = 0, peak = 0.0
@@ -71,6 +73,10 @@ enum LoadTest {
         let buffers = (env["MIX741_BENCH_BUFFERS"] ?? "512,256,128").split(separator: ",")
             .compactMap { UInt32($0.trimmingCharacters(in: .whitespaces)) }
         let plugin = env["MIX741_BENCH_PLUGIN"] ?? "aufx:mrev:appl"
+        // Rechenkern je Stufe: seriell und/oder Decks parallel (MIX741_BENCH_MODES=serial,parallel)
+        let modes = (env["MIX741_BENCH_MODES"] ?? "serial").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0 == "serial" || $0 == "parallel" }
+        let stageList = modes.isEmpty ? buffers.map { ($0, false) } : modes.flatMap { m in buffers.map { ($0, m == "parallel") } }
         openLog()
         installInterrupt(core)
 
@@ -84,10 +90,11 @@ enum LoadTest {
         core.setExternalMixer(ext)
         core.setMasterVolume(mute ? 0 : 1)
         let dev = MixEngine.outputDevices().first { $0.id == engine.routing.device }
-        startInfo = String(format: "Gerät %@ (%d Kanäle, %@) · %@ · Kern %.0f Hz, Gerät %.0f Hz · Stufen %@ je %.0f min",
+        startInfo = String(format: "Gerät %@ (%d Kanäle, %@) · %@ · Kern %.0f Hz, Gerät %.0f Hz · Stufen %@ je %.0f min · %@",
                            dev?.name ?? "?", engine.deviceChannels, ext ? "extern A 1/2 · B 3/4 · C 5/6 · D 7/8" : "eingebaut",
                            mute ? "stumm" : "Master 0 dB", engine.sampleRate, engine.outputRate,
-                           buffers.map(String.init).joined(separator: "/"), minutes)
+                           buffers.map(String.init).joined(separator: "/"), minutes,
+                           (modes.isEmpty ? ["serial"] : modes).map { $0 == "parallel" ? "Decks parallel" : "seriell" }.joined(separator: " + "))
         log(startInfo)
         if !ext {
             log(env["MIX741_NOEXT"] != nil ? "eingebautes Gerät (MIX741_NOEXT), stumm"
@@ -169,22 +176,23 @@ enum LoadTest {
 
         MeterSampler.shared.paused = true
         let fs0 = core.fileService?.stats
-        let saved = engine.bufferFrames
+        let saved = engine.bufferFrames, savedParallel = engine.parallelDecks
         let queries = ["the", "mix", "dub", "acid", "remix", "deep", "love", "techno"]
         var q = 0, deckTurn = 1
 
-        for frames in buffers {
+        for (frames, parallel) in stageList {
             engine.bufferFrames = frames
+            engine.parallelDecks = parallel
             engine.apply(engine.routing, restart: true)
             for d in 0..<4 { prepare(d) }
             try? await Task.sleep(for: .seconds(2))   // einschwingen
             engine.resetOverloads()
             _ = engine.takeLoad()
             let info = engine.takeLoad()
-            current = Stage(frames: frames, deviceFrames: info.bufferFrames, latencyMs: info.outputLatency * 1000)
+            current = Stage(frames: frames, parallel: parallel, deviceFrames: info.bufferFrames, latencyMs: info.outputLatency * 1000)
             let r0 = engine.watch.reconnects
-            log(String(format: "Stufe Puffer %d: Gerät %d Frames, Latenz %.1f ms, %.0f min", frames, info.bufferFrames,
-                       info.outputLatency * 1000, minutes))
+            log(String(format: "Stufe Puffer %d %@: Gerät %d Frames, Latenz %.1f ms, %.0f min", frames, parallel ? "Decks parallel" : "seriell",
+                       info.bufferFrames, info.outputLatency * 1000, minutes))
             let start = Date()
             var lastLoad = -15.0, lastSearch = 0.0, lastLink = 0.0, lastLine = 0.0, nextBlock = 30.0
             while true {
@@ -258,6 +266,7 @@ enum LoadTest {
             current = nil
         }
         engine.bufferFrames = saved
+        engine.parallelDecks = savedParallel
         engine.apply(engine.routing, restart: true)
         if let a = fs0, let b = core.fileService?.stats {
             log("Datei-Dienst: Helfer gestartet \(b.spawns - a.spawns) · abgestürzt \(b.crashes - a.crashes) · abgeschossen \(b.kills - a.kills) · mlock fehlgeschlagen \(b.lockFailures - a.lockFailures)")
@@ -267,18 +276,18 @@ enum LoadTest {
 
     private static func summaryLine(_ c: Stage) -> String {
         let loads = c.loads.isEmpty ? "–" : String(format: "%.2f / %.2f s", c.loads.reduce(0, +) / Double(c.loads.count), c.loads.max() ?? 0)
-        return String(format: "Stufe %d %@: %.1f min · DSP %.1f %% · Spitze %.0f %% · über Budget %d · Gerät überlastet %d · Hänger %d (max %.0f ms) · Link %@ · Laden Mittel/Max %@ (%d fehlgeschlagen) · RSS max %@ · neu verbunden %d",
-                      c.frames, c.pass ? "PASS" : "FAIL", c.seconds / 60, c.mean * 100, c.peak * 100, c.overloads, c.deviceOverloads,
+        return String(format: "Stufe %d %@ %@: %.1f min · DSP %.1f %% · Spitze %.0f %% · über Budget %d · Gerät überlastet %d · Hänger %d (max %.0f ms) · Link %@ · Laden Mittel/Max %@ (%d fehlgeschlagen) · RSS max %@ · neu verbunden %d",
+                      c.frames, c.parallel ? "parallel" : "seriell", c.pass ? "PASS" : "FAIL", c.seconds / 60, c.mean * 100, c.peak * 100, c.overloads, c.deviceOverloads,
                       c.hitches, c.worstHitchMs, c.linkMax.map { String(format: "%.4f Beats", $0) } ?? "keine Teilnehmer",
                       loads, c.loadFailures, Mem.gb(c.rssMax), c.reconnects)
     }
 
     /// Tabelle je Stufe; Kriterien: Spitze < 70 %, 0 über Budget, 0 Geräte-Überlastungen, Link-Phase < 0,02 Beats
     private static func table() -> String {
-        var s = "\nPuffer | Gerät | Latenz ms | Min | DSP % | Spitze % | über Budget | Overloads | Hänger | Link max | Laden max s | Ergebnis\n"
-        s += "---|---|---|---|---|---|---|---|---|---|---|---\n"
+        var s = "\nPuffer | Kern | Gerät | Latenz ms | Min | DSP % | Spitze % | über Budget | Overloads | Hänger | Link max | Laden max s | Ergebnis\n"
+        s += "---|---|---|---|---|---|---|---|---|---|---|---|---\n"
         for c in stages {
-            s += String(format: "%d | %d | %.1f | %.1f | %.1f | %.0f | %d | %d | %d | %@ | %@ | %@\n", c.frames, c.deviceFrames, c.latencyMs,
+            s += String(format: "%d | %@ | %d | %.1f | %.1f | %.1f | %.0f | %d | %d | %d | %@ | %@ | %@\n", c.frames, c.parallel ? "parallel" : "seriell", c.deviceFrames, c.latencyMs,
                         c.seconds / 60, c.mean * 100, c.peak * 100, c.overloads, c.deviceOverloads, c.hitches,
                         c.linkMax.map { String(format: "%.4f", $0) } ?? "–", c.loads.max().map { String(format: "%.2f", $0) } ?? "–",
                         c.pass ? "PASS" : (c.aborted ? "FAIL (abgebrochen)" : "FAIL"))

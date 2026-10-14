@@ -376,6 +376,8 @@ struct DeckSettings: View {
                     Text("4 Decks").tag(4)
                 }
                 sliderRow("Vorhören im Browser ab (Anteil)", $mix.prefs.ui.previewStart, 0...0.9, format: "%.1f")
+                sliderRow("Abstand zwischen Decks (pt)", $mix.prefs.ui.deckGap, 0...12, step: 1, format: "%.0f")
+                Text("0 = die Wellenformen enden an den Deck-Rändern und am Fensterrand, nur die Rahmenlinie dazwischen.").settingsHint()
             }
             Section("Zeilen je Deck") {
                 ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
@@ -385,6 +387,7 @@ struct DeckSettings: View {
                 Toggle("Kompakte Decks (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge)", isOn: $mix.prefs.ui.compactDecks)
                 Text("auch im menü decks -> zeilen / kompakte decks. ohne pitch-fader nimmt die wellenform die breite. wellenform und kopfzeile bleiben immer.").settingsHint()
             }
+            GrooveSettingsSection()
         }
     }
 }
@@ -554,7 +557,13 @@ struct WaveformSettings: View {
                 Toggle("Ordner-Baum ausblenden, solange Decks sichtbar sind", isOn: $mix.prefs.ui.hideTreeWithDecks)
                 MusicFolderSettings()
                 Toggle("Änderungen in die Collection-Datei schreiben (Backup davor)", isOn: $mix.prefs.ui.writeCollection)
-                Text("aus: änderungen (inline, ⌘E) liegen nur in MINOS-741 (metadata.json). an: nach ÜBERNEHMEN in die collection.nml, sicherung höchstens stündlich in „Backup MINOS-741“ neben der datei. nicht, solange die collection-software läuft.")
+                Text("aus: änderungen (inline, ⌘E, hotcues, loops, grid) liegen nur in MINOS-741 (metadata.json, edits.json). an: gesammelt in die collection.nml, sicherung höchstens stündlich in „Backup MINOS-741“ neben der datei. nicht, solange die collection-software läuft. schnitt und active loops bleiben in MINOS-741.")
+                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
+                Toggle("Cuts und Tool-Loops als neue Einträge anlegen", isOn: $mix.prefs.ui.writeCuts)
+                    .disabled(!mix.prefs.ui.writeCollection)
+                Toggle("Preparation und History als Playlists (Ordner MINOS-741)", isOn: $mix.prefs.ui.writePlaylists)
+                    .disabled(!mix.prefs.ui.writeCollection)
+                Text("eigene playlists stehen nur im ordner MINOS-741 und werden bei jedem schreiben ersetzt, andere playlists bleiben unberührt.")
                     .font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
             PreviewSettings()
@@ -586,6 +595,7 @@ struct WaveformSettings: View {
                     .settingsHint()
                 KeyProfileSettings()
             }
+            DAWBridgeSettings()
             Section("Collection prüfen") {
                 Toggle("Beim Start prüfen", isOn: $mix.prefs.ui.checkOnStart)
                 Toggle("Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen", isOn: $mix.prefs.ui.checkMusicFolders)
@@ -644,6 +654,11 @@ struct AudioSettings: View {
                 }
                 .settingsControlColumn()
                 Text("Eine neue Samplerate gilt am Gerät sofort, MINOS-741 rechnet ab dem nächsten Start damit.")
+                    .settingsHint()
+            }
+            Section("Rechenkern") {
+                Toggle("Decks parallel rechnen", isOn: Binding(get: { mix.parallelDecks }, set: { mix.parallelDecks = $0 }))
+                Text("Deck A im Audio-Thread, B–D auf eigenen Echtzeit-Threads neben dem Gerät (gleicher Klang, Summe danach). Zum Vergleich im Lasttest; bei kleinen Puffern mit 4 Decks Keylock + FX niedrigere Spitzenlast je Kern.")
                     .settingsHint()
             }
             Section("Mixer") {

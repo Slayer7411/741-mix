@@ -145,7 +145,13 @@ bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) · ideas -> [di
 
 ## ◆ LICENSE
 
-GPL-2.0-or-later ([LICENSE.md](LICENSE.md)), because of the link library.
+© 2026 Slayer7411. dual licensed:
+* free: GPL-2.0-or-later ([LICENSE.md](LICENSE.md)). your version stays open
+* commercial, closed or sold products: license from the author with a revenue share -> [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)
+* name, ◆ mark and logo stay with the author, forks pick their own
+* pull requests need the [CLA](CLA.md)
+
+third party:
 * link library 3.1.5: GPL-2.0-or-later, `Sources/LinkKit`
 * time-stretch / fft libraries: MIT, `Sources/MixDSP/vendor`
 * VST 3 SDK 3.8.1 (hosting part): MIT, `Sources/VST3SDK` · VST is a registered trademark of Steinberg Media Technologies GmbH

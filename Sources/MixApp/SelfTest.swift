@@ -206,11 +206,15 @@ enum SelfTest {
             log(String(format: "Pegel A: trocken %.3f · Filter HP %.3f (%.0f %%) · Reverb %.3f (%.0f %%)",
                        dry, hp, hp / max(dry, 1e-6) * 100, rev, rev / max(dry, 1e-6) * 100))
             await deviceProbe(core)
+            await parallelProbe(core)
             await previewProbe(mix, tracks: c)
             await cutProbe(mix, tracks: c)
             await editProbe(mix)
             await profileProbe(mix, browser: browser)
             await undoProbe(mix, store: store)
+            await grooveProbe(mix)
+            await nmlProbe()
+            await dawBridgeProbe(mix, store: store)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -317,6 +321,31 @@ enum SelfTest {
         let woke = await waitRunning()
         log(String(format: "Ruhezustand: %@, Ausgabe aus %@, Position steht %@ -> aufgewacht, läuft nach %.0f ms, A läuft %@, Deck spielt %@",
                    sleeping.rawValue, "\(quiet)", "\(frozen)", woke * 1000, "\(await advancing())", "\(core.snapshot().decks[0].playing)"))
+        if !wasPlaying { core.togglePlay(0) }
+    }
+
+    /// Decks parallel am laufenden Gerät: einschalten, Blöcke laufen weiter, keine Überläufe, Position läuft; danach zurück
+    static func parallelProbe(_ core: MixController) async {
+        let engine = core.engine
+        let was = engine.parallelDecks
+        let wasPlaying = core.snapshot().decks[0].playing
+        if !wasPlaying { core.togglePlay(0) }
+        _ = engine.takeLoad()
+        engine.resetOverloads()
+        engine.parallelDecks = true
+        let p0 = core.position(0)
+        try? await Task.sleep(for: .milliseconds(600))
+        let l = engine.takeLoad()
+        let moved = core.position(0) - p0
+        let info = engine.parallelInfo
+        engine.parallelDecks = was
+        try? await Task.sleep(for: .milliseconds(200))
+        let l2 = engine.takeLoad()
+        let ok = l.blocks > 0 && l.overloads == 0 && moved > 0.4 && l2.blocks > 0 && info.joined == info.workers && info.realtime == info.workers
+        log(String(format: "Decks parallel: an -> %d Blöcke, DSP %.1f %% (Spitze %.0f %%), über Budget %d, A lief %.2f s, Worker %d (Workgroup %d, Echtzeit %d); zurück %@ -> %d Blöcke · %@",
+                   l.blocks, l.average * 100, l.peak * 100, l.overloads, moved, info.workers, info.joined, info.realtime, "\(was)", l2.blocks,
+                   ok ? "OK" : "FAIL"))
+        if !ok { log("FEHLER Decks parallel: Ausgabe läuft nicht sauber"); exit(1) }
         if !wasPlaying { core.togglePlay(0) }
     }
 
@@ -820,5 +849,212 @@ extension SelfTest {
                    deckLetters[d], "\(s0.playing)", dur0, removed, want1, render1 * 1000, swap1 * 1000, main * 1000, segs, dup, want2, loopText,
                    "\(original)", back, ok ? "ok" : "FALSCH"))
         if !ok { log("EDIT FALSCH"); exit(1) }
+    }
+
+    /// Groove → MIDI an Deck A: Muster lesen, alle Stile erzeugen (keine Doppelung der Track-Hats), .mid rundreise,
+    /// MIDI-Quelle (versteckt) 2 s im Takt der Clock, eigener Eingang misst Zeitstempel gegen das 16tel-Raster der Clock
+    static func grooveProbe(_ mix: MixModel) async {
+        let g = GrooveCenter.shared, core = mix.core
+        guard core.trackAudio(0) != nil, mix.deck(0).grid != nil else { log("Groove: Deck A ohne Track – übersprungen"); return }
+        let wasPlaying = mix.deck(0).playing
+        if !wasPlaying { core.togglePlay(0); try? await Task.sleep(for: .milliseconds(300)) }
+        mix.pull()
+        let t0 = CACurrentMediaTime()
+        guard g.analyze(mix, 0), let p = g.slots[0].pattern else { log("Groove FEHLER: kein Muster"); exit(1) }
+        let ms = (CACurrentMediaTime() - t0) * 1000
+        // MIX741_GROOVE_DEBUG=<Beat,Beat…>: Messwerte je Schritt (Anstieg / Spitze je Gruppe, Höhen-Dauer)
+        if let dbg = ProcessInfo.processInfo.environment["MIX741_GROOVE_DEBUG"], let a = core.trackAudio(0), let grid = mix.deck(0).grid {
+            let bps = a.sampleRate / Double(TrackAudio.blockFrames(sampleRate: a.sampleRate))
+            if dbg == "all" {
+                for d in 0..<2 {
+                    guard let a = core.trackAudio(d), let grid = mix.deck(d).grid else { continue }
+                    let bps = a.sampleRate / Double(TrackAudio.blockFrames(sampleRate: a.sampleRate))
+                    log("Groove debug \(deckLetters[d]): \(mix.deck(d).track?.title ?? "-")")
+                    for b in stride(from: 0.0, to: grid.beatPosition(at: a.duration) - 8, by: 32) {
+                        let pat = GrooveAnalyzer.extract(a.spectrum, blocksPerSecond: bps, grid: grid, startBeat: b, beats: 8)
+                        log("  \(Int(b)): K \(pat.steps(.kick)) S \(pat.steps(.snare)) H \(pat.steps(.closedHat)) O \(pat.steps(.openHat))")
+                    }
+                }
+            }
+            for b in dbg.split(separator: ",").compactMap({ Double($0) }) {
+                let pat = GrooveAnalyzer.extract(a.spectrum, blocksPerSecond: bps, grid: grid, startBeat: b, beats: 8)
+                log("Groove debug Beat \(Int(b)): Kick \(pat.steps(.kick)) Snare \(pat.steps(.snare)) Hats \(pat.steps(.closedHat)) offen \(pat.steps(.openHat))")
+                for (i, m) in GrooveAnalyzer.measure(a.spectrum, blocksPerSecond: bps, grid: grid, startBeat: b, steps: 32).enumerated() {
+                    log(String(format: "  %2d  K %5.1f/%6.1f  M %5.1f/%6.1f  H %5.1f/%6.1f  S %.2f", i, m.kick.rise, m.kick.peak,
+                               m.mid.rise, m.mid.peak, m.hat.rise, m.hat.peak, m.sustain))
+                }
+            }
+        }
+        log(String(format: "Groove A: %d Schritte ab Beat %.0f · Kick %@ · Snare %@ · Hats zu %@ · offen %@ · %.2f ms",
+                   p.steps, g.slots[0].startBeat, "\(p.steps(.kick))", "\(p.steps(.snare))", "\(p.steps(.closedHat))",
+                   "\(p.steps(.openHat))", ms))
+        for style in GrooveStyle.allCases {
+            var o = g.options(mix, g.slots[0]); o.style = style; o.instrument = .both
+            let c = GrooveGenerator.clip(p, o)
+            let hats = c.notes.filter { $0.channel == o.drumChannel }.map(\.step), bass = c.notes.filter { $0.channel == o.bassChannel }
+            guard Set(hats).count == hats.count, Set(hats).isDisjoint(with: p.hatSteps),
+                  Set(bass.map(\.step)).count == bass.count else { log("Groove FEHLER: \(style) doppelt belegt"); exit(1) }
+            log("Groove \(style.rawValue): \(hats.count) Hats, \(bass.count) Bass-Noten (\(bass.map { Int($0.note) }.prefix(8)))")
+        }
+        guard let data = g.midiData(mix, 0), let f = try? MIDIFile.parse(data), let clip = g.slots[0].clip else { log("Groove FEHLER: .mid"); exit(1) }
+        let notes = f.tracks.reduce(0) { $0 + $1.notes.count }
+        guard notes == clip.notes.count, abs((f.bpm ?? 0) - g.slots[0].bpm) < 0.01 else {
+            log("Groove FEHLER: .mid \(notes) Noten statt \(clip.notes.count), \(f.bpm ?? 0) BPM"); exit(1)
+        }
+        log(String(format: "Groove .mid: %d Bytes, %d Spuren, %d Noten, %.2f BPM", data.count, f.tracks.count, notes, f.bpm ?? 0))
+
+        // laufend: versteckte Quelle, eigener Eingang
+        final class Box: @unchecked Sendable { let lock = NSLock(); var got: [(stamp: UInt64, at: UInt64, status: UInt8)] = [] }
+        let box = Box()
+        g.start(mix, 0)
+        guard g.running == 0, let out = g.out, out.listen({ stamp, st, _, _ in
+            let now = mach_absolute_time()
+            box.lock.withLock { box.got.append((stamp, now, st)) }
+        }) else { log("Groove FEHLER: MIDI startet nicht (\(g.out?.lastError ?? "-"))"); exit(1) }
+        try? await Task.sleep(for: .seconds(2))
+        // Raster der Clock: Beat zum Zeitstempel über den letzten Clock-Stempel
+        guard let st = core.engine.clockStamp else { log("Groove FEHLER: keine Clock"); exit(1) }
+        let spb = 60 / core.clockTempo, second = Double(LinkSession.hostTicks(seconds: 1))
+        g.stop()
+        out.unlisten()
+        let got = box.lock.withLock { box.got }
+        let ons = got.filter { $0.status & 0xF0 == 0x90 }
+        var worst = 0.0, lead = [Double]()
+        for e in ons {
+            let beat = st.beat + Double(Int64(bitPattern: e.stamp &- st.hostTime)) / second / spb
+            let off = abs(beat * 4 - (beat * 4).rounded()) / 4 * spb
+            worst = max(worst, off)
+            lead.append(Double(Int64(bitPattern: e.stamp &- e.at)) / second * 1000)
+        }
+        lead.sort()
+        log(String(format: "Groove MIDI 2 s: %d Note-Ons, %d Ereignisse gesamt · Abstand zum 16tel-Raster der Clock max %.3f ms · Vorlauf %.1f–%.1f ms",
+                   ons.count, got.count, worst * 1000, lead.first ?? 0, lead.last ?? 0))
+        let expected = Int(2 / (spb * clip.beats) * Double(clip.notes.count))
+        guard ons.count >= expected / 2, worst < 0.002, g.running == nil else {
+            log("Groove FEHLER: \(ons.count) Note-Ons (erwartet ~\(expected)), Raster \(worst * 1000) ms"); exit(1)
+        }
+        if !wasPlaying { core.togglePlay(0) }
+    }
+
+    /// Collection-Datei schreiben (Hotcues, Playlists, neuer Eintrag, Umbenennung) auf einer Kopie der Collection im
+    /// Temp-Ordner. Die echte Datei wird nur gelesen; der Schreibschutz im Selbsttest muss sie ablehnen
+    static func nmlProbe() async {
+        let real = LibraryStore.defaultNML
+        guard !CollectionWriter.writeAllowed(real) else { log("NML-Rundreise: FEHLER Schreibschutz lässt die echte Collection zu"); exit(1) }
+        guard FileManager.default.fileExists(atPath: real.path) else { log("NML-Rundreise: übersprungen (keine Collection)"); return }
+        let report = await Task.detached(priority: .utility) { () -> String in
+            let fm = FileManager.default
+            let dir = fm.temporaryDirectory.appendingPathComponent("minos741-nml-\(UUID().uuidString.prefix(8))")
+            defer { try? fm.removeItem(at: dir) }
+            do {
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+                let url = dir.appendingPathComponent("collection-copy.nml")
+                try fm.copyItem(at: real, to: url)
+                let text = try String(contentsOf: url, encoding: .utf8)
+                let index = NMLEntryIndex(nmlText: text)
+                let c = try NMLParser.parse(url: url)
+                guard let t = c.tracks.first(where: { $0.hotcues.contains { $0.kind != .grid } && !$0.locked }),
+                      let m = c.tracks.first(where: { $0.key != t.key && $0.key.hasSuffix(".mp3") }) else { return "FEHLER keine passenden Tracks" }
+                var job = CollectionWriter.Job()
+                var hot = t.hotcues.filter { $0.hotcue != 7 }
+                hot.append(Cue(name: "Loop", kind: .loop, startMs: 1000, lengthMs: 1875, hotcue: 7))
+                job.cues[t.key] = TrackEdit(hotcues: hot)
+                job.moves[m.key] = NMLLocation(volume: String(m.key.prefix { $0 != "/" }), volumeID: String(m.key.prefix { $0 != "/" }),
+                                               dir: String(m.key[m.key.range(of: "/:")!.lowerBound..<m.key.range(of: "/:", options: .backwards)!.upperBound]),
+                                               file: String((m.path as NSString).lastPathComponent.dropLast(4)) + ".m4a")
+                var loop = t
+                loop.key = String(t.key.dropLast((t.path as NSString).pathExtension.count + 1)) + " [tool-loop 1].m4a"
+                job.newEntries = [loop]
+                job.playlists = [.playlist("Preparation", c.tracks.prefix(3).map(\.key)), .folder("History", [.playlist("History test", [t.key, m.key])])]
+                job.expected = FileStamp(url: url)
+                let t0 = CACurrentMediaTime()
+                let r = try CollectionWriter.write(url: url, job: job, index: index, backupDir: dir.appendingPathComponent("Backup MINOS-741"))
+                let ms = (CACurrentMediaTime() - t0) * 1000
+                let after = try NMLParser.parse(url: url)
+                let byKey = Dictionary(after.tracks.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+                let newKey = job.moves[m.key]!.key
+                let cueOK = byKey[t.key]?.hotcues.contains { $0.hotcue == 7 && $0.kind == .loop && abs($0.lengthMs - 1875) < 0.001 } == true
+                let own = after.root.children.last
+                let ok = r.changed && r.backup != nil && after.tracks.count == c.tracks.count + 1 && byKey[loop.key] != nil && cueOK
+                    && byKey[newKey] != nil && byKey[m.key] == nil && own?.name == CollectionWriter.ownFolder
+                    && own?.children.first?.trackKeys.count == 3 && own?.children.last?.children.first?.trackKeys == [t.key, newKey]
+                // außerhalb der geänderten Stellen gleich: alle übrigen ENTRY-Blöcke unverändert
+                let out = try String(contentsOf: url, encoding: .utf8)
+                let idx2 = NMLEntryIndex(nmlText: out)
+                let changedBlocks = index.raw.filter { k, b in k != t.key && k != m.key && idx2.raw[k] != b }.count
+                // zweiter Lauf (Index der neuen Datei): gleicher Stand -> nichts geschrieben
+                var again = CollectionWriter.Job()
+                again.cues = job.cues
+                again.newEntries = job.newEntries
+                again.playlists = [.playlist("Preparation", c.tracks.prefix(3).map(\.key)), .folder("History", [.playlist("History test", [t.key, newKey])])]
+                let r2 = try CollectionWriter.write(url: url, job: again, index: idx2, backupDir: nil)
+                return String(format: "%@ · schreiben %.0f ms · %d Tracks +%d · Cues %@ · umbenannt %@ · Playlists %@ · andere Blöcke geändert %d · zweiter Lauf %@",
+                              ok && changedBlocks == 0 && !r2.changed ? "OK" : "FEHLER", ms, c.tracks.count, r.added.count,
+                              cueOK ? "ok" : "fehlen", byKey[newKey] != nil ? "ok" : "fehlt", own?.name ?? "-", changedBlocks,
+                              r2.changed ? "schrieb erneut" : "unverändert")
+            } catch {
+                return "FEHLER \(error)"
+            }
+        }.value
+        log("NML-Rundreise (Kopie): \(report)")
+        if report.hasPrefix("FEHLER") { exit(1) }
+    }
+
+    /// DAW-Brücke: Testpakete (Clip mit Warp-Markern für die Datei in Deck B, Song mit Position) an den eigenen
+    /// Empfänger (Selbsttest: vom System gewählter Port), Modell, Quelle DAW, Streifen-Zuordnung, Grid übernehmen +
+    /// Rückgängig, Abmelden
+    static func dawBridgeProbe(_ mix: MixModel, store: LibraryStore) async {
+        let bridge = DAWBridgeModel.shared, d = 1
+        mix.pull()
+        guard let t = mix.deck(d).track, mix.deck(d).duration > 30 else { log("DAW-Brücke: übersprungen"); return }
+        if bridge.port == 0 { bridge.configure(enabled: true, port: 0) }
+        func fail(_ s: String) -> Never { log("DAW-Brücke: \(s)"); log("DAW-BRÜCKE FALSCH"); exit(1) }
+        guard bridge.port > 0 else { fail("Empfänger nicht gestartet (\(bridge.startError ?? "-"))") }
+        let bpm = 125.0, beat = 60 / bpm, anchor = 0.3
+        let clip: [String: Any] = ["v": 1, "t": "clip", "id": "selftest", "track": 0, "trackName": "Selbsttest", "name": "Clip",
+                                   "file": t.path, "warping": true,
+                                   "markers": [[0, anchor], [64, anchor + 64 * beat], [64.03125, anchor + 64.03125 * beat]],
+                                   "loop": [0, 16], "looping": true, "start": 0, "end": 64, "playing": true, "selected": false, "where": "session"]
+        let song: [String: Any] = ["v": 1, "t": "song", "seq": 1, "tempo": bpm, "playing": true, "beat": 0, "sig": 4,
+                                   "clips": ["selftest"], "pos": ["selftest": [1, 8.0]]]
+        let before = mix.deck(d).grid, edited = mix.deck(d).gridEdited
+        try? await Task.sleep(for: .seconds(1))   // Hauptthread nach den vorigen Schritten zur Ruhe (Übergabe messen)
+        let t0 = CACurrentMediaTime()
+        for p in [clip, song] {
+            guard let data = try? JSONSerialization.data(withJSONObject: p), DAWBridgeReceiver.send(data, port: bridge.port) else { fail("senden") }
+        }
+        while bridge.clip(deck: d)?.id != "selftest", CACurrentMediaTime() - t0 < 2 { try? await Task.sleep(for: .milliseconds(5)) }
+        let latency = (CACurrentMediaTime() - t0) * 1000
+        guard bridge.clip(deck: d)?.id == "selftest" else { fail("Clip nicht beim Deck angekommen") }
+        guard let dt = store.track(DAWBridgeModel.keyPrefix + "selftest"), abs(dt.bpm - bpm) < 1e-6,
+              abs((dt.gridAnchorMs ?? 0) - anchor * 1000) < 1e-6, store.tracks(for: .daw).count == 1 else { fail("Quelle DAW: Track/Grid falsch") }
+        let pos = bridge.position(of: "selftest") ?? 0
+        guard pos >= 8, pos < 8 + 0.5 * bpm / 60 + 1e-9 else { fail("Position \(pos)") }
+        // Dauerbetrieb: 20 Song-Pakete wie im 100-ms-Takt (hier alle 10 ms), nur Positionen
+        let n0 = bridge.deliverMs.count
+        for i in 0..<20 {
+            var s = song
+            s["seq"] = 2 + i
+            s["pos"] = ["selftest": [1, 8.0 + Double(i) * 0.2]]
+            if let data = try? JSONSerialization.data(withJSONObject: s) { DAWBridgeReceiver.send(data, port: bridge.port) }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        try? await Task.sleep(for: .milliseconds(50))
+        let steady = bridge.deliverMs.suffix(from: min(n0, bridge.deliverMs.count)).sorted()
+        bridge.applyGrid(deck: d, mix: mix)
+        mix.pull()
+        guard let g = mix.deck(d).grid, abs(g.bpm - bpm) < 1e-9, abs(g.anchor - anchor) < 1e-9, mix.deck(d).gridEdited else {
+            fail("Grid nicht übernommen: \(String(describing: mix.deck(d).grid))")
+        }
+        UndoStack.shared.undo()
+        mix.pull()
+        guard mix.deck(d).grid == before, mix.deck(d).gridEdited == edited else { fail("Rückgängig stellt das Grid nicht her") }
+        guard let bye = try? JSONSerialization.data(withJSONObject: ["v": 1, "t": "bye"]) else { fail("bye") }
+        DAWBridgeReceiver.send(bye, port: bridge.port)
+        let t1 = CACurrentMediaTime()
+        while !bridge.clips.isEmpty, CACurrentMediaTime() - t1 < 2 { try? await Task.sleep(for: .milliseconds(5)) }
+        guard bridge.clips.isEmpty, bridge.deckClip[d] == nil, store.tracks(for: .daw).isEmpty else { fail("Abmelden leert die Liste nicht") }
+        log(String(format: "DAW-Brücke: Port %d · Clip am Deck nach %.1f ms · Grid %.2f BPM / Anker %.3f s übernommen + rückgängig ok · Position %.2f Beats · Song-Pakete: %d Übergaben, Hauptthread median %.3f ms, max %.3f ms",
+                   Int(bridge.port), latency, bpm, anchor, pos, steady.count, steady.isEmpty ? 0 : steady[steady.count / 2], steady.last ?? 0))
     }
 }

@@ -12,6 +12,9 @@ OSStatus mdsp_au_render(void *inRefCon, AudioUnitRenderActionFlags *flags, const
                         UInt32 bus, UInt32 frames, AudioBufferList *io);
 /// derselbe Callback, als AURenderCallback typisiert (für Swift)
 AURenderCallback mdsp_render_callback(void);
+/// Worker der parallelen Decks in die Workgroup des AUHAL-IO-Threads holen (nach AudioUnitInitialize, bei jedem Öffnen);
+/// `periodSeconds` = Blockdauer des Geräts
+void mdsp_au_join_workgroup(MDEngine *e, AudioUnit au, double periodSeconds);
 
 /// DSP-Last des Render-Callbacks: Rechenzeit ÷ Blockdauer. Gemessen mit mach_absolute_time, gespeichert in Atomics
 /// (keine Sperre, kein Speicher im Audio-Thread). Gilt für die eine Live-Ausgabe des Prozesses.

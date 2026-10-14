@@ -26,6 +26,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * history: played after x seconds audible, optional copy into the collection's history folder
 * decks shown 1 / 2 / 4 (`ui.deckCount`, older `showFourDecks` is read once), preview start position in the browser
 * edit mode & tool-loops: snap when marking (`ui.editSnap`: 1 beat / 1 bar / 2 / 4 / 8 bars, default 1 bar), load the cut result into the deck (`ui.cutLoadsResult`), tool-loops into folder … (`ui.toolLoopFolder`, empty = next to the original)
+* groove → midi (`groove`): midi source name (default `MINOS-741 Groove`), channel bass (1) / drums (10), bass octave 0-3 (C3 = 60, default 1), length without loop 1 / 2 bars (default 2), offset −100…100 ms. instrument and style of the deck row are saved here too
 
 ## ◆ MIXER & FX
 
@@ -53,6 +54,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 
 ## ◆ DISPLAY
 
+* view: decks shown (1 / 2 / 4), preview start, gap between decks 0-12 pt (0 = waveforms end at the deck frame and the window edge)
 * profiles: list (rename, apply, update, ↑ / ↓, ✕), save current view -> [manual](MANUAL.md#view-profiles). `ui.layoutProfiles`, `ui.activeLayoutProfile`
 * waveform style: 3-band blend (default) / spectrum (6 bands) / mono; palette (not for spectrum): spectrum (rgb, default) / 741 bone / orange / blue / classic; high emphasis 0-3
 * palette: 741 bone, orange, blue / white, classic (not for spectrum fine, it has fixed band colors -> [manual](MANUAL.md#-05--waveform--grid))
@@ -66,6 +68,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * cover: in the deck header (on), preview of the selected track below the browser tree (on). the browser column `Cover` is switched via right click on the list header
 * music folders for MUSIC FOLDERS: add / remove, empty = automatic (the folder holding 90 % of the collection's files)
 * write browser edits into the collection file (off): backup at most once per hour into `Backup MINOS-741`, not while the library software runs -> [manual](MANUAL.md#-09--browser)
+  * with it: hotcues / loops / hand grid, renamed files, cuts and tool loops as new entries (on), preparation + own history as playlists in `MINOS-741` (on) -> [manual](MANUAL.md#write-into-the-collection-file)
 * browser preview: full row, two lines (default) / own column / behind the title / off
 * preview colors: spectrum red / green / blue (default) / like the waveform
 * compute previews in the background: always, throttled while a deck plays (default) / only while no deck plays / off -> [manual](MANUAL.md#preview)
@@ -74,6 +77,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * language: system / english / german (after restart)
 * status bar: load meters DSP · latency · dropouts · memory · cpu (on) -> [manual](MANUAL.md#status-bar)
 * cancel loading after x s without audio data (4 s, 2-15)
+* DAW bridge: receive warp markers and position from the DAW's remote script (on), udp port 7411 (127.0.0.1 only). `ui.dawBridge`, `ui.dawBridgePort` -> [manual](MANUAL.md#grid-from-the-daw-live-bridge)
 
 ## ◆ BROWSER
 
@@ -86,6 +90,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * output device (the system default or any device, saved by uid)
 * sample rate (what the device offers, applies to the device right away, inside minos from the next start) and buffer size
 * reconnect -> restarts the output, also via ↻ in the status bar
+* audio core: decks in parallel (deck A on the audio thread, B-D on real-time workers in the device workgroup, same output; default off, for the load test) -> [manual · audio core](MANUAL.md#audio-core-decks-in-parallel)
 * mode: internal (mixer in the app) or external (mixing desk)
 * internal: which pair the master goes to
 * external: one pair per deck, default a 1/2 · b 3/4 · c 5/6 · d 7/8

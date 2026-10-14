@@ -19,6 +19,18 @@ public enum CollectionWriter {
         public var backup: URL?
         /// Datei tatsächlich neu geschrieben
         public var changed = false
+        /// Hotcues / Grid, die jetzt so in der Datei stehen
+        public var writtenCues: [String: TrackEdit] = [:]
+        /// umbenannte Einträge: alter -> neuer Schlüssel
+        public var moved: [String: String] = [:]
+        /// neu angelegte Einträge
+        public var added: [String] = []
+        /// eigene Playlists, wie sie jetzt in der Datei stehen (nil = nicht geschrieben)
+        public var playlists: [NMLOwnNode]?
+        /// eigener Playlist-Ordner hat sich geändert
+        public var playlistsChanged = false
+        /// Größe + Änderungszeit der Datei nach dem Schreiben
+        public var stamp: FileStamp?
     }
 
     public enum Failure: Error, CustomStringConvertible {
@@ -284,38 +296,10 @@ public enum CollectionWriter {
 
     // MARK: - Datei
 
-    /// Änderungen in die Datei schreiben: Sicherung (höchstens eine pro Stunde), Blöcke ersetzen, Ergebnis prüfen
-    /// (muss sich lesen lassen, gleiche Anzahl Tracks), dann atomar ersetzen (Temp-Datei + rename).
+    /// Metadaten und Analysen in die Datei schreiben (Kurzform von `write(url:job:…)`)
     public static func write(url: URL, changes: [String: [TrackField: String]], analyses: [String: TrackAnalysis] = [:],
                              index: NMLEntryIndex, backupDir: URL?, now: Date = Date()) throws -> Result {
-        let data = try Data(contentsOf: url)
-        var bytes = [UInt8](data)
-        var res = Result()
-        var replacements: [(range: Range<Int>, new: [UInt8])] = []
-        for key in Set(changes.keys).union(analyses.keys).sorted() {
-            guard let old = index.raw[key] else { res.missing.append(key); continue }
-            let ob = Array(old.utf8)
-            guard let pos = find(ob, in: bytes) else { res.missing.append(key); continue }
-            var new = old
-            if let fields = changes[key] { new = patch(entry: new, changes: fields); res.written[key] = fields }
-            if let a = analyses[key] { new = patch(entry: new, analysis: a); res.writtenAnalyses.append(key) }
-            res.blocks[key] = new
-            if new != old { replacements.append((pos..<(pos + ob.count), Array(new.utf8))) }
-        }
-        guard !replacements.isEmpty else { return res }
-        // von hinten ersetzen, damit die Positionen davor gültig bleiben
-        for r in replacements.sorted(by: { $0.range.lowerBound > $1.range.lowerBound }) {
-            bytes.replaceSubrange(r.range, with: r.new)
-        }
-        let out = Data(bytes)
-        let before = try NMLParser.parse(data: data).tracks.count
-        let after: Int
-        do { after = try NMLParser.parse(data: out).tracks.count } catch { throw Failure.invalidResult("\(error)") }
-        guard before == after else { throw Failure.invalidResult("\(before) -> \(after) tracks") }
-        if let backupDir { res.backup = try backup(url, into: backupDir, now: now) }
-        try replaceAtomically(url, with: out)
-        res.changed = true
-        return res
+        try write(url: url, job: Job(changes: changes, analyses: analyses), index: index, backupDir: backupDir, now: now)
     }
 
     /// Temp-Datei im selben Ordner schreiben, dann per rename über das Original (atomar, nie halb geschrieben)

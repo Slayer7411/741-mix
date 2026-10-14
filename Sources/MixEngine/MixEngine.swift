@@ -43,6 +43,18 @@ public final class MixEngine: @unchecked Sendable {
     public var deviceRate: Double?
     /// aktuelle Rate des Geräts
     public var outputRate: Double { output.deviceRate }
+    /// Decks parallel rechnen: A im Audio-Thread, B–D auf eigenen Echtzeit-Threads in der Workgroup des Geräts, Summe danach.
+    /// Gleiches Ergebnis wie seriell; umschaltbar im Betrieb (gilt ab dem nächsten Block)
+    public var parallelDecks: Bool {
+        get { mdsp_parallel(core) }
+        set { mdsp_set_parallel(core, newValue) }
+    }
+    /// Diagnose der parallelen Decks: Worker gestartet, in der Workgroup des Geräts, mit Echtzeit-Policy
+    public var parallelInfo: (workers: Int, joined: Int, realtime: Int) {
+        var w: Int32 = 0, j: Int32 = 0, r: Int32 = 0
+        mdsp_parallel_info(core, &w, &j, &r)
+        return (Int(w), Int(j), Int(r))
+    }
 
     /// Wird gerufen, wenn sich die Geräteliste oder das Standardgerät ändert (Geräte-Queue). Gerät weg/wieder da
     /// erledigt die Engine selbst; ob auf ein anderes Gerät gewechselt wird, entscheidet die Oberfläche

@@ -10,8 +10,18 @@
 #include <algorithm>
 #include <vector>
 #include <memory>
+#include <mutex>
+#include <thread>
 #if defined(__x86_64__) || defined(__i386__)
 #include <xmmintrin.h>
+#endif
+#if defined(__APPLE__)
+#include <dispatch/dispatch.h>
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+#include <mach/thread_policy.h>
+#include <os/workgroup.h>
+#include <pthread.h>
 #endif
 
 
@@ -882,6 +892,8 @@ struct Deck {
     FXChain fx[MDSP_FX_UNITS];
     signalsmith::stretch::SignalsmithStretch<float> stretch;
     std::vector<float> inL, inR, outL, outR;
+    // Übergabe Teilblock -> Summe (Worker schreibt, Audio-Thread liest nach dem Join)
+    bool blockHas = false, blockOk = true;   // etwas gerechnet / ohne NaN
 
     Deck() {
         for (auto &x : p) x.store(0);
@@ -905,9 +917,30 @@ struct Clock {
     double clickPhase = 0, clickFreq = 1000; float clickEnv = 0;
 };
 
+// Decks parallel: Worker-Threads rechnen Deck B–D, der Audio-Thread Deck A, die Summe danach seriell.
+// Wecken je Block per Semaphore (kein Spin), Worker treten der Workgroup des Geräte-IO-Threads bei und laufen mit
+// Echtzeit-Policy (Blockdauer als Periode). Threads entstehen beim ersten Einschalten (Steuer-Thread), nie im Audio-Thread.
+struct Workers {
+    static constexpr int N = MDSP_DECKS - 1;
+    std::atomic<bool> enabled{false};      // Audio-Thread liest je Teilblock
+    std::atomic<bool> quit{false};
+    bool started = false;                  // nur Steuer-Thread
+    std::thread threads[N];
+    int n = 0;                             // Frames des laufenden Teilblocks (vor dem Wecken gesetzt)
+#if defined(__APPLE__)
+    dispatch_semaphore_t go[N] = {}, done = nullptr;
+    std::mutex wgLock;                     // Steuer-Thread beim Setzen, Worker per try_lock beim Beitritt
+    os_workgroup_t wg = nullptr;           // retained; Worker halten beim Beitritt eine eigene Referenz
+    double period = 0;                     // Blockdauer in Sekunden (Echtzeit-Policy der Worker)
+    std::atomic<uint32_t> wgGen{0};        // jede Änderung von wg/period
+#endif
+    std::atomic<int> joined{0}, realtime{0};   // Worker in der Workgroup / mit Echtzeit-Policy (Diagnose)
+};
+
 struct MDEngine {
     double fs;
     Clock clock;
+    Workers workers;
     Deck decks[MDSP_DECKS];
     std::atomic<float> fxp[MDSP_FX_UNITS][MDFX_PARAM_COUNT];
     std::atomic<float> master{0.85f};
@@ -1036,7 +1069,11 @@ static void healDeck(Deck &d) {
 
 // ---------- ein Deck rendern und in die Ausgänge mischen ----------
 
-static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
+static void mixDeck(MDEngine *e, Deck &d, float **out, int channels, int n);
+
+/// ein Deck für einen Teilblock rechnen (Abspielen, Kanalzug, FX, Fader) -> d.outL/outR; die Summe macht mixDeck
+static void renderDeckBlock(MDEngine *e, Deck &d, int n) {
+    d.blockHas = false; d.blockOk = true;
     // ausstehende Änderungen übernehmen
     uint32_t pg = d.pendingGen.exchange(0);
     if (pg) {
@@ -1213,10 +1250,8 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
         }
     }
 
-    // Lautstärke + Ausgangspaar
+    // Lautstärke; Ausgangspaar und Summe in mixDeck (Audio-Thread, nach dem Join)
     float vol = d.p[MD_VOLUME].load();
-    int ch = std::clamp(int(d.p[MD_OUT_CHANNEL].load()), 0, std::max(0, channels - 2));
-    float *oL = out[ch], *oR = out[std::min(ch + 1, channels - 1)];
     float sum = 0, pk = 0;
     for (int i = 0; i < n; i++) {
         d.volSm += (vol - d.volSm) * 0.002f;
@@ -1224,12 +1259,8 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
         L[i] = l; R[i] = r;
         sum += (l * l + r * r) * 0.5f; pk = std::max(pk, std::max(std::fabs(l), std::fabs(r)));
     }
-    if (std::isfinite(sum)) {
-        for (int i = 0; i < n; i++) { oL[i] += L[i]; oR[i] += R[i]; }
-    } else {   // Block verwerfen (andere Decks bleiben hörbar), Deck zurücksetzen
-        healDeck(d);
-        sum = pk = 0;
-    }
+    d.blockHas = true;
+    if (!std::isfinite(sum)) { d.blockOk = false; sum = pk = 0; }   // Block verwerfen, mixDeck setzt das Deck zurück
     float rms = std::sqrt(sum / std::max(1, n));
     d.rms.store(d.rms.load() * 0.7f + rms * 0.3f);
     d.peak.store(std::max(pk, d.peak.load() * 0.85f));
@@ -1243,6 +1274,102 @@ static void renderDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     d.loopActiveOut.store(d.loopActive);
     d.loopStartOut.store(d.loopStart); d.loopEndOut.store(d.loopEnd);
 }
+
+/// Teilblock eines Decks auf sein Kanalpaar summieren (nur Audio-Thread). NaN im Block: andere Decks bleiben hörbar,
+/// dieses wird zurückgesetzt
+static void mixDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
+    (void)e;
+    if (!d.blockHas) return;
+    if (!d.blockOk) { healDeck(d); return; }
+    int ch = std::clamp(int(d.p[MD_OUT_CHANNEL].load()), 0, std::max(0, channels - 2));
+    float *oL = out[ch], *oR = out[std::min(ch + 1, channels - 1)];
+    const float *L = d.outL.data(), *R = d.outR.data();
+    for (int i = 0; i < n; i++) { oL[i] += L[i]; oR[i] += R[i]; }
+}
+
+// ---------- Worker-Threads (Decks parallel) ----------
+#if defined(__APPLE__)
+/// Echtzeit-Policy wie ein Audio-Thread: Periode = Blockdauer, halbe Periode Rechenzeit, Frist eine Periode
+static bool setRealtime(double periodS) {
+    if (!(periodS > 0)) periodS = 512.0 / 48000;
+    mach_timebase_info_data_t tb;
+    mach_timebase_info(&tb);
+    double ticksPerNs = double(tb.denom) / double(tb.numer);
+    uint32_t period = uint32_t(std::clamp(periodS * 1e9 * ticksPerNs, 1e4, 4e9));
+    thread_time_constraint_policy_data_t p;
+    p.period = period; p.computation = period / 2; p.constraint = period; p.preemptible = 1;
+    return thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_TIME_CONSTRAINT_POLICY,
+                             reinterpret_cast<thread_policy_t>(&p), THREAD_TIME_CONSTRAINT_POLICY_COUNT) == KERN_SUCCESS;
+}
+
+static void workerMain(MDEngine *e, int w) {
+    Workers &W = e->workers;
+    char name[32];
+    snprintf(name, sizeof name, "minos741.deck%c", 'A' + w + 1);
+    pthread_setname_np(name);
+    DenormalGuard ftz;
+    Deck &d = e->decks[w + 1];
+    uint32_t joinedGen = 0;
+    os_workgroup_t joined = nullptr;
+    os_workgroup_join_token_s token{};
+    bool rt = false;
+    for (;;) {
+        dispatch_semaphore_wait(W.go[w], DISPATCH_TIME_FOREVER);
+        if (W.quit.load(std::memory_order_acquire)) break;
+        uint32_t g = W.wgGen.load(std::memory_order_acquire);
+        if (g != joinedGen && W.wgLock.try_lock()) {   // Gerät neu geöffnet: Workgroup/Periode übernehmen (selten)
+            if (joined) { os_workgroup_leave(joined, &token); os_release(joined); joined = nullptr; W.joined.fetch_sub(1); }
+            bool r = setRealtime(W.period);
+            if (r != rt) { W.realtime.fetch_add(r ? 1 : -1); rt = r; }
+            if (W.wg) {
+                os_retain(W.wg);
+                if (os_workgroup_join(W.wg, &token) == 0) { joined = W.wg; W.joined.fetch_add(1); } else os_release(W.wg);
+            }
+            joinedGen = g;
+            W.wgLock.unlock();
+        }
+        renderDeckBlock(e, d, W.n);
+        dispatch_semaphore_signal(W.done);
+    }
+    if (joined) { os_workgroup_leave(joined, &token); os_release(joined); W.joined.fetch_sub(1); }
+    if (rt) W.realtime.fetch_sub(1);
+}
+
+static void startWorkers(MDEngine *e) {
+    Workers &W = e->workers;
+    if (W.started) return;
+    W.done = dispatch_semaphore_create(0);
+    for (int w = 0; w < Workers::N; w++) W.go[w] = dispatch_semaphore_create(0);
+    for (int w = 0; w < Workers::N; w++) W.threads[w] = std::thread(workerMain, e, w);
+    W.started = true;
+}
+
+static void stopWorkers(MDEngine *e) {
+    Workers &W = e->workers;
+    W.enabled.store(false);
+    if (!W.started) return;
+    W.quit.store(true, std::memory_order_release);
+    for (int w = 0; w < Workers::N; w++) dispatch_semaphore_signal(W.go[w]);
+    for (int w = 0; w < Workers::N; w++) if (W.threads[w].joinable()) W.threads[w].join();
+    for (int w = 0; w < Workers::N; w++) if (W.go[w]) { dispatch_release(W.go[w]); W.go[w] = nullptr; }
+    if (W.done) { dispatch_release(W.done); W.done = nullptr; }
+    if (W.wg) { os_release(W.wg); W.wg = nullptr; }
+    W.started = false; W.quit.store(false);
+}
+
+/// alle Decks eines Teilblocks: A hier, B–D auf den Workern, dann warten
+static void renderDecksParallel(MDEngine *e, int n) {
+    Workers &W = e->workers;
+    W.n = n;
+    for (int w = 0; w < Workers::N; w++) dispatch_semaphore_signal(W.go[w]);
+    renderDeckBlock(e, e->decks[0], n);
+    for (int w = 0; w < Workers::N; w++) dispatch_semaphore_wait(W.done, DISPATCH_TIME_FOREVER);
+}
+#else
+static void startWorkers(MDEngine *) {}
+static void stopWorkers(MDEngine *e) { e->workers.enabled.store(false); }
+static void renderDecksParallel(MDEngine *e, int n) { for (auto &d : e->decks) renderDeckBlock(e, d, n); }
+#endif
 
 // ---------- C-Schnittstelle ----------
 
@@ -1280,7 +1407,34 @@ MDEngine *mdsp_create(double sampleRate) {
     return e;
 }
 
-void mdsp_destroy(MDEngine *e) { delete e; }
+void mdsp_destroy(MDEngine *e) { stopWorkers(e); delete e; }
+
+void mdsp_set_parallel(MDEngine *e, bool on) {
+    if (on) { startWorkers(e); e->workers.enabled.store(e->workers.started); }
+    else e->workers.enabled.store(false);
+}
+
+bool mdsp_parallel(MDEngine *e) { return e->workers.enabled.load(); }
+
+void mdsp_parallel_info(MDEngine *e, int *workers, int *joined, int *realtime) {
+    if (workers) *workers = e->workers.started ? Workers::N : 0;
+    if (joined) *joined = e->workers.joined.load();
+    if (realtime) *realtime = e->workers.realtime.load();
+}
+
+void mdsp_set_workgroup(MDEngine *e, void *workgroup, double periodSeconds) {
+#if defined(__APPLE__)
+    Workers &W = e->workers;
+    std::lock_guard<std::mutex> lk(W.wgLock);
+    auto wg = static_cast<os_workgroup_t>(workgroup);
+    if (wg) os_retain(wg);
+    if (W.wg) os_release(W.wg);
+    W.wg = wg; W.period = periodSeconds;
+    W.wgGen.fetch_add(1, std::memory_order_release);
+#else
+    (void)e; (void)workgroup; (void)periodSeconds;
+#endif
+}
 
 uint32_t mdsp_set_track(MDEngine *e, int deck, const float *left, const float *right, int64_t frames, double trackRate, double startSeconds) {
     Deck &d = e->decks[deck];
@@ -1395,7 +1549,9 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
         for (int c = 0; c < channels && c < 64; c++) o[c] = out[c] + done;
         e->fxBeat = beatStart + done * perSample; e->fxBps = perSample;
         for (int i = 0; i < MDSP_DECKS; i++) e->blockPos[i] = e->decks[i].posOut.load(std::memory_order_relaxed);
-        for (auto &d : e->decks) renderDeck(e, d, o, std::min(channels, 64), n);
+        if (e->workers.enabled.load(std::memory_order_relaxed)) renderDecksParallel(e, n);
+        else for (auto &d : e->decks) renderDeckBlock(e, d, n);
+        for (auto &d : e->decks) mixDeck(e, d, o, std::min(channels, 64), n);
         done += n;
     }
     float m = e->master.load();

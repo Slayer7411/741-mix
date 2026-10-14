@@ -87,4 +87,4 @@ semver: `0.x` minor = new features, patch = fixes.
 
 ## ◆ LICENSE
 
-contributions are under GPL-2.0-or-later, same as the project ([LICENSE.md](LICENSE.md)).
+the project is dual licensed (gpl + commercial, [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)). contributions are under GPL-2.0-or-later and the [CLA](CLA.md): add `cla: agreed` to the pull request description, without it nothing is merged.

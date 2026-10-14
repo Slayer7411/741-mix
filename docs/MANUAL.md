@@ -66,6 +66,8 @@ settings, session and history survive updates.
 4. ⌘, -> CONTROLLER -> check which controller drives which decks, BLINK shows the unit. the side (left a / c, right b / d) is saved per device serial number, the startup show displays it on connect
 5. double click a track = load into the focused deck (⌘1-4), right click -> load into deck A-D, or LOAD on the controller
 
+on start a small panel asks for a coffee (paypal, any amount). `Später` = next start, `einmal pro Woche`, `nie`, or `Ich habe gespendet` -> never again. help menu -> `Kauf mir einen Kaffee …` brings it back.
+
 nothing is analyzed. bpm, key, grid, cues and loudness come from the collection.
 tracks without an analysis in the collection play, but have no grid -> no sync. right click -> `Analysieren` computes tempo, grid, key and loudness in MINOS-741 (see [analyze](#analyze)).
 
@@ -144,7 +146,7 @@ A ▣ title                FX1 FX2    -1:10  130.00    5/16   11m   ±8 ▾
 
 ### rows
 
-DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, comment, tags (comment 2), phase bar, overview, transport, hotcues (with IN / OUT / RE), loop sizes, beatjump, grid tools, pitch fader. waveform and header always stay.
+DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, comment, tags (comment 2), phase bar, overview, transport, hotcues (with IN / OUT / RE), loop sizes, beatjump, grid tools, groove → midi (off by default), pitch fader. waveform and header always stay.
 
 * pitch fader off -> waveform and rows take its width
 * DECKS -> compact decks (⌥⌘K) -> pitch fader, hotcues and grid tools off / on together -> more room for waveform and beatgrid
@@ -282,6 +284,38 @@ grid edits:
 * `Analysieren` / `Neu analysieren` never replace it, only RESET does
 * shown in red: `GRID` label, anchor flag `G` in the waveform, `◆` before the tempo in the header
 
+### grid from the daw (live bridge)
+
+a remote script in the DAW sends the warp markers, loop and play position of its audio clips to MINOS (udp, 127.0.0.1 only). the grid of a clip shows up the way the DAW has it.
+
+install (once):
+
+1. copy `extras/daw-bridge/MINOS741Bridge` into the DAW's user library folder `Remote Scripts` (`~/Music/<DAW>/User Library/Remote Scripts/MINOS741Bridge`)
+2. restart the DAW, preferences -> control surface: `MINOS741Bridge`, input / output: none
+3. MINOS: ⌘, -> DISPLAY -> DAW bridge on (default), port 7411. other port: same value in `MINOS741Bridge/config.json` (`{"port": 7411}`)
+
+what is sent (per audio track): the playing session clip, the arrangement clip under the play head (while the song plays) and the selected clip. warp markers need DAW object model 11 or newer; older versions send clips without markers.
+
+in MINOS:
+
+* status bar `DAW-Brücke: 3 Spuren · 4 Clips`, no packet for 2 s -> `keine Verbindung`, the list empties
+* tree entry `DAW` (only while connected): the clips as tracks (title = clip, artist = DAW track, collection values when the file is in the collection), bpm + grid from the warp markers. above the list one row per clip: grid strip (bars, beats, DAW loop, DAW position in purple). double click / load = deck with that grid (load lock applies); the grid is not saved, it comes from the DAW each time
+* deck with the same file (path) as a reported clip: strip below the overview, grid lines from the warp markers, DAW position purple, deck position red, `Δ ms` = deck minus DAW
+* right click on the deck title -> `Grid des DAW-Clips übernehmen`: warp markers -> grid of the deck, undo like every grid edit, saved in `edits.json` with source `daw`
+* warp markers -> grid: MINOS has one tempo per track. the longest stretch of markers with the same tempo (±0.5 %) gives bpm and phase (least squares), anchor = beat 0 of the clip (bar one), before the file start -> the first bar one in the file. tempo changes inside the clip: grid off outside that stretch (status bar shows `min–max BPM, Grid x`)
+* position between packets: last DAW position + elapsed time × DAW tempo (at most 0.5 s ahead). with link on, DAW and MINOS share tempo and phase anyway
+* `.asd` clip analysis files: reader in MixCore (`ClipAnalysisFile`, warp markers saved with the clip), not yet in the ui
+
+protocol v1 (json, one object per datagram, ≤ 8 kb, field list in `Sources/MixCore/DAWBridge.swift`):
+
+| type | when | fields |
+|---|---|---|
+| `song` | every ~100 ms | `tempo`, `playing`, `beat`, `sig`, `clips` (ids), `pos` (id -> [playing 0/1, position]) |
+| `clip` | on change, every clip again round robin (one per 200 ms) | `id`, `track`, `trackName`, `name`, `file`, `warping`, `markers` [[beat, sec] …], `truncated`, `loop`, `looping`, `start`, `end`, `playing`, `selected`, `where` |
+| `bye` | script stops | – |
+
+position: clip beats (warped) or file seconds (not warped). script checks without a DAW: `python3 -m unittest discover -s extras/daw-bridge/tests`.
+
 ### edit mode
 
 `EDIT` in the transport row, ⌥⌘E (focused deck) or menu DECKS. per deck, saved in the settings, off by default.
@@ -395,6 +429,27 @@ link (network tempo sync):
 
 bar counter (top right): runs from the first play, 4 / 8 / 16 bars, the big number counts within the phrase (⌘, -> DISPLAY, default 16 bars) and starts over, double click or ↺ = back to bar 1. next to it the time of day and a stopwatch (from the first play, click = restart at 0). the whole top bar scales 60-130 % by dragging the grip below it (double click = 100 %), fx units sit 10 pt flatter. bar 1 of the counter = bar 1 of a phrase (the code). each deck header shows `◆ CODE` or how far the deck is off (`+2 BARS`) -> a beatjump of that size the other way brings it back in.
 
+### groove to midi
+
+deck row GROOVE (off by default, DECKS -> ROWS): hats and / or a bass line for the running track, as midi to a daw or as a file.
+
+```
+GROOVE  HATS+BASS ▾  OFF ▾  [ 16-step grid ]  ⚄  ▶ MIDI  ■  .MID
+```
+
+* click the grid -> reads the pattern: active loop (1-8 beats), else the next 1 or 2 bars from the next bar start (⌘, -> DECKS). source: the fine spectrum of the waveform (300 blocks/s) on the beat grid, 16th steps
+* kick = rise of sub + bass. kicks on the quarters -> other steps count only as loud as those (offbeat bass stays out). clap / snare = mids on 2 and 4 louder than on 1 and 3. hats = rise of highs + air, open = held highs. no spectrum -> kick on every beat
+* grid lanes top to bottom: kick, clap, hats, bass. track hits light, generated hats red (open gold), bass purple bars
+* HATS / BASS / HATS+BASS, style TIGHT / OFF / ROLLING:
+  * hats only on 16ths without a hat in the track. tight = offbeats, off = offbeats + open hat on the last offbeat of the bar + 1-2 ghost 16ths, rolling = all free 16ths with accents. all taken -> quiet 16ths in the gaps
+  * bass root from the track key + key shift (and tempo without keylock), octave setting (C3 = 60, octave 1 = 36-47). tight = with the kicks, off = offbeat after each kick, rolling = 16ths between the kicks. fifth / octave / third as variation, bar 2 repeats bar 1 with a new turnaround. length = 85 % up to the next note. no key -> A minor
+* ⚄ -> new seed, same seed = same result
+* ▶ MIDI -> virtual midi source `MINOS-741 Groove` (name in ⌘, -> DECKS). in the daw: midi track, input = this source, monitor or record. notes follow the master clock (same clock as link and metronome): step 0 of the pattern sits on the deck's beat; channel 1 = bass, channel 10 = drums (42 closed hat, 46 open hat). one deck at a time, ▶ on another deck takes over. changes (style, ⚄, settings) swap the pattern without a gap
+* ■ -> note offs + all notes off on the used channels
+* .MID -> save dialog in the track's folder: standard midi file type 1, tempo = deck tempo, tracks bass / drums, 480 ppq, track end = loop length. drag from the grid -> same file from a temporary folder
+* timing: own queue every 10 ms, events planned 25 ms ahead with host time stamps (time the clock beat is audible), offset in ⌘, -> DECKS. nothing in the audio thread. measured (self test, debug build): time stamps within 0.02 ms of the clock's 16th grid, delivered at their time stamp
+* status bar: `Groove → MIDI: Hats + Bass, 2 Takte`
+
 ## ◆ 07 · MIXER + AUDIO
 
 ### internal mode
@@ -428,6 +483,13 @@ per channel (order C · A · B · D):
 
 routing is in ⌘, -> AUDIO. the device sample rate is never changed by minos.
 the status bar shows device, mode and routing, preview pair as `PRE→9/10` (`PRE→–` = off).
+
+### audio core: decks in parallel
+
+* default: one audio thread renders all four decks (play, keylock, channel strip, fx) and sums them
+* ⌘, -> AUDIO -> `Decks parallel rechnen`: deck A stays on the audio thread, B-D run on three real-time worker threads that join the device's workgroup, the sum follows once all are done. bit-identical output, switchable while playing (takes effect with the next block)
+* for the live load test (`scripts/loadtest.sh --modes serial,parallel`), off by default. `MIX741_PARALLEL_DECKS=1` / `0` overrides the setting for one run
+* self test: switches it on at the running device and checks blocks, overloads, position, workers in the workgroup and with real-time policy
 
 ### device gone, rate change, sleep
 
@@ -643,6 +705,36 @@ off by default. ⌘, -> ANZEIGE -> browser -> `Änderungen in die Collection-Dat
 * switching the setting on writes the changes made before
 * tags inside the audio files are not touched
 
+what goes into the file:
+
+| from MINOS-741 | in the file | after writing |
+|---|---|---|
+| metadata (inline, ⌘E) | `ENTRY` / `ALBUM` / `INFO` / `TEMPO` attributes | leaves `metadata.json` |
+| own analysis | `TEMPO BPM`, `LOUDNESS`, `MUSICAL_KEY`, first grid marker | marked written in `analysis.json` |
+| hotcues 1-8: cue, loop (with length), fade, load | `CUE_V2` with `HOTCUE 0-7`, `TYPE 0/1/2/3/5`, `START` / `LEN` ms, `NAME` | leave `edits.json` |
+| grid set by hand (bpm + anchor) | `TEMPO BPM` + `START` of the first `CUE_V2 TYPE="4"` (new marker if none) | leaves `edits.json`, stays when an own analysis with grid exists (the hand grid must stay on top) |
+| renamed file (cut in place, other extension) | `LOCATION DIR / FILE / VOLUME / VOLUMEID` | leaves `collection-moves.json` |
+| cut copies and tool loops (`cuts.json`) | new `ENTRY` before `</COLLECTION>`, `COLLECTION ENTRIES` counted | stays in CUTS too |
+| preparation, own history sessions | `$ROOT/MINOS-741/Preparation`, `$ROOT/MINOS-741/History/History YYYY-MM-DD · NN` (`TYPE="LIST"`) | replaced on every write |
+
+* hotcues: the hotcues of the entry are replaced by MINOS-741's set; unchanged ones keep their text, memory cues (`HOTCUE -1`) and grid markers stay. a grid marker sitting on a hotcue slot stays where it is
+* locked entries (`LOCK="1"`): no bpm / grid written, the hand grid stays in `edits.json`
+* entries with more than one grid marker (tempo changes): only the first marker is written, the others stay; MINOS-741 plays one tempo
+* new entries have no `AUDIO_ID` (the library software computes it on its next analysis), `MODIFIED_DATE` / `MODIFIED_TIME` = now. options under ⌘, -> ANZEIGE -> browser: `Cuts und Tool-Loops als neue Einträge anlegen`, `Preparation und History als Playlists (Ordner MINOS-741)`, both on (only with writing on)
+* own playlists: only the folder `MINOS-741` directly under `$ROOT` is written, replaced as a whole, its playlist ids stay the same per path. other folders and playlists are never changed or removed. tracks not in the file are left out
+* stays in MINOS-741 only (the format has no place for it): trim (cut in / out), active loops, undo
+* preparation changes write after 10 s, history sessions go out with the next write (no write per played track)
+
+reading back (↻ or a write that finds the file changed):
+
+* before writing, size + modification time of the file are compared with the last read. changed -> reload first, then write
+* MINOS-741 keeps per open change the entry's `MODIFIED_DATE` / `MODIFIED_TIME` from when the change was made
+* entry unchanged in the file -> MINOS-741's open changes stay on top and go out with the next write
+* entry changed in the file, no open change in MINOS-741 -> the file's values
+* both changed (conflict) -> the file wins for the whole entry. MINOS-741's open metadata go to `metadata-konflikt.json`, hotcues / grid to `edits-konflikt.json` (Application Support, newer entries replace older ones with the same key); trim and active loops stay. status bar: `Konflikt: n Tracks …`
+* changes made before this version carry no stamp -> no conflict check for them
+* the result is checked before it replaces the file: readable, track count + new entries, written cues / grid / moved entries / own playlist folder read back the same
+
 ### check the collection
 
 BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION. read only, nothing is changed.
@@ -838,7 +930,7 @@ scripts/loadtest.sh --minutes 30          # release build, first external interf
 tail -f ~/Library/Application\ Support/MINOS-741/loadtest/latest.log
 ```
 
-* stages: buffer 512 -> 256 -> 128 (`--buffers 512,256,128,64`), `--minutes` each (10)
+* stages: buffer 512 -> 256 -> 128 (`--buffers 512,256,128,64`), `--minutes` each (10); `--modes serial,parallel` runs all buffers with the serial core first, then with decks in parallel (default `serial`), column `Kern` in the table
 * per stage: 4 local tracks, keylock, B-D synced to A, link on, fx 1 (A/C) + fx 2 (B/D) delay + reverb, fx 3 (all) isolated plugin (`--plugin <id>|none`, default apple matrix reverb isolated)
 * stress: track change on B / C / D every 60 s (file service), search + sort over the collection every 20 s, main thread blocked 1 s every 5 min
 * routing external A 1/2 · B 3/4 · C 5/6 · D 7/8, master 0 dB -> turn the desk down first. `--mute` silent, `--out <name>` picks the device, `--builtin` built-in output (silent)
