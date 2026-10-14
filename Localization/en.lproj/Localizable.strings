@@ -923,3 +923,14 @@
 "Deck A im Audio-Thread, B–D auf eigenen Echtzeit-Threads neben dem Gerät (gleicher Klang, Summe danach). Zum Vergleich im Lasttest; bei kleinen Puffern mit 4 Decks Keylock + FX niedrigere Spitzenlast je Kern." = "Deck A on the audio thread, B-D on their own real-time threads next to the device (same sound, summed afterwards). For comparison in the load test; lower peak load per core with small buffers, 4 decks keylock + fx.";
 "Abstand zwischen Decks (pt)" = "Gap between decks (pt)";
 "0 = die Wellenformen enden an den Deck-Rändern und am Fensterrand, nur die Rahmenlinie dazwischen." = "0 = the waveforms end at the deck edges and the window edge, only the frame line between.";
+
+"KAUF MIR EINEN KAFFEE ☕" = "BUY ME A COFFEE ☕";
+"… oder ein paar Claude-Tokens, damit MINOS-741 besser wird. Betrag frei wählbar, PayPal an %@." = "… or a few Claude tokens to make MINOS-741 better. Any amount, PayPal to %@.";
+"Spenden (PayPal)" = "Donate (PayPal)";
+"Ich habe gespendet" = "I have donated";
+"Später" = "Later";
+"Hinweis zeigen:" = "Show this:";
+"bei jedem Start" = "every start";
+"einmal pro Woche" = "once a week";
+"nie" = "never";
+"Kauf mir einen Kaffee …" = "Buy me a coffee …";

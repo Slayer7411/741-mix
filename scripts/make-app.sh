@@ -69,5 +69,6 @@ if [[ "${1:-}" != "--no-install" ]]; then
   rm -rf /Applications/741-mix.app   # alter Name
   rm -rf /Applications/MINOS-741.app
   ditto "$APP" /Applications/MINOS-741.app
+  defaults write com.github.slayer7411.minos741 donated -bool true   # eigene Installation: kein Spenden-Hinweis
   echo "installiert: /Applications/MINOS-741.app"
 fi

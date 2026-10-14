@@ -26,6 +26,7 @@ struct ContentView: View {
     /// Höhe der Deck-Fläche vor dem Zuklappen – ohne Beobachtung, Messen löst kein neues Layout aus
     private final class Height { var value: CGFloat = 0 }
     @State private var deckAreaHeight = Height()
+    @State private var donate = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -105,7 +106,10 @@ struct ContentView: View {
             }
             mix.library = store   // Schneiden trägt neue Dateien in CUTS ein
             SelfTest.run(store: store, mix: mix, browser: browserState)
+            if DonateHint.dueNow { DonateHint.lastShown = Date(); donate = true }
         }
+        .sheet(isPresented: $donate) { DonateView(shown: $donate) }
+        .onReceive(NotificationCenter.default.publisher(for: .showDonate)) { _ in donate = true }
     }
 
     /// RUNNING TRACKS im Browser nachführen – eigene leere Ansicht: liest alle vier Decks, ohne dass
@@ -287,6 +291,9 @@ struct MixApp: App {
             CommandGroup(replacing: .appSettings) {
                 SettingsLink { Text(ShortcutID.settings.title) }
                     .shortcut(keys.combo(.settings))
+            }
+            CommandGroup(after: .help) {
+                Button(String(localized: "Kauf mir einen Kaffee …")) { NotificationCenter.default.post(name: .showDonate, object: nil) }
             }
             CommandGroup(replacing: .saveItem) {
                 Button(String(localized: "Fenster schließen")) { run(.closeWindow) }
@@ -520,4 +527,9 @@ enum BrowserSnap {
         let rows = max(1, ((h - chrome) / row).rounded())
         return chrome + rows * row
     }
+}
+
+extension Notification.Name {
+    /// Spenden-Hinweis aus dem Hilfe-Menü öffnen
+    static let showDonate = Notification.Name("minos741.showDonate")
 }
