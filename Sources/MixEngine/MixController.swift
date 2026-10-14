@@ -1560,6 +1560,9 @@ public final class MixController: @unchecked Sendable {
 
     private var sessionOffset: Double?
 
+    /// Tempo der Master-Clock (folgt im AUTO-Modus dem Master-Deck)
+    public var clockTempo: Double { locked { state.clockBPM } }
+
     /// Beats seit dem ersten Play (nil = noch nichts gespielt)
     public var sessionBeat: Double? { locked { sessionOffset.map { engine.clockBeat + $0 } } }
 
