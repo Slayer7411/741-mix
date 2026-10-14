@@ -11,8 +11,12 @@ swift build 2>&1 | grep -E "error:|warning:.*Sources/|Build complete" | grep -v 
 swift build >/dev/null 2>&1
 if [ $quick = 0 ]; then
   echo "== swift test"
-  swift test --no-parallel 2>&1 | grep -E "✘|Test run with" || true
-  swift test --no-parallel >/dev/null 2>&1 || { echo "FEHLER: Unit-Tests rot"; exit 1; }
+  # ein Lauf, Ausgabe gesichert: rote Tests stehen im Log, Ergebnis aus dem Exit-Code (zwei Läufe verdoppelten nur das Flattern)
+  tlog=$(mktemp)
+  swift test --no-parallel >"$tlog" 2>&1; trc=$?
+  grep -E "✘|Test run with" "$tlog" || true
+  [ $trc = 0 ] || { grep -E "error:|Expectation failed|recorded an issue" "$tlog" | head -20; rm -f "$tlog"; echo "FEHLER: Unit-Tests rot"; exit 1; }
+  rm -f "$tlog"
 fi
 echo "== selftest"
 MIX741_SELFTEST=1 MIX741_NOEXT=1 .build/debug/minos741 2>&1 | grep -E "SELFTEST|FAIL|Fehler" | tail -3 | grep -q "SELFTEST OK" || { echo "FEHLER: Selbsttest"; exit 1; }

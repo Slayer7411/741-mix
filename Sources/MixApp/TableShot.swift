@@ -236,7 +236,10 @@ enum TableShot {
                 let item = menu.items.first { $0.title == "Genre" }
                 let before = tv.tableColumns.first { $0.identifier.rawValue == "genre" }?.isHidden
                 if let item, let a = item.action { NSApp.sendAction(a, to: item.target, from: item) }
-                check("kopf-menü", menu.items.count == TrackColumn.all.count - 1 && item?.state == .off && before == true
+                // Spalten-Einträge bis zum Trenner, dahinter die Sortierung (Titel, je Spalte, zurücksetzen)
+                let columns = menu.items.prefix { !$0.isSeparatorItem }.count
+                let sortItems = menu.items.drop { !$0.isSeparatorItem }.dropFirst().count
+                check("kopf-menü", columns == TrackColumn.all.count - 1 && sortItems == 3 && item?.state == .off && before == true
                       && tv.tableColumns.first { $0.identifier.rawValue == "genre" }?.isHidden == false)
             }
             check("spalten", back?.order.first == "bpm" && back?.hidden["label"] == true)
