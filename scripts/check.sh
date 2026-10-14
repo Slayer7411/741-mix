@@ -19,7 +19,11 @@ if [ $quick = 0 ]; then
   rm -f "$tlog"
 fi
 echo "== selftest"
-MIX741_SELFTEST=1 MIX741_NOEXT=1 .build/debug/minos741 2>&1 | grep -E "SELFTEST|FAIL|Fehler" | tail -3 | grep -q "SELFTEST OK" || { echo "FEHLER: Selbsttest"; exit 1; }
+# Ausgabe gesichert: bei Rot die letzten Fehlerzeilen zeigen (unter Last flattert sonst nur „FEHLER: Selbsttest“ ohne Grund)
+slog=$(mktemp)
+MIX741_SELFTEST=1 MIX741_NOEXT=1 .build/debug/minos741 >"$slog" 2>&1 || true
+grep -E "SELFTEST|FAIL|Fehler" "$slog" | tail -3 | grep -q "SELFTEST OK" || { grep -n -B3 -E "FAIL|FALSCH|SELFTEST" "$slog" | tail -20; echo "Last: $(uptime | sed 's/.*load/load/')"; rm -f "$slog"; echo "FEHLER: Selbsttest"; exit 1; }
+rm -f "$slog"
 echo "== table checks"
 out=$(mktemp -d)
 MIX741_SELFTEST=1 MIX741_NOEXT=1 MIX741_SHOT="table:$out/table.png" MIX741_SHOT_CHECKS=1 .build/debug/minos741 2>&1 | grep -iE "prüfungen|FAIL" | tail -2 | grep -qi "prüfungen OK" || { echo "FEHLER: Tabellen-Prüfungen"; exit 1; }
