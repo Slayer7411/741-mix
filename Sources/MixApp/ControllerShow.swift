@@ -1,10 +1,11 @@
 import Foundation
 
 /// Startsequenz des Controllers als reine Funktion: Zeit → LED-Bild (testbar ohne Gerät). Senden: ControllerUnit.
-/// Ablauf: Sturm (rot/weiß/lila, 2 s) → Decks der Seite (7-Segment, 1,2 s) → kurz dunkel → weißer Blitz → bereit.
+/// Ablauf: Sturm (rot/weiß/lila, 5 s) → Decks der Seite (7-Segment, 1,2 s) → kurz dunkel → weißer Blitz (1,1 s)
+/// → Ausdimmen in den normalen LED-Zustand (1,5 s, Frame.mix) → bereit.
 enum LEDShow {
     enum Phase: Int, Comparable {
-        case storm, decks, blackout, flash, ready
+        case storm, decks, blackout, flash, fade, ready
         static func < (a: Phase, b: Phase) -> Bool { a.rawValue < b.rawValue }
     }
 
@@ -28,10 +29,14 @@ enum LEDShow {
         var digits: [UInt8]
         /// Touchstrip von links nach rechts
         var strip: [Light]
+        /// Anteil des normalen LED-Zustands (0 = nur Sequenz, 1 = nur normal), Mischung: blend
+        var mix: Double = 0
     }
 
-    static let stormEnd = 2.0, decksEnd = 3.2, blackoutEnd = 3.28, flashEnd = 3.43
-    static var duration: Double { flashEnd }
+    static let stormEnd = 5.0, decksEnd = 6.2, blackoutEnd = 6.25, flashEnd = 7.35, fadeEnd = 8.85
+    /// Abschnitte des Sturms: Glut, Lauflicht Runde 1 und 2, Stroboskop bis stormEnd
+    static let emberEnd = 1.2, chaseTurn = 2.35, chaseEnd = 3.5
+    static var duration: Double { fadeEnd }
     /// Raster der Zufallswerte (= Takt der LED-Ausgabe, 30 ms)
     static let step = 0.03
 
@@ -69,7 +74,23 @@ enum LEDShow {
     }
 
     static func phase(at t: Double) -> Phase {
-        t < stormEnd ? .storm : t < decksEnd ? .decks : t < blackoutEnd ? .blackout : t < flashEnd ? .flash : .ready
+        t < stormEnd ? .storm : t < decksEnd ? .decks : t < blackoutEnd ? .blackout : t < flashEnd ? .flash
+            : t < fadeEnd ? .fade : .ready
+    }
+
+    /// Ausdimmen: Anteil des normalen Zustands, Kosinus-Kurve 0 → 1 über flashEnd…fadeEnd
+    static func mix(at t: Double) -> Double {
+        let u = max(0, min(1, (t - flashEnd) / (fadeEnd - flashEnd)))
+        return (1 - cos(Double.pi * u)) / 2
+    }
+
+    /// Report der Sequenz in den normalen Report mischen (an Ort und Stelle, ohne Allokation); w = Anteil normal
+    static func blend(_ show: inout [UInt8], toward normal: [UInt8], _ w: Double) {
+        let w = max(0, min(1, w))
+        guard w > 0 else { return }
+        for i in 1..<min(show.count, normal.count) {
+            show[i] = UInt8((Double(show[i]) * (1 - w) + Double(normal[i]) * w).rounded())
+        }
     }
 
     // MARK: - Generator
@@ -87,7 +108,8 @@ enum LEDShow {
             return nil
         case .blackout:
             break
-        case .flash:
+        case .flash, .fade:
+            f.mix = f.phase == .fade ? mix(at: t) : 0
             f.pads = Array(repeating: Light(color: .white, level: 1), count: 8)
             f.buttons = Array(repeating: 1, count: buttons.count)
             f.digits = Array(repeating: 0xFF, count: 6)
@@ -101,44 +123,53 @@ enum LEDShow {
             let mid = stripCount / 2
             for i in 0..<stripCount where i != mid { f.strip[i] = Light(color: i < mid ? .purple : .red, level: fade) }
         case .storm:
-            if t < 0.5 {
-                // Glut: dunkelrotes Flackern, einzelne Funken
-                let e = t / 0.5
-                for i in 0..<8 { f.pads[i] = Light(color: .red, level: 0.06 + 0.4 * rnd(i) * (0.5 + 0.5 * e)) }
-                for i in 0..<stripCount { let r = rnd(i, 1); f.strip[i] = Light(color: .red, level: r < 0.25 ? 0.2 + 2 * r : 0.03) }
-                for i in buttons.indices { f.buttons[i] = rnd(i, 2) < 0.15 ? 0.5 : 0.04 }
-                for i in 0..<6 { let r = rnd(i, 3); f.digits[i] = r < 0.3 ? UInt8(1 << (1 + Int(r * 23) % 7)) : 0 }
-            } else if t < 1.3 {
-                // Lauflicht: lila Kopf, roter Schweif, weiße Funken
-                let u = t - 0.5
-                let head = u / 0.045
+            if t < emberEnd {
+                // Glut: dunkelrotes Flackern, Funken werden dichter
+                let e = t / emberEnd
+                for i in 0..<8 { f.pads[i] = Light(color: .red, level: 0.06 + 0.4 * rnd(i) * (0.4 + 0.6 * e)) }
+                for i in 0..<stripCount {
+                    let r = rnd(i, 1)
+                    f.strip[i] = Light(color: .red, level: r < 0.1 + 0.2 * e ? 0.2 + 2 * r : 0.03)
+                }
+                for i in buttons.indices { f.buttons[i] = rnd(i, 2) < 0.05 + 0.15 * e ? 0.5 : 0.04 }
+                for i in 0..<6 { let r = rnd(i, 3); f.digits[i] = r < 0.1 + 0.25 * e ? UInt8(1 << (1 + Int(r * 23) % 7)) : 0 }
+            } else if t < chaseEnd {
+                // Lauflicht in zwei Runden: lila Kopf, roter Schweif, weiße Funken; Runde 2 rückwärts, schneller, mehr Funken
+                let second = t >= chaseTurn
+                let u = second ? t - chaseTurn : t - emberEnd
+                let dir = second ? -1.0 : 1.0, speed = second ? 0.032 : 0.045, sparks = second ? 0.12 : 0.05
+                let head = u / speed
                 for (pos, pad) in padSnake.enumerated() {
-                    let d = (head - Double(pos)).truncatingRemainder(dividingBy: 8)
+                    let d = (head - dir * Double(pos)).truncatingRemainder(dividingBy: 8)
                     let dist = d < 0 ? d + 8 : d
                     f.pads[pad] = dist < 1 ? Light(color: .purple, level: 1)
-                        : rnd(pad, 4) < 0.06 ? Light(color: .white, level: 1)
+                        : rnd(pad, 4) < sparks ? Light(color: .white, level: 1)
                         : Light(color: .red, level: max(0.06, 0.8 - (dist - 1) * 0.25))
                 }
                 // Strip: zwei Köpfe, gespiegelt hin und her
-                let period = 0.4, last = Double(stripCount - 1)
+                let period = second ? 0.3 : 0.4, last = Double(stripCount - 1)
                 let ph = (u / period).truncatingRemainder(dividingBy: 1)
                 let p = (ph < 0.5 ? ph * 2 : 2 - ph * 2) * last
                 for i in 0..<stripCount {
                     let dist = min(abs(Double(i) - p), abs(Double(i) - (last - p)))
-                    f.strip[i] = dist < 0.8 ? Light(color: .purple, level: 1) : Light(color: .red, level: max(0.03, 0.6 - dist * 0.15))
+                    f.strip[i] = dist < 0.8 ? Light(color: .purple, level: 1)
+                        : second && rnd(i, 13) < sparks ? Light(color: .white, level: 0.8)
+                        : Light(color: .red, level: max(0.03, 0.6 - dist * 0.15))
                 }
-                let bh = (u / 0.03).truncatingRemainder(dividingBy: Double(buttons.count))
+                let count = Double(buttons.count)
+                let bh = (u / (second ? 0.022 : 0.03)).truncatingRemainder(dividingBy: count)
                 for i in buttons.indices {
-                    let d = bh - Double(i)
-                    let dist = d < 0 ? d + Double(buttons.count) : d
+                    let d = bh - dir * Double(i)
+                    let m = d.truncatingRemainder(dividingBy: count)
+                    let dist = m < 0 ? m + count : m
                     f.buttons[i] = max(0.05, 1 - dist * 0.3)
                 }
-                // 7-Segment: äußerer Ring läuft um (a b c d e f)
-                let ring = [4, 3, 2, 7, 6, 5]
+                // 7-Segment: äußerer Ring läuft um (a b c d e f), Runde 2 andersherum
+                let ring = second ? [5, 6, 7, 2, 3, 4] : [4, 3, 2, 7, 6, 5]
                 for i in 0..<6 { f.digits[i] = UInt8(1 << ring[(Int(u / 0.05) + i) % ring.count]) }
             } else {
                 // Stroboskop: wird dichter und weißer, zuletzt jeder zweite Takt dunkel
-                let s = (t - 1.3) / (stormEnd - 1.3)
+                let s = (t - chaseEnd) / (stormEnd - chaseEnd)
                 let dark = s > 0.6 && n % 2 == 0
                 func pick(_ i: Int, _ salt: Int) -> Light {
                     guard !dark, rnd(i, salt) < 0.25 + 0.5 * s else { return .off }
