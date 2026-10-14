@@ -336,7 +336,12 @@ private func sameCues(_ a: [Cue], _ b: [Cue]) -> Bool {
     #expect(res.changed && res.added == [cut.key] && res.missing.isEmpty)
     let after = try NMLParser.parse(url: url)
     #expect(after.tracks.count == c.tracks.count + 1)
-    #expect(after.root.children.last?.name == "MINOS-741" && after.root.children.dropLast().map(\.name) == c.root.children.map(\.name))
+    // Ordner MINOS-741 kommt ans Ende – hat die echte Collection ihn schon (die App schreibt sie), bleibt die Reihenfolge
+    if c.root.children.contains(where: { $0.name == "MINOS-741" }) {
+        #expect(after.root.children.map(\.name) == c.root.children.map(\.name))
+    } else {
+        #expect(after.root.children.last?.name == "MINOS-741" && after.root.children.dropLast().map(\.name) == c.root.children.map(\.name))
+    }
     let out = try String(contentsOf: url, encoding: .utf8)
     let entryEnd = text.range(of: "</COLLECTION>")!.lowerBound
     #expect(out.hasPrefix(String(text[..<entryEnd]).replacingOccurrences(of: index.raw[t.key]!, with: res.blocks[t.key]!)
