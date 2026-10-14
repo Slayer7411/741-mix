@@ -7,8 +7,10 @@ import MixEngine
 /// Vorberechnete Wellenform eines Tracks: Vektor-Abschnitte für die Scroll-Ansicht (GPU zeichnet sie in
 /// Bildschirmauflösung, scharf bei jedem Zoom) oder Blockdaten zum Rastern (3-Band Mischung) + ein Übersichtsbild.
 final class RenderedWaveform: @unchecked Sendable {
-    /// Abschnitt: Pfade in Sekunden (x, ab `t0`) und Amplitude (y, -1…1 = 0 dBFS)
-    struct Chunk { let t0: Double; let layers: [(color: CGColor, path: CGPath)] }
+    /// Abschnitt: Pfade in Sekunden (x, ab `t0`) und Amplitude (y, -1…1 = 0 dBFS); `clip` = Umriss, auf den die
+    /// Flächen der Ebene beschnitten werden (Blöcke als Rechtecke je Farbe, Kante weich zwischen den Block-Mitten)
+    typealias Layer = (color: CGColor, path: CGPath, clip: CGPath?)
+    struct Chunk { let t0: Double; let layers: [Layer] }
     static let chunkBlocks = 2048
 
     /// Mischung: Spitzen und Hüllkurven je Block (Kopie – hält den Track-Puffer nicht fest), gerastert je Kachel
@@ -30,12 +32,17 @@ final class RenderedWaveform: @unchecked Sendable {
                 blend.withUnsafeBufferPointer { bl in
                   open.withUnsafeBufferPointer { op in
                    warm.withUnsafeBufferPointer { wm in
+                    // Spalte schmaler als ein Block: zwischen den Block-Mitten interpolieren (keine Stufen), sonst Maximum
+                    let narrow = dt * bps < 1, n = min(pk.count, bl.count / WaveBlend.stride)
                     for x in 0..<width {
-                        let a = t0 + Double(x) * dt
-                        let from = Int((a * bps).rounded(.down)), to = Int(((a + dt) * bps).rounded(.up))
-                        guard to > 0, from < pk.count else { continue }
+                        let a = t0 + Double(x) * dt, fa = a * bps, fb = (a + dt) * bps
+                        // Rundungsfehler: eine Spalte genau auf Blockgrenzen soll den Nachbarblock nicht anschneiden
+                        let from = Int((fa + 1e-6).rounded(.down)), to = Int((fb - 1e-6).rounded(.up))
+                        guard to > 0, from < n else { continue }
+                        let edges = (first: Float(min(1, Double(from + 1) - fa)), last: Float(min(1, fb - Double(to - 1))))
                         BlendPaint.column(peak: pk, blend: bl, open: op.isEmpty ? nil : op, warm: wm.isEmpty ? nil : wm,
-                                          from: max(0, from), to: max(from + 1, to), half: half, palette: palette) {
+                                          from: max(0, from), to: max(from + 1, to), edges: edges,
+                                          between: narrow ? .at(a + dt / 2, bps: bps, count: n) : nil, half: half, palette: palette) {
                             j, r, g, b, al in
                             let o = (half - 1 - j) * bytesPerRow + x * 4, u = (height - half + j) * bytesPerRow + x * 4
                             px[o] = r; px[o + 1] = g; px[o + 2] = b; px[o + 3] = al
@@ -148,42 +155,69 @@ final class RenderedWaveform: @unchecked Sendable {
         return (r * 64 + g * 8 + b, RGB(r: CGFloat(r) / 7, g: CGFloat(g) / 7, b: CGFloat(b) / 7))
     }
 
-    /// feines Spektrum: Blöcke als Rechtecke je Farbe, optional die Höhen als eigene Ebene darüber
-    private static func fineChunk(_ a: TrackAudio, env: [Float], range: Range<Int>, fine: Fine) -> [(CGColor, CGPath)] {
-        let dt = 1 / TrackAudio.blocksPerSecond
+    /// Umriss durch die Block-Mitten (oben + gespiegelt unten) als Beschnitt: `amps` = Blöcke des Abschnitts und der
+    /// erste des nächsten (die Kante läuft bis zu dessen Mitte weiter)
+    private static func clipOutline(_ amps: [CGFloat], dt: Double) -> CGPath {
+        let p = CGMutablePath()
+        guard let first = amps.first else { return p }
+        p.move(to: CGPoint(x: 0, y: -first))
+        for (i, v) in amps.enumerated() { p.addLine(to: CGPoint(x: (Double(i) + 0.5) * dt, y: -v)) }
+        for (i, v) in amps.enumerated().reversed() { p.addLine(to: CGPoint(x: (Double(i) + 0.5) * dt, y: v)) }
+        p.addLine(to: CGPoint(x: 0, y: first))
+        p.closeSubpath()
+        return p
+    }
+
+    /// Höhe des Rechtecks für Block k: höchster der drei Nachbarn (der Umriss zwischen den Mitten liegt darunter)
+    @inline(__always) private static func cover(_ v: [CGFloat], _ k: Int) -> CGFloat {
+        max(v[k], v[max(0, k - 1)], v[min(v.count - 1, k + 1)])
+    }
+
+    /// feines Spektrum: Blöcke als Rechtecke je Farbe, beschnitten auf den Umriss; optional die Höhen als eigene Ebene darüber
+    private static func fineChunk(_ a: TrackAudio, env: [Float], range: Range<Int>, fine: Fine) -> [Layer] {
+        let dt = 1 / TrackAudio.blocksPerSecond, n = env.count
+        // ein Block Rand je Seite: Höhe der Nachbarn für Umriss und Rechtecke
+        let lo = max(0, range.lowerBound - 1), hi = min(n, range.upperBound + 1)
+        let cols = (lo..<hi).map { fine.color(a.spectrum, $0) }
+        let v = (lo..<hi).map { max(CGFloat(env[$0]), 0.004) }
+        let h = (0..<v.count).map { cols[$0].high > 0.02 ? v[$0] * cols[$0].high : 0 }
         var body: [Int: (RGB, CGMutablePath)] = [:], highs: [Int: (RGB, CGMutablePath)] = [:]
         var order: [Int] = []
         for k in 0..<range.count {
-            let i = range.lowerBound + k
-            let c = fine.color(a.spectrum, i)
-            let v = max(CGFloat(env[i]), 0.004)
+            let j = range.lowerBound + k - lo
+            let c = cols[j]
             let (key, qc) = quantized(c.body)
             if body[key] == nil { body[key] = (qc, CGMutablePath()); order.append(key) }
-            body[key]!.1.addRect(CGRect(x: Double(k) * dt, y: -v, width: dt * 1.02, height: v * 2))
-            if c.high > 0.02 {
+            let bv = cover(v, j)
+            body[key]!.1.addRect(CGRect(x: Double(k) * dt, y: -bv, width: dt * 1.02, height: bv * 2))
+            if h[j] > 0 || cover(h, j) > 0 {
                 let (hk, hq) = quantized(c.highColor)
                 if highs[hk] == nil { highs[hk] = (hq, CGMutablePath()) }
-                let h = v * c.high
-                highs[hk]!.1.addRect(CGRect(x: Double(k) * dt, y: -h, width: dt * 1.02, height: h * 2))
+                let hv = cover(h, j)
+                highs[hk]!.1.addRect(CGRect(x: Double(k) * dt, y: -hv, width: dt * 1.02, height: hv * 2))
             }
         }
-        return order.map { (cg(body[$0]!.0), body[$0]!.1 as CGPath) } + highs.values.map { (cg($0.0), $0.1 as CGPath) }
+        let first = range.lowerBound - lo
+        let bodyClip = clipOutline(Array(v[first...]), dt: dt), highClip = clipOutline(Array(h[first...]), dt: dt)
+        return order.map { (cg(body[$0]!.0), body[$0]!.1 as CGPath, bodyClip) } + highs.values.map { (cg($0.0), $0.1 as CGPath, highClip) }
     }
 
-    private static func chunk(_ a: TrackAudio, env: [Float], range: Range<Int>, style: WaveformStyle, colors: Colors, fine: Fine?) -> [(CGColor, CGPath)] {
+    private static func chunk(_ a: TrackAudio, env: [Float], range: Range<Int>, style: WaveformStyle, colors: Colors, fine: Fine?) -> [Layer] {
         if let fine { return fineChunk(a, env: env, range: range, fine: fine) }
         let dt = 1 / TrackAudio.blocksPerSecond
         let pk = range.map { CGFloat(env[$0]) }
         switch style {
         case .mono:
-            return [(cg(colors.mid), outline(pk, dt: dt))]
+            return [(cg(colors.mid), outline(pk, dt: dt), nil)]
         case .blend:
             // ohne Mischungsdaten (alter Cache): drei Amplituden übereinander, Bass hinten, Mitten, Höhen vorn
             let mid = (0..<range.count).map { pk[$0] * CGFloat(a.mid[range.lowerBound + $0] + a.high[range.lowerBound + $0]).squareRoot() }
             let high = (0..<range.count).map { pk[$0] * Self.highLevel(a.high[range.lowerBound + $0]) }
-            return [(cg(colors.low), outline(pk, dt: dt)), (cg(colors.mid), outline(mid, dt: dt)), (cg(colors.high), outline(high, dt: dt))]
+            return [(cg(colors.low), outline(pk, dt: dt), nil), (cg(colors.mid), outline(mid, dt: dt), nil), (cg(colors.high), outline(high, dt: dt), nil)]
         case .spectrum:
             // ohne Spektrumdaten (alter Cache): Farbe je Block aus den drei Anteilen, auf 5 Stufen je Kanal gerundet
+            let lo = max(0, range.lowerBound - 1), hi = min(env.count, range.upperBound + 1)
+            let v = (lo..<hi).map { max(CGFloat(env[$0]), 0.004) }
             var paths: [Int: (RGB, CGMutablePath)] = [:]
             for k in 0..<range.count {
                 let i = range.lowerBound + k
@@ -193,10 +227,11 @@ final class RenderedWaveform: @unchecked Sendable {
                 let key = Int(c.r * 4) * 25 + Int(c.g * 4) * 5 + Int(c.b * 4)
                 let path = paths[key]?.1 ?? CGMutablePath()
                 if paths[key] == nil { paths[key] = (c, path) }
-                let v = max(pk[k], 0.004)
-                path.addRect(CGRect(x: Double(k) * dt, y: -v, width: dt * 1.02, height: v * 2))
+                let bv = cover(v, i - lo)
+                path.addRect(CGRect(x: Double(k) * dt, y: -bv, width: dt * 1.02, height: bv * 2))
             }
-            return paths.values.map { (cg($0.0), $0.1) }
+            let clip = clipOutline(Array(v[(range.lowerBound - lo)...]), dt: dt)
+            return paths.values.map { (cg($0.0), $0.1, clip) }
         }
     }
 
@@ -299,7 +334,7 @@ extension RenderedWaveform {
         let blendData = Array(data.data.prefix(n * WaveBlend.stride))
         // gehaltene Tiefen (Bassline, Sub-Ausklang) orange, Kick-Anschläge rot: laufendes Minimum der Tief-Spitze
         let warm = BlendPaint.warmth(blend: blendData, count: n)
-        let raster = Raster(peak: Array(a.peak), blend: blendData, open: open, warm: warm, palette: pal)
+        let raster = Raster(peak: BlendPaint.displayPeaks(Array(a.peak)), blend: blendData, open: open, warm: warm, palette: pal)
         let ow = 1600, oh = 60
         var overview: CGImage?
         if let ctx = CGContext(data: nil, width: ow, height: oh, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
@@ -395,6 +430,7 @@ struct WaveformView: View {
         let scene = WaveScene(
             waveID: wf.map { ObjectIdentifier($0) }, duration: deck.duration, grid: deck.grid, span: ui.waveformSeconds,
             showGrid: ui.showBeatgrid, colorful: ui.colorfulGrid, phraseBeats: ui.phraseBeats, barNumbers: ui.showBarNumbers, barMarkers: ui.barMarkers,
+            boldLines: ui.gridLineWeight == .bold,
             dimPlayed: ui.dimPlayed,
             cues: deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }.map {
                 WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)),

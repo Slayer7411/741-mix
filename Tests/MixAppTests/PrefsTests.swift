@@ -61,3 +61,15 @@ import Testing
     let part = AppPrefs.decode(Data(#"{"record": {"source": "master"}}"#.utf8))
     #expect(part.record.source == .master && part.record.format == .alac)
 }
+/// Linien des Beatgrids: Standard fein; alte Einstellungen ohne das Feld laden fein, kräftig bleibt nach der Rundreise
+@MainActor @Test func gridLineWeightDefaultsToFine() throws {
+    #expect(UIPrefs().gridLineWeight == .fine)
+    let old = AppPrefs.decode(Data(#"{"ui": {"colorfulGrid": false, "barMarkers": false}}"#.utf8))
+    #expect(old.ui.gridLineWeight == .fine && !old.ui.colorfulGrid && !old.ui.barMarkers)
+    var p = AppPrefs()
+    p.ui.gridLineWeight = .bold
+    #expect(AppPrefs.decode(try JSONEncoder().encode(p)).ui.gridLineWeight == .bold)
+    // unbekannter Wert (späteres Update) -> Standard, Rest bleibt
+    let odd = AppPrefs.decode(Data(#"{"ui": {"gridLineWeight": "xyz", "zoom": 1.25}}"#.utf8))
+    #expect(odd.ui.gridLineWeight == .fine && odd.ui.zoom == 1.25)
+}

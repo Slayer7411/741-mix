@@ -148,6 +148,16 @@ public enum BlendPaint {
         return out
     }
 
+    /// Spitzen für die Anzeige: Einzelblock-Kerben füllen (Block niedriger als beide Nachbarn → kleinerer Nachbar).
+    /// Tiefe Töne lassen die Spitze je 3,3-ms-Block springen; ohne das zeichnet die Wellenform bei 1 Block je Pixel
+    /// einen Kamm aus hellen und dunklen Einzelspalten. Einzelne Spitzen (Transienten) bleiben unverändert.
+    public static func displayPeaks(_ pk: [Float]) -> [Float] {
+        guard pk.count > 2 else { return pk }
+        var out = pk
+        for k in 1..<(pk.count - 1) { out[k] = max(pk[k], min(pk[k - 1], pk[k + 1])) }
+        return out
+    }
+
     /// Pixelfarbe aus den Bandanteilen (Tief, Mitte, Hoch, Summe ≤ 1; kleiner = leiser, dunkler); `open` = Anteil der
     /// Höhen, der gehalten ist (0 = kurze Hats, blau; 1 = offene Hats / Ride, hellblau), `warm` = Anteil der Tiefen, der
     /// gehalten ist (0 = Kick-Anschlag, rot; 1 = Bassline / Sub-Ausklang, orange)
@@ -198,6 +208,57 @@ public enum BlendPaint {
         max(0, min(1, (y - lo + f) / f)) * max(0, min(1, (hi - y + f) / f))
     }
 
+    /// Werte eines Blocks für eine Spalte, einmal je Spalte gelesen: Spitze, Effektivwert, gewichtete Band-Spitzen,
+    /// Stapel-Anteile, gehaltene Höhen / Tiefen (0…1, mit Stärke der Palette)
+    struct Sample {
+        var pk: Float, r: Float, gl: Float, gm: Float, gh: Float
+        var pl: Float = 0, pm: Float = 0, ph: Float = 0
+        var open: Float, warm: Float
+        /// Anteil des Blocks an der Spalte (Höhe, Deckung); 0 = nur Farbe aus dem Fenster
+        var w: Float
+        var own: Bool { w > 0 }
+
+        @inline(__always) mutating func stack(_ p: Palette) {
+            pl = powf(gl, p.stackCurve); pm = powf(gm, p.stackCurve); ph = powf(gh, p.stackCurve)
+        }
+
+        @inline(__always) static func read(_ k: Int, peak: UnsafeBufferPointer<Float>, blend: UnsafeBufferPointer<UInt8>,
+                                           open: UnsafeBufferPointer<UInt8>?, warm: UnsafeBufferPointer<UInt8>?, w: Float, _ p: Palette) -> Sample {
+            let amp = WaveBlend.amplitude
+            let pk = peak[k], o = k * WaveBlend.stride, t = o + WaveBlend.peakSlot
+            var s = Sample(pk: pk, r: min(amp[Int(blend[o])], pk * 0.98),
+                           gl: amp[Int(blend[t])] * p.gain.r, gm: amp[Int(blend[t + 1])] * p.gain.g, gh: amp[Int(blend[t + 2])] * p.gain.b,
+                           open: open.map { k < $0.count ? Float($0[k]) * (p.openness / 255) : 0 } ?? 0,
+                           warm: warm.map { k < $0.count ? Float($0[k]) * (p.warmth / 255) : 0 } ?? 0, w: w)
+            s.stack(p)
+            return s
+        }
+
+        /// linear zwischen zwei Blöcken (f = 0 → a, 1 → b)
+        @inline(__always) static func lerp(_ a: Sample, _ b: Sample, _ f: Float, _ p: Palette) -> Sample {
+            @inline(__always) func m(_ x: Float, _ y: Float) -> Float { x + (y - x) * f }
+            var s = Sample(pk: m(a.pk, b.pk), r: m(a.r, b.r), gl: m(a.gl, b.gl), gm: m(a.gm, b.gm), gh: m(a.gh, b.gh),
+                           open: m(a.open, b.open), warm: m(a.warm, b.warm), w: 1)
+            s.stack(p)
+            return s
+        }
+    }
+
+    /// Spalte zwischen zwei Block-Mitten: Block `k` und `k + 1`, Anteil `f` des zweiten (Spalte schmaler als ein Block)
+    public struct Between: Sendable {
+        public var k: Int, f: Float
+        public init(k: Int, f: Float) { self.k = k; self.f = f }
+
+        /// Spalte mit der Mitte bei `t` Sekunden, Blöcke à `1 / bps`: die beiden nächsten Block-Mitten
+        public static func at(_ t: Double, bps: Double, count n: Int) -> Between {
+            let u = t * bps - 0.5
+            guard n > 1, u > 0 else { return Between(k: 0, f: 0) }
+            let k = Int(u)
+            guard k < n - 1 else { return Between(k: n - 1, f: 0) }
+            return Between(k: k, f: Float(u - Double(k)))
+        }
+    }
+
     /// eine Spalte aus den Blöcken `from..<to` rastern: `half` Zeilen von der Mitte nach außen, Zeile j bei Amplitude
     /// (j + 0,5) / half (volle Höhe = 0 dBFS). Schreibt RGBA (vormultipliziert) je Zeile über `put(j, r, g, b, a)`.
     ///
@@ -206,82 +267,121 @@ public enum BlendPaint {
     /// jedes Band hat zusätzlich einen Grundanteil in allen Zeilen, damit ein mittenlastiger Abschnitt als Ganzes
     /// gelb / grün wird. Deckung und damit Helligkeit kommen nur aus den Blöcken der Spalte selbst, die Farbe aus dem
     /// Fenster `Palette.window` um die Spalte.
+    ///
+    /// `edges`: Anteil des ersten und letzten Blocks an der Spalte (angeschnittene Randblöcke zählen anteilig).
+    /// `between`: Spalte schmaler als ein Block – Höhe, Effektivwert und Bänder linear zwischen den beiden nächsten
+    /// Block-Mitten (keine Stufen je Block); sonst das Maximum über `from..<to`. Die oberste Zeile deckt nur den Bruchteil,
+    /// den die Spitze erreicht (Alpha anteilig, keine harte Kante).
     @inline(__always)
     /// `open`: je Block 0…255 = Anteil gehaltener Höhen (aus der Höhen-Dauer des Spektrums), nil = alle kurz;
     /// `warm`: je Block 0…255 = Anteil gehaltener Tiefen (`warmth`), nil = alles Anschlag
     public static func column(peak: UnsafeBufferPointer<Float>, blend: UnsafeBufferPointer<UInt8>, open: UnsafeBufferPointer<UInt8>? = nil,
-                              warm: UnsafeBufferPointer<UInt8>? = nil,
-                              from: Int, to: Int, half: Int, palette p: Palette, put: (Int, UInt8, UInt8, UInt8, UInt8) -> Void) {
+                              warm: UnsafeBufferPointer<UInt8>? = nil, from: Int, to: Int, edges: (first: Float, last: Float) = (1, 1),
+                              between: Between? = nil,
+                              half: Int, palette p: Palette, put: (Int, UInt8, UInt8, UInt8, UInt8) -> Void) {
         let n = min(peak.count, blend.count / WaveBlend.stride)
-        let lo = max(0, min(n - 1, from)), hi = max(lo + 1, min(n, to))
         guard n > 0, half > 0 else { return }
-        let amp = WaveBlend.amplitude
-        var top: Float = 0
-        for k in lo..<hi { top = max(top, peak[k]) }
-        let rows = min(half, Int((top * Float(half)).rounded(.up)))
-        guard rows > 0 else { return }
+        let lo: Int, hi: Int
+        if let between {
+            lo = max(0, min(n - 1, between.k)); hi = min(n, lo + 2)
+        } else {
+            lo = max(0, min(n - 1, from)); hi = max(lo + 1, min(n, to))
+        }
         let wlo = max(0, lo - p.window), whi = min(n, hi + p.window)
-        let count = Float(hi - lo), inv = 1 / Float(half), base = p.base, rest = 1 - p.base
-            for j in 0..<rows {
-            let y = (Float(j) + 0.5) * inv
-            var c: Float = 0, wc: Float = 0, er: Float = 0, eg: Float = 0, eb: Float = 0, eo: Float = 0, ew: Float = 0
+        let slots = whi - wlo + (between == nil ? 0 : 1)
+        withUnsafeTemporaryAllocation(of: Sample.self, capacity: slots) { buf in
+            var m = 0
             for k in wlo..<whi {
-                let pk = peak[k]
-                guard y < pk else { continue }
-                let o = k * WaveBlend.stride
-                let r = min(amp[Int(blend[o])], pk * 0.98)
-                let cov = coverage(y, pk, r)
-                if k >= lo, k < hi { c += cov }
-                // Band-Spitzen (gewichtet und roh) am lautesten Sample des Blocks
-                let t = o + WaveBlend.peakSlot
-                let el = amp[Int(blend[t])], em = amp[Int(blend[t + 1])], eh = amp[Int(blend[t + 2])]
-                // Stapel-Anteile aus den gewichteten Spitzen (Analyse-Gewicht × Palette-Gewicht), gestaucht
-                let pl = powf(el * p.gain.r, p.stackCurve), pm = powf(em * p.gain.g, p.stackCurve), ph = powf(eh * p.gain.b, p.stackCurve)
-                let sum = pl + pm + ph
+                let w: Float = between != nil || k < lo || k >= hi ? 0 : k == lo ? edges.first : k == hi - 1 ? edges.last : 1
+                buf.initializeElement(at: m, to: Sample.read(k, peak: peak, blend: blend, open: open, warm: warm, w: hi - lo == 1 && w > 0 ? 1 : w, p))
+                m += 1
+            }
+            if let between {
+                let a = buf[lo - wlo], b = hi - lo > 1 ? buf[lo + 1 - wlo] : a
+                buf.initializeElement(at: m, to: Sample.lerp(a, b, between.f, p))
+                m += 1
+            }
+            defer { _ = buf.deinitialize() }
+            raster(buf, half: half, palette: p, put: put)
+        }
+    }
+
+    /// Zeilen einer Spalte aus den gelesenen Blöcken: Deckung nach Anteil der Blöcke an der Spalte gewichtet (ein
+    /// angeschnittener Randblock zählt nur anteilig – keine helleren / dunkleren Einzelspalten)
+    @inline(__always)
+    static func raster(_ s: UnsafeMutableBufferPointer<Sample>, half: Int, palette p: Palette,
+                       put: (Int, UInt8, UInt8, UInt8, UInt8) -> Void) {
+        var top: Float = 0, count: Float = 0, wmax: Float = 0
+        for x in s where x.own { top = max(top, x.pk); count += x.w; wmax = max(wmax, x.w) }
+        guard count > 0 else { return }
+        let fh = Float(half)
+        let rows = min(half, Int((top * fh).rounded(.up)))
+        guard rows > 0 else { return }
+        let inv = 1 / fh, base = p.base, rest = 1 - p.base
+        for j in 0..<rows {
+            let jf = Float(j), y = (jf + 0.5) * inv
+            var c: Float = 0, area: Float = 0
+            var wc: Float = 0, er: Float = 0, eg: Float = 0, eb: Float = 0, eo: Float = 0, ew: Float = 0
+            for i in 0..<s.count {
+                let x = s[i], pk = x.pk
+                // eigener Block: Anteil der Zeile unter der Spitze; Deckung in der Mitte dieses Anteils, Alpha = größter Anteil
+                var yy = y
+                if x.own {
+                    let a = min(1, pk * fh - jf)
+                    guard a > 0.004 else { continue }
+                    if a < 1 { yy = (jf + a * 0.5) * inv }
+                    area = max(area, a * x.w / wmax)
+                } else {
+                    guard y < pk else { continue }
+                }
+                let cov = coverage(yy, pk, x.r)
+                if x.own { c += cov * x.w }
+                let sum = x.pl + x.pm + x.ph
                 guard sum > 0 else { continue }
                 // Stapel: größtes Band unten (Mitte), kleinstes oben (Spitze); Abschnitte auf die Blockspitze skaliert
+                let pl = x.pl, pm = x.pm, ph = x.ph
                 let scale = pk / sum, f = p.fade * pk
                 var gl: Float = 0, gm: Float = 0, gh: Float = 0
                 if pl >= pm, pl >= ph {
                     if pm >= ph {   // L M H
-                        gl = inside(y, 0, pl * scale, f); gm = inside(y, pl * scale, (pl + pm) * scale, f)
-                        gh = inside(y, (pl + pm) * scale, pk, f)
+                        gl = inside(yy, 0, pl * scale, f); gm = inside(yy, pl * scale, (pl + pm) * scale, f)
+                        gh = inside(yy, (pl + pm) * scale, pk, f)
                     } else {        // L H M
-                        gl = inside(y, 0, pl * scale, f); gh = inside(y, pl * scale, (pl + ph) * scale, f)
-                        gm = inside(y, (pl + ph) * scale, pk, f)
+                        gl = inside(yy, 0, pl * scale, f); gh = inside(yy, pl * scale, (pl + ph) * scale, f)
+                        gm = inside(yy, (pl + ph) * scale, pk, f)
                     }
                 } else if pm >= pl, pm >= ph {
                     if pl >= ph {   // M L H
-                        gm = inside(y, 0, pm * scale, f); gl = inside(y, pm * scale, (pm + pl) * scale, f)
-                        gh = inside(y, (pm + pl) * scale, pk, f)
+                        gm = inside(yy, 0, pm * scale, f); gl = inside(yy, pm * scale, (pm + pl) * scale, f)
+                        gh = inside(yy, (pm + pl) * scale, pk, f)
                     } else {        // M H L
-                        gm = inside(y, 0, pm * scale, f); gh = inside(y, pm * scale, (pm + ph) * scale, f)
-                        gl = inside(y, (pm + ph) * scale, pk, f)
+                        gm = inside(yy, 0, pm * scale, f); gh = inside(yy, pm * scale, (pm + ph) * scale, f)
+                        gl = inside(yy, (pm + ph) * scale, pk, f)
                     }
                 } else {
                     if pl >= pm {   // H L M
-                        gh = inside(y, 0, ph * scale, f); gl = inside(y, ph * scale, (ph + pl) * scale, f)
-                        gm = inside(y, (ph + pl) * scale, pk, f)
+                        gh = inside(yy, 0, ph * scale, f); gl = inside(yy, ph * scale, (ph + pl) * scale, f)
+                        gm = inside(yy, (ph + pl) * scale, pk, f)
                     } else {        // H M L
-                        gh = inside(y, 0, ph * scale, f); gm = inside(y, ph * scale, (ph + pm) * scale, f)
-                        gl = inside(y, (ph + pm) * scale, pk, f)
+                        gh = inside(yy, 0, ph * scale, f); gm = inside(yy, ph * scale, (ph + pm) * scale, f)
+                        gl = inside(yy, (ph + pm) * scale, pk, f)
                     }
                 }
                 // Anteile: Stapel-Abschnitt (klare Trennung) + Grundanteil aus der Energie-Mischung (Tönung); leise
                 // Blöcke (Summe nahe dem Grundpegel) dunkler
-                let gsum = gl + gm + gh, msum = el * p.gain.r + em * p.gain.g + eh * p.gain.b
-                let q = msum / (msum + floor), mi = base / (msum + 1e-9), si = rest / gsum
-                let lr = cov * q * (el * p.gain.r * mi + gl * si)
+                let gsum = gl + gm + gh, msum = x.gl + x.gm + x.gh
+                let q = msum / (msum + floor), mi = base / (msum + 1e-9), si = gsum > 0 ? rest / gsum : 0
+                let lr = cov * q * (x.gl * mi + gl * si)
                 er += lr
-                if let warm, k < warm.count { ew += lr * Float(warm[k]) * (p.warmth / 255) }
-                eg += cov * q * (em * p.gain.g * mi + gm * si)
-                let hb = cov * q * (eh * p.gain.b * mi + gh * si)
+                ew += lr * x.warm
+                eg += cov * q * (x.gm * mi + gm * si)
+                let hb = cov * q * (x.gh * mi + gh * si)
                 eb += hb
-                if let open, k < open.count { eo += hb * Float(open[k]) * (p.openness / 255) }
+                eo += hb * x.open
                 wc += cov
             }
-            guard c > 0 else { continue }
-            let L = brightness(c / count)
+            guard c > 0, wc > 0 else { continue }
+            let L = brightness(c / count) * area
             let rgb = paint((er / wc, eg / wc, eb / wc), p, open: eb > 0 ? eo / eb : 0, warm: er > 0 ? ew / er : 0)
             put(j, UInt8(rgb.r * L * 255), UInt8(rgb.g * L * 255), UInt8(rgb.b * L * 255), UInt8(L * 255))
         }

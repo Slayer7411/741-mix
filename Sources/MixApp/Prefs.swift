@@ -8,6 +8,12 @@ enum WaveformStyle: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Linien des Beatgrids: fein (Haarlinien, Beats 1 Gerätepixel) oder kräftig (breiter, deckender)
+enum GridLineWeight: String, CaseIterable, Codable, Identifiable {
+    case fine = "fein", bold = "kräftig"
+    var id: String { rawValue }
+}
+
 enum WaveformPalette: String, CaseIterable, Codable, Identifiable {
     case rgb = "Spektrum (RGB)", bone = "741 Knochen", orange = "Orange", blue = "Blau/Weiß", classic = "Klassisch"
     var id: String { rawValue }
@@ -218,6 +224,8 @@ struct UIPrefs: Codable, Equatable {
     var tagSeparators = " "
     /// Beatgrid farbig (Phrasen/Takte/Beats) oder schlicht
     var colorfulGrid = true
+    /// Linienstärke des Beatgrids
+    var gridLineWeight = GridLineWeight.fine
     /// Beats je Phrase (Markierung/Farbwechsel)
     var phraseBeats = 64
     /// MUSIC FOLDERS: eigene Musik-Ordner (leer = automatisch aus der Collection)

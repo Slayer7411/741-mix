@@ -227,6 +227,7 @@ DECKS -> ROWS or ⌘, -> DECKS -> rows per deck, each on / off: readouts, commen
 ## ◆ 05 · WAVEFORM + GRID
 
 * rendered as bitmap tiles in screen resolution (background thread) -> sharp at any zoom, no load on the render server
+* smooth edges: zoomed in (a block wider than a device pixel) the height runs linearly between block centres, zoomed out a column takes the highest block, edge blocks count by their share of the column. the top pixel row gets alpha by the share the peak reaches. 3-band blend: single-block notches in the peaks are filled (no comb of bright / dark columns at 1 block per pixel). spectrum / mono: outline through the block centres
 * height = real file level, full height = 0 dBFS, no normalizing -> loud masters look loud
 * styles (⌘, -> DISPLAY): 3-band blend (default) / spectrum (6 bands) / mono. 3-band blend: presets; spectrum / mono: palettes (not for spectrum): spectrum (rgb, default) / 741 bone / orange / blue / classic
 * 3-band blend: each pixel row colored by the bass (< 150 Hz), mids (around 670 Hz) and highs (> 3 kHz) of the samples that reach it, brightness = share of samples reaching the row ^(1/3.5). the three bands of a block are stacked by their peak: the strongest is the body from the centre, the weakest sits outside at the tips -> bass red core, mids yellow / green ring, hats blue edge, soft upper edge. highs take the held share of the spectrum analysis: short highs (closed hats) blue, held highs (open hats, ride, noise) light blue (741 palettes: high color half way to white). lows: a kick rises above the low level of the last 300 ms -> red, fading to orange as it rings out; a bass line or the sub tail sits on that level -> orange (741 palettes: low color half way to orange). no kick = no red hits. spectrum (rgb): bass red, mids green, highs blue, mixes yellow / cyan / white. overview in the same style
@@ -257,6 +258,7 @@ spectrum (6 bands), colors:
 beatgrid:
 
 * thin beat lines, stronger bar lines with caps top and bottom, bar numbers on the ruler
+* lines (⌘, -> DISPLAY -> beatgrid): fine (default) / bold. fine: beat 0.5 pt (1 device pixel at 2×) at 35 %, bar 1 pt at 70 %, phrase 1.5 pt, markers 2 / 2.5 / 3 pt. bold: beat 1 pt at 60 %, bar 1.5 pt, phrase 2.5 pt, markers 2.5 / 3.5 / 4.5 pt. widths scale with the window zoom, lines sit on whole device pixels, caps and triangles centred on the line
 * loop: red frame + tint, cues: line in their color + numbered flag, play head red
 * phrases (16 / 32 / 64 / 128 beats) in purple, phrase countdown at the play head (`P3 · 16 T`)
 * magenta markers every 8 / 16 / 32 bars (setting)
