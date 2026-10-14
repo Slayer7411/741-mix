@@ -608,6 +608,36 @@ off by default. ⌘, -> ANZEIGE -> browser -> `Änderungen in die Collection-Dat
 * switching the setting on writes the changes made before
 * tags inside the audio files are not touched
 
+what goes into the file:
+
+| from MINOS-741 | in the file | after writing |
+|---|---|---|
+| metadata (inline, ⌘E) | `ENTRY` / `ALBUM` / `INFO` / `TEMPO` attributes | leaves `metadata.json` |
+| own analysis | `TEMPO BPM`, `LOUDNESS`, `MUSICAL_KEY`, first grid marker | marked written in `analysis.json` |
+| hotcues 1-8: cue, loop (with length), fade, load | `CUE_V2` with `HOTCUE 0-7`, `TYPE 0/1/2/3/5`, `START` / `LEN` ms, `NAME` | leave `edits.json` |
+| grid set by hand (bpm + anchor) | `TEMPO BPM` + `START` of the first `CUE_V2 TYPE="4"` (new marker if none) | leaves `edits.json`, stays when an own analysis with grid exists (the hand grid must stay on top) |
+| renamed file (cut in place, other extension) | `LOCATION DIR / FILE / VOLUME / VOLUMEID` | leaves `collection-moves.json` |
+| cut copies and tool loops (`cuts.json`) | new `ENTRY` before `</COLLECTION>`, `COLLECTION ENTRIES` counted | stays in CUTS too |
+| preparation, own history sessions | `$ROOT/MINOS-741/Preparation`, `$ROOT/MINOS-741/History/History YYYY-MM-DD · NN` (`TYPE="LIST"`) | replaced on every write |
+
+* hotcues: the hotcues of the entry are replaced by MINOS-741's set; unchanged ones keep their text, memory cues (`HOTCUE -1`) and grid markers stay. a grid marker sitting on a hotcue slot stays where it is
+* locked entries (`LOCK="1"`): no bpm / grid written, the hand grid stays in `edits.json`
+* entries with more than one grid marker (tempo changes): only the first marker is written, the others stay; MINOS-741 plays one tempo
+* new entries have no `AUDIO_ID` (the library software computes it on its next analysis), `MODIFIED_DATE` / `MODIFIED_TIME` = now. options under ⌘, -> ANZEIGE -> browser: `Cuts und Tool-Loops als neue Einträge anlegen`, `Preparation und History als Playlists (Ordner MINOS-741)`, both on (only with writing on)
+* own playlists: only the folder `MINOS-741` directly under `$ROOT` is written, replaced as a whole, its playlist ids stay the same per path. other folders and playlists are never changed or removed. tracks not in the file are left out
+* stays in MINOS-741 only (the format has no place for it): trim (cut in / out), active loops, undo
+* preparation changes write after 10 s, history sessions go out with the next write (no write per played track)
+
+reading back (↻ or a write that finds the file changed):
+
+* before writing, size + modification time of the file are compared with the last read. changed -> reload first, then write
+* MINOS-741 keeps per open change the entry's `MODIFIED_DATE` / `MODIFIED_TIME` from when the change was made
+* entry unchanged in the file -> MINOS-741's open changes stay on top and go out with the next write
+* entry changed in the file, no open change in MINOS-741 -> the file's values
+* both changed (conflict) -> the file wins for the whole entry. MINOS-741's open metadata go to `metadata-konflikt.json`, hotcues / grid to `edits-konflikt.json` (Application Support, newer entries replace older ones with the same key); trim and active loops stay. status bar: `Konflikt: n Tracks …`
+* changes made before this version carry no stamp -> no conflict check for them
+* the result is checked before it replaces the file: readable, track count + new entries, written cues / grid / moved entries / own playlist folder read back the same
+
 ### check the collection
 
 BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION. read only, nothing is changed.

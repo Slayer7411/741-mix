@@ -150,6 +150,16 @@ public final class AnalysisStore: @unchecked Sendable {
         save()
     }
 
+    /// Datei umbenannt (anderer Track-Schlüssel): Analyse wandert mit
+    public func rename(from old: String, to new: String) {
+        guard old != new else { return }
+        lock.lock()
+        let a = entries.removeValue(forKey: old)
+        if let a { entries[new] = a }
+        lock.unlock()
+        if a != nil { save(); onChange?(old); onChange?(new) }
+    }
+
     /// noch nicht in der Collection-Datei
     public var unwritten: [String: TrackAnalysis] { all.filter { !$0.value.written } }
 

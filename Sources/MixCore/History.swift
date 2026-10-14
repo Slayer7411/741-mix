@@ -132,6 +132,8 @@ public struct NMLEntryIndex: Sendable {
 
     /// geänderte Blöcke übernehmen (nach dem Zurückschreiben in die Collection)
     public mutating func update(_ blocks: [String: String]) { raw.merge(blocks) { _, new in new } }
+    /// Einträge, die es unter diesem Schlüssel nicht mehr gibt (umbenannt)
+    public mutating func remove(_ keys: some Sequence<String>) { for k in keys { raw[k] = nil } }
 
     public init(nmlText s: String) {
         guard let c0 = s.range(of: "<COLLECTION"), let c1 = s.range(of: "</COLLECTION>") else { return }

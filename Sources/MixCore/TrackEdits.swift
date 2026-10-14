@@ -32,7 +32,8 @@ public struct TrackTrim: Codable, Equatable, Hashable, Sendable {
     }
 }
 
-/// Eigene Änderungen an Tracks (Beatgrid, Hotcues, Schnitt) – dauerhaft, ohne die Collection anzufassen.
+/// Eigene Änderungen an Tracks (Beatgrid, Hotcues, Schnitt) – dauerhaft; Hotcues und Grid gehen mit „in die Collection-Datei
+/// schreiben“ in die Datei und verlassen dann edits.json (`clearWritten`).
 /// Beim Laden eines Tracks werden sie über die Collection-Werte (und die eigene Analyse) gelegt: ein von Hand gesetztes
 /// Grid gewinnt immer, nur RESET am Deck nimmt es weg.
 public struct TrackEdit: Codable, Equatable, Sendable {
@@ -45,6 +46,9 @@ public struct TrackEdit: Codable, Equatable, Sendable {
     /// Active Loops: Hotcues (0–7), deren Loop beim Erreichen von selbst einrastet (fehlt in älteren Dateien)
     public var activeLoops: [Int]?
     public var modified = Date()
+    /// Stand des Collection-Eintrags (`Track.entryStamp`), als Hotcues/Grid zuletzt von leer auf gesetzt gingen –
+    /// Konfliktprüfung beim Neu-Laden (nil = unbekannt, ältere Dateien)
+    public var stamp: String?
 
     public init(bpm: Double? = nil, gridAnchorMs: Double? = nil, hotcues: [Cue]? = nil, trim: TrackTrim = TrackTrim()) {
         self.bpm = bpm; self.gridAnchorMs = gridAnchorMs; self.hotcues = hotcues
@@ -58,6 +62,14 @@ public struct TrackEdit: Codable, Equatable, Sendable {
         set { trimStart = newValue.start; trimEnd = newValue.end }
     }
     public var isEmpty: Bool { !hasGrid && hotcues == nil && trim.isEmpty && (activeLoops ?? []).isEmpty }
+    /// Teile, die auch in der Collection-Datei stehen können (Hotcues, Grid)
+    public var hasNMLPart: Bool { hotcues != nil || hasGrid }
+    /// ohne Hotcues und Grid (bleibt in edits.json: Schnitt, Active Loops)
+    public var withoutNMLPart: TrackEdit {
+        var e = self
+        e.hotcues = nil; e.bpm = nil; e.gridAnchorMs = nil; e.stamp = nil
+        return e
+    }
 
     /// gleiche Änderung (ohne Zeitstempel)
     public func same(as o: TrackEdit?) -> Bool {
@@ -120,6 +132,60 @@ public final class TrackEditStore: @unchecked Sendable {
         lock.unlock()
         guard schedule else { return }
         queue.asyncAfter(deadline: .now() + saveDelay) { [self] in writePending() }
+    }
+
+    /// mehrere Einträge auf einmal ändern (`f` unter der Sperre; nil = entfernen), Schreiben gesammelt
+    private func modify(_ f: (inout [String: TrackEdit]) -> Void) {
+        lock.lock()
+        f(&edits)
+        for (k, e) in edits where e.isEmpty { edits[k] = nil }
+        let schedule = !savePending && writes && url != nil
+        if schedule { savePending = true }
+        lock.unlock()
+        guard schedule else { return }
+        queue.asyncAfter(deadline: .now() + saveDelay) { [self] in writePending() }
+    }
+
+    /// nach dem Schreiben in die Collection-Datei: Hotcues und Grid, die so in der Datei stehen, verlassen edits.json
+    /// (Schnitt und Active Loops bleiben). `keepGrid`: Grid bleibt trotzdem (eigene Analyse mit Grid – das von Hand
+    /// gesetzte Grid muss weiter darüber liegen)
+    public func clearWritten(_ written: [String: TrackEdit], keepGrid: Set<String> = []) {
+        modify { edits in
+            for (k, w) in written {
+                guard var e = edits[k] else { continue }
+                if let h = w.hotcues, e.hotcues == h { e.hotcues = nil }
+                if w.hasGrid, !keepGrid.contains(k), e.bpm == w.bpm, e.gridAnchorMs == w.gridAnchorMs { e.bpm = nil; e.gridAnchorMs = nil }
+                if !e.hasNMLPart { e.stamp = nil }
+                edits[k] = e
+            }
+        }
+    }
+
+    /// Konflikt beim Neu-Laden: Einträge mit Hotcues/Grid, deren Collection-Eintrag sich seit der eigenen Änderung
+    /// geändert hat (`current`: Schlüssel -> `Track.entryStamp`). Die Datei gewinnt: Hotcues und Grid fallen hier weg,
+    /// zurück kommen die vollständigen alten Einträge (für die Konflikt-Sicherung)
+    public func takeConflicts(current: [String: String]) -> [String: TrackEdit] {
+        var out: [String: TrackEdit] = [:]
+        lock.lock()
+        let found = edits.filter { k, e in
+            guard e.hasNMLPart, let s = e.stamp, !s.isEmpty, let c = current[k], !c.isEmpty else { return false }
+            return s != c
+        }
+        lock.unlock()
+        guard !found.isEmpty else { return [:] }
+        modify { edits in
+            for (k, e) in found { out[k] = e; edits[k] = e.withoutNMLPart }
+        }
+        return out
+    }
+
+    /// Datei umbenannt (anderer Track-Schlüssel): Änderung wandert mit
+    public func rename(from old: String, to new: String) {
+        guard old != new else { return }
+        modify { edits in
+            guard let e = edits.removeValue(forKey: old) else { return }
+            edits[new] = e
+        }
     }
 
     /// auf `queue`: letzten Stand schreiben, falls noch offen
@@ -259,6 +325,8 @@ public enum TrackField: String, CaseIterable, Codable, Sendable, Identifiable {
 public struct MetadataEdit: Codable, Equatable, Sendable {
     public var fields: [String: String] = [:]
     public var modified = Date()
+    /// Stand des Collection-Eintrags (`Track.entryStamp`) bei der ersten noch offenen Änderung (nil = unbekannt)
+    public var stamp: String?
 
     public init(fields: [TrackField: String] = [:]) {
         self.fields = Dictionary(uniqueKeysWithValues: fields.map { ($0.key.rawValue, $0.value) })
@@ -292,11 +360,13 @@ public final class MetadataStore: @unchecked Sendable {
     public var all: [String: MetadataEdit] { lock.lock(); defer { lock.unlock() }; return edits }
     public func edit(for key: String) -> MetadataEdit? { lock.lock(); defer { lock.unlock() }; return edits[key] }
 
-    /// Felder setzen; Werte gleich dem Collection-Wert (`base`) fallen heraus, leere Einträge verschwinden
-    public func merge(_ changes: [String: [TrackField: String]], base: [String: Track]) {
+    /// Felder setzen; Werte gleich dem Collection-Wert (`base`) fallen heraus, leere Einträge verschwinden.
+    /// `stamps`: Stand des Collection-Eintrags, gilt ab der ersten offenen Änderung (Konfliktprüfung)
+    public func merge(_ changes: [String: [TrackField: String]], base: [String: Track], stamps: [String: String] = [:]) {
         lock.lock()
         for (key, fields) in changes {
             var e = edits[key] ?? MetadataEdit()
+            if e.fields.isEmpty || e.stamp == nil, let s = stamps[key], !s.isEmpty { e.stamp = s }
             for (f, v) in fields {
                 if let b = base[key], f.value(of: b) == v { e.fields[f.rawValue] = nil } else { e.fields[f.rawValue] = v }
             }
@@ -324,6 +394,31 @@ public final class MetadataStore: @unchecked Sendable {
         for k in keys { edits[k] = nil }
         lock.unlock()
         save()
+    }
+
+    /// Konflikt beim Neu-Laden: Einträge, deren Collection-Eintrag sich seit der eigenen Änderung geändert hat
+    /// (`current`: Schlüssel -> `Track.entryStamp`). Die Datei gewinnt: die Einträge verlassen den Speicher und kommen
+    /// zurück (für die Konflikt-Sicherung)
+    public func takeConflicts(current: [String: String]) -> [String: MetadataEdit] {
+        lock.lock()
+        let found = edits.filter { k, e in
+            guard let s = e.stamp, !s.isEmpty, let c = current[k], !c.isEmpty else { return false }
+            return s != c
+        }
+        for k in found.keys { edits[k] = nil }
+        lock.unlock()
+        if !found.isEmpty { save() }
+        return found
+    }
+
+    /// Datei umbenannt (anderer Track-Schlüssel): Änderung wandert mit
+    public func rename(from old: String, to new: String) {
+        guard old != new else { return }
+        lock.lock()
+        let e = edits.removeValue(forKey: old)
+        if let e { edits[new] = e }
+        lock.unlock()
+        if e != nil { save() }
     }
 
     /// im Hintergrund schreiben (Reihenfolge bleibt über die serielle Queue erhalten)

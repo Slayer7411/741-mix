@@ -210,6 +210,7 @@ enum SelfTest {
             await cutProbe(mix, tracks: c)
             await profileProbe(mix, browser: browser)
             await undoProbe(mix, store: store)
+            await nmlProbe()
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -750,5 +751,71 @@ enum WaveShot {
               let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { throw ShotError.png }
         CGImageDestinationAddImage(dest, img, nil)
         guard CGImageDestinationFinalize(dest) else { throw ShotError.png }
+    }
+}
+
+extension SelfTest {
+    /// Collection-Datei schreiben (Hotcues, Playlists, neuer Eintrag, Umbenennung) auf einer Kopie der Collection im
+    /// Temp-Ordner. Die echte Datei wird nur gelesen; der Schreibschutz im Selbsttest muss sie ablehnen
+    static func nmlProbe() async {
+        let real = LibraryStore.defaultNML
+        guard !CollectionWriter.writeAllowed(real) else { log("NML-Rundreise: FEHLER Schreibschutz lässt die echte Collection zu"); exit(1) }
+        guard FileManager.default.fileExists(atPath: real.path) else { log("NML-Rundreise: übersprungen (keine Collection)"); return }
+        let report = await Task.detached(priority: .utility) { () -> String in
+            let fm = FileManager.default
+            let dir = fm.temporaryDirectory.appendingPathComponent("minos741-nml-\(UUID().uuidString.prefix(8))")
+            defer { try? fm.removeItem(at: dir) }
+            do {
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+                let url = dir.appendingPathComponent("collection-copy.nml")
+                try fm.copyItem(at: real, to: url)
+                let text = try String(contentsOf: url, encoding: .utf8)
+                let index = NMLEntryIndex(nmlText: text)
+                let c = try NMLParser.parse(url: url)
+                guard let t = c.tracks.first(where: { $0.hotcues.contains { $0.kind != .grid } && !$0.locked }),
+                      let m = c.tracks.first(where: { $0.key != t.key && $0.key.hasSuffix(".mp3") }) else { return "FEHLER keine passenden Tracks" }
+                var job = CollectionWriter.Job()
+                var hot = t.hotcues.filter { $0.hotcue != 7 }
+                hot.append(Cue(name: "Loop", kind: .loop, startMs: 1000, lengthMs: 1875, hotcue: 7))
+                job.cues[t.key] = TrackEdit(hotcues: hot)
+                job.moves[m.key] = NMLLocation(volume: String(m.key.prefix { $0 != "/" }), volumeID: String(m.key.prefix { $0 != "/" }),
+                                               dir: String(m.key[m.key.range(of: "/:")!.lowerBound..<m.key.range(of: "/:", options: .backwards)!.upperBound]),
+                                               file: String((m.path as NSString).lastPathComponent.dropLast(4)) + ".m4a")
+                var loop = t
+                loop.key = String(t.key.dropLast((t.path as NSString).pathExtension.count + 1)) + " [tool-loop 1].m4a"
+                job.newEntries = [loop]
+                job.playlists = [.playlist("Preparation", c.tracks.prefix(3).map(\.key)), .folder("History", [.playlist("History test", [t.key, m.key])])]
+                job.expected = FileStamp(url: url)
+                let t0 = CACurrentMediaTime()
+                let r = try CollectionWriter.write(url: url, job: job, index: index, backupDir: dir.appendingPathComponent("Backup MINOS-741"))
+                let ms = (CACurrentMediaTime() - t0) * 1000
+                let after = try NMLParser.parse(url: url)
+                let byKey = Dictionary(after.tracks.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+                let newKey = job.moves[m.key]!.key
+                let cueOK = byKey[t.key]?.hotcues.contains { $0.hotcue == 7 && $0.kind == .loop && abs($0.lengthMs - 1875) < 0.001 } == true
+                let own = after.root.children.last
+                let ok = r.changed && r.backup != nil && after.tracks.count == c.tracks.count + 1 && byKey[loop.key] != nil && cueOK
+                    && byKey[newKey] != nil && byKey[m.key] == nil && own?.name == CollectionWriter.ownFolder
+                    && own?.children.first?.trackKeys.count == 3 && own?.children.last?.children.first?.trackKeys == [t.key, newKey]
+                // außerhalb der geänderten Stellen gleich: alle übrigen ENTRY-Blöcke unverändert
+                let out = try String(contentsOf: url, encoding: .utf8)
+                let idx2 = NMLEntryIndex(nmlText: out)
+                let changedBlocks = index.raw.filter { k, b in k != t.key && k != m.key && idx2.raw[k] != b }.count
+                // zweiter Lauf (Index der neuen Datei): gleicher Stand -> nichts geschrieben
+                var again = CollectionWriter.Job()
+                again.cues = job.cues
+                again.newEntries = job.newEntries
+                again.playlists = [.playlist("Preparation", c.tracks.prefix(3).map(\.key)), .folder("History", [.playlist("History test", [t.key, newKey])])]
+                let r2 = try CollectionWriter.write(url: url, job: again, index: idx2, backupDir: nil)
+                return String(format: "%@ · schreiben %.0f ms · %d Tracks +%d · Cues %@ · umbenannt %@ · Playlists %@ · andere Blöcke geändert %d · zweiter Lauf %@",
+                              ok && changedBlocks == 0 && !r2.changed ? "OK" : "FEHLER", ms, c.tracks.count, r.added.count,
+                              cueOK ? "ok" : "fehlen", byKey[newKey] != nil ? "ok" : "fehlt", own?.name ?? "-", changedBlocks,
+                              r2.changed ? "schrieb erneut" : "unverändert")
+            } catch {
+                return "FEHLER \(error)"
+            }
+        }.value
+        log("NML-Rundreise (Kopie): \(report)")
+        if report.hasPrefix("FEHLER") { exit(1) }
     }
 }

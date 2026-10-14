@@ -31,6 +31,13 @@ off by default (setting). browser edits go to `metadata.json` first; with write-
 * result is parsed before it replaces the file: must read, same track count. temp file + rename
 * backup first: `Backup MINOS-741/collection_YYYY-MM-DD_HHMMSS.nml`, at most one per hour
 * never while the library software is running
+* hotcues: `CUE_V2` with `HOTCUE` 0-7 (not `TYPE="4"`) replaced, written as `<CUE_V2 NAME="…" DISPL_ORDER="0" TYPE="5" START="%.6f" LEN="%.6f" REPEATS="-1" HOTCUE="n"></CUE_V2>` one per line after the last `CUE_V2`. unchanged cues (6 decimals) keep their text
+* hand grid: `TEMPO BPM` + `START` of the first `TYPE="4"` marker, not for `LOCK="1"`
+* renamed file: `LOCATION DIR FILE VOLUME VOLUMEID`, key changes with it
+* new entry: `ENTRY MODIFIED_DATE MODIFIED_TIME TITLE ARTIST`, `LOCATION`, `ALBUM`, `MODIFICATION_INFO AUTHOR_TYPE="user"`, `INFO`, `TEMPO`, `LOUDNESS`, `MUSICAL_KEY`, `CUE_V2` (grid, hotcues, memory cues), no `AUDIO_ID`. `VOLUMEID` taken from an entry on the same volume
+* own playlists: `$ROOT/MINOS-741` folder node, replaced whole, `COUNT` of `$ROOT` + 1 when new, `UUID` = md5 of the node path
+* file size + mtime checked against the last read; changed -> reload, conflict rule, then write
+* conflict stamp: `ENTRY MODIFIED_DATE` + `MODIFIED_TIME`
 
 ## ◆ SMARTLIST QUERIES
 

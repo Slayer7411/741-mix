@@ -65,6 +65,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * cover: in the deck header (on), preview of the selected track below the browser tree (on). the browser column `Cover` is switched via right click on the list header
 * music folders for MUSIC FOLDERS: add / remove, empty = automatic (the folder holding 90 % of the collection's files)
 * write browser edits into the collection file (off): backup at most once per hour into `Backup MINOS-741`, not while the library software runs -> [manual](MANUAL.md#-09--browser)
+  * with it: hotcues / loops / hand grid, renamed files, cuts and tool loops as new entries (on), preparation + own history as playlists in `MINOS-741` (on) -> [manual](MANUAL.md#write-into-the-collection-file)
 * browser preview: full row, two lines (default) / own column / behind the title / off
 * preview colors: spectrum red / green / blue (default) / like the waveform
 * compute previews in the background: always, throttled while a deck plays (default) / only while no deck plays / off -> [manual](MANUAL.md#preview)
