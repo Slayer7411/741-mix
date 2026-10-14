@@ -310,3 +310,61 @@ private func waitFor(_ seconds: Double = 20, _ cond: () -> Bool) async throws {
     #expect(core.snapshot().fx[1].chain.isEmpty && core.snapshot().masterFX.chain.isEmpty)
 }
 
+
+/// Messung (MIX741_BENCH=1): 4 Decks, Rauschen, je Deck FX 1 mit Kette Tiefpass > Hochpass (8 Instanzen), Master-Kette
+/// mit Limiter, gegen dieselben Decks ohne Plugins. Mittel je Block zu 512 Frames
+@Test(.enabled(if: ProcessInfo.processInfo.environment["MIX741_BENCH"] == "1")) func chainRenderCost() throws {
+    func run(_ plugins: Bool) throws -> Double {
+        let rig = Rig(decks: [0, 1, 2, 3], seconds: 30)
+        var opened: [OpaquePointer] = []
+        if plugins {
+            for d in 0..<4 {
+                let a = try open("lpas"), b = try open("hpas")
+                opened += [a, b]
+                rig.chain(0, deck: d, [a, b])
+            }
+            let m = try open("lmtr")
+            opened.append(m)
+            var one: [OpaquePointer?] = [m]
+            one.withUnsafeMutableBufferPointer { mdsp_set_fx_chain(rig.e, MDSP_MASTER_UNIT, 0, $0.baseAddress, 1) }
+            mdsp_set_master_fx(rig.e, true, 1)
+            mdsp_set_master_fx_channel(rig.e, 0)
+        }
+        _ = rig.render(50)
+        let t = Date()
+        _ = rig.render(2000)
+        let us = Date().timeIntervalSince(t) / 2000 * 1e6
+        for p in opened { mdplug_close(p) }
+        return us
+    }
+    let base = try run(false), chain = try run(true)
+    print(String(format: "[bench] 4 Decks je Block 512: ohne Plugins %.1f µs · mit Ketten (8 AUs) + Master-Limiter %.1f µs (Budget %.0f µs)",
+                 base, chain, 512 / fs * 1e6))
+}
+
+/// gemischte Kette VST3 (Test-Plugin "AGain") > Audio Unit: beide laden, Gain auf Platz 1 zuweisbar, Zustand je Platz
+@Test func controllerMixesVST3AndAudioUnitInOneChain() async throws {
+    let src = try #require(VST3Fixture.bundle)
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("minos-chain-vst3-\(UUID().uuidString.prefix(8))")
+    let folder = dir.appendingPathComponent("vst3")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try FileManager.default.copyItem(at: src, to: folder.appendingPathComponent(src.lastPathComponent))
+    let core = MixController()
+    let cat = PluginCatalog(directory: dir.appendingPathComponent("store"), folders: [], vst3Folders: [])
+    cat.update { $0.folders = [folder.path]; $0.allowInProcess = true }
+    core.pluginCatalog = cat
+    core.addPlugin(0, id: "aufx:lpas:appl")
+    core.addPlugin(0, id: "vst3:C18D3C1E719E4E29924D3ECAA5E4DA18")
+    try await waitFor { core.pluginInstance(0, slot: 1) != nil && core.pluginInstance(0, slot: 0) != nil }
+    let s = core.snapshot()
+    let gain = try #require(s.fxParams[0].first { $0.pluginSlot == 1 && $0.name == "Gain" })
+    #expect(gain.id == "s1.p\(gain.pluginParam!)" && gain.normalized)
+    core.setFXMapping(0, .knob2, gain.id)
+    core.setFXControl(0, .knob2, 0.3)
+    let v = try #require(core.pluginInstance(0, slot: 1))
+    #expect(v.isVST3 && abs(v.value(gain.pluginParam!) - 0.3) < 1e-6)
+    #expect(core.pluginText(0, gain, 0.3)?.isEmpty == false)
+    core.setPlugin(0, id: nil)
+    #expect(core.snapshot().fx[0].chain.isEmpty)
+}
