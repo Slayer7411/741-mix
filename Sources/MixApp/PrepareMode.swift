@@ -411,14 +411,14 @@ struct PrepareRow: View {
 
     struct Model: Equatable {
         var playing = false, bpm: Double?, edited = false, snap = EditSnap.bar, previewing = false, pending = false
-        var prep = PrepMirror(), hasTrack = false
+        var prep = PrepMirror(), hasTrack = false, rip = false
     }
 
     var body: some View {
         let s = mix.deck(d), e = mix.decks[d].edit
         Content(d: d, m: Model(playing: s.playing, bpm: s.grid?.bpm, edited: s.gridEdited, snap: mix.prefs.ui.editSnap,
                                previewing: e?.previewing ?? false, pending: e?.pending ?? false, prep: mix.prepState(d),
-                               hasTrack: s.track != nil)).equatable()
+                               hasTrack: s.track != nil, rip: mix.ripMark(d) != nil)).equatable()
             .onAppear { mix.prepareRowAppeared(d) }
             .onDisappear { mix.prepareRowDisappeared(d) }
     }
@@ -463,8 +463,8 @@ struct PrepareRow: View {
                     DeckButton(title: "B OUT") { mix.prepareMark(d, end: true) }.stable()
                         .help("Ende von B an die Position (auf dem Raster)")
                 }
-                DeckButton(title: "REMOVE") { mix.prepareEdit(d, .remove) }.stable()
-                    .help("Bereich (sonst Segment am Spielkopf) aus der Schnittliste entfernen")
+                DeckButton(title: m.rip ? "◆ REMOVE RIP" : "REMOVE", active: m.rip, color: Theme.state, verbatim: true) { mix.prepareEdit(d, .remove) }.stable()
+                    .help(LocalizedStringKey(m.rip ? "Markierten RIP-Bereich aus der Schnittliste entfernen (Befund erledigt)" : "Bereich (sonst Segment am Spielkopf) aus der Schnittliste entfernen"))
                 if !compact {
                     DeckButton(title: "KEEP") { mix.prepareEdit(d, .keep) }.stable().help("Nur Bereich behalten")
                 }

@@ -272,6 +272,8 @@ struct UIPrefs: Codable, Equatable {
     var analysisBpmLow = 100.0
     /// Rip-Prüfung (Stille, fremder Anfang / fremdes Ende, Grid-Verdacht) mit jeder Analyse
     var ripWithAnalysis = true
+    /// Rip-Befund beim Laden als markierten Bereich setzen (nichts wird geschnitten)
+    var ripMarkOnLoad = true
     /// DAW-Brücke: Pakete des Remote Scripts auf 127.0.0.1 empfangen (UDP)
     var dawBridge = true
     var dawBridgePort = 7411

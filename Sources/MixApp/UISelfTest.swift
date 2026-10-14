@@ -127,6 +127,7 @@ enum UISelfTest {
             ("aufnahme", recording),
             ("linien", gridLines),
             ("rip", ripCheck),
+            ("rip-bereich", ripRange),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1745,5 +1746,57 @@ extension UISelfTest {
         u.spin(5) { !pane.listPending && pane.shown.isEmpty }
         check(pane.shown.isEmpty, "◆ RIP nach Schnitt IN: \(pane.shown.count) Zeilen")
         log("rip: spalte ▸ 4,0 s · ◆ RIP 1 zeile · schnitt IN gesetzt · erledigt")
+    }
+
+    /// Befund am geladenen Track von Deck A (ohne EDIT): RIP markiert 0 … 4 s mit „RIP · …“, Rechtsklick in den Bereich ->
+    /// „Markierten Bereich entfernen“ (EDIT an, Schnittliste) -> Befund erledigt, Bereich weg. Kommt der Rechtsklick nicht
+    /// an, die Aktion direkt (Weg im Log). Danach Rückgängig, EDIT wie vorher
+    static func ripRange(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, d = 0, rips = RipChecks.shared
+        guard let track = mix.deck(d).track else { fail("RIP-Bereich: Deck A leer") }
+        if mix.deck(d).playing { mix.togglePlay(d) }
+        let mix0 = rips.mix, edit0 = mix.edits.edit(for: track.key), wasEditing = mix.editing(d), undo0 = UndoStack.shared.done.count
+        rips.mix = mix
+        defer {
+            while UndoStack.shared.done.count > undo0 { UndoStack.shared.undo() }
+            u.spin(5) { mix.editSession(d)?.rendering != true }
+            mix.setRange(d, nil)
+            mix.setEditing(d, wasEditing)
+            rips.store.remove([track.key]); mix.edits.set(edit0, for: track.key); rips.mix = mix0
+            u.spin(0.5)
+        }
+        mix.edits.set(nil, for: track.key)
+        mix.setEditing(d, false)
+        mix.setRange(d, nil)
+        let f = RipCheck.Finding(kind: .foreign, edge: .start, time: 4, confidence: 0.8, cues: [.key])
+        rips.store.put(RipCheck.Result(findings: [f], duration: mix.deck(d).duration), for: track.key)
+        u.spin(2) { rips.openKeys.contains(track.key) }
+        check(mix.markNextRip(d), "RIP-Bereich: RIP markiert nichts (\(rips.open(track.key).map(\.id)))")
+        guard let range = mix.range(d), let label = mix.rangeMarked(d, grid: mix.deck(d).grid)?.label else { fail("RIP-Bereich: kein Bereich") }
+        check(range == TrackRange(0, 4) && label.hasPrefix("RIP · "), "RIP-Bereich: \(range) „\(label)“")
+        check(rips.openKeys.contains(track.key), "RIP-Bereich: Markieren erledigt den Befund schon")
+        guard let w = u.views.compactMap({ $0 as? WaveMouseView }).first(where: { $0.d == d }) else { fail("Wellenform A nicht gefunden") }
+        mix.core.seek(d, seconds: 2)   // Mitte der Wellenform im Bereich
+        mix.pull()
+        u.spin(0.3)
+        let dur0 = mix.deck(d).duration, r = u.frame(w)
+        let item = String(localized: "Markierten Bereich entfernen")
+        var via = "rechtsklick"
+        if let menu = u.rightClick(at: NSPoint(x: r.midX, y: r.midY)), let i = menu.items.firstIndex(where: { $0.title == item }) {
+            check(i <= 3, "RIP-Bereich: „\(item)“ nicht oben: \(menu.items.map(\.title))")
+            check(menu.items.contains { $0.title == String(localized: "Markierten Bereich entfernen (neue Datei)") }, "RIP-Bereich: ohne „… (neue Datei)“")
+            menu.performActionForItem(at: i)
+        } else {
+            via = "direkt (rechtsklick nicht zugestellt)"
+            mix.removeMarkedRange(d)
+        }
+        u.spin(10) { mix.editSession(d)?.preview != nil && mix.editSession(d)?.rendering == false }
+        let dur1 = mix.deck(d).duration
+        check(mix.editing(d), "RIP-Bereich: EDIT nicht an")
+        check(abs(dur1 - (dur0 - 4)) < 0.01, "RIP-Bereich: Dauer \(dur0) -> \(dur1), soll 4 s weniger")
+        check(mix.range(d) == nil && mix.ripMark(d) == nil, "RIP-Bereich: Bereich nach dem Entfernen noch da")
+        u.spin(2) { !rips.openKeys.contains(track.key) }
+        check(rips.open(track.key).isEmpty && rips.store.entry(for: track.key)?.done == [f.id], "RIP-Bereich: Befund nicht erledigt")
+        log("rip-bereich: „\(label)“ · \(via) -> entfernt \(String(format: "%.1f", dur0 - dur1)) s · erledigt")
     }
 }

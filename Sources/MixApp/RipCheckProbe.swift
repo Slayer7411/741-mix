@@ -29,6 +29,7 @@ extension SelfTest {
         rips.applyCut(key, s)
         let done = rips.open(key).filter { $0.cuts }.isEmpty && mix.edits.edit(for: key)?.trimStart == s.time
         guard col.hasPrefix("▸ 7,5 s"), done else { fail("Spalte „\(col)“, nach Schnitt IN offen: \(rips.open(key).map(\.id))") }
+        let marked = await ripRangeProbe(mix, url: url, result: r)
         // Laufzeit an einem echten Track: Dekodieren + Prüfung (Grid der Collection)
         var real = ""
         if let t = c.first, let a = t.gridAnchorMs {
@@ -40,8 +41,43 @@ extension SelfTest {
             real = String(format: " · Collection-Track %.0f s in %.2f s: %@", t.duration, res.1,
                           res.0.map { $0.findings.isEmpty ? "ohne Befund" : $0.findings.map { "\($0.id) \(RipCheck.shortTime($0.time))" }.joined(separator: ", ") } ?? "nicht lesbar")
         }
-        log(String(format: "Rip-Prüfung: Fixture %@ bei %.2f s (Sicherheit %.2f, %@) in %.2f s · Spalte „%@“ · Schnitt IN erledigt%@",
-                   s.id, s.time, s.confidence, s.cues.map(\.rawValue).joined(separator: "+"), fixture.1, col, real))
+        log(String(format: "Rip-Prüfung: Fixture %@ bei %.2f s (Sicherheit %.2f, %@) in %.2f s · Spalte „%@“ · Schnitt IN erledigt · %@%@",
+                   s.id, s.time, s.confidence, s.cues.map(\.rawValue).joined(separator: "+"), fixture.1, col, marked, real))
+    }
+
+    /// Befund im Speicher, Fixture in das letzte Deck (EDIT an): Laden markiert den Bereich 0 … Befund mit „RIP · …“,
+    /// REMOVE (Schnittliste) erledigt den Befund, der Bereich ist weg. Edits nur im Speicher
+    static func ripRangeProbe(_ mix: MixModel, url: URL, result r: RipCheck.Result) async -> String {
+        func fail(_ s: String) -> Never { log("Rip-Bereich: \(s)"); log("RIP-PRÜFUNG FALSCH"); exit(1) }
+        guard let s = r.start else { fail("kein Befund") }
+        let d = mix.decks.count - 1, rips = RipChecks.shared
+        var t = Track(key: url.path, path: url.path)
+        t.title = "Rip Fixture"
+        t.bpm = 126
+        t.duration = r.duration
+        t.cues = [Cue(name: "AutoGrid", kind: .grid, startMs: s.time * 1000, lengthMs: 0, hotcue: -1)]
+        rips.store.put(r, for: t.key)
+        let wasEditing = mix.editing(d), onLoad = mix.prefs.ui.ripMarkOnLoad
+        defer { rips.store.remove([t.key]); mix.prefs.ui.ripMarkOnLoad = onLoad; mix.setRange(d, nil); mix.setEditing(d, wasEditing); mix.pull() }
+        mix.prefs.ui.ripMarkOnLoad = true
+        mix.setEditing(d, true)
+        guard mix.load(t, deck: d, force: true) else { fail("Fixture lädt nicht in Deck \(deckLetters[d])") }
+        for _ in 0..<1500 where mix.ripMark(d) == nil { mix.pull(); try? await Task.sleep(for: .milliseconds(20)) }
+        guard let m = mix.ripMark(d), let range = mix.range(d) else { fail("Laden markiert keinen Bereich (\(mix.deck(d).error ?? "-"))") }
+        let label = mix.rangeMarked(d, grid: mix.deck(d).grid)?.label ?? ""
+        guard m.finding.id == s.id, range.start == 0, abs(range.end - s.time) < 1e-3, label.hasPrefix("RIP · ") else {
+            fail("Bereich \(range) „\(label)“ für \(m.finding.id)")
+        }
+        let dur0 = mix.deck(d).duration
+        mix.editAction(d, .remove)
+        for _ in 0..<500 where mix.editSession(d)?.rendering == true { try? await Task.sleep(for: .milliseconds(20)) }
+        mix.pull()
+        let open = rips.open(t.key).filter(\.cuts).map(\.id), done = rips.store.entry(for: t.key)?.done ?? []
+        let dur1 = mix.deck(d).duration
+        guard open.isEmpty, done == [s.id], mix.range(d) == nil, mix.ripMark(d) == nil, abs(dur0 - dur1 - range.length) < 0.01 else {
+            fail("nach REMOVE: offen \(open), erledigt \(done), Bereich \(String(describing: mix.range(d))), Dauer \(dur0) -> \(dur1)")
+        }
+        return "Laden markiert „\(label)“ · REMOVE -> erledigt"
     }
 }
 

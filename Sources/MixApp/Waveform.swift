@@ -438,7 +438,7 @@ struct WaveformView: View {
             },
             cuePoint: deck.cuePoint, hasTrack: deck.track != nil, zoom: 1.z, gridEdited: deck.gridEdited,
             trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d) && !(mix.decks[d].edit?.previewing ?? false)),
-            range: mix.range(d).map { WaveScene.Marked($0, grid: deck.grid) }, edit: mix.editing(d) ? mix.decks[d].edit : nil)
+            range: mix.rangeMarked(d, grid: deck.grid), edit: mix.editing(d) ? mix.decks[d].edit : nil)
         Content(d: d, scene: scene, wave: wf, waiting: deck.track != nil && wf == nil).equatable()
     }
 
@@ -585,7 +585,8 @@ final class WaveMouseView: NSView {
             self.drag = .scrub(x)
         case let .trim(end):
             mix.dragTrim(d, end: end, to: time(x, mix))
-        case let .mark(anchor, _):
+        case let .mark(anchor, fresh):
+            if fresh { mix.dropRipMark(d) }   // neue Markierung: kein RIP-Bereich mehr
             let t = snap(time(x, mix), e)
             mix.setRange(d, abs(t - anchor) < 1e-6 ? nil : TrackRange(anchor, t))
         case let .joint(k):
@@ -633,12 +634,12 @@ final class WaveMouseView: NSView {
         if editing {
             if mix.focusedDeck != d { mix.focusedDeck = d }
             return EditMenu.make(mix: mix, d: d, at: t, joint: joint(at: point(event), mix),
-                                 label: mix.range(d).map { WaveScene.Marked($0, grid: scene.grid).label })
+                                 label: mix.rangeMarked(d, grid: scene.grid)?.label, inRange: mix.range(d).map { t >= $0.start && t <= $0.end } ?? false)
         }
         guard let r = mix.range(d) else { return nil }
         guard t >= r.start, t <= r.end else { return nil }
         if mix.focusedDeck != d { mix.focusedDeck = d }
-        return WaveRangeMenu.make(mix: mix, d: d, label: WaveScene.Marked(r, grid: scene.grid).label)
+        return WaveRangeMenu.make(mix: mix, d: d, label: mix.rangeMarked(d, grid: scene.grid)?.label ?? "")
     }
 
     // Zeiger: über einem Rand des Bereichs, einer Naht oder einem Griff des Schnitts ↔
@@ -674,8 +675,10 @@ enum WaveRangeMenu {
         let head = NSMenuItem(title: label, action: nil, keyEquivalent: "")
         head.isEnabled = false
         m.addItem(head)
+        ripReason(m, mix: mix, d: d)
         m.addItem(.separator())
-        m.addItem(ActionItem(String(localized: "Bereich entfernen (neue Datei)")) { mix.cutRange(d, mode: .remove) })
+        markedRemove(m, mix: mix, d: d)
+        m.addItem(.separator())
         m.addItem(ActionItem(String(localized: "Auf Bereich kürzen (neue Datei)")) { mix.cutRange(d, mode: .keep) })
         let load = ActionItem(String(localized: "Ergebnis ins Deck laden")) { mix.prefs.ui.cutLoadsResult.toggle() }
         load.state = mix.prefs.ui.cutLoadsResult ? .on : .off
@@ -685,7 +688,31 @@ enum WaveRangeMenu {
         m.addItem(ActionItem(String(localized: "Loop aus Bereich")) { mix.rangeToLoop(d) })
         m.addItem(.separator())
         m.addItem(ActionItem(String(localized: "Bereich aufheben")) { mix.clearRange(d) })
+        ripDismiss(m, mix: mix, d: d)
         return m
+    }
+
+    /// RIP-Bereich: Grund unter der Beschriftung
+    static func ripReason(_ m: NSMenu, mix: MixModel, d: Int) {
+        guard let r = mix.ripMark(d) else { return }
+        let i = NSMenuItem(title: RipChecks.text(r.finding) + " – " + RipChecks.reasons(r.finding), action: nil, keyEquivalent: "")
+        i.isEnabled = false
+        m.addItem(i)
+    }
+
+    /// „Markierten Bereich entfernen“ (Schnittliste) und „… (neue Datei)“ – die neue Datei nur, solange das Deck das
+    /// Original spielt
+    static func markedRemove(_ m: NSMenu, mix: MixModel, d: Int) {
+        m.addItem(ActionItem(String(localized: "Markierten Bereich entfernen")) { mix.removeMarkedRange(d) })
+        let file = ActionItem(String(localized: "Markierten Bereich entfernen (neue Datei)")) { mix.cutRange(d, mode: .remove) }
+        file.isEnabled = mix.playedEditList(d) == nil
+        m.addItem(file)
+    }
+
+    /// RIP-Bereich: Befund verwerfen (Bereich bleibt markiert)
+    static func ripDismiss(_ m: NSMenu, mix: MixModel, d: Int) {
+        guard let r = mix.ripMark(d) else { return }
+        m.addItem(ActionItem(String(localized: "Befund verwerfen")) { RipChecks.shared.dismiss(r.key, [r.finding]) })
     }
 }
 
@@ -693,7 +720,7 @@ enum WaveRangeMenu {
 /// Edit-Zeile keinen Platz hat
 @MainActor
 enum EditMenu {
-    static func make(mix: MixModel, d: Int, at t: Double, joint: Int?, label: String?) -> NSMenu {
+    static func make(mix: MixModel, d: Int, at t: Double, joint: Int?, label: String?, inRange: Bool = false) -> NSMenu {
         let m = NSMenu()
         m.autoenablesItems = false
         let session = mix.editSession(d)
@@ -701,6 +728,11 @@ enum EditMenu {
             let head = NSMenuItem(title: label, action: nil, keyEquivalent: "")
             head.isEnabled = false
             m.addItem(head)
+            WaveRangeMenu.ripReason(m, mix: mix, d: d)
+            m.addItem(.separator())
+        }
+        if inRange {
+            WaveRangeMenu.markedRemove(m, mix: mix, d: d)
             m.addItem(.separator())
         }
         for op in EditOp.allCases {
@@ -749,6 +781,7 @@ enum EditMenu {
         if mix.range(d) != nil {
             m.addItem(ActionItem(String(localized: "Loop aus Bereich")) { mix.rangeToLoop(d) })
             m.addItem(ActionItem(String(localized: "Bereich aufheben")) { mix.clearRange(d) })
+            WaveRangeMenu.ripDismiss(m, mix: mix, d: d)
         }
         return m
     }

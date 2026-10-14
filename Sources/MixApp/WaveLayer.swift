@@ -43,7 +43,8 @@ struct WaveScene: Equatable {
     /// markierter Bereich (⌃ + Ziehen): Fläche, Ränder, Beschriftung Takt.Beat → Takt.Beat · Beats · Sekunden
     struct Marked: Equatable {
         var start: Double, end: Double, label: String
-        init(_ r: TrackRange, grid: BeatGrid?) {
+        /// `rip`: Bereich aus einem Befund der Rip-Prüfung („RIP · …“)
+        init(_ r: TrackRange, grid: BeatGrid?, rip: Bool = false) {
             start = r.start; end = r.end
             let secs = String(format: "%.1f s", r.length)
             if let g = grid, g.bpm > 0 {
@@ -51,6 +52,7 @@ struct WaveScene: Equatable {
             } else {
                 label = "\(CutRow.Content.time(r.start)) → \(CutRow.Content.time(r.end)) · \(secs)"
             }
+            if rip { label = "RIP · " + label }
         }
     }
     var range: Marked?

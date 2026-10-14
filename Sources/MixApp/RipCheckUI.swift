@@ -87,12 +87,12 @@ final class RipChecks {
                                                 : String(localized: "Schnitt OUT auf \(RipCheck.shortTime(f.time)) gesetzt"), key: "ripcheck")
     }
 
-    /// Bereich vor dem Schnitt IN bzw. hinter dem Schnitt OUT als neue Datei entfernen (Weg von „Bereich entfernen“)
+    /// Bereich vor dem Schnitt IN bzw. hinter dem Schnitt OUT als neue Datei entfernen (Weg von „Bereich entfernen“);
+    /// erledigt erst, wenn die Datei geschrieben ist
     func removeRegion(_ t: Track, _ f: RipCheck.Finding) {
         guard let mix, let store = library, f.cuts else { return }
         let dur = duration(t.key)
-        let r = f.edge == .start ? TrackRange(0, f.time) : TrackRange(f.time, dur)
-        guard r.length > 0.01, dur - r.length >= TrackTrim.minLength else {
+        guard let r = RipCheck.range(f, duration: dur), dur - r.length >= TrackTrim.minLength else {
             StatusCenter.post(.warning, String(localized: "Ergebnis zu kurz (mindestens 1 s)"), key: "cut")
             return
         }
@@ -100,11 +100,16 @@ final class RipChecks {
         let tt = mix.edits.edit(for: t.key)?.apply(to: t) ?? t
         let grid = d.flatMap { mix.deck($0).grid } ?? BeatGrid(track: tt)
         let cues = d.map { Array(mix.deck($0).hotcues.values) } ?? tt.cues.filter { $0.hotcue >= 0 && $0.kind != .grid }
+        let key = t.key
         CutJob.start(.init(deck: d ?? mix.focusedDeck, kind: .cut(.remove, r), track: tt, grid: grid, hotcues: cues,
                            audio: d.flatMap { mix.audio($0) }, load: false,
-                           directory: Session.isSelfTest ? CutJob.selfTestDirectory : nil), mix: mix, store: store)
-        markDismissed(t.key, [f.id])
+                           directory: Session.isSelfTest ? CutJob.selfTestDirectory : nil), mix: mix, store: store) {
+            RipChecks.shared.markDone(key, [f])
+        }
     }
+
+    /// erledigt über den markierten Bereich (REMOVE, KEEP, neue Datei, Schnitt aus Bereich)
+    func markDone(_ key: String, _ f: [RipCheck.Finding]) { store.markDone(f.map(\.id), for: key) }
 
     func dismiss(_ key: String, _ f: [RipCheck.Finding]) {
         markDismissed(key, f.map(\.id))
@@ -113,10 +118,11 @@ final class RipChecks {
 
     private func markDismissed(_ key: String, _ ids: [String]) { store.dismiss(ids, for: key) }
 
-    /// Deck geladen: kurzer Hinweis bei offenem Befund
-    func deckLoaded(_ key: String, deck d: Int) {
+    /// Deck geladen: offenen Schnitt-Befund als Bereich markieren (⌘, → BROWSER → Analyse, nach dem Laden), sonst Hinweis
+    func deckLoaded(_ key: String, deck d: Int, mix m: MixModel) {
         let o = open(key)
-        guard !o.isEmpty else { return }
+        m.pendingRip[d] = m.prefs.ui.ripMarkOnLoad && o.contains(where: \.cuts) ? key : nil
+        guard !o.isEmpty, m.pendingRip[d] == nil else { return }
         let text = o.map(Self.text).joined(separator: " · ")
         StatusCenter.post(.info, String(localized: "Rip-Prüfung: \(text) · RIP in der Edit-Zeile"), key: "ripcheck.\(d)")
     }
@@ -128,6 +134,15 @@ final class RipChecks {
     }
 
     // MARK: Text
+
+    /// Grund kurz: Stille, fremd, Grid
+    static func reason(_ f: RipCheck.Finding) -> String {
+        switch f.kind {
+        case .silence: String(localized: "Stille")
+        case .foreign: String(localized: "fremd")
+        case .grid: String(localized: "Grid")
+        }
+    }
 
     static func text(_ f: RipCheck.Finding) -> String {
         let t = RipCheck.shortTime(f.time)
@@ -178,6 +193,9 @@ final class RipChecks {
                     self?.applyCut(t.key, f)
                 })
                 menu.addItem(ActionItem(String(localized: "Bereich entfernen (neue Datei)")) { [weak self] in self?.removeRegion(t, f) })
+                if let d = loadedDeck(t.key), let mix {
+                    menu.addItem(ActionItem(String(localized: "Befund als Bereich markieren")) { mix.markRip(d, f) })
+                }
             }
         }
         menu.addItem(ActionItem(String(localized: "Befund verwerfen")) { [weak self] in self?.dismiss(t.key, o) })
@@ -196,7 +214,8 @@ struct RipChip: View {
     }
 }
 
-/// RIP in der Edit- und Vorbereiten-Zeile: nur bei offenem Befund des geladenen Tracks; Klick = Befunde und Aktionen
+/// RIP in der Edit- und Vorbereiten-Zeile: nur bei offenem Befund des geladenen Tracks. Klick = Befund als markierten
+/// Bereich (weitere Klicks: nächster Befund), ⌥-Klick oder nur Grid-Befund = Befunde und Aktionen
 struct RipDeckButton: View {
     @Environment(MixModel.self) private var mix
     let d: Int
@@ -206,15 +225,19 @@ struct RipDeckButton: View {
         let rips = RipChecks.shared
         let _ = rips.revision
         if let t = mix.deck(d).track, !mix.deck(d).loading, rips.openKeys.contains(t.key) {
-            DeckButton(title: "RIP", active: true, color: Theme.state) { show.toggle() }
-                .help("Rip-Prüfung: Befund am Anfang oder Ende")
-                .popover(isPresented: $show, arrowEdge: .bottom) { RipFindingsView(track: t) { show = false } }
+            DeckButton(title: "RIP", active: true, color: Theme.state) {
+                if NSEvent.modifierFlags.contains(.option) || !mix.markNextRip(d) { show.toggle() }
+            }
+                .help("Rip-Prüfung: Befund am Anfang oder Ende als Bereich markieren (nichts wird geschnitten), ⌥-Klick: Befunde")
+                .popover(isPresented: $show, arrowEdge: .bottom) { RipFindingsView(track: t, mark: { [mix, d] in mix.markRip(d, $0) }) { show = false } }
         }
     }
 }
 
 struct RipFindingsView: View {
     let track: Track
+    /// Befund als Bereich im Deck markieren
+    var mark: ((RipCheck.Finding) -> Void)?
     let close: () -> Void
 
     var body: some View {
@@ -228,6 +251,9 @@ struct RipFindingsView: View {
                     Text(verbatim: RipChecks.text(f)).font(Theme.mono(11)).foregroundStyle(Theme.bone)
                     Text(verbatim: RipChecks.reasons(f)).font(Theme.mono(10)).foregroundStyle(Theme.muted)
                     HStack(spacing: 4) {
+                        if f.cuts, let mark {
+                            DeckButton(title: "◆ BEREICH") { mark(f); close() }
+                        }
                         if f.cuts {
                             DeckButton(title: f.edge == .start ? String(localized: "◆ SCHNITT IN \(RipCheck.shortTime(f.time))")
                                                                : String(localized: "◆ SCHNITT OUT \(RipCheck.shortTime(f.time))"),
@@ -243,5 +269,95 @@ struct RipFindingsView: View {
         .frame(minWidth: 320, alignment: .leading)
         .background(Theme.chitin)
         .zoomExempt()
+    }
+}
+
+/// markierter Bereich aus einem Befund der Rip-Prüfung: Beschriftung „RIP · …“, Grund im Menü und in der Statuszeile.
+/// Gilt, bis der Bereich aufgehoben, neu markiert oder ein anderer Track geladen wird; Ränder ziehen behält ihn
+struct RipMark: Equatable {
+    let key: String
+    let finding: RipCheck.Finding
+}
+
+extension MixModel {
+    /// RIP-Kennzeichnung des markierten Bereichs
+    func ripMark(_ d: Int) -> RipMark? {
+        guard decks.indices.contains(d), decks[d].range != nil, let m = decks[d].rip, m.key == decks[d].trackKey else { return nil }
+        return m
+    }
+
+    func dropRipMark(_ d: Int) { if decks.indices.contains(d), decks[d].rip != nil { decks[d].rip = nil } }
+
+    /// Schnittliste, die das Deck gerade spielt (nil = Original)
+    func playedEditList(_ d: Int) -> EditList? {
+        guard let s = editSessions[d], s.preview != nil, core.trackAudio(d) === s.preview else { return nil }
+        return s.shown
+    }
+
+    /// Beschriftung des Bereichs (Wellenform, Menü)
+    func rangeMarked(_ d: Int, grid: BeatGrid?) -> WaveScene.Marked? {
+        range(d).map { WaveScene.Marked($0, grid: grid, rip: ripMark(d) != nil) }
+    }
+
+    /// Befund als markierten Bereich (anpassbar wie jeder Bereich); geschnitten wird nichts
+    @discardableResult
+    func markRip(_ d: Int, _ f: RipCheck.Finding) -> Bool {
+        let s = deck(d)
+        guard let t = s.track, !s.loading, s.duration > 0, f.cuts else { return false }
+        if editSessions[d]?.rendering == true {
+            StatusCenter.post(.info, String(localized: "Schnittliste wird noch gerechnet …"), key: "edit.\(d)")
+            return false
+        }
+        let edl = playedEditList(d)
+        let dur = edl != nil ? editSessions[d]?.source.duration ?? s.duration : s.duration
+        guard let r = RipCheck.range(f, duration: dur, edl: edl) else {
+            StatusCenter.post(.info, String(localized: "Rip-Befund liegt nicht mehr in der Schnittliste"), key: "ripcheck.\(d)")
+            return false
+        }
+        setRange(d, r)
+        decks[d].rip = RipMark(key: t.key, finding: f)
+        StatusCenter.post(.info, String(localized: "RIP-Bereich markiert (\(RipChecks.reason(f))): \(RipChecks.text(f)) – \(RipChecks.reasons(f)) · Rechtsklick → Markierten Bereich entfernen"),
+                          key: "ripcheck.\(d)")
+        return true
+    }
+
+    /// RIP-Knopf: nächster offener Schnitt-Befund als Bereich; false = keiner
+    func markNextRip(_ d: Int) -> Bool {
+        guard let key = deck(d).track?.key else { return false }
+        let o = RipChecks.shared.open(key).filter(\.cuts)
+        guard !o.isEmpty else { return false }
+        let i = ripMark(d).flatMap { m in o.firstIndex { $0.id == m.finding.id } }.map { ($0 + 1) % o.count } ?? 0
+        return markRip(d, o[i])
+    }
+
+    /// nach dem Laden (und dem Rechnen einer Schnittliste) den vorgemerkten Befund markieren
+    func applyPendingRip(_ d: Int) {
+        guard let k = pendingRip[d], let t = deck(d).track, t.key == k, !deck(d).loading, core.trackAudio(d) != nil else { return }
+        if editing(d), editSessions[d]?.rendering ?? true { return }
+        pendingRip[d] = nil
+        if let f = RipChecks.shared.open(k).first(where: \.cuts) { markRip(d, f) }
+    }
+
+    /// Aktion auf dem markierten Bereich ausgeführt: RIP-Befund erledigt
+    func ripRangeDone(_ m: RipMark?) {
+        guard let m else { return }
+        RipChecks.shared.markDone(m.key, [m.finding])
+        StatusCenter.post(.ok, String(localized: "Rip-Befund erledigt: \(RipChecks.text(m.finding))"), key: "ripcheck")
+    }
+
+    /// „Markierten Bereich entfernen“: aus der Schnittliste (REMOVE, keine Datei). Ohne EDIT-Modus schaltet es ihn ein –
+    /// die Liste spielt nur dort
+    func removeMarkedRange(_ d: Int) {
+        guard range(d) != nil else { return }
+        if !editing(d) {
+            setEditing(d, true)
+            if editSessions[d]?.rendering == true {
+                if let m = ripMark(d) { pendingRip[d] = m.key }
+                setRange(d, nil)
+                StatusCenter.post(.info, String(localized: "EDIT an: Schnittliste wird gerechnet, Bereich danach neu markieren"), key: "edit.\(d)")
+                return
+            }
+        }
+        editAction(d, .remove)
     }
 }

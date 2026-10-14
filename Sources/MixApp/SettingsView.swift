@@ -947,6 +947,9 @@ struct BrowserSettings: View {
                 Toggle("Rip-Prüfung bei der Analyse mit", isOn: $mix.prefs.ui.ripWithAnalysis)
                 Text("prüft anfang und ende: stille, rest eines anderen tracks (tonart, tempo), grid. ergebnis: spalte rip, ◆ RIP, ZU BEARBEITEN. rechtsklick -> rip prüfen geht immer.")
                     .settingsHint()
+                Toggle("Rip-Befund beim Laden markieren", isOn: $mix.prefs.ui.ripMarkOnLoad)
+                Text("lädt ein deck einen track mit offenem befund, wird der vorgeschlagene teil als bereich markiert (RIP · …). geschnitten wird nichts: rechtsklick -> markierten bereich entfernen.")
+                    .settingsHint()
                 KeyProfileSettings()
             }
             DAWBridgeSettings()

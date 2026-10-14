@@ -168,6 +168,7 @@ extension MixModel {
 
     func editAction(_ d: Int, _ op: EditOp) {
         guard let s = readySession(d), let r = editTarget(d, s) else { return }
+        let rip = ripMark(d)
         var n = s.shown
         var newRange: TrackRange? = range(d)
         var landing: Double?
@@ -202,7 +203,9 @@ extension MixModel {
             StatusCenter.post(.warning, why, key: "edit.\(d)")
             return
         }
+        dropRipMark(d)   // Bereich gehört danach zur neuen Liste
         applyEdit(d, s, n, range: newRange, label: op.label, landing: landing)
+        if op == .remove || op == .keep { ripRangeDone(rip) }
     }
 
     /// Schnittmarke bei t (Ausgabe-Zeit, schon gerastet)

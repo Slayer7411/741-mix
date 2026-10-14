@@ -24,6 +24,8 @@ final class DeckMirror {
     var editing = false
     /// markierter Bereich der Wellenform (⌃ + Ziehen), bis Esc, Klick daneben, neue Markierung oder anderer Track
     var range: TrackRange?
+    /// Bereich stammt aus einem Befund der Rip-Prüfung (RipCheckUI.swift)
+    var rip: RipMark?
     /// EDIT-Modus: Schnittliste, wie das Deck sie gerade spielt (Marken, Schnitte, stumme Stücke), nil = keine Sitzung
     var edit: WaveScene.EditMarks?
     /// Vorbereiten: Gain, Spitze, Analyse (PrepareMode.swift)
@@ -137,6 +139,8 @@ final class MixModel {
     @ObservationIgnored var editSessions: [Int: EditSession] = [:]
     /// Bereich nach einer Bearbeitung, gesetzt nach dem Tausch (gehört zur neuen Liste)
     @ObservationIgnored var pendingRange: [Int: TrackRange?] = [:]
+    /// Rip-Befund des geladenen Tracks (Schlüssel), als Bereich zu markieren, sobald das Deck bereit ist
+    @ObservationIgnored var pendingRip: [Int: String] = [:]
     /// Grid, das aus Warp-Markern der DAW übernommen wurde (Herkunft `.daw` beim Speichern, solange es unverändert ist)
     @ObservationIgnored private var dawGrid: [Int: BeatGrid] = [:]
     @ObservationIgnored private var timer: Timer?
@@ -275,6 +279,7 @@ final class MixModel {
                 if key != decks[d].trackKey {
                     decks[d].trackKey = key
                     if decks[d].range != nil { decks[d].range = nil }
+                    if decks[d].rip != nil { decks[d].rip = nil }
                     UndoStack.shared.clear(deck: d)   // auch Controller-LOAD, Entladen
                     // Instant Double (auch vom Controller): Collection-Stand und gespeicherte Änderung vom Quell-Deck
                     if !key.isEmpty, originals[d]?.key != key, let e = originals.first(where: { $0.value.key == key })?.key {
@@ -282,6 +287,10 @@ final class MixModel {
                         savedEdit[d] = savedEdit[e]
                         dawGrid[d] = dawGrid[e]
                     }
+                }
+                if pendingRip[d] != nil {
+                    // danach: ein Tausch der Schnittliste setzt den Bereich erst nach diesem Abgleich
+                    DispatchQueue.main.async { [weak self] in self?.applyPendingRip(d) }
                 }
             }
             if s.effectiveMaster != effectiveMaster { effectiveMaster = s.effectiveMaster }
@@ -371,7 +380,7 @@ final class MixModel {
         UndoStack.shared.clear(deck: d)   // Trackwechsel: kein Rückgängig, die Schritte passen nicht zum neuen Track
         focusedDeck = d
         pull()
-        RipChecks.shared.deckLoaded(t.key, deck: d)
+        RipChecks.shared.deckLoaded(t.key, deck: d, mix: self)
         return true
     }
 
@@ -487,6 +496,7 @@ final class MixModel {
     func range(_ d: Int) -> TrackRange? { decks.indices.contains(d) ? decks[d].range : nil }
     func setRange(_ d: Int, _ r: TrackRange?) {
         guard decks.indices.contains(d), decks[d].range != r else { return }
+        if r == nil || decks[d].range == nil { dropRipMark(d) }   // aufgehoben oder neu: kein RIP-Bereich
         recordRange(d, from: decks[d].range, to: r)
         decks[d].range = r
     }
@@ -511,8 +521,9 @@ final class MixModel {
     func rangeToTrim(_ d: Int) {
         guard let r = range(d) else { return }
         var ok = false
+        let rip = ripMark(d)
         edit(d, String(localized: "Schnitt aus Bereich"), [.trim, .loop]) { ok = core.setTrim(d, TrackTrim(start: r.start, end: r.end)) }
-        if !ok { StatusCenter.post(.warning, String(localized: "Schnitt zu kurz (mindestens 1 s)"), key: "trim.\(d)") }
+        if !ok { StatusCenter.post(.warning, String(localized: "Schnitt zu kurz (mindestens 1 s)"), key: "trim.\(d)") } else { ripRangeDone(rip) }
     }
     /// Loop auf den Bereich
     func rangeToLoop(_ d: Int) {

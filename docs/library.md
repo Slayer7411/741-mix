@@ -56,7 +56,8 @@
 * right click tracks or a source -> `Rip prüfen`, or with every analysis (⌘, -> BROWSER -> analyse, on)
 * start and end: silence (start > 2 s, end > 6 s), rest of the previous track / start of the next one (key change or other tempo, hard cut, 4 / 8 bar loop hint), grid suspect at the start. breakdown and drum intros are no finding
 * `ripcheck.json` (MINOS-741 folder). column `Rip` (`▸ 7,3 s`, `◂ 3:02`, `GRID`), `◆ RIP` filter, tree `ZU BEARBEITEN`
-* actions: set cut IN / OUT (edits.json, no new file), remove the region as a new file, discard. done when the side has a cut. deck: status on load, `RIP` in edit and prepare row, striped region in the overview
+* nothing is cut automatically: loading a track pre-marks the proposed part as a marked range (`RIP · …`, ⌘, -> BROWSER -> analyse -> `Rip-Befund beim Laden markieren`, on). right click in the range -> `Markierten Bereich entfernen` (edit list) or `… (neue Datei)`
+* other actions: set cut IN / OUT (edits.json, no new file), remove the region as a new file, discard. done when the side has a cut or after an action on the RIP range. deck: `RIP` in edit and prepare row marks the range, striped region in the overview
 * details: [manual](MANUAL.md#rip-check)
 
 ## ◆ RELOAD

@@ -523,14 +523,14 @@ struct CutRow: View {
 
     struct Model: Equatable {
         var start: Double?, end: Double?, duration = 0.0, range = false
-        var snap = EditSnap.bar, previewing = false, pending = false, segments = 1
+        var snap = EditSnap.bar, previewing = false, pending = false, segments = 1, rip = false
     }
 
     var body: some View {
         let s = mix.deck(d), e = mix.decks[d].edit
         Content(d: d, m: Model(start: s.trim.start, end: s.trim.end, duration: s.track != nil ? s.duration : 0,
                                range: mix.range(d) != nil, snap: mix.prefs.ui.editSnap, previewing: e?.previewing ?? false,
-                               pending: e?.pending ?? false, segments: e?.segments ?? 1)).equatable()
+                               pending: e?.pending ?? false, segments: e?.segments ?? 1, rip: mix.ripMark(d) != nil)).equatable()
     }
 
     struct Content: View, Equatable {
@@ -559,8 +559,8 @@ struct CutRow: View {
         private func row(_ w: Width) -> some View {
             HStack(spacing: 3.z) {
                 if w != .tiny { snapButton }
-                DeckButton(title: "REMOVE", active: true, color: Theme.state) { mix.editAction(d, .remove) }.stable()
-                    .help("Bereich (sonst Segment am Spielkopf) aus der Schnittliste entfernen")
+                DeckButton(title: m.rip ? "◆ REMOVE RIP" : "REMOVE", active: true, color: Theme.state, verbatim: true) { mix.editAction(d, .remove) }.stable()
+                    .help(LocalizedStringKey(m.rip ? "Markierten RIP-Bereich aus der Schnittliste entfernen (Befund erledigt)" : "Bereich (sonst Segment am Spielkopf) aus der Schnittliste entfernen"))
                 DeckButton(title: "KEEP") { mix.editAction(d, .keep) }.stable().help("Nur Bereich behalten")
                 if w != .tiny {
                     DeckButton(title: "DUP") { mix.editAction(d, .duplicate) }.stable().help("Bereich duplizieren (hinter sich selbst)")

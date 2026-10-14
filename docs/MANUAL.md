@@ -390,14 +390,16 @@ real cut = a new audio file. the original is never changed.
 
 | entry | action |
 |---|---|
-| Bereich entfernen (neue Datei) | new file without the range (breakdown out) |
+| Markierten Bereich entfernen | range out of the edit list (= REMOVE, no file). edit mode is switched on: the edit list plays only there |
+| Markierten Bereich entfernen (neue Datei) | new file without the range (breakdown out). not while the deck plays an edit list |
 | Auf Bereich kürzen (neue Datei) | new file with only the range |
 | Ergebnis ins Deck laden | on: the new file loads into the same deck (load lock applies: a playing deck keeps its track). also in menu DECKS |
 | Schnitt IN/OUT aus Bereich | cut start / end = range, no file |
 | Loop aus Bereich | loop on the range, play head jumps in when outside |
 | Bereich aufheben | range off |
 
-* edit mode: REMOVE / KEEP in the edit row change the edit list (no file until RENDER), see [full edit](#full-edit--tool-loops)
+* edit mode: REMOVE / KEEP in the edit row change the edit list (no file until RENDER), see [full edit](#full-edit--tool-loops). right click in the range shows `Markierten Bereich entfernen` and `… (neue Datei)` on top of the edit menu
+* range from a [rip check](#rip-check) finding: label `RIP · …`, reason line in the menu, `Befund verwerfen` at the end
 * keys (⌘, -> KEYBOARD, no default): remove range, keep range, cut in / out from range, loop from range. esc = clear range (only taken when a range exists)
 * file: `<name> [cut].m4a` next to the original, apple lossless, sample rate and channels of the original, 16 bit from 16-bit sources, else 24. name taken -> `[cut 2]`, `[cut 3]` …
 * 2 ms linear crossfade at the joint, 2 ms fade at an edge inside the track (keep). length = original minus range (remove) or range (keep), sample exact
@@ -794,12 +796,16 @@ right click tracks, TRACK COLLECTION, PREPARATION, a playlist, smartlist, playli
 * breakdown intros without a beat, filtered intros, drum intros, outros and tails: no finding. a break needs a key change to an unrelated key (both sides tonal) or a clearly different tempo in the foreign part, material that does not come back later in the track, and a hard edge at the file boundary. loudness alone never counts
 * same queue and rules as the analysis (2 files, throttled while a deck plays, pause while a deck loads, ✕ = cancel). done -> `Rip geprüft: 240 Tracks · 12 zu bearbeiten`
 * grid of the check: own grid edit, else the track's grid, else the tempo is computed for it (not stored)
-* results: `ripcheck.json` in the MINOS-741 folder (track key -> findings, discarded findings). separate from `analysis.json`: findings are not collection values, nothing goes into the collection file, a new check keeps discarded findings discarded
-* open finding = not discarded and no cut on that side yet (grid: no own grid)
+* results: `ripcheck.json` in the MINOS-741 folder (track key -> findings, discarded and done findings). separate from `analysis.json`: findings are not collection values, nothing goes into the collection file, a new check keeps discarded findings discarded
+* open finding = not discarded, not done and no cut on that side yet (grid: no own grid)
+* nothing is cut automatically. a finding only pre-marks a range and points to files worth a look
 * column `Rip` (hidden by default, header right click): `▸ 7,3 s` = cut IN proposal, `◂ 3:02` = cut OUT, `GRID`. hover = reasons (key `8m → 11d`, sound changes, loop 4 bars, tempo) and confidence
 * `◆ RIP` in the pane header: only tracks with an open finding, count next to it. tree: `ZU BEARBEITEN` while findings are open
-* right click one track with an open finding: the finding, `Schnitt IN auf 7,3 s setzen` / `Schnitt OUT auf 3:02 setzen` (non-destructive cut in `edits.json`, no new file; on a deck with undo), `Bereich entfernen (neue Datei)` (same path as [cut audio](#cut-audio), `[cut]` file next to the original, finding done), `Befund verwerfen`
-* deck: loading a track with an open finding -> status `Rip-Prüfung: Anfang 7,3 s vermutlich fremd · RIP in der Edit-Zeile`. edit row and prepare row show `RIP` -> same actions. the overview shows the region striped while the finding is open
+* right click one track with an open finding: the finding, `Schnitt IN auf 7,3 s setzen` / `Schnitt OUT auf 3:02 setzen` (non-destructive cut in `edits.json`, no new file; on a deck with undo), `Bereich entfernen (neue Datei)` (same path as [cut audio](#cut-audio), `[cut]` file next to the original, finding done once the file is written), `Befund als Bereich markieren` (track on a deck), `Befund verwerfen`
+* deck: loading a track with an open finding marks the proposed part as a normal [marked range](#cut-audio): start finding 0 … proposal, end finding proposal … end (with an edit list in output time). label `RIP · 0.1 → 4.1 · 16 B · 7,5 s`, status line with the reason (silence / foreign / grid) and the cues. edges drag like any range (snap, ⌥ free). ⌘, -> BROWSER -> analyse -> `Rip-Befund beim Laden markieren` (on); off -> status `Rip-Prüfung: … · RIP in der Edit-Zeile` only
+* `RIP` in the edit row and prepare row: click = mark the finding as range (again = next finding), ⌥-click = list of findings with `◆ BEREICH`, cut IN / OUT, remove as new file, discard. a grid-only finding opens the list
+* range from a finding: right click -> `Markierten Bereich entfernen` (edit list, see [cut audio](#cut-audio)), REMOVE in the edit / prepare row shows `◆ REMOVE RIP`. done after REMOVE, KEEP, `… (neue Datei)` (once the file is written) or `Schnitt IN/OUT aus Bereich`. esc / a click outside only clears the range, the finding stays open. `Befund verwerfen` in the range menu. a new range (fresh drag) is no RIP range any more
+* the overview shows the region striped while the finding is open, with or without a range
 * method: features from the analysis pass. chroma per 125 ms frame (key threshold and masking, 12 pitch classes), band levels (10 bands, ~10 ms), bass onsets. per candidate (every 125 ms) means of foreign (music start to candidate, at least 3 s), track (16 s after) and rest (to music end). break if both sides are tonal (≥ 3 pitch classes over 20 % of the strongest, chroma mass ≥ 20 % of the track's median), chroma correlation foreign ↔ track ≤ 0.3, foreign ↔ rest ≤ 0.4, foreign ↔ every 8 s window of the rest ≤ 0.5, track ↔ rest ≥ 0.6, keys of foreign and track not same / ±1 / relative / ±2, foreign part at most 8 dB quieter than the track and its first (last) second at most 6 dB under its mean. without key: own tempo of the foreign part ≥ 1.2 % off the grid, phase lock to the own tempo ≥ 0.5 and 0.25 above the grid's, band levels ≥ 1.5 × the track's usual distance and no window of the rest closer than 1 ×. position: strongest onset ±0.25 s, then the beat. loop: foreign part ≥ 2 × 4 / 8 bars and band envelope correlated ≥ 0.8 at that lag. silence at the end counts from 6 s (releases often end with 2–5 s under −45 dBFS)
 * synthetic checks (`swift test`): 6.3 s silence -> cut IN before the first beat · 4 bars 128 bpm C, hard cut, 126 bpm F# -> break at 7.50 s (±30 ms), 4 bars · 8 bars -> loop 4 bars, without grid ±0.1 s · breakdown intro 30 s same key -> nothing · drum intro 16 bars -> nothing · 8 s silence at the end -> cut OUT on the next beat, 4 s -> nothing · end with the next track -> break at 90.00 s · clean track -> nothing. 8 / 8
 * against the collection (`MIX741_RIP_NML=<collection.nml> MIX741_RIP_N=100 swift test --filter ripAgainstCollection`, read only), 96 local tracks: 3 with a foreign start / end, 17 with more than 6 s silence at the end, 1 grid suspect, not checked by ear

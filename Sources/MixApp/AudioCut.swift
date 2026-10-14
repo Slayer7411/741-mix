@@ -114,7 +114,8 @@ enum CutJob {
         var directory: URL?
     }
 
-    static func start(_ input: Input, mix: MixModel, store: LibraryStore) {
+    /// `done`: nach erfolgreichem Schreiben (Hauptthread)
+    static func start(_ input: Input, mix: MixModel, store: LibraryStore, done: (@MainActor () -> Void)? = nil) {
         guard !running else {
             StatusCenter.post(.warning, String(localized: "Schneiden läuft schon"), key: "cut")
             return
@@ -141,7 +142,10 @@ enum CutJob {
             let result = Result { try run(input, report: report) }
             let secs = CACurrentMediaTime() - t0
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { finish(input, result, seconds: secs, mix: mix, store: store) }
+                MainActor.assumeIsolated {
+                    finish(input, result, seconds: secs, mix: mix, store: store)
+                    if case .success = result { done?() }
+                }
             }
         }
     }
@@ -276,8 +280,9 @@ extension MixModel {
         }
         // Selbsttest: nie neben Christians Dateien schreiben
         let dir: URL? = Session.isSelfTest ? CutJob.selfTestDirectory : nil
+        let rip = ripMark(d)
         CutJob.start(.init(deck: d, kind: .cut(mode, r), track: t, grid: s.grid, hotcues: Array(s.hotcues.values), audio: audio,
-                           load: load ?? prefs.ui.cutLoadsResult, directory: dir), mix: self, store: store)
+                           load: load ?? prefs.ui.cutLoadsResult, directory: dir), mix: self, store: store) { [weak self] in self?.ripRangeDone(rip) }
     }
 }
 
