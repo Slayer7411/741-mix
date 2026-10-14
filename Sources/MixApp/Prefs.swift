@@ -265,7 +265,8 @@ struct UIPrefs: Codable, Equatable {
     var match = MatchRule()
     /// gespielte Tracks (History dieser Sitzung bzw. seit dem letzten Reset) im Browser dimmen
     var dimPlayedTracks = true
-    /// gespielte Tracks aus Collection, Playlists und Ordnern ausblenden (History und RUNNING zeigen sie weiter)
+    /// gespielte Tracks aus Collection, Playlists, Smartlists und Ordnern ausblenden (◆ UNGESPIELT; History, RUNNING
+    /// und Preparation zeigen sie weiter)
     var hidePlayedTracks = false
     /// Gespielt-Markierungen beim Start der App zurücksetzen
     var resetPlayedOnStart = false
@@ -280,6 +281,8 @@ struct UIPrefs: Codable, Equatable {
     var layoutProfiles: [LayoutProfile] = []
     /// zuletzt angewendetes Profil (LayoutProfile.id, "" = keins)
     var activeLayoutProfile = ""
+    /// Reihenfolge der Bereiche in ⌘, (Titel-Schlüssel, per Ziehen in der Seitenleiste; leer = Standard)
+    var settingsTabOrder: [String] = []
 
     /// alt: 2 / 4 Decks (Kürzel ⌥⌘4, Selbsttest); von 1 Deck aus -> 4
     var showFourDecks: Bool {

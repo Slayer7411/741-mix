@@ -78,7 +78,8 @@ final class HistoryStore {
         }
     }
 
-    private func setPlayed(_ s: Set<String>) {
+    /// Gespielt-Markierungen setzen (Reset, Rückgängig, Selbsttest)
+    func setPlayed(_ s: Set<String>) {
         played = s
         playedRevision += 1
         savePlayed()

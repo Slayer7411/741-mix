@@ -106,10 +106,25 @@ final class BrowserPaneModel: Identifiable {
     /// zuletzt angezeigte Liste (Tabelle, Browse-Encoder) – nie neu sortiert
     var shown: [Track] { cachedRows }
 
-    /// gespielte Tracks ausblenden (⌘, -> BROWSER): nicht in History und RUNNING, dort stehen sie gerade deshalb
+    /// Zeilen, die „gespielte ausblenden“ zuletzt aus der Liste genommen hat (Anzahl im Kopf)
+    @ObservationIgnored private(set) var hiddenCount = 0
+
+    /// gespielte Tracks ausblenden (⌘, -> BROWSER, ◆ UNGESPIELT): nicht in History, RUNNING und Preparation (+ Archiv),
+    /// dort stehen sie gerade deshalb bzw. sind vorgemerkt
+    nonisolated static func hidesPlayed(in source: BrowserSource) -> Bool {
+        switch source {
+        case .historyLive, .history, .running, .preparation, .prepArchive: false
+        default: true
+        }
+    }
+
+    /// Schlüssel, die aus der Liste fallen (nil = keine)
+    nonisolated static func hiddenKeys(source: BrowserSource, played: Set<String>, hidePlayed: Bool) -> Set<String>? {
+        hidePlayed && !played.isEmpty && hidesPlayed(in: source) ? played : nil
+    }
+
     private func excluded(_ history: HistoryStore?, _ hidePlayed: Bool) -> Set<String>? {
-        guard hidePlayed, !source.isHistory, source != .running, let history, !history.played.isEmpty else { return nil }
-        return history.played
+        Self.hiddenKeys(source: source, played: history?.played ?? [], hidePlayed: hidePlayed)
     }
 
     private func keys(_ store: LibraryStore, _ separators: String, _ h: HarmonyInput?, excl: Set<String>? = nil,
@@ -138,8 +153,8 @@ final class BrowserPaneModel: Identifiable {
             sortedKey = baseKey
         }
         if key == cacheKey { return cachedRows }
-        let list = Self.filtered(sortedBase, criteria(separators, h, excl), index: Self.tagIndex)
-        apply(localOnly ? Self.local(list) : list, key: key)
+        let list = Self.filteredCounting(sortedBase, criteria(separators, h, excl), index: Self.tagIndex)
+        apply(localOnly ? Self.local(list.rows) : list.rows, key: key, hidden: list.hidden)
         return cachedRows
     }
 
@@ -156,7 +171,7 @@ final class BrowserPaneModel: Identifiable {
             sortedBase = pre
             sortedKey = baseKey
         }
-        if cacheKey.isEmpty { return rows(from: store, history: history, separators: separators) }
+        if cacheKey.isEmpty { return rows(from: store, history: history, separators: separators, hidePlayed: hidePlayed) }
         let sorted = baseKey == sortedKey
         let base = sorted ? sortedBase : self.base(from: store, history: history)
         jobSerial += 1
@@ -184,17 +199,18 @@ final class BrowserPaneModel: Identifiable {
             sortedBase = job.base
             sortedKey = baseKey
         }
-        apply(localOnly ? Self.local(job.rows) : job.rows, key: key)
+        apply(localOnly ? Self.local(job.rows) : job.rows, key: key, hidden: job.hidden)
     }
 
     @ObservationIgnored private var notifyPending = false
 
     /// neue Liste: Tabelle (`onList`) und Anzahl im Kopf (`listRevision`) danach, nie während einer Auswertung
-    private func apply(_ rows: [Track], key: [AnyHashable]) {
+    private func apply(_ rows: [Track], key: [AnyHashable], hidden: Int) {
         if !ListChange.isSmall(from: cachedRows, to: rows, limit: 64) { tableGeneration += 1 }
         Self.dropLater(cachedRows)
         cachedRows = rows
         cacheKey = key
+        hiddenCount = hidden
         guard !notifyPending else { return }
         notifyPending = true
         DispatchQueue.main.async { [weak self] in
@@ -255,6 +271,7 @@ final class BrowserPaneModel: Identifiable {
         let criteria: Criteria
         let rank: (@Sendable (Track) -> Double)?
         private(set) var rows: [Track] = []
+        private(set) var hidden = 0
         init(base: [Track], order: [KeyPathComparator<Track>]?, criteria: Criteria, rank: (@Sendable (Track) -> Double)?) {
             self.base = base
             self.order = order
@@ -263,12 +280,17 @@ final class BrowserPaneModel: Identifiable {
         }
         func run() -> ListJob {
             if let order { base = TrackSort.sorted(base, using: order, rank: rank) }
-            rows = BrowserPaneModel.filtered(base, criteria, index: TagIndex())
+            (rows, hidden) = BrowserPaneModel.filteredCounting(base, criteria, index: TagIndex())
             return self
         }
     }
 
     nonisolated static func filtered(_ base: [Track], _ c: Criteria, index: TagIndex) -> [Track] {
+        filteredCounting(base, c, index: index).rows
+    }
+
+    /// gefiltert + Anzahl der ausgeblendeten gespielten Tracks (nach allen anderen Filtern)
+    nonisolated static func filteredCounting(_ base: [Track], _ c: Criteria, index: TagIndex) -> (rows: [Track], hidden: Int) {
         var list = base
         if !c.roles.isEmpty {
             let needles = c.roles.map { "» " + $0.rawValue }
@@ -279,8 +301,9 @@ final class BrowserPaneModel: Identifiable {
         }
         if !c.words.isEmpty { list = list.filter { $0.matches(words: c.words) } }
         if let m = c.match { list = list.filter { m.rule.matches($0, m.ref) } }
-        if let x = c.exclude { list = list.filter { !x.contains($0.key) } }
-        return list
+        guard let x = c.exclude else { return (list, 0) }
+        let kept = list.filter { !x.contains($0.key) }
+        return (kept, list.count - kept.count)
     }
 
     private static func local(_ list: [Track]) -> [Track] {
@@ -371,7 +394,9 @@ struct RowCount: View {
         let _ = model.listRevision
         let n = model.source.isHistory ? BrowserPane.historyEntries(model.source, history).count
             : model.list(from: store, history: history, separators: decks.prefs.ui.tagSeparators, hidePlayed: decks.prefs.ui.hidePlayedTracks).count
-        Text("\(n)").font(Theme.mono(11.z)).foregroundStyle(Theme.muted).fixedSize()
+        let hidden = model.source.isHistory || !decks.prefs.ui.hidePlayedTracks ? 0 : model.hiddenCount
+        (hidden > 0 ? Text("\(n) · \(hidden) ausgeblendet") : Text(verbatim: "\(n)"))
+            .font(Theme.mono(11.z)).foregroundStyle(Theme.muted).fixedSize()
     }
 }
 
@@ -387,27 +412,28 @@ struct PaneHeader: View {
 
     var body: some View {
         if side {
-            VStack(alignment: .leading, spacing: 6.z) {
-                titleRow
-                search.frame(maxWidth: .infinity)
-                if case .folder = model.source { subfolders }
-                Wrap(spacing: 4.z) { roles }
-                Wrap(spacing: 4.z) {
-                    tagsButton
-                    MatchChip(model: model)
-                    if CloudLibrary.shared.hasCloudTracks { cloud }
-                }
-                if !model.tagFilter.isEmpty {
-                    ScrollView(.vertical, showsIndicators: false) {
+            // scrollt, wenn der Bereich niedriger ist als die Spalte (viele Filter, viele Tags)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 6.z) {
+                    titleRow
+                    search.frame(maxWidth: .infinity)
+                    if case .folder = model.source { subfolders }
+                    Wrap(spacing: 4.z) { roles }
+                    Wrap(spacing: 4.z) {
+                        tagsButton
+                        MatchChip(model: model)
+                        UnplayedChip()
+                        if CloudLibrary.shared.hasCloudTracks { cloud }
+                    }
+                    if !model.tagFilter.isEmpty {
                         Wrap(spacing: 3.z) {
                             DeckButton(title: "✕ TAGS") { model.clearTags() }.help("Tag-Filter löschen")
                             activeTags
                         }
                     }
                 }
-                Spacer(minLength: 0)
+                .padding(6.z)
             }
-            .padding(6.z)
             .frame(width: Self.sideWidth.z, alignment: .topLeading)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(Theme.panelHeader)
@@ -426,6 +452,7 @@ struct PaneHeader: View {
                     tagsButton
                     Text("│").foregroundStyle(Theme.hairline)
                     MatchChip(model: model)
+                    UnplayedChip()
                     if CloudLibrary.shared.hasCloudTracks {
                         Text("│").foregroundStyle(Theme.hairline)
                         cloud
@@ -504,6 +531,17 @@ struct PaneHeader: View {
     }
 }
 
+/// ◆ UNGESPIELT: gespielte Tracks ausblenden (gilt für beide Bereiche, gleiche Einstellung wie ⌘, -> BROWSER)
+struct UnplayedChip: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        DeckButton(title: "UNGESPIELT", active: mix.prefs.ui.hidePlayedTracks) { mix.prefs.ui.hidePlayedTracks.toggle() }
+            .help("Gespielte Tracks ausblenden: Collection, Playlists, Smartlists, Ordner, Suche – History, Running Tracks und Preparation zeigen sie weiter. Auch ⌘, → Browser, Menü Browser")
+            .background(UITestMark(name: "unplayed"))
+    }
+}
+
 /// Filter „passt zum Master“: an zeigt er den Bezug (hörbarer Key, Tempo) – eigene Ansicht, nur sie hängt dann am Tempo
 struct MatchChip: View {
     @Environment(MixModel.self) private var mix
@@ -566,7 +604,7 @@ struct TagPicker: View {
         let tf = model.tagFilter
         VStack(alignment: .leading, spacing: 6.z) {
             Text("TAGS · KOMMENTAR 2").font(Theme.label(12.z, .bold))
-            Text("trennzeichen: '\(separators)' (einstellbar unter ⌘, → anzeige)").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
+            Text("trennzeichen: '\(separators)' (einstellbar unter ⌘, → tags)").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
             Text("klick = filter · ⌥-klick = ausschließen · auch in der liste").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
             TextField("FILTERN", text: $filter).textFieldStyle(.plain).font(Theme.mono(11.z))
                 .padding(4.z).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))

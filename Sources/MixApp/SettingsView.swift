@@ -5,36 +5,74 @@ import MixEngine
 
 /// Einstellungen (⌘,) – jede Option der App ist hier einstellbar.
 /// Links die Bereiche (neuer Bereich = eine Zeile in `tabs`), rechts der Inhalt scrollbar.
+/// Reihenfolge: allgemein -> speziell; per Ziehen in der Seitenleiste änderbar (`ui.settingsTabOrder`).
 struct SettingsView: View {
     static let tabs: [SettingsTab] = [
         SettingsTab("AUDIO") { AudioSettings() },
+        SettingsTab("ANZEIGE") { DisplaySettings() },
         SettingsTab("DECKS") { DeckSettings() },
         SettingsTab("MIXER & FX") { MixerFXSettings() },
         SettingsTab("PLUGINS") { PluginSettingsView() },
-        SettingsTab("ANZEIGE") { WaveformSettings() },
         SettingsTab("BROWSER") { BrowserSettings() },
-        SettingsTab("CONTROLLER") { ControllerSettings() },
         SettingsTab("TAGS") { TagColorSettings() },
         SettingsTab("CLOUD") { CloudSettings() },
         SettingsTab("TASTATUR") { ShortcutSettings() },
+        SettingsTab("CONTROLLER") { ControllerSettings() },
     ]
 
-    @State var selection = 0
+    @Environment(MixModel.self) private var mix
+    /// Titel-Schlüssel des gewählten Bereichs
+    @State var selection = "AUDIO"
+
+    /// Bereiche in der gespeicherten Reihenfolge
+    static func ordered(_ saved: [String]) -> [SettingsTab] {
+        let byID = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+        return SettingsTabOrder.merged(saved, defaults: tabs.map(\.id)).compactMap { byID[$0] }
+    }
 
     var body: some View {
+        let tabs = Self.ordered(mix.prefs.ui.settingsTabOrder)
+        let current = tabs.first { $0.id == selection } ?? tabs[0]
         HStack(spacing: 0) {
-            SettingsSidebar(tabs: Self.tabs, selection: $selection)
+            SettingsSidebar(tabs: tabs, selection: $selection) { id, target in
+                let order = SettingsTabOrder.moved(tabs.map(\.id), id, before: target)
+                mix.prefs.ui.settingsTabOrder = order == Self.tabs.map(\.id) ? [] : order
+            } reset: {
+                mix.prefs.ui.settingsTabOrder = []
+            }
             Rectangle().fill(Theme.hairline).frame(width: 1)
             ScrollView {
-                SettingsPage { Self.tabs[min(selection, Self.tabs.count - 1)].content() }
+                SettingsPage { current.content() }
             }
-            .id(selection)
+            .id(current.id)
             .background(Theme.chitin)
         }
         .frame(minWidth: 720, idealWidth: 820, maxWidth: .infinity, minHeight: 520, idealHeight: 640, maxHeight: .infinity)
         .background(Theme.void)
         .background(ResizableWindow())
         .preferredColorScheme(.dark)
+    }
+}
+
+/// Reihenfolge der Bereiche: gespeicherte Schlüssel, unbekannte fallen weg, neue Bereiche stehen hinter ihrem
+/// Vorgänger aus der Standardreihenfolge
+enum SettingsTabOrder {
+    static func merged(_ saved: [String], defaults: [String]) -> [String] {
+        var out: [String] = []
+        for id in saved where defaults.contains(id) && !out.contains(id) { out.append(id) }
+        for (i, id) in defaults.enumerated() where !out.contains(id) {
+            let at = defaults[..<i].reversed().lazy.compactMap { p in out.firstIndex(of: p) }.first.map { $0 + 1 } ?? 0
+            out.insert(id, at: at)
+        }
+        return out
+    }
+
+    /// `id` vor `target` setzen (target nil = ans Ende)
+    static func moved(_ order: [String], _ id: String, before target: String?) -> [String] {
+        guard id != target, order.contains(id) else { return order }
+        var out = order.filter { $0 != id }
+        out.insert(id, at: target.flatMap { out.firstIndex(of: $0) } ?? out.count)
+        return out
     }
 }
 
@@ -51,21 +89,25 @@ struct SettingsTab: Identifiable {
     }
 }
 
-/// Seitenleiste: Cinzel versal, roter Balken am aktiven Eintrag
+/// Seitenleiste: Cinzel versal, roter Balken am aktiven Eintrag; Einträge per Ziehen umsortieren
 private struct SettingsSidebar: View {
     let tabs: [SettingsTab]
-    @Binding var selection: Int
+    @Binding var selection: String
+    /// gezogener Bereich, Ziel (davor; nil = ans Ende)
+    let move: (String, String?) -> Void
+    let reset: () -> Void
+    @State private var target: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(verbatim: "MINOS-741").font(Theme.label(11, .bold)).foregroundStyle(Theme.muted)
                 .padding(.leading, 18).padding(.top, 20).padding(.bottom, 14)
-            ForEach(tabs.indices, id: \.self) { i in
-                let active = i == selection
-                Button { selection = i } label: {
+            ForEach(tabs) { tab in
+                let active = tab.id == selection
+                Button { selection = tab.id } label: {
                     HStack(spacing: 0) {
                         Rectangle().fill(active ? Theme.state : .clear).frame(width: 3)
-                        Text(tabs[i].title).font(Theme.label(12, .bold))
+                        Text(tab.title).font(Theme.label(12, .bold))
                             .foregroundStyle(active ? Theme.bone : Theme.bone.opacity(0.6))
                             .lineLimit(1)
                             .padding(.leading, 15)
@@ -73,11 +115,31 @@ private struct SettingsSidebar: View {
                     }
                     .frame(height: 32)
                     .background(active ? Theme.chitinRaised : .clear)
+                    .overlay(alignment: .top) { if target == tab.id { Rectangle().fill(Theme.state).frame(height: 2) } }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .draggable(tab.id)
+                .dropDestination(for: String.self) { ids, _ in
+                    guard let id = ids.first else { return false }
+                    move(id, tab.id)
+                    return true
+                } isTargeted: { on in
+                    if on { target = tab.id } else if target == tab.id { target = nil }
+                }
+                .contextMenu { Button("Standard-Reihenfolge") { reset() } }
             }
-            Spacer(minLength: 0)
+            // unter dem letzten Eintrag: ans Ende
+            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .top) { if target == "" { Rectangle().fill(Theme.state).frame(height: 2) } }
+                .contentShape(Rectangle())
+                .dropDestination(for: String.self) { ids, _ in
+                    guard let id = ids.first else { return false }
+                    move(id, nil)
+                    return true
+                } isTargeted: { on in
+                    if on { target = "" } else if target == "" { target = nil }
+                }
         }
         .frame(width: 176)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -290,14 +352,6 @@ struct DeckSettings: View {
                 Text("spielt das deck, wird nicht geladen (doppelklick, taste, controller-load) -> hinweis in der statusleiste. trotzdem laden: ⌥-doppelklick, shift + load, taste „auswahl ins fokus-deck laden (auch wenn es spielt)“.")
                     .settingsHint()
             }
-            Section("Master-Clock & Metronom") {
-                Picker("Metronom auf Kanalpaar", selection: $mix.prefs.engine.metronomeChannel) {
-                    ForEach(Array(stride(from: 0, to: max(2, mix.deviceChannels - 1), by: 2)), id: \.self) { c in
-                        Text("\(c + 1)/\(c + 2)").tag(c)
-                    }
-                }
-                Text("im extern-modus z. b. auf das paar vom kopfhörer-cue legen -> klick nur auf dem kopfhörer").settingsHint()
-            }
             Section("Tempo & Sync") {
                 Toggle("Keylock beim ersten Laden an", isOn: $mix.prefs.engine.keylockDefault)
                 Picker("Tempo-Bereich (Standard)", selection: $mix.prefs.engine.tempoRangeDefault) {
@@ -309,13 +363,6 @@ struct DeckSettings: View {
                 }
                 sliderRow("Pitch-Bend-Stärke", $mix.prefs.engine.bendAmount, 0.01...0.12, format: "%.2f")
                 sliderRow("Link-Versatz (ms)", $mix.prefs.engine.linkOffsetMs, -50...50, step: 1, format: "%+.0f", unit: "ms")
-            }
-            Section("Phrasen-Anker") {
-                Picker("Grid-Anker auf Phrasen ausrichten", selection: $mix.prefs.engine.phraseAnchor) {
-                    ForEach(PhraseAnchorMode.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
-                }
-                Text("beim laden prüft minos, ob die strukturwechsel des tracks auf 8-takt-grenzen ab dem grid-anker liegen. vorschlagen -> roter phrase-knopf in der grid-zeile, automatisch -> anker wird um ganze beats verschoben. bpm und raster bleiben, gespeichert in den eigenen änderungen, nie in der collection.")
-                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
             }
             Section("Loops & Beatjump") {
                 Picker("Loopgröße (Standard)", selection: $mix.prefs.engine.defaultLoopSize) {
@@ -341,6 +388,29 @@ struct DeckSettings: View {
                 Text("rechtsklick auf einen loop-hotcue -> active loop (punkt auf der taste, gestrichelter rahmen in der wellenform). erreicht die position den loop-anfang, rastet der loop ein, die loop-taste verlässt ihn. gespeichert je track in den eigenen änderungen.")
                     .settingsHint()
             }
+            Section("Zeilen je Deck") {
+                ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
+                    Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui[keyPath: row.0] },
+                                                                  set: { mix.prefs.ui[keyPath: row.0] = $0 }))
+                }
+                Toggle("Kompakte Decks (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge)", isOn: $mix.prefs.ui.compactDecks)
+                Text("auch im menü decks -> zeilen / kompakte decks. ohne pitch-fader nimmt die wellenform die breite. wellenform und kopfzeile bleiben immer.").settingsHint()
+            }
+            Section("Master-Clock & Metronom") {
+                Picker("Metronom auf Kanalpaar", selection: $mix.prefs.engine.metronomeChannel) {
+                    ForEach(Array(stride(from: 0, to: max(2, mix.deviceChannels - 1), by: 2)), id: \.self) { c in
+                        Text("\(c + 1)/\(c + 2)").tag(c)
+                    }
+                }
+                Text("im extern-modus z. b. auf das paar vom kopfhörer-cue legen -> klick nur auf dem kopfhörer").settingsHint()
+            }
+            Section("Phrasen-Anker") {
+                Picker("Grid-Anker auf Phrasen ausrichten", selection: $mix.prefs.engine.phraseAnchor) {
+                    ForEach(PhraseAnchorMode.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                Text("beim laden prüft minos, ob die strukturwechsel des tracks auf 8-takt-grenzen ab dem grid-anker liegen. vorschlagen -> roter phrase-knopf in der grid-zeile, automatisch -> anker wird um ganze beats verschoben. bpm und raster bleiben, gespeichert in den eigenen änderungen, nie in der collection.")
+                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
+            }
             Section("EDIT-Modus & Tool-Loops") {
                 Picker("Raster beim Markieren", selection: $mix.prefs.ui.editSnap) {
                     ForEach(EditSnap.allCases, id: \.self) { Text(verbatim: $0.label).tag($0) }
@@ -363,30 +433,6 @@ struct DeckSettings: View {
                 Text("edit-modus: ziehen markiert auf dem raster, klick setzt eine schnittmarke, die zeile bearbeitet die schnittliste, das deck spielt sie. render schreibt <name> [cut].m4a, tool 2 · 4 · 8 · 16 schreibt <name> [tool-loop n].m4a.")
                     .settingsHint()
             }
-            Section("History & Preparation") {
-                sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f", unit: "s")
-                Toggle("History zusätzlich in den History-Ordner der Collection schreiben", isOn: $mix.prefs.ui.historyToExternal)
-                Text("history und preparation werden als nml gespeichert (~/Library/Application Support/MINOS-741) -> direkt in die collection importierbar. preparation wird bei jedem start archiviert und geleert.")
-                    .settingsHint()
-            }
-            Section("Ansicht") {
-                Picker("Decks anzeigen", selection: $mix.prefs.ui.deckCount) {
-                    Text("1 Deck").tag(1)
-                    Text("2 Decks").tag(2)
-                    Text("4 Decks").tag(4)
-                }
-                sliderRow("Vorhören im Browser ab (Anteil)", $mix.prefs.ui.previewStart, 0...0.9, format: "%.1f")
-                sliderRow("Abstand zwischen Decks (pt)", $mix.prefs.ui.deckGap, 0...12, step: 1, format: "%.0f")
-                Text("0 = die Wellenformen enden an den Deck-Rändern und am Fensterrand, nur die Rahmenlinie dazwischen.").settingsHint()
-            }
-            Section("Zeilen je Deck") {
-                ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
-                    Toggle(LocalizedStringKey(row.1), isOn: Binding(get: { mix.prefs.ui[keyPath: row.0] },
-                                                                  set: { mix.prefs.ui[keyPath: row.0] = $0 }))
-                }
-                Toggle("Kompakte Decks (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge)", isOn: $mix.prefs.ui.compactDecks)
-                Text("auch im menü decks -> zeilen / kompakte decks. ohne pitch-fader nimmt die wellenform die breite. wellenform und kopfzeile bleiben immer.").settingsHint()
-            }
             GrooveSettingsSection()
         }
     }
@@ -404,17 +450,17 @@ struct MixerFXSettings: View {
                 Toggle("Auto-Gain (Lautheit aus der Collection)", isOn: $mix.prefs.engine.autoGain)
                 headroomPicker("Headroom", $mix.prefs.engine.headroomInternal)
             }
-            Section("Externer Mixer") {
-                headroomPicker("Headroom", $mix.prefs.engine.headroomExternal)
-                Toggle("Auto-Gain", isOn: $mix.prefs.engine.autoGainExternal)
-                Toggle("Main-Volume wirkt auch extern", isOn: $mix.prefs.engine.masterVolumeExternal)
-            }
             Section("Mixer-Optionen") {
                 Toggle("EQ-Kill (ganz links = aus)", isOn: $mix.prefs.engine.eqKill)
                 Picker("Crossfader-Kurve", selection: $mix.prefs.engine.crossfaderCurve) {
                     ForEach(CrossfaderCurve.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 sliderRow("Kanalfilter-Resonanz", $mix.prefs.engine.channelFilterResonance, 0.2...1.5)
+            }
+            Section("Externer Mixer") {
+                headroomPicker("Headroom", $mix.prefs.engine.headroomExternal)
+                Toggle("Auto-Gain", isOn: $mix.prefs.engine.autoGainExternal)
+                Toggle("Main-Volume wirkt auch extern", isOn: $mix.prefs.engine.masterVolumeExternal)
             }
             Section("FX-Units (Gruppenmodus: Filter · Delay · Reverb)") {
                 Toggle("FX-Units anzeigen", isOn: $mix.prefs.ui.showFXUnits)
@@ -512,13 +558,45 @@ private struct FXAssignRow: View {
     }
 }
 
-struct WaveformSettings: View {
+/// ⌘, -> ANZEIGE: Sprache, Zoom, Layout, Profile, Statusleiste, Wellenform, Beatgrid, Cue-Farben
+struct DisplaySettings: View {
     @Environment(MixModel.self) private var mix
 
     var body: some View {
         @Bindable var mix = mix
         Form {
+            Section("Sprache") {
+                Picker("Sprache (wirkt nach Neustart)", selection: $mix.prefs.ui.language) {
+                    Text("Systemstandard").tag("system")
+                    Text(verbatim: "Deutsch").tag("de")
+                    Text(verbatim: "English").tag("en")
+                }
+            }
+            Section("Zoom") {
+                Picker("Hauptfenster (⌘+ / ⌘− / ⌘0)", selection: Binding(get: { mix.prefs.ui.zoom }, set: { ZoomControl.set($0, mix: mix) })) {
+                    ForEach(Set(ZoomSteps.levels + [mix.prefs.ui.zoom]).sorted(), id: \.self) { Text(verbatim: ZoomSteps.percent($0)).tag($0) }
+                }
+            }
+            Section("Layout") {
+                Picker("Decks anzeigen", selection: $mix.prefs.ui.deckCount) {
+                    Text("1 Deck").tag(1)
+                    Text("2 Decks").tag(2)
+                    Text("4 Decks").tag(4)
+                }
+                sliderRow("Abstand zwischen Decks (pt)", $mix.prefs.ui.deckGap, 0...12, step: 1, format: "%.0f")
+                Text("0 = die Wellenformen enden an den Deck-Rändern und am Fensterrand, nur die Rahmenlinie dazwischen.").settingsHint()
+                Picker("Browser-Anordnung", selection: $mix.prefs.ui.browserLayout) { ForEach(BrowserLayout.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Toggle("Ordner-Baum ausblenden, solange Decks sichtbar sind", isOn: $mix.prefs.ui.hideTreeWithDecks)
+            }
             LayoutProfileSettings()
+            Section("Statusleiste") {
+                Picker("Anzeigen", selection: $mix.prefs.ui.statusBar) { ForEach(StatusBarMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
+                Text("automatisch: die leiste fährt hoch, wenn die maus am unteren fensterrand steht oder eine warnung kommt, und liegt dann über dem browser. aus: keine leiste, auch keine meldungen. auch im menü darstellung.")
+                    .settingsHint()
+                Toggle("Last-Anzeigen (DSP, Latenz, Aussetzer, Speicher, CPU)", isOn: $mix.prefs.ui.showMeters)
+                Text("dsp = rechenzeit des audio-blocks ÷ blockdauer, rot ab 70 %. aussetzer: blöcke über dem budget plus überlast-meldungen des geräts, klick setzt zurück. meldungen: klick zeigt die letzten 50.")
+                    .settingsHint()
+            }
             Section("Wellenform") {
                 Picker("Stil", selection: $mix.prefs.ui.waveformStyle) {
                     ForEach(WaveformStyle.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
@@ -554,68 +632,6 @@ struct WaveformSettings: View {
                 }
                 Toggle("Taktnummern", isOn: $mix.prefs.ui.showBarNumbers)
                 Toggle("Marker alle 8 / 16 / 32 Takte (magenta)", isOn: $mix.prefs.ui.barMarkers)
-            }
-            Section("Zoom") {
-                Picker("Hauptfenster (⌘+ / ⌘− / ⌘0)", selection: Binding(get: { mix.prefs.ui.zoom }, set: { ZoomControl.set($0, mix: mix) })) {
-                    ForEach(Set(ZoomSteps.levels + [mix.prefs.ui.zoom]).sorted(), id: \.self) { Text(verbatim: ZoomSteps.percent($0)).tag($0) }
-                }
-            }
-            Section("Sprache") {
-                Picker("Sprache (wirkt nach Neustart)", selection: $mix.prefs.ui.language) {
-                    Text("Systemstandard").tag("system")
-                    Text(verbatim: "Deutsch").tag("de")
-                    Text(verbatim: "English").tag("en")
-                }
-            }
-            Section("Browser") {
-                Picker("Anordnung", selection: $mix.prefs.ui.browserLayout) { ForEach(BrowserLayout.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
-                Toggle("Ordner-Baum ausblenden, solange Decks sichtbar sind", isOn: $mix.prefs.ui.hideTreeWithDecks)
-                MusicFolderSettings()
-                Toggle("Änderungen in die Collection-Datei schreiben (Backup davor)", isOn: $mix.prefs.ui.writeCollection)
-                Text("aus: änderungen (inline, ⌘E, hotcues, loops, grid) liegen nur in MINOS-741 (metadata.json, edits.json). an: gesammelt in die collection.nml, sicherung höchstens stündlich in „Backup MINOS-741“ neben der datei. nicht, solange die collection-software läuft. schnitt und active loops bleiben in MINOS-741.")
-                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
-                Toggle("Cuts und Tool-Loops als neue Einträge anlegen", isOn: $mix.prefs.ui.writeCuts)
-                    .disabled(!mix.prefs.ui.writeCollection)
-                Toggle("Preparation und History als Playlists (Ordner MINOS-741)", isOn: $mix.prefs.ui.writePlaylists)
-                    .disabled(!mix.prefs.ui.writeCollection)
-                Text("eigene playlists stehen nur im ordner MINOS-741 und werden bei jedem schreiben ersetzt, andere playlists bleiben unberührt.")
-                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
-            }
-            PreviewSettings()
-            Section("Statusleiste") {
-                Picker("Anzeigen", selection: $mix.prefs.ui.statusBar) { ForEach(StatusBarMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
-                Text("automatisch: die leiste fährt hoch, wenn die maus am unteren fensterrand steht oder eine warnung kommt, und liegt dann über dem browser. aus: keine leiste, auch keine meldungen. auch im menü darstellung.")
-                    .settingsHint()
-                Toggle("Last-Anzeigen (DSP, Latenz, Aussetzer, Speicher, CPU)", isOn: $mix.prefs.ui.showMeters)
-                Text("dsp = rechenzeit des audio-blocks ÷ blockdauer, rot ab 70 %. aussetzer: blöcke über dem budget plus überlast-meldungen des geräts, klick setzt zurück. meldungen: klick zeigt die letzten 50.")
-                    .settingsHint()
-            }
-            Section("Cover") {
-                Toggle("Cover im Deck anzeigen", isOn: $mix.prefs.ui.showDeckCover)
-                Toggle("Cover-Vorschau im Browser", isOn: $mix.prefs.ui.showCoverPreview)
-                Text("vorschau unter dem baum (gewählter track). spalte „Cover“ in der liste: rechtsklick auf die spaltenköpfe. bild aus der datei, sonst cover / folder / front.jpg im ordner, zwischengespeichert in ~/Library/Caches/MINOS-741/artwork.")
-                    .settingsHint()
-            }
-            Section("Analyse") {
-                // genau eine Oktave: jede Grenze stellt die andere mit
-                Stepper(value: Binding(get: { mix.prefs.ui.analysisBpmLow }, set: { mix.prefs.ui.analysisBpmLow = max(40, min(150, $0)) }),
-                        in: 40...150, step: 1) {
-                    Text("BPM-Bereich ab \(Int(mix.prefs.ui.analysisBpmLow))")
-                }
-                Stepper(value: Binding(get: { 2 * mix.prefs.ui.analysisBpmLow }, set: { mix.prefs.ui.analysisBpmLow = max(40, min(150, $0 / 2)) }),
-                        in: 80...300, step: 2) {
-                    Text("BPM-Bereich bis \(Int(2 * mix.prefs.ui.analysisBpmLow))")
-                }
-                Text("genau eine oktave: das tempo wird in den bereich gefaltet (z. b. 100–200: 96 -> 192). gilt für analysieren / neu analysieren.")
-                    .settingsHint()
-                KeyProfileSettings()
-            }
-            DAWBridgeSettings()
-            Section("Collection prüfen") {
-                Toggle("Beim Start prüfen", isOn: $mix.prefs.ui.checkOnStart)
-                Toggle("Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen", isOn: $mix.prefs.ui.checkMusicFolders)
-                Text("browser-menü -> collection prüfen … oder rechtsklick auf TRACK COLLECTION. nur lesen: dateien, audio-kopf, dauer, schreibweise, namen, doppelte, analyse, grid, playlist-einträge. abbrechen jederzeit.")
-                    .settingsHint()
             }
             Section("Cue-Farben (Bildschirm und Controller-Pads)") {
                 Picker("Start-Cue (Load / AutoGrid)", selection: $mix.prefs.controller.colorStartCue) { ForEach(PadColor.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) } }
@@ -671,11 +687,6 @@ struct AudioSettings: View {
                 Text("Eine neue Samplerate gilt am Gerät sofort, MINOS-741 rechnet ab dem nächsten Start damit.")
                     .settingsHint()
             }
-            Section("Rechenkern") {
-                Toggle("Decks parallel rechnen", isOn: Binding(get: { mix.parallelDecks }, set: { mix.parallelDecks = $0 }))
-                Text("Deck A im Audio-Thread, B–D auf eigenen Echtzeit-Threads neben dem Gerät (gleicher Klang, Summe danach). Zum Vergleich im Lasttest; bei kleinen Puffern mit 4 Decks Keylock + FX niedrigere Spitzenlast je Kern.")
-                    .settingsHint()
-            }
             Section("Mixer") {
                 Picker("Modus", selection: Binding(get: { mix.mixerMode }, set: { mix.mixerMode = $0; mix.applyRouting() })) {
                     Text("Intern – Mixer in MINOS-741").tag(MixerMode.internalMixer)
@@ -701,6 +712,11 @@ struct AudioSettings: View {
             }
             PreviewOutputSettings()
             LoadCacheSettings()
+            Section("Rechenkern") {
+                Toggle("Decks parallel rechnen", isOn: Binding(get: { mix.parallelDecks }, set: { mix.parallelDecks = $0 }))
+                Text("Deck A im Audio-Thread, B–D auf eigenen Echtzeit-Threads neben dem Gerät (gleicher Klang, Summe danach). Zum Vergleich im Lasttest; bei kleinen Puffern mit 4 Decks Keylock + FX niedrigere Spitzenlast je Kern.")
+                    .settingsHint()
+            }
             Section { Text(mix.engineStatus).settingsHint() }
         }
         .onAppear { mix.refreshDevices() }
@@ -786,12 +802,6 @@ struct BrowserSettings: View {
     var body: some View {
         @Bindable var mix = mix
         Form {
-            Section("Harmonie zum Master") {
-                Toggle("Key-Spalte färben", isOn: $mix.prefs.ui.harmonyColors)
-                Text("""
-                bezug: hörbarer key des master-decks (mit key-shift, ohne keylock mit dem tempo), spielt kein master:                 fokus-deck. ◆ lila = gleich · ▲▼ hell = ±1 auf dem rad · ◇ hell = relativ dur/moll · grau = ±2 (energie) ·                 gedimmt = unpassend. spalte match: pitch in prozent, den der track bis zum master-tempo braucht
-                """).settingsHint()
-            }
             Section("Zeilen") {
                 sliderRow("Luft um den Text", $mix.prefs.ui.browserRowPadding, 3...16, step: 1, format: "%.0f", unit: "pt")
                 Toggle("Trennlinie zwischen den Zeilen", isOn: $mix.prefs.ui.browserRowLines)
@@ -803,7 +813,22 @@ struct BrowserSettings: View {
                 Toggle("Gespielte Tracks dimmen", isOn: $mix.prefs.ui.dimPlayedTracks)
                 Toggle("Gespielte Tracks ausblenden", isOn: $mix.prefs.ui.hidePlayedTracks)
                 Toggle("Gespielt beim Start zurücksetzen", isOn: $mix.prefs.ui.resetPlayedOnStart)
-                Text("gespielt = in der history (ab der schwelle unter decks). ausblenden gilt für collection, playlists und ordner; history und running tracks zeigen sie weiter. zurücksetzen jederzeit: rechtsklick auf track collection -> reset played state").settingsHint()
+                Text("gespielt = in der history (ab der schwelle unter history & preparation), bis zum zurücksetzen. ausblenden (auch ◆ UNGESPIELT im kopf des bereichs, menü browser) gilt für collection, playlists, smartlists, ordner und suche; history, running tracks und preparation zeigen sie weiter. zurücksetzen jederzeit: rechtsklick auf track collection -> reset played state").settingsHint()
+            }
+            Section("History & Preparation") {
+                sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f", unit: "s")
+                Toggle("History zusätzlich in den History-Ordner der Collection schreiben", isOn: $mix.prefs.ui.historyToExternal)
+                Text("history und preparation werden als nml gespeichert (~/Library/Application Support/MINOS-741) -> direkt in die collection importierbar. preparation wird bei jedem start archiviert und geleert.")
+                    .settingsHint()
+            }
+            Section("Vorhören") {
+                sliderRow("Vorhören im Browser ab (Anteil)", $mix.prefs.ui.previewStart, 0...0.9, format: "%.1f")
+            }
+            Section("Harmonie zum Master") {
+                Toggle("Key-Spalte färben", isOn: $mix.prefs.ui.harmonyColors)
+                Text("""
+                bezug: hörbarer key des master-decks (mit key-shift, ohne keylock mit dem tempo), spielt kein master:                 fokus-deck. ◆ lila = gleich · ▲▼ hell = ±1 auf dem rad · ◇ hell = relativ dur/moll · grau = ±2 (energie) ·                 gedimmt = unpassend. spalte match: pitch in prozent, den der track bis zum master-tempo braucht
+                """).settingsHint()
             }
             Section("◆ PASST (Matching)") {
                 Toggle("±1 auf dem Rad (▲▼)", isOn: $mix.prefs.ui.match.adjacent)
@@ -813,6 +838,46 @@ struct BrowserSettings: View {
                 Toggle("Halbes / doppeltes Tempo mitzählen", isOn: $mix.prefs.ui.match.halfDouble)
                 Text("gleicher key zählt immer. track ohne key passt nicht, master ohne key: nur das tempo. an/aus: chip ◆ PASST im kopf des bereichs, tastatur (⌘, → tastatur) oder browse-taste am controller").settingsHint()
             }
+            PreviewSettings()
+            Section("Cover") {
+                Toggle("Cover im Deck anzeigen", isOn: $mix.prefs.ui.showDeckCover)
+                Toggle("Cover-Vorschau im Browser", isOn: $mix.prefs.ui.showCoverPreview)
+                Text("vorschau unter dem baum (gewählter track). spalte „Cover“ in der liste: rechtsklick auf die spaltenköpfe. bild aus der datei, sonst cover / folder / front.jpg im ordner, zwischengespeichert in ~/Library/Caches/MINOS-741/artwork.")
+                    .settingsHint()
+            }
+            Section("Collection") {
+                MusicFolderSettings()
+                Toggle("Änderungen in die Collection-Datei schreiben (Backup davor)", isOn: $mix.prefs.ui.writeCollection)
+                Text("aus: änderungen (inline, ⌘E, hotcues, loops, grid) liegen nur in MINOS-741 (metadata.json, edits.json). an: gesammelt in die collection.nml, sicherung höchstens stündlich in „Backup MINOS-741“ neben der datei. nicht, solange die collection-software läuft. schnitt und active loops bleiben in MINOS-741.")
+                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
+                Toggle("Cuts und Tool-Loops als neue Einträge anlegen", isOn: $mix.prefs.ui.writeCuts)
+                    .disabled(!mix.prefs.ui.writeCollection)
+                Toggle("Preparation und History als Playlists (Ordner MINOS-741)", isOn: $mix.prefs.ui.writePlaylists)
+                    .disabled(!mix.prefs.ui.writeCollection)
+                Text("eigene playlists stehen nur im ordner MINOS-741 und werden bei jedem schreiben ersetzt, andere playlists bleiben unberührt.")
+                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
+            }
+            Section("Collection prüfen") {
+                Toggle("Beim Start prüfen", isOn: $mix.prefs.ui.checkOnStart)
+                Toggle("Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen", isOn: $mix.prefs.ui.checkMusicFolders)
+                Text("browser-menü -> collection prüfen … oder rechtsklick auf TRACK COLLECTION. nur lesen: dateien, audio-kopf, dauer, schreibweise, namen, doppelte, analyse, grid, playlist-einträge. abbrechen jederzeit.")
+                    .settingsHint()
+            }
+            Section("Analyse") {
+                // genau eine Oktave: jede Grenze stellt die andere mit
+                Stepper(value: Binding(get: { mix.prefs.ui.analysisBpmLow }, set: { mix.prefs.ui.analysisBpmLow = max(40, min(150, $0)) }),
+                        in: 40...150, step: 1) {
+                    Text("BPM-Bereich ab \(Int(mix.prefs.ui.analysisBpmLow))")
+                }
+                Stepper(value: Binding(get: { 2 * mix.prefs.ui.analysisBpmLow }, set: { mix.prefs.ui.analysisBpmLow = max(40, min(150, $0 / 2)) }),
+                        in: 80...300, step: 2) {
+                    Text("BPM-Bereich bis \(Int(2 * mix.prefs.ui.analysisBpmLow))")
+                }
+                Text("genau eine oktave: das tempo wird in den bereich gefaltet (z. b. 100–200: 96 -> 192). gilt für analysieren / neu analysieren.")
+                    .settingsHint()
+                KeyProfileSettings()
+            }
+            DAWBridgeSettings()
         }
     }
 }
@@ -946,7 +1011,7 @@ func headroomPicker(_ title: String, _ v: Binding<Double>) -> some View {
     }
 }
 
-/// ⌘, -> Analyse: Key-Profile aus der Collection lernen / verwerfen, Stand
+/// ⌘, -> BROWSER -> Analyse: Key-Profile aus der Collection lernen / verwerfen, Stand
 private struct KeyProfileSettings: View {
     var body: some View {
         let a = Analyses.shared

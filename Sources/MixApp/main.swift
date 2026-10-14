@@ -400,6 +400,8 @@ struct MixApp: App {
                 ForEach([ShortcutID.resetPlayed, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .matching]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
                 }
+                Toggle(String(localized: "Gespielte Tracks ausblenden"), isOn: Binding(get: { mix.prefs.ui.hidePlayedTracks }, set: { mix.prefs.ui.hidePlayedTracks = $0 }))
+                    .shortcut(keys.combo(.hidePlayed))
                 Button(String(localized: "Collection prüfen …")) { ConsistencyWindow.show(store: store) }
                 Divider()
                 ForEach(ShortcutID.favorites) { a in
