@@ -210,6 +210,7 @@ enum SelfTest {
             await cutProbe(mix, tracks: c)
             await profileProbe(mix, browser: browser)
             await undoProbe(mix, store: store)
+            await grooveProbe(mix)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -750,5 +751,92 @@ enum WaveShot {
               let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { throw ShotError.png }
         CGImageDestinationAddImage(dest, img, nil)
         guard CGImageDestinationFinalize(dest) else { throw ShotError.png }
+    }
+}
+
+extension SelfTest {
+    /// Groove → MIDI an Deck A: Muster lesen, alle Stile erzeugen (keine Doppelung der Track-Hats), .mid rundreise,
+    /// MIDI-Quelle (versteckt) 2 s im Takt der Clock, eigener Eingang misst Zeitstempel gegen das 16tel-Raster der Clock
+    static func grooveProbe(_ mix: MixModel) async {
+        let g = GrooveCenter.shared, core = mix.core
+        guard core.trackAudio(0) != nil, mix.deck(0).grid != nil else { log("Groove: Deck A ohne Track – übersprungen"); return }
+        let wasPlaying = mix.deck(0).playing
+        if !wasPlaying { core.togglePlay(0); try? await Task.sleep(for: .milliseconds(300)) }
+        mix.pull()
+        let t0 = CACurrentMediaTime()
+        guard g.analyze(mix, 0), let p = g.slots[0].pattern else { log("Groove FEHLER: kein Muster"); exit(1) }
+        let ms = (CACurrentMediaTime() - t0) * 1000
+        // MIX741_GROOVE_DEBUG=<Beat,Beat…>: Messwerte je Schritt (Anstieg / Spitze je Gruppe, Höhen-Dauer)
+        if let dbg = ProcessInfo.processInfo.environment["MIX741_GROOVE_DEBUG"], let a = core.trackAudio(0), let grid = mix.deck(0).grid {
+            let bps = a.sampleRate / Double(TrackAudio.blockFrames(sampleRate: a.sampleRate))
+            if dbg == "all" {
+                for d in 0..<2 {
+                    guard let a = core.trackAudio(d), let grid = mix.deck(d).grid else { continue }
+                    let bps = a.sampleRate / Double(TrackAudio.blockFrames(sampleRate: a.sampleRate))
+                    log("Groove debug \(deckLetters[d]): \(mix.deck(d).track?.title ?? "-")")
+                    for b in stride(from: 0.0, to: grid.beatPosition(at: a.duration) - 8, by: 32) {
+                        let pat = GrooveAnalyzer.extract(a.spectrum, blocksPerSecond: bps, grid: grid, startBeat: b, beats: 8)
+                        log("  \(Int(b)): K \(pat.steps(.kick)) S \(pat.steps(.snare)) H \(pat.steps(.closedHat)) O \(pat.steps(.openHat))")
+                    }
+                }
+            }
+            for b in dbg.split(separator: ",").compactMap({ Double($0) }) {
+                let pat = GrooveAnalyzer.extract(a.spectrum, blocksPerSecond: bps, grid: grid, startBeat: b, beats: 8)
+                log("Groove debug Beat \(Int(b)): Kick \(pat.steps(.kick)) Snare \(pat.steps(.snare)) Hats \(pat.steps(.closedHat)) offen \(pat.steps(.openHat))")
+                for (i, m) in GrooveAnalyzer.measure(a.spectrum, blocksPerSecond: bps, grid: grid, startBeat: b, steps: 32).enumerated() {
+                    log(String(format: "  %2d  K %5.1f/%6.1f  M %5.1f/%6.1f  H %5.1f/%6.1f  S %.2f", i, m.kick.rise, m.kick.peak,
+                               m.mid.rise, m.mid.peak, m.hat.rise, m.hat.peak, m.sustain))
+                }
+            }
+        }
+        log(String(format: "Groove A: %d Schritte ab Beat %.0f · Kick %@ · Snare %@ · Hats zu %@ · offen %@ · %.2f ms",
+                   p.steps, g.slots[0].startBeat, "\(p.steps(.kick))", "\(p.steps(.snare))", "\(p.steps(.closedHat))",
+                   "\(p.steps(.openHat))", ms))
+        for style in GrooveStyle.allCases {
+            var o = g.options(mix, g.slots[0]); o.style = style; o.instrument = .both
+            let c = GrooveGenerator.clip(p, o)
+            let hats = c.notes.filter { $0.channel == o.drumChannel }.map(\.step), bass = c.notes.filter { $0.channel == o.bassChannel }
+            guard Set(hats).count == hats.count, Set(hats).isDisjoint(with: p.hatSteps),
+                  Set(bass.map(\.step)).count == bass.count else { log("Groove FEHLER: \(style) doppelt belegt"); exit(1) }
+            log("Groove \(style.rawValue): \(hats.count) Hats, \(bass.count) Bass-Noten (\(bass.map { Int($0.note) }.prefix(8)))")
+        }
+        guard let data = g.midiData(mix, 0), let f = try? MIDIFile.parse(data), let clip = g.slots[0].clip else { log("Groove FEHLER: .mid"); exit(1) }
+        let notes = f.tracks.reduce(0) { $0 + $1.notes.count }
+        guard notes == clip.notes.count, abs((f.bpm ?? 0) - g.slots[0].bpm) < 0.01 else {
+            log("Groove FEHLER: .mid \(notes) Noten statt \(clip.notes.count), \(f.bpm ?? 0) BPM"); exit(1)
+        }
+        log(String(format: "Groove .mid: %d Bytes, %d Spuren, %d Noten, %.2f BPM", data.count, f.tracks.count, notes, f.bpm ?? 0))
+
+        // laufend: versteckte Quelle, eigener Eingang
+        final class Box: @unchecked Sendable { let lock = NSLock(); var got: [(stamp: UInt64, at: UInt64, status: UInt8)] = [] }
+        let box = Box()
+        g.start(mix, 0)
+        guard g.running == 0, let out = g.out, out.listen({ stamp, st, _, _ in
+            let now = mach_absolute_time()
+            box.lock.withLock { box.got.append((stamp, now, st)) }
+        }) else { log("Groove FEHLER: MIDI startet nicht (\(g.out?.lastError ?? "-"))"); exit(1) }
+        try? await Task.sleep(for: .seconds(2))
+        // Raster der Clock: Beat zum Zeitstempel über den letzten Clock-Stempel
+        guard let st = core.engine.clockStamp else { log("Groove FEHLER: keine Clock"); exit(1) }
+        let spb = 60 / core.clockTempo, second = Double(LinkSession.hostTicks(seconds: 1))
+        g.stop()
+        out.unlisten()
+        let got = box.lock.withLock { box.got }
+        let ons = got.filter { $0.status & 0xF0 == 0x90 }
+        var worst = 0.0, lead = [Double]()
+        for e in ons {
+            let beat = st.beat + Double(Int64(bitPattern: e.stamp &- st.hostTime)) / second / spb
+            let off = abs(beat * 4 - (beat * 4).rounded()) / 4 * spb
+            worst = max(worst, off)
+            lead.append(Double(Int64(bitPattern: e.stamp &- e.at)) / second * 1000)
+        }
+        lead.sort()
+        log(String(format: "Groove MIDI 2 s: %d Note-Ons, %d Ereignisse gesamt · Abstand zum 16tel-Raster der Clock max %.3f ms · Vorlauf %.1f–%.1f ms",
+                   ons.count, got.count, worst * 1000, lead.first ?? 0, lead.last ?? 0))
+        let expected = Int(2 / (spb * clip.beats) * Double(clip.notes.count))
+        guard ons.count >= expected / 2, worst < 0.002, g.running == nil else {
+            log("Groove FEHLER: \(ons.count) Note-Ons (erwartet ~\(expected)), Raster \(worst * 1000) ms"); exit(1)
+        }
+        if !wasPlaying { core.togglePlay(0) }
     }
 }

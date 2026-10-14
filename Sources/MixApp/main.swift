@@ -466,6 +466,7 @@ default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
 Theme.registerFonts()
 if !Session.isSelfTest { MainActor.assumeIsolated { ZoomControl.apply(AppPrefs.load().ui.zoom) } }   // Zoom vor dem ersten Layout, Selbsttest 100 %
 MainActor.assumeIsolated { DeckShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=deck:…, kehrt dann nicht zurück
+MainActor.assumeIsolated { GrooveShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=groove:…
 
 // Selbsttest, nur Bild: MIX741_SHOT=wave:<png> | header:<png> rendert offscreen und beendet – kein Fenster
 if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SHOT"], shot.hasPrefix("header:") {
