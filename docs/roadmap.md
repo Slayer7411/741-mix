@@ -39,10 +39,10 @@
 | headphone cue in internal mode | □ p2 | external mode uses the desk |
 | more eq types | □ p3 | |
 | mixer fx | □ p2 | |
-| 2 / 4 fx units, group + single mode, channel assign | ■ | 7 effects, group slots selectable |
+| 2 / 4 fx units with insert slots, channel assign | ■ | up to 6 slots, 7 built-in effects, templates, racks |
 | beat fx: gater, roll, flanger, phaser | ■ | master clock grid |
 | more effects (ramp delay, slicer …) | □ p2 | |
-| effect plugins: audio unit (v2, v3) + VST3 in single mode | ■ | audio units isolated by default |
+| effect plugins: audio unit (v2, v3) + VST3 in insert slots | ■ | audio units isolated by default, intel-only isolated |
 | VST3 in a helper process (crash isolation) | □ p3 | xpc + shared memory ring, VST3 runs in-process so far |
 
 ## ◆ BROWSER / LIBRARY

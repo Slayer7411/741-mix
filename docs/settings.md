@@ -55,10 +55,10 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * mixer: show internal mixer, auto-gain from the collection loudness, headroom internal (−3 dB default)
 * mixer options: eq kill (knob fully left = off), crossfader curve (smooth / sharp cut), channel filter resonance
 * external mixer: headroom, auto-gain, main volume also external
-* fx units: show, 2 or 4 units, delay feedback, fx filter resonance, reverb type, reverb level (dB, 0 = reverb ~4 dB below the track at full d/w), reverb brightness (dark -> airy: high decay 35 … 90 %, low cut 150 … 400 Hz, high shelf −4 … +6 dB, default 0.6), reverb pre-delay (ms)
-* fx mapping: per unit D/W, knob 1-3, button 1-3 -> parameter of the loaded effect (menu, search field above), all to default. same menu as the right click on the unit
-* remembered mappings per effect / plugin id / plugin chain (`engine.fxMappings`, chain key = plugin ids joined by ` > `), forget per entry. a unit keeps its own mapping in the session
-* remembered plugin chains (`engine.pluginChains`: name -> slots with plugin id, on / off, state), forget per entry. saved from the chain popover of a unit or the master bus
+* fx units: show, 2 or 4 units, delay feedback and fx filter resonance (for slots without an own value, delay / roll filter), reverb type, reverb level (dB, 0 = reverb ~4 dB below the track at full d/w), reverb brightness (dark -> airy: high decay 35 … 90 %, low cut 150 … 400 Hz, high shelf −4 … +6 dB, default 0.6), reverb pre-delay (ms)
+* fx mapping: per unit D/W, knob 1-3, button 1-3 -> any parameter of any slot (menu, search field above), all to default. same menu as the right click on the unit
+* remembered mappings per rack (`engine.fxMappings`, key = effect names / plugin ids in slot order joined by ` > `; older `GROUP` keys are moved over on load), forget per entry. a unit keeps its own mapping in the session
+* remembered racks (`engine.pluginChains`: name -> slots with effect or plugin id, on / off, d/w, parameters, plugin state), forget per entry. saved from the rack popover of a unit or the master bus
 
 ## ◆ PLUGINS
 
@@ -69,7 +69,10 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 * list with search: per plugin use in MINOS-741 (on / off), status, PRÜFEN (auval / VST3 self-check), click -> path, load default / isolated / in-process (audio units), `läuft im prozess` (VST3), unblock, last log
 * ALLE PRÜFEN with progress and cancel, results kept per plugin + version
 * crash marker `plugin-opening.json` next to it, a leftover marker blocks that plugin on the next start -> [manual](MANUAL.md#-08--fx)
-* chains (up to 4 per fx unit, master bus) use the same list, isolation and crash handling per slot: a crashed or hanging slot is passed through, reloads after 2 s, blocked after 3 crashes
+* insert slots (up to 6 per fx unit and master bus) use the same list, isolation and crash handling per slot: a crashed or hanging slot is passed through, reloads after 2 s, blocked after 3 crashes
+* architecture read from the bundle's binary: intel-only audio units load isolated only (badge `nur Intel – isoliert`), intel-only VST3 are listed but not loadable
+* settings are read back with their validation results (iso 8601 dates); before, a file with a stored validation fell back to the defaults on the next start
+* effect picker image without audio: `MIX741_SELFTEST=1 MIX741_SHOT=fx:<folder>` (top bar with 2 / 4 units, rack, picker, slot parameters)
 * offscreen image of this tab without audio: `MIX741_SELFTEST=1 MIX741_SHOT=plugins:<folder>` (optional `MIX741_SHOT_PLUGINS=<plugin folder>`)
 
 ## ◆ BROWSER

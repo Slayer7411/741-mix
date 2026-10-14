@@ -404,6 +404,8 @@ struct AppPrefs: Codable, Equatable {
         if ui["deckCount"] == nil, let four = ui["showFourDecks"] as? Bool { ui["deckCount"] = four ? 4 : 2; saved["ui"] = ui }
         let hadProfiles = ui["layoutProfiles"] != nil
         var p = merged(saved, over: defaults)
+        // gemerkte FX-Belegungen der früheren Gruppe (bis 2026-10) -> Rack-Kennungen
+        p.engine.fxMappings = FXMigration.mappings(p.engine.fxMappings)
         // noch keine Profile gespeichert -> „Default Setup“, „Musik suchen“, „Vorbereiten“ aus der gespeicherten Ansicht
         if !hadProfiles { p.ui.layoutProfiles = LayoutProfile.defaults(from: p.ui) }
         return p

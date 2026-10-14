@@ -29,7 +29,8 @@ one auhal output on the device with all its channels, render callback in c++.
 
 ```
 track (float, in memory) -> hermite varispeed | time-stretch (keylock / key shift)
-  -> flux -> gain -> 3-band eq -> channel filter -> fx 1 -> fx 2 -> fader -> deck pair
+  -> flux -> gain -> 3-band eq -> channel filter -> fx 1 … fx 4 (insert slots) -> fader -> deck pair
+sum of the decks -> master bus (insert slots) -> main -> clip
 master clock -> metronome click -> own pair
 preview track -> linear varispeed -> volume -> preview pair (after main, Preview.cpp / MixDSPPreview.h)
 ```
@@ -86,17 +87,33 @@ track load (`MixController.load`):
 * watchdog on the control tick (every 0.25 s, not a utility queue: that one is starved under cpu load): no new frames for `loadTimeout` (4 s) -> file service: warning notice, deck keeps loading · in-process: cancel flag, load sequence bumped, deck emptied, notice. a decoder stuck in a read returns later and its result is dropped by the sequence check
 * notices (`EngineNotice`: level, key, text, detail) -> `StatusCenter` (main thread, `StatusLog` in MixCore: expiry, dedupe by key, history of 50)
 
-plugins (audio units):
+fx insert slots (`MixDSP.cpp` Rack / runFX, `RackEngine.swift`, `FXRack.swift`):
+
+```
+unit × deck (and master bus): Rack = kSlots (6) × { kind, plugin } -> runFX: slots in order, then tails of built-ins not in the rack
+built-in effects: one instance each per unit × deck (FXChain), parameters per unit (fxp, master = row 4)
+```
+
+* kinds and plugin pointers of all slots are written as one set under a sequence counter (odd = writing); the audio thread takes a complete set at the start of a sub-block, else keeps the old one. no lock, no allocation (`mdsp_alloc_probe_*` counts allocations of the render thread in the tests: 0 while reordering)
+* a built-in effect in a slot runs at that position; taken out it runs behind the slots with its input closed until its tail is gone. each built-in once per unit (rule in `FXRules`)
+* plugin slot: out = x·(1 − w·m) + P(x·m)·w, m = input ramp (on / off, 0.002 per sample), w = slot d/w × unit d/w. off and silent for 1 s (or the plugin's tail time) -> not rendered
+* new kinds while playing (reorder, add, remove): the jump to the last sample of the previous sub-block is ramped out over 256 samples, only if the previous sub-block ran
+* the unit d/w scales each built-in's amount as before; delay and roll have their own filter (`MDFX_DELAY_FILTER_*`, `MDFX_ROLL_FILTER_*`)
+* cost: 4 decks × 4 units × 6 built-in slots all on, 512 frames at 48 kHz: ~0.7 ms mean (budget 10.7 ms, test `sixSlotsFitTheBudget`)
+* swift: `FXUnitState.slots` ([FXSlot]: id = effect name or plugin id, on, mix, params, state). `MixController.syncRack` loads missing plugins, sets kinds + instances per deck (`setRack`), retires taken-out instances after a block. `MixEngine.applyFX` sets the built-ins' parameters from their slots and the plugin slots' on / d/w
+* mapping keys: `dw`, per slot `""` (slot 1) or `s<k>.` + `on` / `mix` / parameter / `p<id>`. old sessions and remembered group mappings move over in `FXMigration` (decoder of `FXUnitState`, `AppPrefs.decode`, `setPrefs`)
+* bit-identical output to the former group / single modes: checksums over blocks recorded before the change (`FXGoldenTests`)
+
 plugins (audio units, VST3):
 
 ```
-fx unit × deck -> PluginInstance (swift, control thread) -> MDPlugin (c++, Plugin.cpp) -> AUHost.cpp   -> AudioUnitRender
+plugin slot of unit × deck -> PluginInstance (swift, control thread) -> MDPlugin (c++, Plugin.cpp) -> AUHost.cpp   -> AudioUnitRender
                                                                                     -> VST3Host.cpp -> IAudioProcessor::process
 ```
 
-* `MDPlugin` = small c++ base (`PluginBackend.h`): `process` / `reset` + type tag, tail length, tempo + beat of the master clock per block. the core (`PluginSlot`) only sees `mdplug_process`, handoff and spillover are the same for both formats
+* `MDPlugin` = small c++ base (`PluginBackend.h`): `process` / `reset` + type tag, tail length, tempo + beat of the master clock per block. the core (`Rack`) only sees `mdplug_process`, handoff and spillover are the same for both formats
 
-* one instance per unit × deck, opened off the control lock on its own queue, then swapped in by an atomic pointer
+* one instance per slot × deck, opened off the control lock on its own queue, then swapped in with the slot set
 * the old instance is closed only after the audio thread finished a whole block without it (render counter)
 * input -> render callback on the deck buffer, output -> preallocated buffers, error -> signal stays dry
 * off = input closed, the tail rings out until 1 s below -100 dB (or the plugin's own tail time, max 30 s), then the plugin is no longer rendered
@@ -126,7 +143,8 @@ plugin list and loading (`PluginCatalog`, `PluginInstaller`, `PluginValidator` i
 
 * list = system registry (`AudioComponentFindNext` over `aufx` / `aumf`) + bundles scanned in the standard folders (source, path) + own folders + `.vst3` effect classes (`moduleinfo.json`, else the module is loaded, crash marker `bundle:<path>`), id `vst3:<class id>`
 * own folders: Info.plist `AudioComponents` (type, subtype, manufacturer, name, version, factoryFunction) -> `CFBundleLoadExecutable` -> `CFBundleGetFunctionPointerForName` -> `AudioComponentRegister`. once per bundle path and process, ids already in the system are not registered twice. a removed folder hides its plugins, they stay registered until restart
-* fx menu = enabled and not blocked; a blocked or disabled plugin is never instantiated, also not from the session
+* effect picker = enabled and not blocked; locked entries (in-process only without permission, intel-only VST3) are listed with the reason. a blocked or disabled plugin is never instantiated, also not from the session
+* architecture from the mach-o header of the bundle (fat / thin, no loading): intel-only audio units are always isolated (apple's service runs them under rosetta), intel-only VST3 are not loaded
 * isolated: `AudioComponentInstantiate` with `kAudioComponentInstantiation_LoadOutOfProcess` (v2 and v3) on the plugin queue, waited for (10 s timeout), then `mdplug_wrap` configures it like `mdplug_open`. in-process: `mdplug_open` (`AudioComponentInstanceNew`). both off the audio thread, handed over by the same atomic pointer swap
 * live rule (`PluginSettings.allowInProcess`, default off): third-party audio units always isolated, in-process-only plugins (VST3, own folders) not loaded and not in the menu. on -> per-plugin / default isolation as set
 * isolated instance gone (`kAudioComponentInstanceInvalidationNotification`) or 2 s without a rendered block -> its instances are taken out (dry), crash counted in `plugins.json` (once per second and plugin), reload after 2 s, blocked at 3

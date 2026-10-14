@@ -33,15 +33,15 @@ default layout:
 * loop encoder: turn = loop size, push = loop on / off, shift + turn = beatjump, shift + push = reloop
 * load -> selected track of the own browser pane. a playing deck is locked (load lock), shift + load forces it. ⌘, -> CONTROLLER -> `Shift + LOAD` -> instant double from the deck on the other side instead (load lock applies)
 * browse encoder -> selection (shift: x10), push = big browser, shift + push = preview
-* fx: d/w knob, knob 1-3, button 1-3 -> the unit's fx mapping ([manual](MANUAL.md#-08--fx)). default group: knob 1-3 = amount of slot 1-3 (filter / delay / reverb unless changed, gater depth, roll length), button 1-3 = on / off
-* mode = fx on / off (group: remembers which slots were on), shift + mode = next effect (single: filter, delay, reverb, gater, roll, flanger, phaser, plugin) or next delay time (group)
+* fx: d/w knob, knob 1-3, button 1-3 = the unit's quick controls ([manual](MANUAL.md#quick-controls)). default with two or more built-in slots in front: knob 1-3 = main parameter of slot 1-3 (filter cutoff, roll length, else the slot's d/w), button 1-3 = on / off of slot 1-3; otherwise the 3 parameters of slot 1, button 1 = slot 1 on / off
+* mode = all slots off (remembers which were on) / back on, shift + mode = next template (group FLT·DLY·REV, filter, delay, reverb, gater, roll, flanger, phaser)
 * load -> selected track of the own browser pane
 * browse encoder -> selection (shift: x10), push = big browser (or matching on / off, ⌘, -> CONTROLLER), shift + push = preview
-* fx: d/w knob, knob 1-3, button 1-3 -> the unit's fx mapping ([manual](MANUAL.md#-08--fx)). default: knob 1-3 = filter / delay / reverb amount, button 1-3 = on / off
-* mode = fx on / off (group: remembers which slots were on), shift + mode = next effect (single) or next delay time (group)
+* fx: d/w knob, knob 1-3, button 1-3 = the unit's quick controls. default group template: knob 1-3 = filter / delay / reverb amount, button 1-3 = on / off
+* mode = all slots off / back on, shift + mode = next template
 * off = input closed, echo and reverb ring out
-* reverb (single): knob 1-3 = size / hp / lp, d/w = send into the reverb
-* beat fx (single): gater rate / shape / width + mute / trip, roll length / filter / decay + rev, flanger and phaser rate / depth / feedback + freeze / sync (phaser: stages 4 / 8)
+* reverb as only slot: knob 1-3 = size / hp / lp, d/w = send into the reverb
+* beat fx as only slot: gater rate / shape / width + mute / trip, roll length / filter / decay + rev, flanger and phaser rate / depth / feedback + freeze / sync (phaser: stages 4 / 8)
 * fx assign buttons per side
 * touch strip: pitch bend (shift: seek), split left / right side
 * 7 segment display: loop size of each side
