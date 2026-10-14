@@ -865,6 +865,8 @@ extension SelfTest {
             log("Groove FEHLER: \(ons.count) Note-Ons (erwartet ~\(expected)), Raster \(worst * 1000) ms"); exit(1)
         }
         if !wasPlaying { core.togglePlay(0) }
+    }
+
     /// Collection-Datei schreiben (Hotcues, Playlists, neuer Eintrag, Umbenennung) auf einer Kopie der Collection im
     /// Temp-Ordner. Die echte Datei wird nur gelesen; der Schreibschutz im Selbsttest muss sie ablehnen
     static func nmlProbe() async {
