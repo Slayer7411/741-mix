@@ -46,13 +46,19 @@ final class LibraryStore {
     private var smartCache: [UUID: [Track]] = [:]
     /// Playlist-Knoten nach ID (aktueller Baum)
     @ObservationIgnored private var nodes: [UUID: PlaylistNode] = [:]
-    @ObservationIgnored private var customCache: [UUID: (query: String, tracks: [Track])] = [:]
+    /// Treffer eigener Smartlists: Regeln + Stand (gespielt / Cloud, wenn die Regeln sie brauchen)
+    @ObservationIgnored var ownCache: [UUID: OwnHit] = [:]
+    struct OwnHit { var rules: SmartRules; var stamp: Int; var tracks: [Track] }
 
-    /// Eigene Smartlists (Smartlist-Regel-Syntax), gespeichert in UserDefaults
-    var customSmartlists: [CustomSmartlist] = CustomSmartlist.load() {
-        didSet { smartlistRevision += 1; if !Session.isSelfTest { CustomSmartlist.save(customSmartlists) } }
+    /// eigener Playlist-Baum (Ordner, Playlists, Smartlists), gespeichert in `playlists.json` (OwnPlaylists.swift)
+    var playlists: PlaylistTree = PlaylistFile.load() {
+        didSet { playlistsChanged(from: oldValue) }
     }
-    private(set) var smartlistRevision = 0
+    var playlistRevision = 0
+    /// Änderungszähler je eigenem Eintrag (Browser-Zwischenspeicher)
+    @ObservationIgnored var ownRevisions: [UUID: Int] = [:]
+    /// Werte je Feld für die Vorschläge im Smartlist-Editor (Feld | Stand)
+    @ObservationIgnored var suggestionCache: [String: [(value: String, count: Int)]] = [:]
 
     /// Preparation: wird gespeichert, beim nächsten Start archiviert und geleert (Selbsttest/Messung: nur im Speicher)
     var preparation: [String] = Session.isSelfTest ? [] : UserDefaults.standard.stringArray(forKey: "prep.current") ?? [] {
@@ -148,7 +154,7 @@ final class LibraryStore {
         switch s {
         case .running: runningRevision
         case .preparation: preparationRevision
-        case .custom: smartlistRevision
+        case let .own(r): ownRevision(r)
         case .cuts, .toolLoops: cutsRevision
         case .cuts: cutsRevision
         case .daw: dawRevision
@@ -257,6 +263,7 @@ final class LibraryStore {
                 let parsed = CACurrentMediaTime()
                 // erster Start: Playlists und Sitzung (Quellen, Sortierung der Bereiche) vorab, damit gleich die
                 // richtigen Listen vorsortiert werden; Neu-Laden: nur nachsehen, was die Bereiche gerade zeigen
+                let own = await MainActor.run { OwnSnapshot(tree: self.playlists, context: self.smartContext(background: true)) }
                 let (targets, old, oldByKey, previous, oldRoot): ([PresortKey], [Track], [String: Track], [PresortKey: [Track]], PlaylistNode) = await MainActor.run {
                     if first {
                         self.root = parsedRoot
@@ -286,7 +293,7 @@ final class LibraryStore {
                 var nodes: [UUID: PlaylistNode] = [:]
                 root.index(into: &nodes)
                 let position = Dictionary(tracks.indices.map { (tracks[$0].key, $0) }, uniquingKeysWith: { a, _ in a })
-                let pre = Self.presort(targets, tracks: tracks, byKey: byKey, nodes: nodes, previous: previous)
+                let pre = Self.presort(targets, tracks: tracks, byKey: byKey, nodes: nodes, previous: previous, own: own)
                 let sorted = CACurrentMediaTime()
                 let newTracks = tracks, newByKey = byKey, newRoot = root, newNodes = nodes
                 await MainActor.run {
@@ -294,14 +301,15 @@ final class LibraryStore {
                     let t0 = CACurrentMediaTime()
                     // alte Liste und Indizes nicht hier freigeben (14k Tracks freigeben kostet den Hauptthread ~50 ms)
                     Self.releaseLater((self.tracks, self.byKey, self.position, self.collectionBase, self.entryIndex,
-                                       self.smartCache, self.customCache, self.presorted))
+                                       self.smartCache, self.ownCache, self.presorted))
                     self.tracks = newTracks
                     self.byKey = newByKey
                     self.position = position
                     self.collectionBase = base
                     self.entryIndex = index
                     self.smartCache = pre.smart
-                    self.customCache = pre.custom
+                    self.ownCache = [:]
+                    for (id, hit) in pre.own where self.playlists.item(id)?.rules == hit.rules { self.ownCache[id] = hit }
                     self.presorted = pre.lists
                     self.presortRevision = self.revision
                     self.folders.collectionLoaded(index: folderIndex, defaultRoot: folderRoot)
@@ -365,13 +373,20 @@ final class LibraryStore {
 
     /// Basisliste einer Quelle ohne Hauptthread (nur Quellen, die allein aus der Collection kommen)
     nonisolated private static func baseTracks(_ s: BrowserSource, tracks: [Track], byKey: [String: Track],
-                                               nodes: [UUID: PlaylistNode]) -> [Track]? {
+                                               nodes: [UUID: PlaylistNode], own: OwnSnapshot) -> [Track]? {
         let none = SmartQuery.compare(field: "TITLE", op: .eq, value: .text("\u{0}"))
         switch s {
         case .collection: return tracks
-        case let .custom(sl):
-            let q = (try? SmartQuery.parse(sl.query)) ?? none
-            return tracks.filter { q.matches($0) }
+        case let .own(r):
+            guard let it = own.tree.item(r.id) else { return nil }
+            switch it.kind {
+            case .folder: return nil
+            case .playlist: return it.tracks.compactMap { byKey[$0] }
+            case .smartlist:
+                // Cloud-Status und History gibt es nur auf dem Hauptthread
+                guard !it.rules.usesAvailability, !it.rules.usesPlayed else { return nil }
+                return it.rules.compile(own.context).apply(tracks)
+            }
         case let .node(old):
             let n = nodes[old.id] ?? old
             switch n.kind {
@@ -388,13 +403,13 @@ final class LibraryStore {
     private struct Presorted: @unchecked Sendable {
         var lists: [PresortKey: [Track]] = [:]
         var smart: [UUID: [Track]] = [:]
-        var custom: [UUID: (query: String, tracks: [Track])] = [:]
+        var own: [UUID: OwnHit] = [:]
     }
 
     /// Listen der Bereiche parallel sortieren (gleiches `TrackSort` wie im Bereich, nur nicht auf dem Hauptthread)
     /// Gleiche Liste wie beim letzten Laden -> derselbe Speicher: die Tabelle sieht keine Änderung und baut nichts neu.
     nonisolated private static func presort(_ targets: [PresortKey], tracks: [Track], byKey: [String: Track],
-                                            nodes: [UUID: PlaylistNode], previous: [PresortKey: [Track]]) -> Presorted {
+                                            nodes: [UUID: PlaylistNode], previous: [PresortKey: [Track]], own: OwnSnapshot) -> Presorted {
         var out = Presorted()
         var results = [[Track]?](repeating: nil, count: targets.count)
         var bases = [[Track]?](repeating: nil, count: targets.count)
@@ -402,7 +417,7 @@ final class LibraryStore {
             bases.withUnsafeMutableBufferPointer { b in
                 let r = r, b = b
                 DispatchQueue.concurrentPerform(iterations: targets.count) { i in
-                    guard let base = baseTracks(targets[i].source, tracks: tracks, byKey: byKey, nodes: nodes) else { return }
+                    guard let base = baseTracks(targets[i].source, tracks: tracks, byKey: byKey, nodes: nodes, own: own) else { return }
                     b[i] = base
                     let list = TrackSort.sorted(base, using: targets[i].order)
                     if let prev = previous[targets[i]], prev == list { r[i] = prev } else { r[i] = list }
@@ -413,7 +428,8 @@ final class LibraryStore {
             guard let list = results[i], let base = bases[i] else { continue }
             out.lists[t] = list
             switch t.source {
-            case let .custom(sl): out.custom[sl.id] = (sl.query, base)
+            case let .own(r):
+                if let it = own.tree.item(r.id), it.kind == .smartlist { out.own[r.id] = OwnHit(rules: it.rules, stamp: 0, tracks: base) }
             case let .node(n) where n.kind == .smartlist: out.smart[n.id] = base
             default: break
             }
@@ -460,7 +476,7 @@ final class LibraryStore {
         meta.merge(applied, base: collectionBase, stamps: applied.keys.reduce(into: [:]) { $0[$1] = collectionBase[$1]?.entryStamp })
         replaceRunning(applied.keys)
         smartCache = [:]
-        customCache = [:]
+        ownCache = [:]
         tracks = list
         StatusCenter.post(.ok, String(localized: "Gespeichert: \(applied.count) Tracks (Metadaten)"), key: "edits")
         if writeBack { scheduleWriteBack() }
@@ -483,7 +499,7 @@ final class LibraryStore {
         guard !reverted.isEmpty else { return }
         replaceRunning(reverted)
         smartCache = [:]
-        customCache = [:]
+        ownCache = [:]
         tracks = list
     }
 
@@ -511,7 +527,7 @@ final class LibraryStore {
         guard !hit.isEmpty else { return }
         replaceRunning(hit)
         smartCache = [:]
-        customCache = [:]
+        ownCache = [:]
         tracks = list
     }
 
@@ -535,7 +551,7 @@ final class LibraryStore {
         guard !hit.isEmpty else { return }
         replaceRunning(hit)
         smartCache = [:]
-        customCache = [:]
+        ownCache = [:]
         tracks = list
     }
 
@@ -584,16 +600,18 @@ final class LibraryStore {
     /// Preparation und eigene History-Sitzungen (neueste zuerst) als Playlists unter `$ROOT/MINOS-741`
     func ownPlaylists() -> [NMLOwnNode] {
         var nodes: [NMLOwnNode] = [.playlist("Preparation", preparation)]
-        guard let h = history else { return nodes }
         var sessions: [NMLOwnNode] = []
-        if !h.live.isEmpty {
+        if let h = history, !h.live.isEmpty {
             let s = HistorySession(url: h.liveURL, date: h.sessionStart, source: .live)
             sessions.append(.playlist("History " + (s.label ?? HistorySession.dayString(s.date)), h.live.map(\.key)))
         }
-        for s in h.archive where s.source == .live {
-            sessions.append(.playlist("History " + (s.label ?? HistorySession.dayString(s.date)), h.entries(s).map(\.key)))
+        if let h = history {
+            for s in h.archive where s.source == .live {
+                sessions.append(.playlist("History " + (s.label ?? HistorySession.dayString(s.date)), h.entries(s).map(\.key)))
+            }
         }
         if !sessions.isEmpty { nodes.append(.folder("History", sessions)) }
+        if playlists.hasPlaylists { nodes.append(.folder(Self.ownPlaylistsFolder, playlists.nmlNodes)) }
         return nodes
     }
 
@@ -715,7 +733,7 @@ final class LibraryStore {
         guard !hit.isEmpty else { return }
         replaceRunning(hit.map(\.key))
         smartCache = [:]
-        customCache = [:]
+        ownCache = [:]
         tracks = list
         onRefreshed?(hit)
     }
@@ -746,9 +764,10 @@ final class LibraryStore {
         position[oldKey] = nil
         position[loc.key] = i
         smartCache = [:]
-        customCache = [:]
+        ownCache = [:]
         tracks = list
         if preparation.contains(oldKey) { preparation = preparation.map { $0 == oldKey ? loc.key : $0 } }
+        if playlists.all.contains(where: { $0.tracks.contains(oldKey) }) { playlists.renameTrack(oldKey, to: loc.key) }
         if running.contains(where: { $0.key == oldKey }) { running = running.map { $0.key == oldKey ? list[i] : $0 } }
         if uiPrefs().writeCollection { scheduleWriteBack() }
     }
@@ -775,12 +794,7 @@ final class LibraryStore {
         case .daw: return dawTracks
         case .history, .historyLive: return []
         case .prepArchive: return []   // löst BrowserPaneModel über den HistoryStore auf
-        case let .custom(sl):
-            if let hit = customCache[sl.id], hit.query == sl.query { return hit.tracks }
-            let q = (try? SmartQuery.parse(sl.query)) ?? .compare(field: "TITLE", op: .eq, value: .text("\u{0}"))
-            let res = tracks.filter { q.matches($0) }
-            customCache[sl.id] = (sl.query, res)
-            return res
+        case let .own(r): return ownTracks(r.id)
         case let .folder(p): return folders.tracks(in: p, recursive: false, library: self)
         case let .node(old):
             let n = nodes[old.id] ?? old   // Bereich kann noch den Knoten vor dem Neu-Laden halten (gleiche ID)
@@ -812,7 +826,8 @@ enum BrowserSource: Hashable {
     case historyLive
     case history(HistorySession)
     case prepArchive(HistorySession)
-    case custom(CustomSmartlist)
+    /// eigener Eintrag im Playlist-Baum (Ordner, Playlist, Smartlist)
+    case own(OwnRef)
     /// Ordner aus MUSIC FOLDERS (absoluter Pfad)
     case folder(String)
 
@@ -828,7 +843,7 @@ enum BrowserSource: Hashable {
         case .historyLive: "History"
         case let .history(s): "History " + (s.label ?? Theme.dateTimeFormat.string(from: s.date))
         case let .prepArchive(s): "Preparation " + Theme.dateTimeFormat.string(from: s.date)
-        case let .custom(c): c.name
+        case let .own(r): r.name
         case let .folder(p): (p as NSString).lastPathComponent
         }
     }
@@ -841,7 +856,8 @@ enum BrowserSource: Hashable {
     }
 }
 
-/// Eigene Smartlist: Name + Regel in Smartlist-Syntax (z. B. `$COMMENT2 % "BASIS" & $BPM >= 128`)
+/// Eigene Smartlist früherer Versionen (Name + Regel-Text, UserDefaults `smartlists.custom`): nur noch gelesen,
+/// beim ersten Start wandern sie in den Playlist-Baum (PlaylistFile.load)
 struct CustomSmartlist: Codable, Hashable, Identifiable {
     var id = UUID()
     var name: String
@@ -851,9 +867,6 @@ struct CustomSmartlist: Codable, Hashable, Identifiable {
         guard let d = UserDefaults.standard.data(forKey: "smartlists.custom"),
               let l = try? JSONDecoder().decode([CustomSmartlist].self, from: d) else { return [] }
         return l
-    }
-    static func save(_ l: [CustomSmartlist]) {
-        if let d = try? JSONEncoder().encode(l) { UserDefaults.standard.set(d, forKey: "smartlists.custom") }
     }
 }
 

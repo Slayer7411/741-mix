@@ -136,7 +136,7 @@ struct Session: Codable {
         case .toolLoops: "toolloops"
         case .daw: "daw"
         case .historyLive: "history"
-        case .custom(let c): "custom:\(c.id.uuidString)"
+        case .own(let r): "own:\(r.id.uuidString)"
         case .node(let n): "node:\(n.name)"
         case .folder(let p): "folder:" + p
         case .history, .prepArchive: nil
@@ -154,9 +154,10 @@ struct Session: Codable {
         case "history": return .historyLive
         default: break
         }
-        if id.hasPrefix("custom:") {
-            let u = String(id.dropFirst(7))
-            return store.customSmartlists.first { $0.id.uuidString == u }.map { .custom($0) }
+        // eigener Eintrag im Playlist-Baum; „custom:“ = eigene Smartlist früherer Versionen (ID bleibt beim Übernehmen)
+        if id.hasPrefix("own:") || id.hasPrefix("custom:") {
+            let u = String(id.drop { $0 != ":" }.dropFirst())
+            return UUID(uuidString: u).flatMap { store.playlists.item($0) }.map { .own(OwnRef($0)) }
         }
         if id.hasPrefix("folder:") {
             // ohne Materialisieren (Hauptthread, Ordner oft im Cloud-Laufwerk): ein noch nicht geladener Ordner

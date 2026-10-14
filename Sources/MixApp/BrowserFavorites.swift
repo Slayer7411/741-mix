@@ -19,7 +19,7 @@ extension BrowserFavorite {
         case .preparation: BrowserFavorite(.preparation, name: s.title)
         case .running: BrowserFavorite(.running, name: s.title)
         case .historyLive: BrowserFavorite(.history, name: s.title)
-        case let .custom(c): BrowserFavorite(.smartlist, name: c.name, id: c.id.uuidString, path: [c.name])
+        case let .own(r): BrowserFavorite(.own, name: r.name, id: r.id.uuidString, path: [r.name], node: r.kind.rawValue)
         case let .node(n): BrowserFavorite.node(n, in: store.root)
         case let .folder(p): BrowserFavorite(.folder, name: s.title, path: [p])
         case .history, .prepArchive, .cuts, .toolLoops: nil
@@ -35,9 +35,11 @@ extension BrowserFavorite {
         case .running: return .source(.running)
         case .history: return .source(.historyLive)
         case .filter: return .filter
-        case .smartlist:
-            let l = store.customSmartlists
-            return (l.first { $0.id.uuidString == id } ?? l.first { $0.name == path?.first }).map { .source(.custom($0)) } ?? .missing
+        case .smartlist, .own:
+            // eigene Smartlist früherer Versionen: gleiche ID im Baum, sonst gleicher Name
+            let all = store.playlists.all
+            let hit = all.first { $0.id.uuidString == id } ?? all.first { $0.name == path?.first && (kind == .own || $0.kind == .smartlist) }
+            return hit.map { .source(.own(OwnRef($0))) } ?? .missing
         case .node:
             return resolveNode(in: store.root).map { .source(.node($0)) } ?? .missing
         case .folder:
@@ -57,10 +59,11 @@ extension BrowserFavorite {
         case .running: "▶"
         case .preparation: "▤"
         case .history: "◷"
-        case .smartlist: "◆"
+        case .smartlist: OwnGlyph.smartlist
+        case .own: node == "folder" ? OwnGlyph.folder : node == "smartlist" ? OwnGlyph.smartlist : OwnGlyph.playlist
         case .folder: "▱"
         case .filter: "▽"
-        case .node: nodeKind == .folder ? "▸" : nodeKind == .smartlist ? "◇" : "▤"
+        case .node: nodeKind == .folder ? OwnGlyph.folder : nodeKind == .smartlist ? OwnGlyph.smartlist : OwnGlyph.playlist
         case nil: "·"
         }
     }
@@ -69,8 +72,7 @@ extension BrowserFavorite {
 extension BrowserSource {
     /// gleiche Quelle (eigene Smartlist: gleiche ID, auch nach dem Bearbeiten)
     func same(_ o: BrowserSource) -> Bool {
-        if case let .custom(a) = self, case let .custom(b) = o { return a.id == b.id }
-        return self == o
+        self == o
     }
 }
 

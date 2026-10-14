@@ -216,6 +216,7 @@ enum SelfTest {
             await grooveProbe(mix)
             await nmlProbe()
             await dawBridgeProbe(mix, store: store)
+            await playlistTreeProbe(store: store)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
@@ -1124,5 +1125,52 @@ extension SelfTest {
         log(String(format: "Master-Bus (Limiter −20 dB): Master-Pegel aus %.3f · an %.3f · wieder aus %.3f · Vorhören %.3f / %.3f · %@",
                    m0, m1, m2, p0, p1, masterOK ? "OK" : "FAIL"))
         if !chainOK || !masterOK { log("FEHLER Plugin-Kette / Master-Bus"); exit(1) }
+    }
+}
+
+extension SelfTest {
+    /// Playlist-Baum (nur im Temp-Ordner des Selbsttests): Ordner in Ordner, Playlist mit Tracks, Smartlist mit
+    /// Regelzeile gegen die Collection, Verschieben + Rückgängig, Reihenfolge, Entfernen, Spiegel für die
+    /// Collection-Datei, Datei-Rundreise. Danach wieder der Stand vorher, Temp-Ordner weg
+    static func playlistTreeProbe(store: LibraryStore) async {
+        func fail(_ s: String) -> Never { log("Playlist-Baum: \(s)"); log("PLAYLIST-BAUM FALSCH"); exit(1) }
+        let tmp = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path
+        guard PlaylistFile.url.resolvingSymlinksInPath().path.hasPrefix(tmp) else { fail("Datei nicht im Temp-Ordner: \(PlaylistFile.url.path)") }
+        let before = store.playlists
+        let genres = Dictionary(store.tracks.map { ($0.genre, 1) }, uniquingKeysWith: +).filter { !$0.key.isEmpty }
+        guard let genre = genres.max(by: { $0.value < $1.value })?.key, store.tracks.count >= 5 else { log("Playlist-Baum: übersprungen (keine Genres)"); return }
+        let folder = store.addOwn(.folder, into: nil, name: "ST Ordner")
+        let sub = store.addOwn(.folder, into: folder.id, name: "ST Unter")
+        let keys = store.tracks.prefix(5).map(\.key)
+        let pl = store.addOwn(.playlist, into: sub.id, name: "ST Playlist", tracks: Array(keys))
+        let sm = store.addOwn(.smartlist, into: folder.id, name: "ST Smartlist", rules: SmartRules(rules: [SmartRule(.genre, .contains, genre)]))
+        let t0 = CACurrentMediaTime()
+        let hits = store.tracks(for: .own(OwnRef(sm)))
+        let ms = (CACurrentMediaTime() - t0) * 1000
+        let want = store.tracks.filter { SmartRules.contains(Track.fold($0.genre), Track.fold(genre)) }.count
+        guard hits.count == want, want > 0 else { fail("Smartlist Genre enthält „\(genre)“: \(hits.count) statt \(want)") }
+        guard store.tracks(for: .own(OwnRef(pl))).map(\.key) == Array(keys) else { fail("Playlist-Tracks falsch") }
+        guard store.playlists.parent(of: pl.id) == .some(sub.id), store.playlists.isDescendant(pl.id, of: folder.id) else { fail("Ordner in Ordner") }
+        store.editPlaylists("ST verschieben") { $0.move(pl.id, into: nil) }
+        guard store.playlists.parent(of: pl.id) == .some(nil) else { fail("Verschieben nach oben") }
+        UndoStack.shared.undo()
+        guard store.playlists.parent(of: pl.id) == .some(sub.id) else { fail("Rückgängig nach dem Verschieben") }
+        store.editPlaylists("ST Reihenfolge") { $0.moveTracks([keys[4]], in: pl.id, to: 0) }
+        store.removeFromPlaylist([keys[0]], pl.id)
+        let order = store.playlists.item(pl.id)?.tracks ?? []
+        guard order == [keys[4], keys[1], keys[2], keys[3]] else { fail("Reihenfolge / Entfernen: \(order.count) Tracks") }
+        // Spiegel für `$ROOT/MINOS-741/Playlists`: Ordner + Playlists, ohne Smartlists
+        guard case let .folder(name, kids)? = store.ownPlaylists().last, name == LibraryStore.ownPlaylistsFolder,
+              kids.contains(.folder("ST Ordner", [.folder("ST Unter", [.playlist("ST Playlist", order)])])) else { fail("Spiegel für die Collection-Datei") }
+        PlaylistFile.flush()
+        guard let d = try? Data(contentsOf: PlaylistFile.url), let back = try? PlaylistTree.decode(d), back == store.playlists else { fail("Datei-Rundreise") }
+        store.editPlaylists("ST löschen") { $0.remove(folder.id) }
+        guard !store.playlists.contains(sm.id), !store.playlists.contains(pl.id) else { fail("Ordner löschen nimmt den Inhalt nicht mit") }
+        store.playlists = before
+        UndoStack.shared.clearAll()
+        PlaylistFile.flush()
+        PlaylistFile.removeSelfTestDir()
+        log(String(format: "Playlist-Baum: Ordner in Ordner, Playlist %d Tracks, Smartlist Genre enthält „%@“ %d Treffer (%.1f ms über %d Tracks), Verschieben + Rückgängig, Reihenfolge, Spiegel, Datei-Rundreise · OK",
+                   order.count, genre, hits.count, ms, store.tracks.count))
     }
 }

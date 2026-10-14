@@ -386,6 +386,7 @@ struct PaneHeader: View {
                     DeckButton(title: "UNTERORDNER", active: model.subfolders) { model.subfolders.toggle() }
                         .help("Dateien aus allen Unterordnern zeigen")
                 }
+                OwnSmartlistEditButton(model: model)
                 Spacer(minLength: 8.z)
                 SearchField(model: model)
                     .textFieldStyle(.plain)
@@ -526,9 +527,11 @@ struct TagPicker: View {
                     DeckButton(title: "✕ TAGS") { model.clearTags() }
                     DeckButton(title: "ALS SMARTLIST") {
                         let inc = model.tags.sorted(), exc = model.excludedTags.sorted()
-                        let quote = { (t: String) in "\"\(t.replacingOccurrences(of: "\"", with: ""))\"" }
-                        let q = (inc.map { "$COMMENT2 % \(quote($0))" } + exc.map { "$COMMENT2 !% \(quote($0))" }).joined(separator: " & ")
-                        store.customSmartlists.append(CustomSmartlist(name: (inc + exc.map { "!" + $0 }).joined(separator: " + "), query: q))
+                        let rules = inc.map { SmartRule(.tag, .contains, $0) } + exc.map { SmartRule(.tag, .notContains, $0) }
+                        let it = store.addOwn(.smartlist, into: nil, name: (inc + exc.map { "!" + $0 }).joined(separator: " + "),
+                                              rules: SmartRules(rules: rules))
+                        model.source = .own(OwnRef(it))
+                        model.clearTags()
                     }
                     .help("Smartlist aus den gewählten Tags anlegen (alle müssen passen, ausgeschlossene nicht)")
                 }
@@ -540,40 +543,32 @@ struct TagPicker: View {
     }
 }
 
-/// Baum: Collection, Preparation (+ Archiv), History (+ Archiv), eigene Smartlists, Playlists.
+/// Baum: Collection, Preparation (+ Archiv), History (+ Archiv), Musik-Ordner, PLAYLISTS (eigene + Collection).
 struct SourceTree: View {
-    @Environment(LibraryStore.self) private var store
     @Binding var selection: BrowserSource
-    @State private var editing: CustomSmartlist?
+    @State private var treeUI = PlaylistTreeUI()
 
     // Zeilen in eigenen Ansichten: ein Quellenwechsel wertet nur die Auswahl der Liste neu aus, nicht alle Zeilen
     // (Baum bleibt auch ausgeblendet in der Ansicht, siehe BrowserPane)
     var body: some View {
         List(selection: Binding<BrowserSource?>(get: { selection }, set: { if let s = $0 { selection = s } })) {
-            SourceTreeFixed(editing: $editing)
+            SourceTreeFixed()
             MusicFolderTree(selection: $selection)
-            SourceTreePlaylists()
+            PlaylistsSection(selection: $selection)
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .background(Theme.chitin)
-        .sheet(item: $editing) { sl in
-            SmartlistEditor(smartlist: sl) { saved in
-                if let i = store.customSmartlists.firstIndex(where: { $0.id == saved.id }) { store.customSmartlists[i] = saved }
-                else { store.customSmartlists.append(saved) }
-                selection = .custom(saved)
-            }
-            .zoomExempt()
-        }
+        .environment(treeUI)
+        .modifier(PlaylistTreeDialogs(ui: treeUI, selection: $selection))
     }
 }
 
-/// Collection, Preparation, History, eigene Smartlists
+/// Collection, Preparation, History
 struct SourceTreeFixed: View, SourceMenus {
     @Environment(LibraryStore.self) var store
     @Environment(HistoryStore.self) var history
     @Environment(MixModel.self) private var decks
-    @Binding var editing: CustomSmartlist?
 
     var body: some View {
         row("≣", "TRACK COLLECTION").tag(BrowserSource.collection)
@@ -606,10 +601,11 @@ struct SourceTreeFixed: View, SourceMenus {
         }
         row("▤", "PREPARATION").tag(BrowserSource.preparation)
             .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
-            .onDrop(of: [.text], isTargeted: nil) { providers in
-                TrackDrag.keys(providers) { keys in
-                    store.appendToPreparation(keys.filter { store.track($0) != nil })
-                }
+            .treeDrop(targeted: .constant(false)) { strings in
+                let keys = strings.compactMap(TreeDrag.track).filter { store.track($0) != nil }
+                guard !keys.isEmpty else { return false }
+                store.appendToPreparation(keys)
+                return true
             }
             .contextMenu {
                 exportMenu(.preparation)
@@ -632,47 +628,6 @@ struct SourceTreeFixed: View, SourceMenus {
                     .contextMenu { exportMenu(.history(s)) }
             }
         } label: { row("▸", String(localized: "HISTORY ARCHIV")) }
-        DisclosureGroup {
-            ForEach(store.customSmartlists) { sl in
-                row("◆", sl.name).tag(BrowserSource.custom(sl))
-                    .favoriteDrag { BrowserFavorite.source(.custom(sl), store: store) }
-                    .contextMenu {
-                        exportMenu(.custom(sl))
-                        OverviewMenuButton { store.tracks(for: .custom(sl)) }
-                        AnalysisMenuButtons { store.tracks(for: .custom(sl)) }
-                        CloudMenuButton(label: sl.name) { store.tracks(for: .custom(sl)) }
-                        Button("Bearbeiten …") { editing = sl }
-                        Button("Löschen") { store.customSmartlists.removeAll { $0.id == sl.id } }
-                    }
-            }
-            Button { editing = CustomSmartlist(name: "Neue Smartlist", query: "$COMMENT2 % \"BASIS\"") } label: {
-                row("+", "NEUE SMARTLIST")
-            }
-            .buttonStyle(.plain)
-        } label: { row("▸", "SMARTLISTS 741") }
-    }
-}
-
-/// Playlists und Smartlists der Collection
-struct SourceTreePlaylists: View, SourceMenus {
-    @Environment(LibraryStore.self) var store
-    @Environment(HistoryStore.self) var history
-
-    var body: some View {
-        Section {
-            OutlineGroup(store.root.children, children: \.childrenOrNil) { node in
-                row(icon(node), node.name)
-                    .tag(BrowserSource.node(node))
-                    .lineLimit(1)
-                    .favoriteDrag { BrowserFavorite.source(.node(node), store: store) }
-                    .contextMenu {
-                        if node.kind != .folder { exportMenu(.node(node)) }
-                        OverviewMenuButton { nodeTracks(node) }
-                        AnalysisMenuButtons { nodeTracks(node) }
-                        CloudMenuButton(label: node.name) { nodeTracks(node) }
-                    }
-            }
-        }
     }
 }
 
@@ -711,9 +666,9 @@ extension SourceMenus {
 
     func icon(_ n: PlaylistNode) -> String {
         switch n.kind {
-        case .folder: "▸"
-        case .playlist: "▤"
-        case .smartlist: "◇"
+        case .folder: OwnGlyph.folder
+        case .playlist: OwnGlyph.playlist
+        case .smartlist: OwnGlyph.smartlist
         }
     }
 
@@ -723,45 +678,6 @@ extension SourceMenus {
             Text(name).font(Theme.mono(11.z)).foregroundStyle(Theme.bone).lineLimit(1)
         }
         .frame(minHeight: 20.z)   // Zeilenhöhe der Seitenleiste mit dem Zoom (100 %: 28 pt)
-    }
-}
-
-/// Smartlist anlegen/bearbeiten: Regel in Smartlist-Syntax, Live-Anzahl und Fehleranzeige.
-struct SmartlistEditor: View {
-    @Environment(LibraryStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State var smartlist: CustomSmartlist
-    let onSave: (CustomSmartlist) -> Void
-
-    var body: some View {
-        let parsed = Result { try SmartQuery.parse(smartlist.query) }
-        let count: Int? = (try? parsed.get()).map { q in store.tracks.filter { q.matches($0) }.count }
-        VStack(alignment: .leading, spacing: 10) {
-            Text("SMARTLIST").font(Theme.label(16, .bold))
-            TextField("NAME", text: $smartlist.name).textFieldStyle(.plain).font(Theme.mono(13))
-                .padding(6).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-            TextEditor(text: $smartlist.query).font(Theme.mono(12)).frame(height: 90)
-                .scrollContentBackground(.hidden).background(Theme.void)
-                .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-            if case let .failure(e) = parsed {
-                Text("fehler: \(String(describing: e))").font(Theme.mono(11)).foregroundStyle(Theme.state)
-            } else if let count {
-                Text("\(count) tracks").font(Theme.mono(11)).foregroundStyle(Theme.muted)
-            }
-            Text("""
-            felder: $ARTIST $TITLE $COMMENT $COMMENT2 $LABEL $GENRE $KEY $BPM $COLOR $RATING $PLAYCOUNT $IMPORTDATE $FILEPATH
-            operatoren: % enthält · !% enthält nicht · == · != · >= · <= · > · < · STARTS_WITH · & und · | oder · ! nicht · ( )
-            beispiel: $COMMENT2 % "BASIS" & $BPM >= 128 & $IMPORTDATE >= MONTHS_AGO(6)
-            """).font(Theme.mono(10)).foregroundStyle(Theme.muted)
-            HStack {
-                Spacer()
-                DeckButton(title: "ABBRECHEN") { dismiss() }
-                DeckButton(title: "SPEICHERN", active: true) { onSave(smartlist); dismiss() }
-            }
-        }
-        .padding(16)
-        .frame(width: 560)
-        .background(Theme.chitin)
     }
 }
 
