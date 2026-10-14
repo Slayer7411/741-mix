@@ -335,6 +335,11 @@ private struct PluginRow: View {
                     Text(verbatim: meta(e)).font(Theme.mono(10)).foregroundStyle(Theme.muted).lineLimit(1)
                 }
                 Spacer(minLength: 8)
+                if e.foreignArch {
+                    StatusBadge(status: .init(text: e.canIsolate ? String(localized: "nur Intel – isoliert") : String(localized: "nur Intel – nicht ladbar"),
+                                              alert: !e.canIsolate, strong: false))
+                        .help(e.canIsolate ? Text("nur Intel – läuft nur isoliert/unter Rosetta") : Text("nur Intel – VST3 nicht ladbar"))
+                }
                 if pm.inProcessOnly(e) {
                     StatusBadge(status: .init(text: String(localized: "nur im Prozess – aus"), alert: true, strong: false))
                         .help("läuft nur im Prozess von MINOS-741 – wird erst mit „Plugins im Prozess (riskant)“ geladen")

@@ -351,3 +351,67 @@ private extension URL {
     b.unblock("aufx:Tst1:Mnos")
     #expect(b.settings.crashes["aufx:Tst1:Mnos"] == nil && b.unusableReason("aufx:Tst1:Mnos") == nil)
 }
+
+/// Mach-O-Kopf: Architekturen ohne Laden (fat und dünn); nur-Intel-Plugins: AU nur isoliert, VST3 gesperrt, beide in der Auswahl
+@Test func architectureFromMachOHeader() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    func bundle(_ name: String, _ bytes: [UInt8]) throws -> URL {
+        let b = dir.appendingPathComponent("\(name).component")
+        try writePlist(["CFBundleExecutable": name], to: b.appendingPathComponent("Contents/Info.plist"))
+        try FileManager.default.createDirectory(at: b.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
+        try Data(bytes + [UInt8](repeating: 0, count: 64)).write(to: b.appendingPathComponent("Contents/MacOS/\(name)"))
+        return b
+    }
+    let fat = try bundle("Fat", [0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 2, 0, 0, 0, 7, 0, 0, 0, 3, 0, 0, 0x10, 0, 0, 0, 0x10, 0, 0, 0, 0, 12,
+                                 0x01, 0, 0, 0x07])
+    #expect(PluginBundle.architectures(fat) == ["i386", "x86_64"])
+    let thin = try bundle("Thin", [0xCF, 0xFA, 0xED, 0xFE, 0x0C, 0, 0, 0x01])
+    #expect(PluginBundle.architectures(thin) == ["arm64"])
+    #expect(PluginBundle.architectures(dir.appendingPathComponent("none.component")).isEmpty)
+    // echte Binärdatei dieses Tests
+    let exe = URL(fileURLWithPath: CommandLine.arguments[0])
+    let host = try bundle("Host", [UInt8](try Data(contentsOf: exe).prefix(4096)))
+    #expect(PluginBundle.architectures(host).contains(PluginBundle.hostArch))
+
+    let intel = ["i386", "x86_64"]
+    let other = PluginBundle.hostArch == "arm64" ? intel : ["arm64"]
+    let au = PluginEntry(id: "aufx:Int1:Mnos", name: "I", manufacturer: "M", version: "1", format: .auv2, source: .user, path: "/i.component",
+                         info: PluginInfo(id: "aufx:Int1:Mnos", name: "I", manufacturer: "M", type: 0x61756678, subtype: 1, manu: 2),
+                         problem: nil, architectures: other)
+    var s = PluginSettings()
+    s.allowInProcess = true
+    s.isolation[au.id] = false
+    #expect(au.foreignArch && PluginCatalog.isolated(au, s))   // im Prozess eingestellt: trotzdem isoliert
+    let native = PluginEntry(id: au.id, name: "I", manufacturer: "M", version: "1", format: .auv2, source: .user, path: "/i.component",
+                             info: au.info, problem: nil, architectures: [PluginBundle.hostArch])
+    #expect(!native.foreignArch && !PluginCatalog.isolated(native, s))
+}
+
+/// plugins.json mit auval-Ergebnis wird wieder gelesen (Datum ISO 8601), Einstellungen bleiben über den Neustart
+@Test func settingsWithValidationSurviveRestart() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let a = PluginCatalog(directory: dir, folders: [], vst3Folders: [])
+    a.update { $0.disabled.insert("aufx:x:y"); $0.allowInProcess = true; $0.validation["aufx:x:y@1"] = PluginValidation(passed: true, log: "ok") }
+    let b = PluginCatalog(directory: dir, folders: [], vst3Folders: [])
+    #expect(b.settings.disabled.contains("aufx:x:y") && b.settings.allowInProcess)
+    #expect(b.settings.validation["aufx:x:y@1"]?.passed == true)
+}
+
+/// Auswahl: VST3 ohne „Plugins im Prozess“ gesperrt mit Grund (statt weggelassen), mit Freigabe ladbar
+@Test func pickerShowsLockedVST3() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let vdir = dir.appendingPathComponent("VST3")
+    let b = vdir.appendingPathComponent("Fake.vst3")
+    try FileManager.default.createDirectory(at: b.appendingPathComponent("Contents/Resources"), withIntermediateDirectories: true)
+    let mi = #"{"Name":"Fake","Version":"1.0","Factory Info":{"Vendor":"Mnos"},"Classes":[{"CID":"0123456789ABCDEF0123456789ABCDEF","Category":"Audio Module Class","Sub Categories":["Fx"],"Name":"Fake FX"}]}"#
+    try Data(mi.utf8).write(to: b.appendingPathComponent("Contents/Resources/moduleinfo.json"))
+    let cat = PluginCatalog(directory: dir, folders: [], vst3Folders: [vdir])
+    let c = try #require(cat.pickerList().first { $0.info.name == "Fake FX" })
+    #expect(c.lock != nil && c.fixInSettings && !cat.menuList().contains { $0.id == c.id })
+    #expect(cat.pickerList().contains { $0.info.id == mrev && $0.lock == nil })
+    cat.update { $0.allowInProcess = true }
+    #expect(cat.pickerList().first { $0.info.name == "Fake FX" }?.lock == nil)
+}

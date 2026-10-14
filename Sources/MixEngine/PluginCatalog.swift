@@ -29,12 +29,22 @@ public struct PluginEntry: Identifiable, Hashable, Sendable {
     public let info: PluginInfo?
     /// Grund, warum ein Bundle aus einem eigenen Ordner nicht ladbar ist
     public let problem: String?
+    /// Architekturen der Binärdatei ("arm64", "x86_64", "i386"); leer = unbekannt (kein Pfad, AUv3)
+    public var architectures: [String] = []
+
+    public init(id: String, name: String, manufacturer: String, version: String, format: PluginFormat, source: PluginSource,
+                path: String?, info: PluginInfo?, problem: String?, architectures: [String] = []) {
+        self.id = id; self.name = name; self.manufacturer = manufacturer; self.version = version; self.format = format
+        self.source = source; self.path = path; self.info = info; self.problem = problem; self.architectures = architectures
+    }
 
     public var validationKey: String { "\(id)@\(version)" }
     /// AU: auval findet nur installierte (System-Register), nicht die in MINOS-741 registrierten. VST3: Selbsttest
     public var canValidate: Bool { info != nil && (format == .vst3 || source != .folder) }
     /// isoliert laden geht nur für Audio Units im System-Register (Apples Dienst kennt kein VST3)
     public var canIsolate: Bool { info != nil && source != .folder && format != .vst3 }
+    /// Binärdatei ohne Code für diesen Rechner (Apple Silicon: nur Intel): im Prozess nicht ladbar
+    public var foreignArch: Bool { !architectures.isEmpty && !architectures.contains(PluginBundle.hostArch) }
 }
 
 /// ein Eintrag aus dem Feld `AudioComponents` der Info.plist eines .component-Bundles
@@ -125,6 +135,48 @@ public enum PluginBundle {
         return (comps, vst3)
     }
 
+    /// Architektur dieses Prozesses ("arm64" oder "x86_64")
+    public static var hostArch: String {
+        #if arch(arm64)
+        "arm64"
+        #else
+        "x86_64"
+        #endif
+    }
+
+    /// Architekturen der Binärdatei eines Bundles (Mach-O-Kopf, ohne zu laden); leer = nicht lesbar
+    public static func architectures(_ bundle: URL) -> [String] {
+        let exe = (infoPlist(bundle)?["CFBundleExecutable"] as? String).map { bundle.appendingPathComponent("Contents/MacOS/" + $0) }
+            ?? (try? FileManager.default.contentsOfDirectory(at: bundle.appendingPathComponent("Contents/MacOS"),
+                                                              includingPropertiesForKeys: nil))?.first
+        guard let exe, let h = try? FileHandle(forReadingFrom: exe) else { return [] }
+        defer { try? h.close() }
+        guard let head = try? h.read(upToCount: 4096), head.count >= 8 else { return [] }
+        let b = [UInt8](head)
+        func be(_ o: Int) -> UInt32 { o + 4 <= b.count ? UInt32(b[o]) << 24 | UInt32(b[o + 1]) << 16 | UInt32(b[o + 2]) << 8 | UInt32(b[o + 3]) : 0 }
+        func le(_ o: Int) -> UInt32 { be(o).byteSwapped }
+        func name(_ cpu: UInt32) -> String {
+            switch cpu {
+            case 0x0100_000C: "arm64"
+            case 0x0100_0007: "x86_64"
+            case 7: "i386"
+            case 0x0200_000C: "arm64_32"
+            case 18, 0x0100_0012: "ppc"
+            default: String(format: "cpu%x", cpu)
+            }
+        }
+        switch be(0) {
+        case 0xCAFE_BABE, 0xCAFE_BABF:   // fat (32 bzw. 64 Bit Einträge), groß-endian
+            let n = Int(be(4)), step = be(0) == 0xCAFE_BABE ? 20 : 32
+            guard n > 0, n < 16 else { return [] }
+            return (0..<n).map { name(be(8 + $0 * step)) }
+        case 0xCEFA_EDFE, 0xCFFA_EDFE:   // dünn, klein-endian
+            return [name(le(4))]
+        default:
+            return []
+        }
+    }
+
     static func infoPlist(_ bundle: URL) -> [String: Any]? {
         guard let d = try? Data(contentsOf: bundle.appendingPathComponent("Contents/Info.plist")) else { return nil }
         return (try? PropertyListSerialization.propertyList(from: d, options: [], format: nil)) as? [String: Any]
@@ -195,6 +247,12 @@ public final class PluginCatalog: @unchecked Sendable {
     public static let defaultVST3Folders = [URL(fileURLWithPath: "/Library/Audio/Plug-Ins/VST3"),
                                             home.appendingPathComponent("Library/Audio/Plug-Ins/VST3")]
     static let markerName = "plugin-opening.json"
+    /// plugins.json: Datumsangaben wie beim Schreiben (ISO 8601)
+    static let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
 
     /// Ablage (plugins.json, Absturz-Markierung); nil = nur im Speicher
     public let directory: URL?
@@ -217,7 +275,7 @@ public final class PluginCatalog: @unchecked Sendable {
         self.vst3Folders = vst3Folders
         var s = PluginSettings()
         if let u = directory?.appendingPathComponent("plugins.json"), let d = try? Data(contentsOf: u),
-           let decoded = try? JSONDecoder().decode(PluginSettings.self, from: d) { s = decoded }
+           let decoded = try? Self.decoder.decode(PluginSettings.self, from: d) { s = decoded }
         _settings = s
         checkCrashMarker()
     }
@@ -266,6 +324,9 @@ public final class PluginCatalog: @unchecked Sendable {
         let s = settings
         if let r = s.blocked[id] { return String(format: String(localized: "blockiert: %@"), r) }
         if s.disabled.contains(id) { return String(localized: "in den Einstellungen abgeschaltet") }
+        if let e = lock.withLock({ _entries })?.first(where: { $0.id == id }), e.foreignArch, !e.canIsolate {
+            return String(localized: "nur Intel – VST3 nicht ladbar")
+        }
         return nil
     }
 
@@ -278,6 +339,7 @@ public final class PluginCatalog: @unchecked Sendable {
 
     public static func isolated(_ e: PluginEntry, _ s: PluginSettings) -> Bool {
         guard e.canIsolate, let info = e.info else { return false }
+        if e.foreignArch { return true }   // nur Intel: geht nur über den Dienst (Rosetta)
         if !s.allowInProcess && !info.isApple { return true }
         return s.isolation[e.id] ?? (!info.isApple && s.isolateThirdParty)
     }
@@ -340,11 +402,40 @@ public final class PluginCatalog: @unchecked Sendable {
 
     /// für das FX-Menü: ladbar, eingeschaltet, nicht blockiert
     public func menuList(refresh: Bool = false) -> [PluginInfo] {
+        pickerList(refresh: refresh).compactMap { $0.lock == nil ? $0.info : nil }
+    }
+
+    /// Eintrag der Effekt-Auswahl: ladbar (lock nil) oder gesperrt mit Grund; `note` = Hinweis ohne Sperre
+    public struct Choice: Identifiable, Sendable {
+        public let info: PluginInfo
+        public let note: String?
+        public let lock: String?
+        /// Sperre lässt sich in ⌘, → PLUGINS aufheben (Plugins im Prozess)
+        public let fixInSettings: Bool
+        public var id: String { info.id }
+    }
+
+    /// Effekt-Auswahl: eingeschaltet und nicht blockiert. Nicht ladbare (nur im Prozess ohne Freigabe, VST3 nur Intel)
+    /// stehen gesperrt mit Grund darin, nur-Intel-Audio-Units mit Hinweis (laufen isoliert über Rosetta)
+    public func pickerList(refresh: Bool = false) -> [Choice] {
         let s = settings
         return entries(refresh: refresh).compactMap { e in
-            guard let i = e.info, !s.disabled.contains(e.id), s.blocked[e.id] == nil, !Self.inProcessOnly(e, s) else { return nil }
-            return i
+            guard let i = e.info, !s.disabled.contains(e.id), s.blocked[e.id] == nil else { return nil }
+            if e.foreignArch && !e.canIsolate {
+                return Choice(info: i, note: nil, lock: String(localized: "nur Intel – VST3 nicht ladbar"), fixInSettings: false)
+            }
+            if Self.inProcessOnly(e, s) {
+                return Choice(info: i, note: nil, lock: String(localized: "nur im Prozess – erlauben: ⌘, → PLUGINS"), fixInSettings: true)
+            }
+            return Choice(info: i, note: e.foreignArch ? String(localized: "nur Intel – läuft nur isoliert/unter Rosetta") : nil,
+                          lock: nil, fixInSettings: false)
         }
+    }
+
+    /// Architektur-Hinweis eines Plugins (nil = passt)
+    public func archNote(_ id: String) -> String? {
+        guard let e = entries().first(where: { $0.id == id }), e.foreignArch else { return nil }
+        return e.canIsolate ? String(localized: "nur Intel – läuft nur isoliert/unter Rosetta") : String(localized: "nur Intel – VST3 nicht ladbar")
     }
 
     /// PluginInfo zu einer ID (auch abgeschaltete)
@@ -352,6 +443,15 @@ public final class PluginCatalog: @unchecked Sendable {
 
     /// wie `info`, aber ohne einzulesen (nil, solange die Liste noch nicht gelesen ist)
     public func knownInfo(_ id: String) -> PluginInfo? { lock.withLock { _entries }?.first { $0.id == id }?.info }
+
+    /// Architekturen je Bundle-Pfad (ein Bundle mit mehreren Effekten wird einmal gelesen)
+    private var archCache: [String: [String]] = [:]
+    private func arch(_ bundle: URL) -> [String] {
+        if let a = lock.withLock({ archCache[bundle.path] }) { return a }
+        let a = PluginBundle.architectures(bundle)
+        lock.withLock { archCache[bundle.path] = a }
+        return a
+    }
 
     private func scan() -> [PluginEntry] {
         let s = settings
@@ -400,7 +500,8 @@ public final class PluginCatalog: @unchecked Sendable {
                 src = i.isV3 ? .appExtension : .system; path = nil
             }
             out.append(PluginEntry(id: i.id, name: i.name, manufacturer: i.manufacturer, version: i.versionString,
-                                   format: i.isV3 ? .auv3 : .auv2, source: src, path: path, info: i, problem: nil))
+                                   format: i.isV3 ? .auv3 : .auv2, source: src, path: path, info: i, problem: nil,
+                                   architectures: path.map { arch(URL(fileURLWithPath: $0)) } ?? []))
         }
         // 4. VST3: Effekt-Klassen je Bundle – aus moduleinfo.json, sonst Bundle laden (Absturz-Markierung "bundle:<pfad>")
         var seen = Set<String>(), seenIDs = Set<String>()
@@ -428,9 +529,10 @@ public final class PluginCatalog: @unchecked Sendable {
                 out.append(PluginEntry(id: key, name: v.name, manufacturer: v.vendor, version: v.version, format: .vst3,
                                        source: src, path: b.path, info: nil, problem: problem))
             }
+            let archs = arch(b)
             for c in fresh {
                 out.append(PluginEntry(id: c.id, name: c.name, manufacturer: c.manufacturer, version: c.versionString, format: .vst3,
-                                       source: src, path: b.path, info: c, problem: nil))
+                                       source: src, path: b.path, info: c, problem: nil, architectures: archs))
             }
         }
         return out.sorted { ($0.manufacturer.lowercased(), $0.name.lowercased()) < ($1.manufacturer.lowercased(), $1.name.lowercased()) }
