@@ -128,6 +128,7 @@ enum UISelfTest {
             ("linien", gridLines),
             ("rip", ripCheck),
             ("rip-bereich", ripRange),
+            ("link", linkDiagnosis),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -156,6 +157,25 @@ enum UISelfTest {
     }
 
     // MARK: Fälle
+
+    /// Rechtsklick auf LINK in der Master-Clock: Menü „Link-Diagnose“ schreibt in die Statusleiste. Link bleibt aus
+    /// (der Test tritt keiner laufenden Link-Session bei) – Meldung „Link ist aus“
+    static func linkDiagnosis(_ u: UIDriver, _ t: [Track]) {
+        let item = String(localized: "Link-Diagnose")
+        guard let clock = u.named("clock") else { fail("Master-Clock-Leiste nicht gefunden") }
+        check(!u.mix.state.linkEnabled, "Link ist im Test an")
+        let r = u.frame(clock)
+        var found: NSMenu?
+        for x in stride(from: r.minX + 2, to: r.maxX, by: 6) {
+            if let m = u.rightClick(at: NSPoint(x: x, y: r.midY)), m.items.contains(where: { $0.title == item }) { found = m; break }
+        }
+        guard let menu = found, let i = menu.items.firstIndex(where: { $0.title == item }) else { fail("Rechtsklick auf LINK: kein Menü mit „\(item)“") }
+        menu.performActionForItem(at: i)
+        let want = String(localized: "Link ist aus")
+        func shown() -> Bool { StatusCenter.shared.log.active.contains { $0.text == want } }
+        u.spin(1) { shown() }
+        check(shown(), "Statusleiste ohne „\(want)“: \(StatusCenter.shared.log.active.map(\.text))")
+    }
 
     /// Rechtsklick auf den Decktitel: Menü „Track bearbeiten …“ (aus der Hosting-View des Kopfs), Auslösen öffnet das
     /// Bearbeiten-Fenster (Sheet am Hauptfenster)

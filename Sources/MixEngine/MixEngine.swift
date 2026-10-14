@@ -454,12 +454,26 @@ public final class MixEngine: @unchecked Sendable {
     public func setClockBPM(_ bpm: Double) { mdsp_clock_set_bpm(core, bpm) }
     public func setClockBeat(_ beat: Double) { mdsp_clock_set_beat(core, beat) }
     public var clockBeat: Double { mdsp_clock_beat(core) }
-    /// Beat am Anfang des letzten Blocks + Host-Zeit, zu der er hörbar ist (mach_absolute_time)
+    /// Beat am Anfang des letzten Blocks + Host-Zeit, zu der er hörbar ist (mach_absolute_time).
+    /// Kern-Stempel = HAL-Ausgabezeit des Blocks (der Puffer ist darin schon enthalten); dazu Geräte-, Sicherheits- und
+    /// Stream-Latenz. Keylock braucht keinen Term: der Lesekopf läuft um die Stretch-Latenz voraus, die Clock folgt der
+    /// hörbaren Position. Formel: docs/architecture.md (Link)
     public var clockStamp: (beat: Double, hostTime: UInt64)? {
         var b = 0.0, h: UInt64 = 0
         guard mdsp_clock_stamp(core, &b, &h) else { return nil }
-        return (b, h + LinkSession.hostTicks(seconds: output.outputLatency))
+        return (b, h + LinkSession.hostTicks(seconds: presentationLatency))
     }
+    /// Ausgabelatenz ohne den Puffer: Geräte-, Sicherheits- und Stream-Latenz, Sekunden
+    public var presentationLatency: Double {
+        let i = output.info
+        return max(0, i.outputLatency - (i.deviceRate > 0 ? Double(i.bufferFrameSize) / i.deviceRate : 0))
+    }
+    /// tatsächliche Puffergröße des Geräts (Frames)
+    public var deviceBufferFrames: Int { Int(output.bufferFrameSize) }
+    /// HAL-Ausgabezeit des letzten Blocks minus Callback-Beginn (Diagnose: etwa ein Puffer), Sekunden
+    public var renderLead: Double { mdsp_render_lead() }
+    /// Clock-Phase um `beats` verschieben, ohne Sprung im Bar-Zähler (Link-Nachführung)
+    public func trimClock(_ beats: Double) { mdsp_clock_trim(core, beats) }
     public func setMetronome(on: Bool, volume: Double, firstChannel: Int) {
         mdsp_metronome(core, on, Float(volume), Int32(firstChannel))
     }

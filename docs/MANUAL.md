@@ -496,8 +496,14 @@ link (network tempo sync):
 
 * LINK -> join the link session, the number = peers
 * minos leads tempo and bar, the other apps follow
-* link beat is time stamped in the audio callback -> no drift
-* offset setting for latency between the two apps
+* link beat is time stamped in the audio callback (hal output time + device latency) -> no drift
+* tolerances (beats, 0.02 ≈ 9 ms at 128 bpm):
+  * below 0.02 the link timeline is never touched (callback jitter, clock drift)
+  * free clock (MASTER, or no master deck playing): from 0.005 minos moves its own clock, the peers see nothing
+  * clock on the master deck (AUTO): from 0.02 the link timeline is set again
+  * a jump > 0.25 (master change, deck jump, device change) sets it again after 15 ms
+* diagnosis: tooltip of LINK = resets since link on; right click -> `Link-Diagnose` -> status line: deviation, drift (ms), resets, clock trims, tempo sets, peers, offset. resets should stay at 1 (the first) while nothing jumps
+* offset (⌘, -> AUDIO -> link offset, ±50 ms): only for a constant shift. run the daw over the same interface with the same buffer size, play both, measure the difference (e.g. record both outputs) and enter it; positive = the other apps play later
 
 bar counter (top right): runs from the first play, 4 / 8 / 16 bars, the big number counts within the phrase (⌘, -> DISPLAY, default 16 bars) and starts over, double click or ↺ = back to bar 1. next to it the time of day and a stopwatch (from the first play, click = restart at 0). the whole top bar scales 60-130 % by dragging the grip below it (double click = 100 %), fx units sit 10 pt flatter. bar 1 of the counter = bar 1 of a phrase (the code). each deck header shows `◆ CODE` or how far the deck is off (`+2 BARS`) -> a beatjump of that size the other way brings it back in.
 

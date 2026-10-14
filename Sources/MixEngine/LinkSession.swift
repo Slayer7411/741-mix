@@ -10,12 +10,16 @@ public final class LinkSession: @unchecked Sendable {
     public var quantum = 4.0
     /// Versatz zu den anderen Teilnehmern (positiv = die anderen spielen später)
     public var offsetMicros: Int64 = 0
-    /// geglättete Phasenabweichung zu Link; erst ab Schwelle wird die Link-Zeitachse neu gesetzt
-    private var drift = 0.0
+    /// Nachführung (Schwellen: LinkLeadPolicy) und Diagnose
+    private var policy = LinkLeadPolicy()
+    public private(set) var stats = LinkStats()
 
     private static let timebase: mach_timebase_info_data_t = { var t = mach_timebase_info_data_t(); mach_timebase_info(&t); return t }()
     public static func hostTicks(seconds: Double) -> UInt64 {
         UInt64(max(0, seconds) * 1e9 * Double(timebase.denom) / Double(timebase.numer))
+    }
+    public static func seconds(hostTicks: UInt64) -> Double {
+        Double(hostTicks) * Double(timebase.numer) / Double(timebase.denom) / 1e9
     }
     static func micros(hostTicks: UInt64) -> Int64 {
         Int64(Double(hostTicks) * Double(timebase.numer) / Double(timebase.denom) / 1000)
@@ -34,7 +38,11 @@ public final class LinkSession: @unchecked Sendable {
 
     public var enabled: Bool {
         get { abl_link_is_enabled(link) }
-        set { if newValue != enabled { abl_link_enable(link, newValue) } }
+        set {
+            guard newValue != enabled else { return }
+            abl_link_enable(link, newValue)
+            policy.reset(); stats = LinkStats()
+        }
     }
 
     public var peers: Int { Int(abl_link_num_peers(link)) }
@@ -49,25 +57,41 @@ public final class LinkSession: @unchecked Sendable {
         return diff
     }
 
+    /// Fenster (Max/σ) der Diagnose abholen und neu beginnen; Zähler laufen weiter
+    public func takeStats() -> LinkStats {
+        var r = stats; r.peers = peers
+        stats.resetWindow()
+        return r
+    }
+
     /// Tempo und Beat an Link geben. `beat` ist zur Host-Zeit `hostTime` hörbar (mach_absolute_time,
-    /// gleiche Uhr wie Link). Kleine Abweichungen (Callback-Jitter) werden geglättet statt jedes Mal neu gesetzt.
-    public func lead(bpm: Double, beat: Double, hostTime: UInt64) {
-        guard enabled, bpm > 0 else { return }
+    /// gleiche Uhr wie Link). Kleine Abweichungen bleiben liegen, mittlere zieht MINOS an der eigenen Clock nach
+    /// (`.trim`, nur wenn `canTrim`), nur Sprünge setzen die Link-Zeitachse neu – siehe LinkLeadPolicy.
+    @discardableResult
+    public func lead(bpm: Double, beat: Double, hostTime: UInt64, canTrim: Bool) -> LinkLeadPolicy.Action {
+        guard enabled, bpm > 0 else { return .none }
         abl_link_capture_app_session_state(link, state)
         let t = Self.micros(hostTicks: hostTime) + offsetMicros
         var changed = false
         if abs(abl_link_tempo(state) - bpm) > 0.0005 {
-            abl_link_set_tempo(state, bpm, t)
+            abl_link_set_tempo(state, bpm, t)   // Phase bleibt zur Zeit t stetig
             changed = true
+            stats.tempoSets += 1
         }
         var diff = (beat - abl_link_beat_at_time(state, t, quantum)).truncatingRemainder(dividingBy: quantum)
         if diff > quantum / 2 { diff -= quantum } else if diff < -quantum / 2 { diff += quantum }
-        drift += (diff - drift) * 0.1
-        if abs(diff) > 0.1 || abs(drift) > 0.01 {
+        stats.record(diff)
+        let action = policy.step(diff: diff, canTrim: canTrim)
+        stats.drift = policy.drift
+        switch action {
+        case .force:
             abl_link_force_beat_at_time(state, beat, UInt64(max(0, t)), quantum)
-            drift = 0
             changed = true
+            stats.forces += 1
+        case .trim: stats.trims += 1
+        case .none: break
         }
         if changed { abl_link_commit_app_session_state(link, state) }
+        return action
     }
 }

@@ -4,6 +4,10 @@
 "741 Knochen" = "741 bone";
 "ANZEIGE" = "DISPLAY";
 "Link: MINOS gibt das Tempo vor" = "Link: MINOS sets the tempo";
+"Link: MINOS gibt das Tempo vor · Neusetzungen %lld · Rechtsklick: Diagnose" = "Link: MINOS sets the tempo · resets %lld · right click: diagnosis";
+"Link-Diagnose" = "Link diagnosis";
+"Link ist aus" = "Link is off";
+"Link: Abweichung %@ ms · Drift %@ ms · Neusetzungen %lld · Clock-Trims %lld · Tempo-Setzungen %lld · Teilnehmer %lld · Versatz %@ ms" = "Link: deviation %@ ms · drift %@ ms · resets %lld · clock trims %lld · tempo sets %lld · peers %lld · offset %@ ms";
 "Abspielen" = "Playback";
 "Am Mischpult die Kanal-Eingänge auf USB stellen. EQ, Fader, Crossfader und Kopfhörer-Cue macht dann das Pult; Filter, FX und Gain bleiben in MINOS-741." = "Set the channel inputs on the mixer to USB. EQ, faders, crossfader and headphone cue are done by the mixer; filter, FX and gain stay in MINOS-741.";
 "An Preparation anhängen" = "Add to preparation";

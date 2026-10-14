@@ -144,7 +144,15 @@ plugin list and loading (`PluginCatalog`, `PluginInstaller`, `PluginValidator` i
 * master = master deck or the master clock (MASTER mode)
 * tempo follows every tick, phase via a small rate nudge (max 6%)
 * hard jump only if the error stays above 0.25 beats for 100 ms
-* AUTO mode: clock follows the master deck (metronome, later link)
+* AUTO mode: clock follows the master deck (metronome, link). tempo threshold 0.0005 bpm, phase > 0.02 beats -> jump
+
+## ◆ LINK
+
+* `MixEngine/LinkSession.swift` on the control queue (200 Hz tick), never in the audio thread
+* stamp: audio callback stores beat at block start + `mHostTime` of the render time stamp (hal output time of the block, smoothed by the hal, follows the device clock); no valid host time -> callback start + one buffer. seqlock `mdsp_clock_stamp`
+* audible time = output time + device latency + safety offset + stream latency (`MixEngine.presentationLatency` = output latency − buffer) + link offset. keylock adds no term: the read head runs ahead by the stretch latency, the clock follows the audible position
+* `MixEngine/LinkLead.swift` `LinkLeadPolicy`: diff = own beat − link beat at the same host time (±2 beats), smoothed (0.1 per tick ≈ 50 ms). free clock: drift > 0.005 -> `mdsp_clock_trim` (audio thread adds it at the next block). clock on the deck: drift > 0.02 -> force. |diff| > 0.25 for 3 ticks -> force. 100 ms hold after every action. tempo: `set_tempo` when it differs > 0.0005 bpm (phase stays continuous)
+* `LinkStats`: resets, tempo sets, trims, last diff, drift, window max / σ; `MixController.linkStats(resetWindow:)`
 
 ## ◆ WAVEFORM SPECTRUM
 

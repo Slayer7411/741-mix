@@ -329,6 +329,8 @@ public struct MixState: Equatable, Sendable {
     public var linkEnabled = false
     /// verbundene Link-Teilnehmer
     public var linkPeers = 0
+    /// Link-Zeitachse neu gesetzt seit dem Einschalten (Diagnose; Tooltip der LINK-Taste)
+    public var linkForces = 0
     public var crossfader: Double = 0
     public var masterVolume: Double = 0.85
     public var externalMixer = false
@@ -1680,6 +1682,17 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
+    /// Link-Diagnose (Zähler, letzte Abweichung, Drift, Teilnehmer); `resetWindow` beginnt Max/σ neu
+    public func linkStats(resetWindow: Bool = false) -> LinkStats {
+        controlQueue.sync {
+            locked { () -> LinkStats in
+                if resetWindow { return link.takeStats() }
+                var r = link.stats; r.peers = link.peers
+                return r
+            }
+        }
+    }
+
     /// Link – MINOS gibt Tempo und Takt vor
     public let link = LinkSession()
     private var linkTicks = 0
@@ -2463,9 +2476,13 @@ public final class MixController: @unchecked Sendable {
                 if changed { applyRate(d) }
             }
             // AUTO-Modus: Clock folgt Tempo und Phase des Master-Decks (für Metronom und Link)
+            var clockOnDeck = false
             if !state.clockMaster, let m = master, let g = state.decks[m].grid, state.decks[m].playing {
+                clockOnDeck = true
+                // Tempo-Schwelle wie bei Link (0,0005 BPM): 0,005 ließ die Clock dem Deck um ~0,02 Beats in 4 min
+                // davonlaufen, jeder Rücksprung war eine Link-Neusetzung
                 let bpm = state.decks[m].bpm
-                if abs(bpm - state.clockBPM) > 0.005 { state.clockBPM = bpm; engine.setClockBPM(bpm) }
+                if abs(bpm - state.clockBPM) > 0.0005 { state.clockBPM = bpm; engine.setClockBPM(bpm) }
                 // Beat-Phase sofort; Takt-Lage (Takt-Eins der Clock = Takt-Eins des Decks, sonst läuft Link um 1–3 Beats
                 // versetzt) erst, wenn der Versatz 0,5 s gleich bleibt – ein Loop kürzer als ein Takt darf die Clock
                 // nicht bei jedem Durchlauf springen lassen
@@ -2479,15 +2496,19 @@ public final class MixController: @unchecked Sendable {
                 } else { clockBarTicks = 0 }
                 clockBarLast = bar
             }
-            // Link: Tempo und Beat der Clock vorgeben, Teilnehmer zählen
+            // Link: Tempo und Beat der Clock vorgeben, Teilnehmer zählen. Läuft die Clock frei, zieht MINOS kleine
+            // Abweichungen an der eigenen Clock nach (Link-Zeitachse bleibt für die Teilnehmer ruhig)
             if state.linkEnabled {
                 if let st = engine.clockStamp {
                     link.offsetMicros = Int64(state.prefs.linkOffsetMs * 1000)
-                    link.lead(bpm: state.clockBPM, beat: st.beat, hostTime: st.hostTime)
+                    if case .trim(let d) = link.lead(bpm: state.clockBPM, beat: st.beat, hostTime: st.hostTime, canTrim: !clockOnDeck) {
+                        engine.trimClock(-d)
+                    }
+                    if link.stats.forces != state.linkForces { state.linkForces = link.stats.forces }
                 }
                 linkTicks += 1
                 if linkTicks % 100 == 0 { let n = link.peers; if n != state.linkPeers { state.linkPeers = n } }
-            } else if state.linkPeers != 0 { state.linkPeers = 0 }
+            } else if state.linkPeers != 0 || state.linkForces != 0 { state.linkPeers = 0; state.linkForces = 0 }
             // Bar-Zähler startet mit dem ersten Play
             if sessionOffset == nil, state.decks.contains(where: { $0.playing }) { sessionOffset = -engine.clockBeat.rounded() }
             // History: hörbare Spielzeit zählen, ab Schwelle als gespielt melden
