@@ -110,6 +110,8 @@ struct ContentView: View {
                 if l.contains("nobrowser") { mix.prefs.ui.browserLayout = .single; mix.prefs.ui.browserHeight = 120 }
             }
             mix.library = store   // Schneiden trägt neue Dateien in CUTS ein
+            RipChecks.shared.mix = mix
+            RipChecks.shared.library = store
             SelfTest.run(store: store, mix: mix, browser: browserState)
             if DonateHint.dueNow { DonateHint.lastShown = Date(); donate = true }
         }

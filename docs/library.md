@@ -51,6 +51,14 @@
 * 20 tracks of the collection (local files): bpm 18 / 20 within 0.1 (the other two 0.7–1.0 off, old vinyl tracks), key 6 / 20 exact + 2 related, loudness ±1.3 dB (median deviation from the collection's value), grid within 20 ms of the collection's marker 10 / 18, ~1 s per track
 * details: [manual](MANUAL.md#analyze)
 
+## ◆ RIP CHECK
+
+* right click tracks or a source -> `Rip prüfen`, or with every analysis (⌘, -> BROWSER -> analyse, on)
+* start and end: silence (start > 2 s, end > 6 s), rest of the previous track / start of the next one (key change or other tempo, hard cut, 4 / 8 bar loop hint), grid suspect at the start. breakdown and drum intros are no finding
+* `ripcheck.json` (MINOS-741 folder). column `Rip` (`▸ 7,3 s`, `◂ 3:02`, `GRID`), `◆ RIP` filter, tree `ZU BEARBEITEN`
+* actions: set cut IN / OUT (edits.json, no new file), remove the region as a new file, discard. done when the side has a cut. deck: status on load, `RIP` in edit and prepare row, striped region in the overview
+* details: [manual](MANUAL.md#rip-check)
+
 ## ◆ RELOAD
 
 * ↻ / ⌘O: everything heavy runs in the background (parse, file check, own edits, indices, sorting of the lists both panes show), the main thread only takes the result

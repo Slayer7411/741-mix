@@ -32,6 +32,8 @@ final class BrowserPaneModel: Identifiable {
     var subfolders = false
     /// nur lokale Dateien (Cloud: ohne ☁ nur online / fehlend)
     var localOnly = false
+    /// nur Tracks mit offenem Befund der Rip-Prüfung (◆ RIP)
+    var ripOnly = false
     /// nur Tracks, die zum Master passen (Key-Stufen und BPM-Fenster aus ⌘, -> BROWSER)
     var matching = false
     /// Inline-Bearbeitung: Zelle (Track + Feld) und der Text im Feld
@@ -132,6 +134,7 @@ final class BrowserPaneModel: Identifiable {
         var base: [AnyHashable] = [source, "\(sortOrder)", store.revision, store.sourceRevision(source, subfolders: subfolders), subfolders]
         if harmonySorted, let h { base += [h.ref, h.rule.halfDouble] as [AnyHashable] }
         var all = base + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0,
+                          ripOnly, ripOnly ? RipChecks.shared.revision : 0,
                           excl != nil, excl != nil ? history?.playedRevision ?? 0 : 0] as [AnyHashable]
         if matching, let h { all += [h.ref, h.rule] as [AnyHashable] }
         return (base, all)
@@ -154,7 +157,7 @@ final class BrowserPaneModel: Identifiable {
         }
         if key == cacheKey { return cachedRows }
         let list = Self.filteredCounting(sortedBase, criteria(separators, h, excl), index: Self.tagIndex)
-        apply(localOnly ? Self.local(list.rows) : list.rows, key: key, hidden: list.hidden)
+        apply(mainFilters(list.rows), key: key, hidden: list.hidden)
         return cachedRows
     }
 
@@ -199,7 +202,7 @@ final class BrowserPaneModel: Identifiable {
             sortedBase = job.base
             sortedKey = baseKey
         }
-        apply(localOnly ? Self.local(job.rows) : job.rows, key: key, hidden: job.hidden)
+        apply(mainFilters(job.rows), key: key, hidden: job.hidden)
     }
 
     @ObservationIgnored private var notifyPending = false
@@ -304,6 +307,13 @@ final class BrowserPaneModel: Identifiable {
         guard let x = c.exclude else { return (list, 0) }
         let kept = list.filter { !x.contains($0.key) }
         return (kept, list.count - kept.count)
+    }
+
+    /// Filter mit Hauptthread-Zustand: nur lokal, nur offene Rip-Befunde
+    private func mainFilters(_ list: [Track]) -> [Track] {
+        var l = localOnly ? Self.local(list) : list
+        if ripOnly { let open = RipChecks.shared.openKeys; l = l.filter { open.contains($0.key) } }
+        return l
     }
 
     private static func local(_ list: [Track]) -> [Track] {
@@ -423,6 +433,7 @@ struct PaneHeader: View {
                         tagsButton
                         MatchChip(model: model)
                         UnplayedChip()
+                        RipChip(model: model)
                         if CloudLibrary.shared.hasCloudTracks { cloud }
                     }
                     if !model.tagFilter.isEmpty {
@@ -453,6 +464,7 @@ struct PaneHeader: View {
                     Text("│").foregroundStyle(Theme.hairline)
                     MatchChip(model: model)
                     UnplayedChip()
+                    RipChip(model: model)
                     if CloudLibrary.shared.hasCloudTracks {
                         Text("│").foregroundStyle(Theme.hairline)
                         cloud
@@ -708,6 +720,11 @@ struct SourceTreeFixed: View, SourceMenus {
                     .contextMenu { OverviewMenuButton { store.toolLoops } }
             }
         }
+        if RipChecks.shared.revision >= 0, RipChecks.shared.openCount > 0 {
+            row("◆", "ZU BEARBEITEN").tag(BrowserSource.ripTodo)
+                .help("Tracks mit offenem Befund der Rip-Prüfung (Stille, fremder Anfang oder fremdes Ende, Grid prüfen)")
+                .contextMenu { AnalysisMenuButtons { store.tracks(for: .ripTodo) } }
+        }
         row("▤", "PREPARATION").tag(BrowserSource.preparation)
             .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
             .treeDrop(targeted: .constant(false)) { strings in
@@ -853,7 +870,7 @@ struct TrackTable: View {
         // Vorschau-Bilder in Zellen hängen am Übersichten-Zähler, das Band (ganze Zeile) zeichnet PreviewRowLayer
         let tick = ui.previewMode == .column || ui.previewMode == .behindTitle ? Overviews.shared.tick : 0
         let look = TrackTableController.Look(ui: ui, zoom: UIZoom.shared.factor, filter: model.tagFilter, inline: model.inline,
-                                             played: history.played, cloud: CloudLibrary.shared.revision, tick: tick,
+                                             played: history.played, cloud: CloudLibrary.shared.revision, rip: RipChecks.shared.revision, tick: tick,
                                              preview: ui.previewMode == .column || ui.previewMode == .behindTitle ? decks.previewing?.key : nil)
         TrackTableView(controller: table, look: look, selection: model.selection, sort: model.sortOrder) { table in
                 table.model = model

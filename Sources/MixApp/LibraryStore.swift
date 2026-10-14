@@ -157,6 +157,7 @@ final class LibraryStore {
         case let .own(r): ownRevision(r)
         case .cuts, .toolLoops: cutsRevision
         case .cuts: cutsRevision
+        case .ripTodo: RipChecks.shared.revision
         case .daw: dawRevision
         case let .folder(p): folders.stamp(p, recursive: subfolders)
         default: 0
@@ -754,6 +755,7 @@ final class LibraryStore {
         saveMoves()
         meta.rename(from: oldKey, to: loc.key)
         analysis.rename(from: oldKey, to: loc.key)
+        RipChecks.shared.store.rename(from: oldKey, to: loc.key)
         edits?.rename(from: oldKey, to: loc.key)
         if collectionBase[oldKey] != nil { collectionBase[loc.key] = collectionBase.removeValue(forKey: oldKey) }
         var list = tracks
@@ -791,6 +793,7 @@ final class LibraryStore {
         case .running: return running
         case .cuts: return cuts
         case .toolLoops: return toolLoops
+        case .ripTodo: return RipChecks.shared.openKeys.compactMap { track($0) }
         case .daw: return dawTracks
         case .history, .historyLive: return []
         case .prepArchive: return []   // löst BrowserPaneModel über den HistoryStore auf
@@ -820,6 +823,8 @@ enum BrowserSource: Hashable {
     case cuts
     /// Tool-Loops (Dateien aus CUTS mit dem Tag `tool-loop`)
     case toolLoops
+    /// Tracks mit offenem Befund der Rip-Prüfung
+    case ripTodo
     /// Clips der laufenden DAW (Live-Brücke)
     case daw
     case node(PlaylistNode)
@@ -838,6 +843,7 @@ enum BrowserSource: Hashable {
         case .running: "Running Tracks"
         case .cuts: "Cuts"
         case .toolLoops: "Tool-Loops"
+        case .ripTodo: "Zu bearbeiten"
         case .daw: "DAW"
         case let .node(n): n.name
         case .historyLive: "History"

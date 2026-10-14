@@ -144,6 +144,7 @@ struct Session: Codable {
         case .running: "running"
         case .cuts: "cuts"
         case .toolLoops: "toolloops"
+        case .ripTodo: "riptodo"
         case .daw: "daw"
         case .historyLive: "history"
         case .own(let r): "own:\(r.id.uuidString)"
@@ -160,6 +161,7 @@ struct Session: Codable {
         case "running": return .running
         case "cuts": return .cuts
         case "toolloops": return .toolLoops
+        case "riptodo": return .ripTodo
         case "daw": return .daw
         case "history": return .historyLive
         default: break

@@ -366,6 +366,7 @@ final class MixModel {
         UndoStack.shared.clear(deck: d)   // Trackwechsel: kein Rückgängig, die Schritte passen nicht zum neuen Track
         focusedDeck = d
         pull()
+        RipChecks.shared.deckLoaded(t.key, deck: d)
         return true
     }
 
@@ -395,6 +396,7 @@ final class MixModel {
                 let newEdit: TrackEdit? = e.isEmpty ? nil : e
                 edits.set(newEdit, for: orig.key)
                 savedEdit[d] = newEdit
+                RipChecks.shared.changed(orig.key)
                 if previewing?.key == orig.key { previewCutChanged(newEdit?.trim) }
                 if prefs.ui.writeCollection, newEdit?.hasNMLPart == true || old?.hasNMLPart == true { library?.scheduleWriteBack() }
             }

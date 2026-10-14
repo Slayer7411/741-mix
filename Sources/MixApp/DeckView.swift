@@ -584,6 +584,7 @@ struct CutRow: View {
                     }
                 }
                 DeckButton(title: "✕") { mix.clearRange(d) }.stable().help("Bereich aufheben (Esc)")
+                RipDeckButton(d: d)
                 if w == .full, !m.previewing {
                     Divider().frame(height: 14.z)
                     DeckButton(title: "IN HERE", active: m.start != nil, color: Theme.state) {

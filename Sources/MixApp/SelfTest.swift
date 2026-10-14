@@ -220,6 +220,7 @@ enum SelfTest {
             await prepareProbe(mix)
             await playlistTreeProbe(store: store)
             await wavePresetProbe(mix)
+            await ripProbe(mix, tracks: c)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
             if ProcessInfo.processInfo.environment["MIX741_KEEP_HISTORY"] == nil, let url = SelfTest.historyURL {
