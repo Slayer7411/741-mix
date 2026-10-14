@@ -5,7 +5,7 @@ import Foundation
 public enum FileProtocol {
     public static let service = "minos-files"
     public static let major = 1
-    public static let minor = 1
+    public static let minor = 2
     /// Name des Helfers (neben dem eigenen Programm, im Bundle unter Contents/MacOS)
     public static let helperName = "minos-files"
 
@@ -79,6 +79,29 @@ public struct DecodeDone: Codable, Sendable, Equatable {
 /// Fehler als Code (die Oberfläche übersetzt), `detail` nur fürs Protokoll
 public enum FileErrorCode: String, Codable, Sendable {
     case missing, format, convert, read, cacheWrite, invalid, cancelled
+    /// Cloud-Datei ohne lokale Kopie: der Anbieter gab den Inhalt beim Lesen nicht heraus
+    case notLocal
+}
+
+/// Lesefehler einer Cloud-Datei erkennen (Datei-Dienst und Laden im Prozess)
+public enum CloudRead {
+    /// liegt in einem Ordner eines Dateianbieters (~/Library/CloudStorage/…, iCloud Drive)
+    public static func isCloudBacked(_ path: String) -> Bool {
+        path.contains("/Library/CloudStorage/") || path.contains("/Library/Mobile Documents/")
+    }
+
+    /// nur Platzhalter auf der Platte (SF_DATALESS); stat lädt nichts herunter
+    public static func isDataless(_ path: String) -> Bool {
+        var st = stat()
+        return stat(path, &st) == 0 && st.st_flags & 0x4000_0000 != 0
+    }
+
+    /// Dekodieren einer Datei im Cloud-Ordner scheiterte, weil der Inhalt nicht lokal war: Platzhalter (SF_DATALESS) vor
+    /// oder nach dem Lesen. Der leere Fehler (Foundation._GenericObjCError 0) allein zählt nicht: er kam im Lasttest von
+    /// lokalen mp3 (Lesen hinter dem tatsächlichen Ende, siehe TrackAudio.readFailureIsEnd)
+    public static func notLocal(path: String, datalessBefore: Bool, datalessAfter: Bool) -> Bool {
+        isCloudBacked(path) && (datalessBefore || datalessAfter)
+    }
 }
 
 public struct DecodeFailed: Codable, Sendable, Equatable {

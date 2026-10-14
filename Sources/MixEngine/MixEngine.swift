@@ -56,6 +56,33 @@ public final class MixEngine: @unchecked Sendable {
         return (Int(w), Int(j), Int(r))
     }
 
+    /// Watchdog der parallelen Decks: Worker über der Frist (2 × Block) -> Deck in diesem Block still, danach seriell
+    public struct ParallelWatchdog: Sendable, Equatable {
+        /// Fristabläufe seit Start
+        public var timeouts = 0
+        /// wie lange der Worker beim letzten Fristablauf brauchte (bis fertig oder bis jetzt), Sekunden
+        public var lastHang = 0.0
+        /// seit dem letzten Fristablauf, Sekunden (nil = keiner)
+        public var lastAgo: Double?
+        /// Worker, die nach dem Fristablauf noch rechnen (ihr Deck bleibt still)
+        public var stuck = 0
+        public init() {}
+    }
+    public var parallelWatchdog: ParallelWatchdog {
+        var w = MDParallelWatchdog()
+        mdsp_parallel_watchdog(core, &w)
+        var r = ParallelWatchdog()
+        r.timeouts = Int(w.timeouts); r.lastHang = Double(w.lastHangNs) / 1e9; r.stuck = Int(w.stuck)
+        if w.timeouts > 0 { r.lastAgo = Double(w.nowNs &- w.lastNs) / 1e9 }
+        return r
+    }
+    /// gerechnete Blöcke seit Start (unabhängig von `takeLoad`)
+    public var renderCount: UInt64 { mdsp_render_count(core) }
+    /// nur Tests/Selbsttest: Worker `w` (0 = Deck B) schläft beim nächsten Auftrag (vor der Übernahme oder beim Rechnen)
+    public func stallWorkerForTest(_ w: Int, seconds: Double, beforeTaking: Bool = false) {
+        mdsp_debug_stall_worker(core, Int32(w), UInt32(max(0, seconds) * 1e6), beforeTaking)
+    }
+
     /// Wird gerufen, wenn sich die Geräteliste oder das Standardgerät ändert (Geräte-Queue). Gerät weg/wieder da
     /// erledigt die Engine selbst; ob auf ein anderes Gerät gewechselt wird, entscheidet die Oberfläche
     public var onConfigurationChange: (@Sendable () -> Void)?
@@ -506,6 +533,8 @@ public final class MixEngine: @unchecked Sendable {
         public var worstParts: [Double] = []
         public var worstFrames = 0
         public var worstTotalMs: Double { worstParts.reduce(0, +) }
+        /// Watchdog der parallelen Decks (Fristabläufe seit Start, letzter)
+        public var parallel = ParallelWatchdog()
         public init() {}
     }
     public static let worstPartNames = ["A", "B", "C", "D", "wait", "mix", "master", "pre"]
@@ -523,6 +552,7 @@ public final class MixEngine: @unchecked Sendable {
         var parts = [UInt64](repeating: 0, count: 8), wf: UInt32 = 0
         mdsp_render_profile(core, &parts, 8, &wf)
         r.worstParts = parts.map { Double($0) / 1e6 }; r.worstFrames = Int(wf)
+        r.parallel = parallelWatchdog
         return r
     }
 

@@ -51,9 +51,18 @@ output and device (`CoreAudioOutput`, `MixEngine`, `OutputWatch`):
 * listeners on the running device: `DeviceIsAlive`, `NominalSampleRate` (debounced 150 ms), `BufferFrameSize`, `ProcessorOverload` (own utility queue). on the system object: `Devices`, `DefaultOutputDevice`. callbacks only read the new value and hand an event to `OutputWatch`
 * `OutputWatch` (pure state machine, tests): stopped · running · waiting · sleeping. alive 0 or uid missing from the list -> stop, wait for the same uid (list listener + 100 ms poll) -> reopen by uid (`TranslateUIDToDevice`). rate change -> reopen, `setDeviceRate` nil: the device rate is never set automatically, the core rate stays, auhal resamples. buffer change -> latency / buffer re-read. sleep -> stop, wake -> reopen or wait. a failed reopen keeps waiting
 * `running` is set before `AudioOutputUnitStart` (the first callback can come first): buffer / plugin releases wait for the core instead of freeing early
+* `MaximumFramesPerSlice` set to 4096 (or 2 × the requested buffer) before `AudioUnitInitialize`, output and input. left at its default, auhal takes the device buffer at initialize; when the device applies a larger buffer only afterwards (restart 256 -> 512) every io cycle ends in `kAudioUnitErr_TooManyFramesToProcess`, the render callback is never called and the output stays silent while `running`
 * `ProcessInfo.beginActivity([.userInitiated, .latencyCritical, .idleSystemSleepDisabled])` while running or waiting, ended on stop / sleep
 * `MixModel` only mirrors: notices, status line, switch to another device (preferred interface back, following the system default). `NSWorkspace` will sleep / did wake -> `engine.willSleep()` / `didWake()`, `ControllerManager` reopens its hid manager after wake
 * keylock / fx state needs no reset on a device rate change: the core runs at its own rate throughout, `healDeck` still catches nan
+
+decks in parallel (`Workers` in `MixDSP.cpp`):
+
+* deck A on the audio thread, B-D on three worker threads (`minos741.deckB`…), one job slot per worker: `ticket << 2 | phase` (idle, posted, rendering, cancelled), woken by a `go` semaphore, finished by its own `done` semaphore
+* workers set the time-constraint policy (period = device buffer) and join the io thread's workgroup when they start and when `mdsp_set_workgroup` wakes them without a job (device opened, buffer changed). the setter waits up to 200 ms until all took it over; the first join costs a few ms and must not fall into a block's deadline. the lock only guards copying the workgroup pointer
+* watchdog: the audio thread waits for each `done` until block start + 2 × block length (`dispatch_semaphore_wait` with a deadline, nothing else). a worker past it: job not taken yet -> cancelled (cas posted -> cancelled, the worker drops it); job taken -> marked hanging, its `done` is collected later without waiting. that deck is left out of the block (silence), parallel is switched off (serial from the next block). a deck whose worker still renders stays silent until the worker is done, it is never rendered twice at once. plugin releases wait while a worker hangs
+* `mdsp_parallel_watchdog`: timeouts, time of the last one, how long the worker took, workers still hanging. app: status line `Decks parallel: Worker hing (n ms) → seriell`, ⌘, -> AUDIO shows the switch off with time and count; switching on retries
+* tests: `mdsp_debug_stall_worker` makes a worker sleep before or while rendering
 
 dsp load (`MixDSPCoreAudio.cpp`):
 

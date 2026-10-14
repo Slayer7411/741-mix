@@ -1005,17 +1005,32 @@ struct Workers {
     static constexpr int N = MDSP_DECKS - 1;
     std::atomic<bool> enabled{false};      // Audio-Thread liest je Teilblock
     std::atomic<bool> quit{false};
-    bool started = false;                  // nur Steuer-Thread
+    std::atomic<bool> started{false};      // setzt der Steuer-Thread, liest auch die Geräte-Queue (mdsp_set_workgroup)
     std::thread threads[N];
     int n = 0;                             // Frames des laufenden Teilblocks (vor dem Wecken gesetzt)
 #if defined(__APPLE__)
-    dispatch_semaphore_t go[N] = {}, done = nullptr;
+    dispatch_semaphore_t go[N] = {}, done[N] = {};
     std::mutex wgLock;                     // Steuer-Thread beim Setzen, Worker per try_lock beim Beitritt
     os_workgroup_t wg = nullptr;           // retained; Worker halten beim Beitritt eine eigene Referenz
     double period = 0;                     // Blockdauer in Sekunden (Echtzeit-Policy der Worker)
     std::atomic<uint32_t> wgGen{0};        // jede Änderung von wg/period
 #endif
     std::atomic<int> joined{0}, realtime{0};   // Worker in der Workgroup / mit Echtzeit-Policy (Diagnose)
+    // Watchdog: je Worker ein Auftrag `job` = Ticket << 2 | Phase. Der Audio-Thread vergibt (POSTED) und zieht nach
+    // der Frist zurück (POSTED -> CANCELLED, der Worker rechnet dann nicht); der Worker übernimmt (POSTED -> RENDERING)
+    // und meldet fertig (-> IDLE, dann `done[w]`). Ein Deck, dessen Worker noch rechnet, bleibt still, bis er fertig ist
+    enum : uint32_t { IDLE = 0, POSTED = 1, RENDERING = 2, CANCELLED = 3 };
+    std::atomic<uint32_t> job[N] = {};
+    uint32_t ticket[N] = {};               // nur Audio-Thread
+    bool owed[N] = {};                     // nur Audio-Thread: ein `done[w]` steht nach Fristablauf noch aus
+    uint64_t postedNs[N] = {};             // nur Audio-Thread: Vergabe des ausstehenden Auftrags
+    std::atomic<int> stuck{0};             // Worker mit ausstehendem Auftrag nach Fristablauf (Freigaben warten)
+    std::atomic<uint32_t> timeouts{0};     // Fristabläufe seit Start
+    std::atomic<uint64_t> lastTimeoutNs{0};   // Zeitpunkt (nowNs) des letzten Fristablaufs
+    std::atomic<uint64_t> lastHangNs{0};      // wie lange der Worker beim letzten Fristablauf brauchte (bis fertig oder bis jetzt)
+    std::atomic<uint32_t> synced[N] = {};   // je Worker: übernommene wgGen (+1, 0 = noch nie)
+    std::atomic<uint32_t> testStallUs[N] = {};   // nur Tests: Worker schläft vor (negativ: vor der Übernahme) dem Rechnen
+    std::atomic<int32_t> testStallMode[N] = {};
 };
 
 /// Master-Bus: Plugin-Kette nach der Summe der Decks auf einem Kanalpaar (Audio-Thread, seriell nach den Decks)
@@ -1396,6 +1411,17 @@ static void mixDeck(MDEngine *e, Deck &d, float **out, int channels, int n) {
     for (int i = 0; i < n; i++) { oL[i] += L[i]; oR[i] += R[i]; }
 }
 
+static inline uint64_t nowNs();
+
+/// Beginn eines weiteren Teilblocks (Frist der Worker), Systemregister
+static inline uint64_t subBlockTicks() {
+#if defined(__APPLE__)
+    return mach_absolute_time();
+#else
+    return 0;
+#endif
+}
+
 // ---------- Worker-Threads (Decks parallel) ----------
 #if defined(__APPLE__)
 /// Echtzeit-Policy wie ein Audio-Thread: Periode = Blockdauer, halbe Periode Rechenzeit, Frist eine Periode
@@ -1411,6 +1437,38 @@ static bool setRealtime(double periodS) {
                              reinterpret_cast<thread_policy_t>(&p), THREAD_TIME_CONSTRAINT_POLICY_COUNT) == KERN_SUCCESS;
 }
 
+/// Workgroup/Periode übernehmen, wenn sie sich geändert hat (Worker-Thread, außerhalb eines Auftrags: beim Start und
+/// nach dem Wecken durch mdsp_set_workgroup). Die Sperre schützt nur das Kopieren; Beitritt und Policy laufen ohne sie
+struct WorkerGroup {
+    uint32_t gen = 0;
+    os_workgroup_t joined = nullptr;
+    os_workgroup_join_token_s token{};
+    bool rt = false;
+
+    void sync(Workers &W, int w) {
+        uint32_t g = W.wgGen.load(std::memory_order_acquire);
+        if (W.synced[w].load(std::memory_order_relaxed) && g == gen) return;
+        if (!W.wgLock.try_lock()) return;   // Steuer-Thread setzt gerade: beim nächsten Wecken
+        g = W.wgGen.load(std::memory_order_acquire);
+        os_workgroup_t wg = W.wg;
+        if (wg) os_retain(wg);
+        double period = W.period;
+        W.wgLock.unlock();
+        leave(W);
+        bool r = setRealtime(period);
+        if (r != rt) { W.realtime.fetch_add(r ? 1 : -1); rt = r; }
+        if (wg) {
+            if (os_workgroup_join(wg, &token) == 0) { joined = wg; W.joined.fetch_add(1); } else os_release(wg);
+        }
+        gen = g;
+        W.synced[w].store(g + 1, std::memory_order_release);
+    }
+    void leave(Workers &W) {
+        if (!joined) return;
+        os_workgroup_leave(joined, &token); os_release(joined); joined = nullptr; W.joined.fetch_sub(1);
+    }
+};
+
 static void workerMain(MDEngine *e, int w) {
     Workers &W = e->workers;
     char name[32];
@@ -1418,39 +1476,47 @@ static void workerMain(MDEngine *e, int w) {
     pthread_setname_np(name);
     DenormalGuard ftz;
     Deck &d = e->decks[w + 1];
-    uint32_t joinedGen = 0;
-    os_workgroup_t joined = nullptr;
-    os_workgroup_join_token_s token{};
-    bool rt = false;
+    WorkerGroup grp;
+    grp.sync(W, w);   // vor dem ersten Auftrag: der erste Beitritt dauert Millisekunden
     for (;;) {
         dispatch_semaphore_wait(W.go[w], DISPATCH_TIME_FOREVER);
         if (W.quit.load(std::memory_order_acquire)) break;
-        uint32_t g = W.wgGen.load(std::memory_order_acquire);
-        if (g != joinedGen && W.wgLock.try_lock()) {   // Gerät neu geöffnet: Workgroup/Periode übernehmen (selten)
-            if (joined) { os_workgroup_leave(joined, &token); os_release(joined); joined = nullptr; W.joined.fetch_sub(1); }
-            bool r = setRealtime(W.period);
-            if (r != rt) { W.realtime.fetch_add(r ? 1 : -1); rt = r; }
-            if (W.wg) {
-                os_retain(W.wg);
-                if (os_workgroup_join(W.wg, &token) == 0) { joined = W.wg; W.joined.fetch_add(1); } else os_release(W.wg);
-            }
-            joinedGen = g;
-            W.wgLock.unlock();
-        }
+        uint32_t j = W.job[w].load(std::memory_order_acquire);
+        if ((j & 3) != Workers::POSTED) { grp.sync(W, w); continue; }   // Wecken ohne Auftrag: neue Workgroup/Periode
+        grp.sync(W, w);
+        uint32_t stall = W.testStallUs[w].exchange(0, std::memory_order_relaxed);
+        bool stallFirst = stall && W.testStallMode[w].load(std::memory_order_relaxed) < 0;
+        if (stallFirst) usleep(stall);   // nur Tests: Worker kommt zu spät dran
+        // Auftrag übernehmen; zurückgezogen (Frist vorbei) oder veraltetes Wecken: nichts tun, nichts melden
+        if (!W.job[w].compare_exchange_strong(j, (j & ~3u) | Workers::RENDERING, std::memory_order_acq_rel)) continue;
+        if (stall && !stallFirst) usleep(stall);   // nur Tests: Worker hängt beim Rechnen
         renderDeckBlock(e, d, W.n);
-        dispatch_semaphore_signal(W.done);
+        W.job[w].store(j & ~3u, std::memory_order_release);   // IDLE, vor dem Signal: wer `done` sieht, sieht IDLE
+        dispatch_semaphore_signal(W.done[w]);
     }
-    if (joined) { os_workgroup_leave(joined, &token); os_release(joined); W.joined.fetch_sub(1); }
-    if (rt) W.realtime.fetch_sub(1);
+    grp.leave(W);
+    if (grp.rt) W.realtime.fetch_sub(1);
+}
+
+/// Steuer-Thread: bis zu 200 ms warten, bis alle Worker die aktuelle Workgroup/Periode übernommen haben – Beitritt und
+/// Echtzeit-Policy dauern beim ersten Mal Millisekunden und sollen nicht in die Frist des ersten Blocks fallen
+static void awaitWorkersSynced(Workers &W) {
+    uint32_t want = W.wgGen.load(std::memory_order_acquire) + 1;
+    for (int i = 0; i < 200; i++) {
+        bool all = true;
+        for (int w = 0; w < Workers::N; w++) all = all && int32_t(W.synced[w].load(std::memory_order_acquire) - want) >= 0;
+        if (all) return;
+        usleep(1000);
+    }
 }
 
 static void startWorkers(MDEngine *e) {
     Workers &W = e->workers;
     if (W.started) return;
-    W.done = dispatch_semaphore_create(0);
-    for (int w = 0; w < Workers::N; w++) W.go[w] = dispatch_semaphore_create(0);
+    for (int w = 0; w < Workers::N; w++) { W.go[w] = dispatch_semaphore_create(0); W.done[w] = dispatch_semaphore_create(0); }
     for (int w = 0; w < Workers::N; w++) W.threads[w] = std::thread(workerMain, e, w);
-    W.started = true;
+    W.started.store(true, std::memory_order_release);
+    awaitWorkersSynced(W);
 }
 
 static void stopWorkers(MDEngine *e) {
@@ -1460,24 +1526,76 @@ static void stopWorkers(MDEngine *e) {
     W.quit.store(true, std::memory_order_release);
     for (int w = 0; w < Workers::N; w++) dispatch_semaphore_signal(W.go[w]);
     for (int w = 0; w < Workers::N; w++) if (W.threads[w].joinable()) W.threads[w].join();
-    for (int w = 0; w < Workers::N; w++) if (W.go[w]) { dispatch_release(W.go[w]); W.go[w] = nullptr; }
-    if (W.done) { dispatch_release(W.done); W.done = nullptr; }
+    for (int w = 0; w < Workers::N; w++) {
+        if (W.go[w]) { dispatch_release(W.go[w]); W.go[w] = nullptr; }
+        if (W.done[w]) { dispatch_release(W.done[w]); W.done[w] = nullptr; }
+    }
     if (W.wg) { os_release(W.wg); W.wg = nullptr; }
     W.started = false; W.quit.store(false);
 }
 
-/// alle Decks eines Teilblocks: A hier, B–D auf den Workern, dann warten
-static void renderDecksParallel(MDEngine *e, int n) {
+/// Audio-Thread: steht nach einem Fristablauf noch ein `done` aus? Ohne Warten abholen (dann frei), sonst true.
+/// Solange true, wird das Deck nicht gerechnet (der Worker rechnet es womöglich noch)
+static bool workerBusy(MDEngine *e, int w) {
+    Workers &W = e->workers;
+    if (!W.owed[w]) return false;
+    if (dispatch_semaphore_wait(W.done[w], DISPATCH_TIME_NOW) != 0) {
+        W.lastHangNs.store(nowNs() - W.postedNs[w], std::memory_order_relaxed);
+        return true;
+    }
+    W.owed[w] = false;
+    W.lastHangNs.store(nowNs() - W.postedNs[w], std::memory_order_relaxed);
+    W.stuck.fetch_sub(1, std::memory_order_release);
+    return false;
+}
+
+/// Decks B–D eines Teilblocks an die Worker geben (Deck A rechnet danach der Audio-Thread)
+static void postWorkers(MDEngine *e, int n) {
     Workers &W = e->workers;
     W.n = n;
-    for (int w = 0; w < Workers::N; w++) dispatch_semaphore_signal(W.go[w]);
-    renderDeckBlock(e, e->decks[0], n);
-    for (int w = 0; w < Workers::N; w++) dispatch_semaphore_wait(W.done, DISPATCH_TIME_FOREVER);
+    uint64_t now = nowNs();
+    for (int w = 0; w < Workers::N; w++) {
+        uint32_t t = (W.ticket[w] + 1) & 0x3fffffffu;
+        W.ticket[w] = t;
+        W.postedNs[w] = now;
+        W.job[w].store(t << 2 | Workers::POSTED, std::memory_order_release);
+        dispatch_semaphore_signal(W.go[w]);
+    }
+}
+
+/// auf die Worker warten, höchstens bis 2 × Teilblock ab Blockanfang. Wer die Frist reißt, wird zurückgezogen (noch nicht
+/// angefangen) oder als hängend vermerkt (rechnet noch); sein Deck fehlt in diesem Block (`skip`), ab dem nächsten Block
+/// rechnet der Kern seriell. Liefert false bei Fristablauf
+static bool waitWorkers(MDEngine *e, int n, uint64_t blockStartTicks, bool *skip) {
+    Workers &W = e->workers;
+    int64_t budgetNs = int64_t(2.0 * double(n) / e->fs * 1e9);
+    dispatch_time_t deadline = dispatch_time(blockStartTicks, budgetNs);
+    bool ok = true;
+    for (int w = 0; w < Workers::N; w++) {
+        if (dispatch_semaphore_wait(W.done[w], deadline) == 0) continue;
+        uint32_t posted = W.ticket[w] << 2 | Workers::POSTED, j = posted;
+        skip[w + 1] = true;
+        ok = false;
+        if (!W.job[w].compare_exchange_strong(j, (posted & ~3u) | Workers::CANCELLED, std::memory_order_acq_rel)) {
+            W.owed[w] = true;
+            W.stuck.fetch_add(1, std::memory_order_release);
+        }
+    }
+    if (!ok) {
+        uint64_t t = nowNs();
+        W.enabled.store(false, std::memory_order_release);
+        W.lastHangNs.store(t - W.postedNs[0], std::memory_order_relaxed);
+        W.lastTimeoutNs.store(t, std::memory_order_relaxed);
+        W.timeouts.fetch_add(1, std::memory_order_release);
+    }
+    return ok;
 }
 #else
 static void startWorkers(MDEngine *) {}
 static void stopWorkers(MDEngine *e) { e->workers.enabled.store(false); }
-static void renderDecksParallel(MDEngine *e, int n) { for (auto &d : e->decks) renderDeckBlock(e, d, n); }
+static bool workerBusy(MDEngine *, int) { return false; }
+static void postWorkers(MDEngine *, int) {}
+static bool waitWorkers(MDEngine *, int, uint64_t, bool *) { return true; }
 #endif
 
 // ---------- C-Schnittstelle ----------
@@ -1549,15 +1667,38 @@ void mdsp_parallel_info(MDEngine *e, int *workers, int *joined, int *realtime) {
     if (realtime) *realtime = e->workers.realtime.load();
 }
 
+void mdsp_parallel_watchdog(MDEngine *e, MDParallelWatchdog *out) {
+    if (!out) return;
+    Workers &W = e->workers;
+    out->timeouts = W.timeouts.load(std::memory_order_acquire);
+    out->lastNs = W.lastTimeoutNs.load(std::memory_order_relaxed);
+    out->lastHangNs = W.lastHangNs.load(std::memory_order_relaxed);
+    out->stuck = W.stuck.load(std::memory_order_acquire);
+    out->nowNs = nowNs();
+}
+
+void mdsp_debug_stall_worker(MDEngine *e, int worker, uint32_t micros, bool beforeTaking) {
+    if (worker < 0 || worker >= Workers::N) return;
+    e->workers.testStallMode[worker].store(beforeTaking ? -1 : 1, std::memory_order_relaxed);
+    e->workers.testStallUs[worker].store(micros, std::memory_order_relaxed);
+}
+
 void mdsp_set_workgroup(MDEngine *e, void *workgroup, double periodSeconds) {
 #if defined(__APPLE__)
     Workers &W = e->workers;
-    std::lock_guard<std::mutex> lk(W.wgLock);
-    auto wg = static_cast<os_workgroup_t>(workgroup);
-    if (wg) os_retain(wg);
-    if (W.wg) os_release(W.wg);
-    W.wg = wg; W.period = periodSeconds;
-    W.wgGen.fetch_add(1, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> lk(W.wgLock);
+        auto wg = static_cast<os_workgroup_t>(workgroup);
+        if (wg) os_retain(wg);
+        if (W.wg) os_release(W.wg);
+        W.wg = wg; W.period = periodSeconds;
+        W.wgGen.fetch_add(1, std::memory_order_release);
+    }
+    // Worker gleich übernehmen lassen (Wecken ohne Auftrag), nicht erst im nächsten Block innerhalb der Frist
+    if (W.started.load(std::memory_order_acquire)) {
+        for (int w = 0; w < Workers::N; w++) dispatch_semaphore_signal(W.go[w]);
+        awaitWorkersSynced(W);
+    }
 #else
     (void)e; (void)workgroup; (void)periodSeconds;
 #endif
@@ -1607,6 +1748,7 @@ bool mdsp_fx_plugin_released(MDEngine *e, int unit, int deck, MDPlugin *old) {
     PluginChain *c = chainOf(e, unit, deck);
     if (!old || !c) return true;
     if (c->contains(old)) return false;
+    if (e->workers.stuck.load(std::memory_order_acquire) > 0) return false;   // ein hängender Worker rechnet womöglich noch damit
     return e->renders.load() >= c->releaseAt.load();
 }
 
@@ -1712,6 +1854,11 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
     RenderProfile &prof = e->profile;
     for (auto &x : prof.cur) x = 0;
     uint64_t tStart = nowNs(), t = tStart;
+#if defined(__APPLE__)
+    uint64_t blockTicks = mach_absolute_time();   // Frist der Worker: ab Blockanfang
+#else
+    uint64_t blockTicks = 0;
+#endif
     auto lap = [&](int part) { uint64_t n2 = nowNs(); prof.cur[part] += n2 - t; t = n2; };
     for (int c = 0; c < channels; c++) std::memset(out[c], 0, sizeof(float) * frames);
     Clock &k = e->clock;
@@ -1728,18 +1875,20 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
         for (int c = 0; c < channels && c < 64; c++) o[c] = out[c] + done;
         e->fxBeat = beatStart + done * perSample; e->fxBps = perSample;
         for (int i = 0; i < MDSP_DECKS; i++) e->blockPos[i] = e->decks[i].posOut.load(std::memory_order_relaxed);
-        if (e->workers.enabled.load(std::memory_order_relaxed)) {
-            Workers &W = e->workers;
-            W.n = n;
-            for (int w = 0; w < Workers::N; w++) dispatch_semaphore_signal(W.go[w]);
+        // Decks, deren Worker nach einem Fristablauf noch rechnet, bleiben still (nicht gleichzeitig zweimal rechnen)
+        bool skip[MDSP_DECKS] = {};
+        bool busy = false;
+        for (int w = 0; w < Workers::N; w++) if (workerBusy(e, w)) { skip[w + 1] = true; busy = true; }
+        if (!busy && e->workers.enabled.load(std::memory_order_acquire)) {
+            postWorkers(e, n);
             renderDeckBlock(e, e->decks[0], n);
             lap(RenderProfile::A);
-            for (int w = 0; w < Workers::N; w++) dispatch_semaphore_wait(W.done, DISPATCH_TIME_FOREVER);
+            waitWorkers(e, n, done == 0 ? blockTicks : subBlockTicks(), skip);
             lap(RenderProfile::WAIT);
         } else {
-            for (int i = 0; i < MDSP_DECKS; i++) { renderDeckBlock(e, e->decks[i], n); lap(RenderProfile::A + i); }
+            for (int i = 0; i < MDSP_DECKS; i++) { if (!skip[i]) renderDeckBlock(e, e->decks[i], n); lap(RenderProfile::A + i); }
         }
-        for (auto &d : e->decks) mixDeck(e, d, o, std::min(channels, 64), n);
+        for (int i = 0; i < MDSP_DECKS; i++) if (!skip[i]) mixDeck(e, e->decks[i], o, std::min(channels, 64), n);
         // Master-Bus: nach der Summe, vor Master-Lautstärke und Begrenzung (Vorhören bleibt auf seinem Paar unberührt)
         MasterBus &mb = e->bus;
         mb.chain.sync();
@@ -1825,6 +1974,7 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
 }
 
 void mdsp_set_render_host(MDEngine *e, uint64_t hostTime) { e->renderHost = hostTime; }
+uint64_t mdsp_render_count(MDEngine *e) { return e->renders.load(std::memory_order_relaxed); }
 
 void mdsp_set_record_tap(MDEngine *e, MDRing *ring, int firstChannel) {
     e->recCh.store(firstChannel, std::memory_order_relaxed);

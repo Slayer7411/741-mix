@@ -175,7 +175,8 @@ final class Worker: @unchecked Sendable {
             unlink(dst.path)   // kaputt oder alt: neu dekodieren
         }
 
-        if Self.state(r.path) == .online { set(r.id, .fetching) }
+        let online = Self.state(r.path) == .online
+        if online { set(r.id, .fetching) }
         var firstData: Date?
         var bytes = 0
         let a: TrackAudio
@@ -194,6 +195,9 @@ final class Worker: @unchecked Sendable {
         } catch let TrackAudio.DecodeError.convert(m) {
             return fail(.convert, m)
         } catch {
+            if CloudRead.notLocal(path: r.path, datalessBefore: online, datalessAfter: Self.state(r.path) == .online) {
+                return fail(.notLocal, r.path)
+            }
             let ns = error as NSError
             return fail(.read, ns.localizedFailureReason ?? ns.localizedDescription)
         }

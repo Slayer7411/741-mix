@@ -578,7 +578,8 @@ the status bar shows device, mode and routing, preview pair as `PRE→9/10` (`PR
 * default: one audio thread renders all four decks (play, keylock, channel strip, fx) and sums them
 * ⌘, -> AUDIO -> `Decks parallel rechnen`: deck A stays on the audio thread, B-D run on three real-time worker threads that join the device's workgroup, the sum follows once all are done. bit-identical output, switchable while playing (takes effect with the next block)
 * for the live load test (`scripts/loadtest.sh --modes serial,parallel`), off by default. `MIX741_PARALLEL_DECKS=1` / `0` overrides the setting for one run
-* self test: switches it on at the running device and checks blocks, overloads, position, workers in the workgroup and with real-time policy
+* self test: switches it on at the running device and checks blocks, overloads, position, workers in the workgroup and with real-time policy. then 5 rounds of output restarts (buffer 512 / 256 / 128, injected rate change, buffer changed on the device): blocks keep coming, 0 timeouts; and a worker made to hang 150 ms -> the block ends in time, the core goes serial. alone, with more rounds: `MIX741_BENCH=parallel-restart MIX741_BENCH_N=20` (`MIX741_CORE_RATE=96000` for the live rate)
+* watchdog: a worker that is not done 2 block lengths after the block started leaves its deck out of that block (a short gap on that deck), the core renders serial from then on. status bar `Decks parallel: Worker hing (n ms) → seriell`, the switch in ⌘, -> AUDIO goes off and shows time and count. switch it on again to retry
 
 ### device gone, rate change, sleep
 
@@ -1049,9 +1050,12 @@ backup = copy the `MINOS-741` folder.
 | link peers but no tempo | LINK on in both apps, same network, firewall |
 | crackles | other apps on the same device, sample rate set in audio midi setup |
 | DROPOUTS counts up | DSP near or above 100 % -> bigger buffer (⌘, -> AUDIO), fewer keylock decks / plugins. DSP low but dropouts -> device or system (other audio apps, usb hub, energy saver) |
+| dropouts on battery, DSP low | low power mode / battery: load test 2026-10-14 (external mixer, core 48 khz, decks in parallel, buffer 256) had device overloads after 6 min with no block over budget (callback came late, not too long). use buffer 256, serial |
+| silent after a buffer change, DSP 0 % | fixed in [UNRELEASED]: a restart to a larger buffer (256 -> 512) could leave the output running without callbacks. older versions: change the buffer again or replug |
+| `Decks parallel: Worker hing` | a worker thread missed its block, the core went serial by itself (deck had one short gap). switch it on again in ⌘, -> AUDIO; repeats -> leave it serial |
 | DSP red | single blocks over 70 %: plugins, 4 decks with keylock, small buffer. average matters, a single peak after loading is normal |
 | latency too high | buffer size in ⌘, -> AUDIO. LATENCY = buffer + device + safety offset; keylock lookahead is compensated and not audible as delay |
-| track won't load | status bar message: `Datei fehlt` = path in the collection wrong; `lädt noch (4 s ohne Daten)` = the cloud provider is still delivering the file, the deck keeps loading; `(60 s) keine Audiodaten (Drive antwortet nicht)` = nothing came, the helper was stopped -> load again or take another track; otherwise the format reason. limits in ⌘, -> AUDIO -> loading & cache |
+| track won't load | status bar message: `Datei fehlt` = path in the collection wrong; `lädt noch (4 s ohne Daten)` = the cloud provider is still delivering the file, the deck keeps loading; `(60 s) keine Audiodaten (Drive antwortet nicht)` = nothing came, the helper was stopped -> load again or take another track; `Datei nicht lokal verfügbar (Cloud)` = only a placeholder of the cloud provider, the content did not arrive -> make it available offline or fetch it (⌘, -> CLOUD); otherwise the format reason. limits in ⌘, -> AUDIO -> loading & cache |
 | ☁ in the list, set-check not clean | right click -> `Bereitmachen`, or `ALLE HOLEN` in the set-check. for good: finder -> right click the library folder -> make available offline |
 | local tracks turn ☁ again | macos evicted them (optimize storage, low disk space) -> keep local in ⌘, -> CLOUD fetches them again; pin the folder, free some space |
 | downloads don't start | a deck is loading (status bar `pausiert`), or less than the free space floor left (⌘, -> CLOUD) |
@@ -1105,8 +1109,11 @@ tail -f ~/Library/Application\ Support/MINOS-741/loadtest/latest.log
 * per stage: 4 local tracks, keylock, B-D synced to A, link on, fx 1 (A/C) + fx 2 (B/D) delay + reverb, fx 3 (all) isolated plugin (`--plugin <id>|none`, default apple matrix reverb isolated)
 * stress: track change on B / C / D every 60 s (file service), search + sort over the collection every 20 s, main thread blocked 1 s every 5 min
 * routing external A 1/2 · B 3/4 · C 5/6 · D 7/8, master 0 dB -> turn the desk down first. `--mute` silent, `--out <name>` picks the device, `--builtin` built-in output (silent)
-* log: dsp mean / peak, blocks over budget, device overloads, main-thread hitches > 16 ms, link phase every 10 s, rss, track load times, file service helpers, mlock failures. every minute and on every overload the heaviest render block split into deck A-D, worker wait, mix + master bus, master, preview (`schwerster Block: 1.45 ms von 2.68 (54 %) · A 0.34 …`). table per stage with PASS / FAIL: peak < 70 %, 0 over budget, 0 overloads, link phase < 0.02 beats. 3 device overloads -> stage FAIL, next stage runs
-* ctrl-c -> summary so far, output off. self test mode: no settings, session or cache of yours written
+* track changes take only files that are local right now (cloud state of the library + stat); others are skipped with a line in the log
+* hand tests (unplug, device off / on, sleep, rate or buffer changed on the device): overloads from 1 s before to 5 s after the event do not count and do not trigger the abort rule, line `Handtest: …` in the log, column `ausgenommen`; reconnects in column `Neu verbunden`
+* log: power source and low power mode at start and per stage; decks in parallel: workers / in workgroup / with real-time policy at the start and end of each stage, watchdog timeouts (a timeout fails the stage); `Ausgabe liefert keine Blöcke` when the render counter stands for 2 s with the device running (fails the stage)
+* log: dsp mean / peak, blocks over budget, device overloads, main-thread hitches > 16 ms, link phase every second (line every 10 s, max and standard deviation per stage, columns `Link max` / `Link σ`), rss, track load times, file service helpers, mlock failures. every minute and on every overload the heaviest render block split into deck A-D, worker wait, mix + master bus, master, preview (`schwerster Block: 1.45 ms von 2.68 (54 %) · A 0.34 …`). table per stage with PASS / FAIL: peak < 70 %, 0 over budget, 0 overloads, link phase < 0.02 beats. 3 device overloads -> stage FAIL, next stage runs
+* ctrl-c -> summary so far, output off. self test mode: no settings, session or cache of yours written. `MIX741_LOADTEST_DIR=<folder>` writes the log elsewhere (trial runs)
 * `--debug` = debug build (dsp much slower, only to check the runner), `--no-build`
 
 bugs -> [issues](https://github.com/Slayer7411/MINOS-741/issues) with version, macos, device, mode, controller.

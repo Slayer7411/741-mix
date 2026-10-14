@@ -1,6 +1,7 @@
 import AudioToolbox
 import Foundation
 import MixCore
+import MixProtocol
 
 // MARK: - Zustand (wird als Kopie an die Oberfläche gegeben)
 
@@ -527,6 +528,7 @@ public final class MixController: @unchecked Sendable {
                          text: String(localized: "Datei fehlt: \(Self.displayName(t))"))
                 return
             }
+            let dataless = CloudRead.isDataless(t.path)
             do {
                 let t0 = Date()
                 let a = try decode(URL(fileURLWithPath: t.path), rate) { [self] frames in
@@ -542,7 +544,8 @@ public final class MixController: @unchecked Sendable {
                 // abgebrochen: Zeitüberschreitung (schon gemeldet) oder ein anderer Track gewählt
             } catch {
                 watch.progress(Int.max)
-                failLoad(t, d, seq: seq, reason: Self.reason(error), timeout: nil)
+                let cloud = CloudRead.notLocal(path: t.path, datalessBefore: dataless, datalessAfter: CloudRead.isDataless(t.path))
+                failLoad(t, d, seq: seq, reason: cloud ? Self.notLocalReason : Self.reason(error), timeout: nil)
             }
         }
     }
@@ -678,6 +681,7 @@ public final class MixController: @unchecked Sendable {
                 case .format: return String(localized: "Format nicht lesbar")
                 case .convert: return String(localized: "Umwandlung: \(detail)")
                 case .cacheWrite: return String(localized: "Cache nicht beschreibbar: \(detail)")
+                case .notLocal: return notLocalReason
                 default: return detail
                 }
             case .crashed: return String(localized: "Datei-Dienst abgestürzt")
@@ -689,6 +693,8 @@ public final class MixController: @unchecked Sendable {
         let ns = e as NSError
         return ns.localizedFailureReason ?? ns.localizedDescription
     }
+
+    static let notLocalReason = String(localized: "Datei nicht lokal verfügbar (Cloud)")
 
     static func deckLetter(_ d: Int) -> String { ["A", "B", "C", "D"][max(0, min(3, d))] }
 

@@ -105,3 +105,78 @@ private final class FourDecks {
     mdsp_render_profile(c.e, &parts, 8, &frames)
     #expect(frames == 256)
 }
+
+/// RMS je Kanalpaar (A 1/2 … D 7/8) eines Blocks aus `render`
+private func pairRMS(_ block: ArraySlice<Float>, n: Int) -> [Float] {
+    (0..<4).map { p in
+        var s: Float = 0
+        for c in [2 * p, 2 * p + 1] { for i in 0..<n { let x = block[block.startIndex + c * n + i]; s += x * x } }
+        return (s / Float(2 * n)).squareRoot()
+    }
+}
+
+private func watchdog(_ e: OpaquePointer) -> MDParallelWatchdog {
+    var w = MDParallelWatchdog()
+    mdsp_parallel_watchdog(e, &w)
+    return w
+}
+
+@Test func parallelWatchdogSkipsHungWorker() {
+    let c = FourDecks(parallel: true)
+    let n = 256
+    _ = c.render(blocks: 20, n: n)                        // eingeschwungen, Worker laufen
+    #expect(watchdog(c.e).timeouts == 0)
+    mdsp_debug_stall_worker(c.e, 0, 300_000, false)        // Deck B hängt 300 ms beim Rechnen
+    let t0 = Date()
+    let hung = c.render(blocks: 1, n: n)
+    let ms = Date().timeIntervalSince(t0) * 1000
+    // Frist 2 × 5.3 ms ab Blockanfang: der Block endet weit vor den 300 ms
+    #expect(ms < 40, "Block dauerte \(ms) ms")
+    let r = pairRMS(hung[...], n: n)
+    #expect(r[1] == 0, "Deck B fehlt im Block")
+    #expect(r[0] > 0.01 && r[2] > 0.01 && r[3] > 0.01, "A, C, D klingen: \(r)")
+    #expect(!mdsp_parallel(c.e), "danach seriell")
+    var w = watchdog(c.e)
+    #expect(w.timeouts == 1 && w.stuck == 1)
+    // seriell weiter: B bleibt still, solange sein Worker noch rechnet; A, C, D laufen
+    let during = c.render(blocks: 5, n: n)
+    for b in 0..<5 {
+        let rb = pairRMS(during[(b * 8 * n)..<((b + 1) * 8 * n)], n: n)
+        #expect(rb[1] == 0 && rb[0] > 0.01 && rb[2] > 0.01)
+    }
+    Thread.sleep(forTimeInterval: 0.35)                    // Worker wird fertig
+    let after = c.render(blocks: 3, n: n)
+    let ra = pairRMS(after[(2 * 8 * n)...], n: n)
+    #expect(ra[1] > 0.01, "Deck B wieder da (seriell): \(ra)")
+    w = watchdog(c.e)
+    #expect(w.timeouts == 1 && w.stuck == 0)
+    #expect(w.lastHangNs > 290_000_000, "Hängedauer \(w.lastHangNs) ns")
+    #expect(!mdsp_parallel(c.e))
+    // wieder einschalten: läuft parallel ohne weiteren Fristablauf
+    mdsp_set_parallel(c.e, true)
+    let again = c.render(blocks: 20, n: n)
+    #expect(mdsp_parallel(c.e) && watchdog(c.e).timeouts == 1)
+    #expect(pairRMS(again[(19 * 8 * n)...], n: n).allSatisfy { $0 > 0.01 })
+}
+
+@Test func parallelWatchdogCancelsLateWorker() {
+    let c = FourDecks(parallel: true)
+    let n = 256
+    _ = c.render(blocks: 10, n: n)
+    mdsp_debug_stall_worker(c.e, 2, 100_000, true)         // Deck D kommt 100 ms zu spät dran (vor der Übernahme)
+    let t0 = Date()
+    let late = c.render(blocks: 1, n: n)
+    #expect(Date().timeIntervalSince(t0) * 1000 < 40)
+    #expect(pairRMS(late[...], n: n)[3] == 0)
+    let w = watchdog(c.e)
+    #expect(w.timeouts == 1 && w.stuck == 0, "zurückgezogen, nicht hängend")
+    // der Auftrag ist zurückgezogen: D rechnet sofort seriell weiter, der Worker rechnet ihn nicht mehr
+    let next = c.render(blocks: 2, n: n)
+    #expect(pairRMS(next[(8 * n)...], n: n)[3] > 0.01)
+    let p = mdsp_position(c.e, 3)
+    Thread.sleep(forTimeInterval: 0.15)                    // Worker wacht auf, findet den Auftrag zurückgezogen
+    #expect(mdsp_position(c.e, 3) == p, "Worker darf das Deck nicht nachrechnen")
+    mdsp_set_parallel(c.e, true)
+    _ = c.render(blocks: 10, n: n)
+    #expect(mdsp_parallel(c.e) && watchdog(c.e).timeouts == 1)
+}

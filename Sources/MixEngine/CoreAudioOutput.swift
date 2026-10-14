@@ -92,6 +92,13 @@ final class CoreAudioOutput: @unchecked Sendable {
         var cb = AURenderCallbackStruct(inputProc: mdsp_render_callback(), inputProcRefCon: UnsafeMutableRawPointer(engine))
         try check(AudioUnitSetProperty(au, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0,
                                        &cb, UInt32(MemoryLayout<AURenderCallbackStruct>.size)), "Callback")
+        // größter Block, den der AUHAL rendert: fest statt aus dem Gerätepuffer beim Initialisieren. Sonst bleibt er auf dem
+        // alten Puffer stehen, wenn das Gerät die neue Größe erst danach übernimmt (256 -> 512: jeder Zyklus endet mit
+        // kAudioUnitErr_TooManyFramesToProcess, der Callback kommt nie, die Ausgabe ist still), ebenso bei einem größeren
+        // Puffer von außen. Der Kern rechnet größere Blöcke in Teilen
+        var maxFrames = UInt32(max(Int(MDSP_MAX_FRAMES), Int(bufferFrames ?? 0) * 2))
+        try check(AudioUnitSetProperty(au, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0,
+                                       &maxFrames, UInt32(MemoryLayout<UInt32>.size)), "Blockgröße")
         mdsp_load_set_rate(engineRate)   // DSP-Last: Blöcke kommen mit der Rate des Kerns
         try check(AudioUnitInitialize(au), "Initialisieren")
         // Worker der parallelen Decks: Workgroup des IO-Threads (erst nach dem Initialisieren vorhanden), Blockdauer des Geräts

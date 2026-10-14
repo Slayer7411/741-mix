@@ -1,7 +1,52 @@
 import AppKit
 import Foundation
+import IOKit.ps
 import MixCore
 import MixEngine
+
+/// Schonfrist für Handtests (Gerät ab/an, Ruhezustand, Raten-/Pufferwechsel): Overloads von `lead` s vor bis `grace` s
+/// nach einem solchen Ereignis zählen nicht. Eingeordnet wird erst nach `lead` s – das Ereignis kann eine Abfrage später
+/// sichtbar werden als sein Overload. Zeiten in Sekunden seit Stufenbeginn
+struct OverloadGrace: Equatable {
+    var grace = 5.0, lead = 1.0
+    private(set) var counted = 0, excluded = 0
+    private var events: [Double] = []
+    private var pending: [Pending] = []
+    private struct Pending: Equatable { var t: Double; var n: Int }
+
+    init(grace: Double = 5, lead: Double = 1) { self.grace = grace; self.lead = lead }
+
+    mutating func event(at t: Double) {
+        if let last = events.last, t - last < 0.25 { events[events.count - 1] = t } else { events.append(t) }
+    }
+    mutating func overloads(_ n: Int, at t: Double) { if n > 0 { pending.append(Pending(t: t, n: n)) } }
+    func inGrace(_ t: Double) -> Bool { events.contains { t >= $0 - lead && t < $0 + grace } }
+
+    /// Overloads einordnen, die älter als `lead` sind (`final`: alle, Stufenende). Liefert (gezählt, ausgenommen) dieses Aufrufs
+    @discardableResult
+    mutating func settle(now: Double, final: Bool = false) -> (counted: Int, excluded: Int) {
+        var c = 0, x = 0, keep: [Pending] = []
+        for p in pending {
+            if !final && now - p.t < lead { keep.append(p) } else if inGrace(p.t) { x += p.n } else { c += p.n }
+        }
+        pending = keep
+        counted += c; excluded += x
+        events.removeAll { $0 + grace < now - lead }
+        return (c, x)
+    }
+}
+
+/// Link-Phasenfehler einer Stufe: Betrag-Max und Standardabweichung (nur mit Teilnehmern)
+struct PhaseStats: Equatable {
+    private(set) var count = 0
+    private(set) var maxAbs = 0.0
+    private var sum = 0.0, sumSq = 0.0
+    mutating func add(_ e: Double) {
+        count += 1; sum += e; sumSq += e * e; maxAbs = max(maxAbs, abs(e))
+    }
+    var mean: Double { count > 0 ? sum / Double(count) : 0 }
+    var std: Double { count > 1 ? max(0, (sumSq - sum * sum / Double(count)) / Double(count - 1)).squareRoot() : 0 }
+}
 
 /// MIX741_BENCH=loadtest (Selbsttest-Modus, schreibt keine Einstellungen): Live-Lasttest in Stufen.
 /// Je Stufe (Puffer MIX741_BENCH_BUFFERS, Standard 512,256,128; Dauer MIX741_LOADTEST_MIN, Standard 10 min; Rechenkern
@@ -10,6 +55,8 @@ import MixEngine
 /// (MIX741_BENCH_PLUGIN, Standard AUMatrixReverb isoliert, "none" = ohne) auf allen Decks. Störlast: alle 60 s
 /// Track-Wechsel (erstmals nach 45 s; B, C, D reihum, Datei-Dienst), alle 20 s Suche + Sortierung über die Collection auf dem Hauptthread,
 /// alle 5 min (erstmals nach 30 s) Hauptthread 1 s blockiert. Ab 3 Geräte-Überlastungen endet die Stufe (FAIL).
+/// Handtests (Gerät ab/an, Ruhezustand, Raten-/Pufferwechsel): Overloads von 1 s davor bis 5 s danach zählen nicht.
+/// Track-Wechsel nur mit lokal vorhandenen Dateien. Link-Phase jede Sekunde (Max, Standardabweichung je Stufe).
 /// Log: ~/Library/Application Support/MINOS-741/loadtest/<datum>.log (+ latest.log), Kurzfassung auf stdout.
 /// Ctrl-C: Zusammenfassung, Ausgabe aus, Ende (Helfer enden mit dem Kanal)
 @MainActor
@@ -24,6 +71,13 @@ enum LoadTest {
         var hitches = 0, worstHitchMs = 0.0
         /// Link (nur mit Teilnehmern): Phase max/σ über alle Steuerticks der Stufe, Neusetzungen, Clock-Trims
         var linkMax: Double?, linkSigma = 0.0, linkPeers = 0, linkForces = 0, linkTrims = 0
+        /// Overloads in der Schonfrist nach Handtests (zählen nicht), Handtests
+        var excluded = 0, handTests = 0
+        /// Decks parallel: Worker, in der Workgroup, mit Echtzeit-Policy (beim Start der Stufe); Fristabläufe in der Stufe
+        var workers = 0, joined = 0, realtime = 0, parallelTimeouts = 0
+        /// längste Zeit ohne Blöcke bei laufendem Gerät (s)
+        var silentMax = 0.0
+        var power = ""
         var loads: [Double] = [], loadFailures = 0
         var rssMax: UInt64 = 0
         var aborted = false
@@ -32,6 +86,7 @@ enum LoadTest {
         static let linkLimit = 0.03
         var pass: Bool {
             peak < 0.7 && overloads == 0 && deviceOverloads == 0 && (linkMax.map { $0 < Self.linkLimit } ?? true) && !aborted
+                && parallelTimeouts == 0 && silentMax < 1
         }
     }
 
@@ -56,7 +111,9 @@ enum LoadTest {
     }
 
     private static func openLog() {
-        let dir = HistoryStore.baseDir.appendingPathComponent("loadtest", isDirectory: true)
+        // MIX741_LOADTEST_DIR: anderer Ordner (Probeläufe, ohne latest.log der echten Läufe anzufassen)
+        let dir = ProcessInfo.processInfo.environment["MIX741_LOADTEST_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? HistoryStore.baseDir.appendingPathComponent("loadtest", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd_HH-mm-ss"
@@ -98,7 +155,7 @@ enum LoadTest {
                            mute ? "stumm" : "Master 0 dB", engine.sampleRate, engine.outputRate,
                            buffers.map(String.init).joined(separator: "/"), minutes,
                            (modes.isEmpty ? ["serial"] : modes).map { $0 == "parallel" ? "Decks parallel" : "seriell" }.joined(separator: " + "))
-        log(startInfo)
+        log(startInfo + " · " + Self.powerLine())
         if !ext {
             log(env["MIX741_NOEXT"] != nil ? "eingebautes Gerät (MIX741_NOEXT), stumm"
                 : "Hinweis: kein externes Interface gefunden (MIX741_OUT=<Name>?) -> eingebautes Gerät, stumm")
@@ -114,6 +171,17 @@ enum LoadTest {
         let tracks = Array(pool)
         guard tracks.count >= 8 else { log("zu wenige lokale Tracks (\(tracks.count))"); return }
         var next = 4
+        /// nächster Track, der jetzt lokal liegt (Cloud-Status der Bibliothek + stat): der Anbieter kann Dateien
+        /// zwischendurch auslagern
+        func nextLocal() -> Track? {
+            for _ in 0..<tracks.count {
+                let t = tracks[next % tracks.count]
+                next += 1
+                if CloudLibrary.shared.peek(t.path) != .cloud, local(t) { return t }
+                log("  Track-Wechsel: \(t.title) übersprungen (nicht lokal)", stdout: false)
+            }
+            return nil
+        }
 
         func waitLoaded(_ d: Int, _ t0: Date) async -> Double? {
             for _ in 0..<600 {
@@ -193,13 +261,21 @@ enum LoadTest {
             _ = engine.takeLoad()
             let info = engine.takeLoad()
             current = Stage(frames: frames, parallel: parallel, deviceFrames: info.bufferFrames, latencyMs: info.outputLatency * 1000)
+            let pi = engine.parallelInfo, wd0 = engine.parallelWatchdog.timeouts
+            current!.workers = pi.workers; current!.joined = pi.joined; current!.realtime = pi.realtime
+            current!.power = Self.powerLine()
             let r0 = engine.watch.reconnects
             let link0 = core.linkStats(resetWindow: true)
-            log(String(format: "Stufe Puffer %d %@: Gerät %d Frames, Latenz %.1f ms, %.0f min", frames, parallel ? "Decks parallel" : "seriell",
-                       info.bufferFrames, info.outputLatency * 1000, minutes))
+            log(String(format: "Stufe Puffer %d %@: Gerät %d Frames, Latenz %.1f ms, %.0f min · %@%@", frames, parallel ? "Decks parallel" : "seriell",
+                       info.bufferFrames, info.outputLatency * 1000, minutes, current!.power,
+                       parallel ? String(format: " · Worker %d (Workgroup %d, Echtzeit %d)", pi.workers, pi.joined, pi.realtime) : ""))
             let start = Date()
-            var lastLoad = -15.0, lastSearch = 0.0, lastLink = 0.0, lastLine = 0.0, nextBlock = 30.0
+            var lastLoad = -15.0, lastSearch = 0.0, lastLink = 0.0, lastLinkLog = 0.0, lastLine = 0.0, nextBlock = 30.0
             var worstSeen: (total: Double, parts: [Double], frames: Int) = (0, [], 0)
+            // Handtests: Zähler der Engine (neu verbunden, Raten-/Pufferwechsel) und Ausgabe nicht laufend
+            var devGrace = OverloadGrace(), ownGrace = OverloadGrace()
+            var seenDev = 0, seenOwn = 0, seen = (info.reconnects, info.rateChanges, info.bufferChanges), wasDown = false
+            var lastRenders = engine.renderCount, rendersAt = 0.0, silent = false
             while true {
                 try? await Task.sleep(for: .milliseconds(50))
                 let el = Date().timeIntervalSince(start)
@@ -208,23 +284,59 @@ enum LoadTest {
                 current!.peak = max(current!.peak, l.peak)
                 // schwerster Block dieses Abhol-Fensters merken; über Budget oder Geräte-Überlast sofort mit Aufteilung loggen
                 if l.worstTotalMs > worstSeen.total { worstSeen = (l.worstTotalMs, l.worstParts, l.worstFrames) }
-                if l.overloads > current!.overloads || l.deviceOverloads > current!.deviceOverloads {
+                if l.overloads > seenOwn || l.deviceOverloads > seenDev {
                     log("  Überlast: " + Self.profileLine(l.worstParts, frames: l.worstFrames, rate: engine.sampleRate), stdout: false)
                 }
-                current!.overloads = l.overloads; current!.deviceOverloads = l.deviceOverloads
+                var what: [String] = []
+                if l.reconnects > seen.0 { what.append("Gerät neu verbunden" + (l.lastReconnect.map { String(format: " (%.0f ms)", $0 * 1000) } ?? "")) }
+                if l.rateChanges > seen.1 { what.append(String(format: "Ratenwechsel am Gerät (%.0f Hz)", l.sampleRate)) }
+                if l.bufferChanges > seen.2 { what.append("Pufferwechsel am Gerät (\(l.bufferFrames) Frames)") }
+                seen = (l.reconnects, l.rateChanges, l.bufferChanges)
+                let down = engine.watch.phase != .running
+                if down, !wasDown { what.append(engine.watch.phase == .sleeping ? "Ruhezustand" : "Ausgabe angehalten (\(engine.watch.phase.rawValue))") }
+                wasDown = down
+                if down || !what.isEmpty { devGrace.event(at: el); ownGrace.event(at: el) }
+                if !what.isEmpty {
+                    current!.handTests += 1
+                    log("  Handtest: " + what.joined(separator: ", ") + String(format: " (Overloads %.0f s davor bis %.0f s danach ausgenommen)", devGrace.lead, devGrace.grace))
+                }
+                devGrace.overloads(l.deviceOverloads - seenDev, at: el); ownGrace.overloads(l.overloads - seenOwn, at: el)
+                seenDev = l.deviceOverloads; seenOwn = l.overloads
+                let xd = devGrace.settle(now: el).excluded, xo = ownGrace.settle(now: el).excluded
+                if xd + xo > 0 {
+                    log("  Handtest: \(xd) Geräte-Overloads, \(xo) Blöcke über Budget (Overloads ausgenommen)")
+                }
+                current!.overloads = ownGrace.counted; current!.deviceOverloads = devGrace.counted
+                current!.excluded = devGrace.excluded + ownGrace.excluded
                 current!.reconnects = l.reconnects - r0
+                current!.parallelTimeouts = l.parallel.timeouts - wd0
                 current!.rssMax = max(current!.rssMax, Mem.rss())
                 current!.seconds = el
-                if l.deviceOverloads >= 3 { current!.aborted = true; log("  3 Geräte-Überlastungen -> Stufe FAIL, weiter mit der nächsten"); break }
+                // läuft die Ausgabe? Blöcke zählen (unabhängig von der Lastmessung)
+                let rc = engine.renderCount
+                if rc != lastRenders || down {
+                    if silent { log(String(format: "  Ausgabe liefert wieder Blöcke (%.1f s ohne)", el - rendersAt)) }
+                    lastRenders = rc; rendersAt = el; silent = false
+                } else {
+                    current!.silentMax = max(current!.silentMax, el - rendersAt)
+                    if !silent, el - rendersAt >= 2 {
+                        silent = true
+                        log("  Ausgabe liefert keine Blöcke (seit 2 s, Gerät läuft)")
+                    }
+                }
+                if devGrace.counted >= 3 { current!.aborted = true; log("  3 Geräte-Überlastungen -> Stufe FAIL, weiter mit der nächsten"); break }
                 if el >= minutes * 60 { break }
-                if el - lastLink >= 10 {
+                if el - lastLink >= 1 {
                     lastLink = el
                     let ls = core.linkStats()
                     if let d = ls.lastDiff {
                         current!.linkPeers = max(current!.linkPeers, ls.peers)
-                        log(String(format: "  Link Phase %+.4f Beats · Drift %+.4f · Fenster max %.4f / σ %.4f · Neusetzungen %d · Clock-Trims %d · Tempo %d · %d Teilnehmer",
-                                   d, ls.drift, ls.windowMax, ls.windowSigma, ls.forces - link0.forces, ls.trims - link0.trims,
-                                   ls.tempoSets - link0.tempoSets, ls.peers), stdout: false)
+                        if el - lastLinkLog >= 10 {
+                            lastLinkLog = el
+                            log(String(format: "  Link Phase %+.4f Beats · Drift %+.4f · Fenster max %.4f / σ %.4f · Neusetzungen %d · Clock-Trims %d · Tempo %d · %d Teilnehmer",
+                                       d, ls.drift, ls.windowMax, ls.windowSigma, ls.forces - link0.forces, ls.trims - link0.trims,
+                                       ls.tempoSets - link0.tempoSets, ls.peers), stdout: false)
+                        }
                     }
                 }
                 if el - lastSearch >= 20 {
@@ -244,8 +356,7 @@ enum LoadTest {
                     lastLoad = el
                     let d = deckTurn
                     deckTurn = deckTurn % 3 + 1
-                    let t = tracks[next % tracks.count]
-                    next += 1
+                    guard let t = nextLocal() else { log("  Track-Wechsel \(deckLetters[d]): kein lokaler Track"); continue }
                     let tl = Date()
                     core.load(t, deck: d)
                     if let s = await waitLoaded(d, tl) {
@@ -279,6 +390,16 @@ enum LoadTest {
             current!.linkForces = max(0, link1.forces - link0.forces); current!.linkTrims = max(0, link1.trims - link0.trims)
             current!.linkPeers = max(current!.linkPeers, link1.peers)
             if current!.linkPeers > 0, link1.windowCount > 0 { current!.linkMax = link1.windowMax; current!.linkSigma = link1.windowSigma }
+            // Rest einordnen (Overloads der letzten Sekunde)
+            let el = Date().timeIntervalSince(start)
+            devGrace.settle(now: el, final: true); ownGrace.settle(now: el, final: true)
+            current!.overloads = ownGrace.counted; current!.deviceOverloads = devGrace.counted
+            current!.excluded = devGrace.excluded + ownGrace.excluded
+            if parallel {
+                let pe = engine.parallelInfo
+                log(String(format: "  Decks parallel am Ende: Worker %d (Workgroup %d, Echtzeit %d) · Fristabläufe %d · %@", pe.workers, pe.joined, pe.realtime,
+                           current!.parallelTimeouts, engine.parallelDecks ? "parallel" : "seriell"), stdout: false)
+            }
             stages.append(current!)
             log(summaryLine(current!))
             current = nil
@@ -292,6 +413,16 @@ enum LoadTest {
         finish(core)
     }
 
+    /// „Netz, Energiesparmodus aus“ (Stromquelle laut IOKit, Energiesparmodus laut ProcessInfo)
+    static func powerLine() -> String {
+        var src = "Strom ?"
+        if let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+           let type = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? {
+            src = type == kIOPMACPowerKey ? "Netz" : (type == kIOPMBatteryPowerKey ? "Batterie" : type)
+        }
+        return src + ", Energiesparmodus " + (ProcessInfo.processInfo.isLowPowerModeEnabled ? "an" : "aus")
+    }
+
     /// „1.92 ms von 5.80 (33 %) · A 0.41 B 1.02 C 0.21 D 0.19 wait 0 mix 0.05 master 0.02 pre 0.01“
     static func profileLine(_ parts: [Double], frames: Int, rate: Double) -> String {
         guard !parts.isEmpty, frames > 0, rate > 0 else { return "–" }
@@ -303,24 +434,30 @@ enum LoadTest {
 
     private static func summaryLine(_ c: Stage) -> String {
         let loads = c.loads.isEmpty ? "–" : String(format: "%.2f / %.2f s", c.loads.reduce(0, +) / Double(c.loads.count), c.loads.max() ?? 0)
-        return String(format: "Stufe %d %@ %@: %.1f min · DSP %.1f %% · Spitze %.0f %% · über Budget %d · Gerät überlastet %d · Hänger %d (max %.0f ms) · Link %@ · Laden Mittel/Max %@ (%d fehlgeschlagen) · RSS max %@ · neu verbunden %d",
-                      c.frames, c.parallel ? "parallel" : "seriell", c.pass ? "PASS" : "FAIL", c.seconds / 60, c.mean * 100, c.peak * 100, c.overloads, c.deviceOverloads,
-                      c.hitches, c.worstHitchMs, c.linkMax.map { String(format: "Phase max %.4f / σ %.4f Beats, Neusetzungen %d, Clock-Trims %d", $0, c.linkSigma, c.linkForces, c.linkTrims) } ?? "keine Teilnehmer",
-                      loads, c.loadFailures, Mem.gb(c.rssMax), c.reconnects)
+        var line = String(format: "Stufe %d %@ %@: %.1f min · DSP %.1f %% · Spitze %.0f %% · über Budget %d · Gerät überlastet %d · Hänger %d (max %.0f ms) · Link %@ · Laden Mittel/Max %@ (%d fehlgeschlagen) · RSS max %@ · neu verbunden %d",
+                          c.frames, c.parallel ? "parallel" : "seriell", c.pass ? "PASS" : "FAIL", c.seconds / 60, c.mean * 100, c.peak * 100, c.overloads, c.deviceOverloads,
+                          c.hitches, c.worstHitchMs, c.linkMax.map { String(format: "Phase max %.4f / σ %.4f Beats, Neusetzungen %d, Clock-Trims %d", $0, c.linkSigma, c.linkForces, c.linkTrims) } ?? "keine Teilnehmer",
+                          loads, c.loadFailures, Mem.gb(c.rssMax), c.reconnects)
+        if c.handTests > 0 || c.excluded > 0 { line += " · Handtests \(c.handTests) (\(c.excluded) Overloads ausgenommen)" }
+        if c.parallel {
+            line += String(format: " · Worker %d (Workgroup %d, Echtzeit %d), Fristabläufe %d", c.workers, c.joined, c.realtime, c.parallelTimeouts)
+        }
+        if c.silentMax >= 1 { line += String(format: " · ohne Blöcke max %.1f s", c.silentMax) }
+        return line + " · " + c.power
     }
 
     /// Tabelle je Stufe; Kriterien: Spitze < 70 %, 0 über Budget, 0 Geräte-Überlastungen, Link-Phase < 0,03 Beats
     private static func table() -> String {
-        var s = "\nPuffer | Kern | Gerät | Latenz ms | Min | DSP % | Spitze % | über Budget | Overloads | Hänger | Link max | Link σ | Neusetzungen | Laden max s | Ergebnis\n"
-        s += "---|---|---|---|---|---|---|---|---|---|---|---|---|---|---\n"
+        var s = "\nPuffer | Kern | Gerät | Latenz ms | Min | DSP % | Spitze % | über Budget | Overloads | ausgenommen | Neu verbunden | Hänger | Link max | Link σ | Neusetzungen | Laden max s | Ergebnis\n"
+        s += "---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---\n"
         for c in stages {
-            s += String(format: "%d | %@ | %d | %.1f | %.1f | %.1f | %.0f | %d | %d | %d | %@ | %@ | %@ | %@ | %@\n", c.frames, c.parallel ? "parallel" : "seriell", c.deviceFrames, c.latencyMs,
-                        c.seconds / 60, c.mean * 100, c.peak * 100, c.overloads, c.deviceOverloads, c.hitches,
+            s += String(format: "%d | %@ | %d | %.1f | %.1f | %.1f | %.0f | %d | %d | %d | %d | %d | %@ | %@ | %@ | %@ | %@\n", c.frames, c.parallel ? "parallel" : "seriell", c.deviceFrames, c.latencyMs,
+                        c.seconds / 60, c.mean * 100, c.peak * 100, c.overloads, c.deviceOverloads, c.excluded, c.reconnects, c.hitches,
                         c.linkMax.map { String(format: "%.4f", $0) } ?? "–", c.linkMax.map { _ in String(format: "%.4f", c.linkSigma) } ?? "–",
                         c.linkMax.map { _ in "\(c.linkForces)" } ?? "–", c.loads.max().map { String(format: "%.2f", $0) } ?? "–",
                         c.pass ? "PASS" : (c.aborted ? "FAIL (abgebrochen)" : "FAIL"))
         }
-        return s + "Kriterien: Spitze < 70 % · 0 über Budget · 0 Overloads · Link-Phase < 0,03 Beats (nur mit Teilnehmern)"
+        return s + "Kriterien: Spitze < 70 % · 0 über Budget · 0 Overloads (ohne Schonfrist nach Handtests) · Link-Phase < 0,03 Beats (nur mit Teilnehmern) · parallel: 0 Fristabläufe · Ausgabe nie > 1 s ohne Blöcke"
     }
 
     private static func finish(_ core: MixController, interrupted: Bool = false) {
