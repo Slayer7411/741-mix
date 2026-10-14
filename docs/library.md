@@ -4,6 +4,7 @@
 
 * one, two side by side or two stacked browser panes (toolbar)
 * every pane has its own tree selection, search, sort, role filter and tags
+* stacked: the pane header (title, search, roles, tags) is a column left of the list, the pane height goes to rows
 * left controller drives the left pane, right controller the right one
 * space / browse push = big browser
 * split line between decks and browser can be dragged

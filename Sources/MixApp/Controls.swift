@@ -182,6 +182,60 @@ struct PressButton: View {
     }
 }
 
+/// Zeilenumbruch: Elemente in Leserichtung, passt eines nicht mehr in die Breite, beginnt die nächste Zeile
+struct Wrap: Layout {
+    var spacing: CGFloat = 4
+
+    private func rows(_ width: CGFloat, _ subviews: Subviews) -> [[Int]] {
+        var rows: [[Int]] = [[]], x: CGFloat = 0
+        for i in subviews.indices {
+            let w = subviews[i].sizeThatFits(.unspecified).width
+            if !rows[rows.count - 1].isEmpty, x + w > width { rows.append([]); x = 0 }
+            rows[rows.count - 1].append(i)
+            x += w + spacing
+        }
+        return rows
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let width = proposal.width ?? subviews.reduce(0) { $0 + $1.sizeThatFits(.unspecified).width + spacing } - spacing
+        var h: CGFloat = 0
+        for r in rows(width, subviews) {
+            h += r.map { subviews[$0].sizeThatFits(.unspecified).height }.max() ?? 0
+            h += spacing
+        }
+        return CGSize(width: width, height: max(0, h - spacing))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for r in rows(bounds.width, subviews) {
+            var x = bounds.minX
+            let rowH = r.map { subviews[$0].sizeThatFits(.unspecified).height }.max() ?? 0
+            for i in r {
+                let s = subviews[i].sizeThatFits(.unspecified)
+                subviews[i].place(at: CGPoint(x: x, y: y + (rowH - s.height) / 2), anchor: .topLeading, proposal: ProposedViewSize(s))
+                x += s.width + spacing
+            }
+            y += rowH + spacing
+        }
+    }
+}
+
+/// Nur für den UI-Selbsttest: unsichtbare, nie klickbare Marke mit Namen (`UIDriver.named`)
+struct UITestMark: NSViewRepresentable {
+    let name: String
+
+    final class V: NSView, UITestNamed {
+        var name = ""
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    func makeNSView(context: Context) -> V { let v = V(); v.name = name; return v }
+    func updateNSView(_ v: V, context: Context) { v.name = name }
+}
+
 /// Wie ViewThatFits(in: .horizontal): zeigt den ersten Kandidaten, dessen ideale Breite passt, sonst den letzten.
 /// Die Kandidaten bleiben aber bestehen (ViewThatFits erzeugt sie bei jedem Layout-Durchgang neu); nicht gewählte
 /// liegen weit außerhalb und werden nicht gezeigt.

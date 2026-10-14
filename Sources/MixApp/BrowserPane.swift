@@ -311,17 +311,25 @@ struct BrowserPane: View {
                     if tree && decks.prefs.ui.showCoverPreview { CoverPreview(model: model) }   // Cover des gewählten Tracks
                 }
                 .frame(minWidth: tree ? 170.z : 0, idealWidth: tree ? 210.z : 0, maxWidth: tree ? 320.z : 0)
-            VStack(spacing: 0) {
-                PaneHeader(model: model)
-                if model.source == .daw { DAWClipsPanel() }
-                if model.source.isHistory {
-                    HistoryTable(entries: Self.historyEntries(model.source, history), model: model)
-                } else {
-                    TrackTable(model: model)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.tableHeight = $0 }
+            // Browser übereinander: Kopf als Spalte links neben der Liste, die Höhe gehört ganz den Zeilen
+            let side = decks.prefs.ui.browserLayout == .stacked
+            HStack(spacing: 0) {
+                if side {
+                    PaneHeader(model: model, side: true)
+                        .background(UITestMark(name: "pane side \(model === browserState.paneA ? "A" : "B")"))
                 }
+                VStack(spacing: 0) {
+                    if !side { PaneHeader(model: model) }
+                    if model.source == .daw { DAWClipsPanel() }
+                    if model.source.isHistory {
+                        HistoryTable(entries: Self.historyEntries(model.source, history), model: model)
+                    } else {
+                        TrackTable(model: model)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.tableHeight = $0 }
+                    }
+                }
+                .frame(minWidth: 380.z)
             }
-            .frame(minWidth: 380.z)
         }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.paneHeight = $0 }
@@ -371,65 +379,128 @@ struct RowCount: View {
 struct PaneHeader: View {
     @Environment(MixModel.self) private var decks
     @Bindable var model: BrowserPaneModel
+    /// Spalte links neben der Liste (Browser übereinander: die Höhe gehört den Zeilen) statt zwei Kopfzeilen
+    var side = false
     @State private var showTags = false
 
+    static let sideWidth: CGFloat = 176
+
     var body: some View {
-        let separators = decks.prefs.ui.tagSeparators
-        VStack(alignment: .leading, spacing: 4.z) {
-            HStack(spacing: 8.z) {
-                Button { model.showTree.toggle() } label: { Text("◧").font(Theme.mono(13.z)).foregroundStyle(Theme.bone) }
-                    .buttonStyle(.borderless)
-                    .help("Baum ein/aus")
-                Text(model.source.title.uppercased()).font(Theme.label(13.z, .bold)).lineLimit(1)
-                RowCount(model: model)
-                if case .folder = model.source {
-                    DeckButton(title: "UNTERORDNER", active: model.subfolders) { model.subfolders.toggle() }
-                        .help("Dateien aus allen Unterordnern zeigen")
+        if side {
+            VStack(alignment: .leading, spacing: 6.z) {
+                titleRow
+                search.frame(maxWidth: .infinity)
+                if case .folder = model.source { subfolders }
+                Wrap(spacing: 4.z) { roles }
+                Wrap(spacing: 4.z) {
+                    tagsButton
+                    MatchChip(model: model)
+                    if CloudLibrary.shared.hasCloudTracks { cloud }
                 }
-                Spacer(minLength: 8.z)
-                SearchField(model: model)
-                    .textFieldStyle(.plain)
-                    .font(Theme.mono(11.z))
-                    .padding(.horizontal, 6.z).padding(.vertical, 3.z)
-                    .background(Theme.void)
-                    .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-                    .frame(minWidth: 120.z, maxWidth: 220.z)
-            }
-            HStack(spacing: 4.z) {
-                ForEach(RoleFilter.allCases) { r in
-                    DeckButton(title: r.rawValue, active: model.roles.contains(r)) {
-                        if model.roles.contains(r) { model.roles.remove(r) } else { model.roles.insert(r) }
-                    }
-                }
-                Text("│").foregroundStyle(Theme.hairline)
-                DeckButton(title: "TAGS ▾", active: showTags) { showTags.toggle() }
-                    .popover(isPresented: $showTags, arrowEdge: .bottom) {
-                        TagPicker(model: model, separators: separators)
-                    }
-                Text("│").foregroundStyle(Theme.hairline)
-                MatchChip(model: model)
-                if CloudLibrary.shared.hasCloudTracks {
-                    Text("│").foregroundStyle(Theme.hairline)
-                    DeckButton(title: "● LOKAL", active: model.localOnly) { model.localOnly.toggle() }
-                        .help("Nur lokale Tracks (ohne ☁ nur online)")
-                    SetCheckButton(model: model)
-                }
-                // aktiver Tag-Filter: eingeschlossene gefüllt, ausgeschlossene durchgestrichen – Klick löst den Tag
                 if !model.tagFilter.isEmpty {
-                    if CloudLibrary.shared.hasCloudTracks { Text("│").foregroundStyle(Theme.hairline) }
-                    DeckButton(title: "✕ TAGS") { model.clearTags() }
-                        .help("Tag-Filter löschen")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        TagChips(tags: model.tags.sorted() + model.excludedTags.sorted(), ui: decks.prefs.ui,
-                                 filter: model.tagFilter) { t, _ in model.removeTag(t) }
-                            .font(Theme.mono(11.z))
+                    ScrollView(.vertical, showsIndicators: false) {
+                        Wrap(spacing: 3.z) {
+                            DeckButton(title: "✕ TAGS") { model.clearTags() }.help("Tag-Filter löschen")
+                            activeTags
+                        }
                     }
                 }
+                Spacer(minLength: 0)
+            }
+            .padding(6.z)
+            .frame(width: Self.sideWidth.z, alignment: .topLeading)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(Theme.panelHeader)
+            .overlay(alignment: .trailing) { Rectangle().fill(Theme.hairline).frame(width: 1) }
+        } else {
+            VStack(alignment: .leading, spacing: 4.z) {
+                HStack(spacing: 8.z) {
+                    titleRow
+                    if case .folder = model.source { subfolders }
+                    Spacer(minLength: 8.z)
+                    search.frame(minWidth: 120.z, maxWidth: 220.z)
+                }
+                HStack(spacing: 4.z) {
+                    roles
+                    Text("│").foregroundStyle(Theme.hairline)
+                    tagsButton
+                    Text("│").foregroundStyle(Theme.hairline)
+                    MatchChip(model: model)
+                    if CloudLibrary.shared.hasCloudTracks {
+                        Text("│").foregroundStyle(Theme.hairline)
+                        cloud
+                    }
+                    // aktiver Tag-Filter: eingeschlossene gefüllt, ausgeschlossene durchgestrichen – Klick löst den Tag
+                    if !model.tagFilter.isEmpty {
+                        if CloudLibrary.shared.hasCloudTracks { Text("│").foregroundStyle(Theme.hairline) }
+                        DeckButton(title: "✕ TAGS") { model.clearTags() }
+                            .help("Tag-Filter löschen")
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            TagChips(tags: model.tags.sorted() + model.excludedTags.sorted(), ui: decks.prefs.ui,
+                                     filter: model.tagFilter) { t, _ in model.removeTag(t) }
+                                .font(Theme.mono(11.z))
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 8.z)
+            .padding(.vertical, 3.z)
+            .background(Theme.panelHeader)
+        }
+    }
+
+    private var titleRow: some View {
+        HStack(spacing: 8.z) {
+            Button { model.showTree.toggle() } label: { Text("◧").font(Theme.mono(13.z)).foregroundStyle(Theme.bone) }
+                .buttonStyle(.borderless)
+                .help("Baum ein/aus")
+            Text(model.source.title.uppercased()).font(Theme.label(13.z, .bold)).lineLimit(1)
+            RowCount(model: model)
+        }
+    }
+
+    private var subfolders: some View {
+        DeckButton(title: "UNTERORDNER", active: model.subfolders) { model.subfolders.toggle() }
+            .help("Dateien aus allen Unterordnern zeigen")
+    }
+
+    private var search: some View {
+        SearchField(model: model)
+            .textFieldStyle(.plain)
+            .font(Theme.mono(11.z))
+            .padding(.horizontal, 6.z).padding(.vertical, 3.z)
+            .background(Theme.void)
+            .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    private var roles: some View {
+        ForEach(RoleFilter.allCases) { r in
+            DeckButton(title: r.rawValue, active: model.roles.contains(r)) {
+                if model.roles.contains(r) { model.roles.remove(r) } else { model.roles.insert(r) }
             }
         }
-        .padding(.horizontal, 8.z)
-        .padding(.vertical, 3.z)
-        .background(Theme.panelHeader)
+    }
+
+    private var tagsButton: some View {
+        DeckButton(title: "TAGS ▾", active: showTags) { showTags.toggle() }
+            .popover(isPresented: $showTags, arrowEdge: .bottom) {
+                TagPicker(model: model, separators: decks.prefs.ui.tagSeparators)
+            }
+    }
+
+    @ViewBuilder private var cloud: some View {
+        DeckButton(title: "● LOKAL", active: model.localOnly) { model.localOnly.toggle() }
+            .help("Nur lokale Tracks (ohne ☁ nur online)")
+        SetCheckButton(model: model)
+    }
+
+    /// aktiver Tag-Filter einzeln (Seitenspalte): eingeschlossene gefüllt, ausgeschlossene durchgestrichen, Klick löst den Tag
+    private var activeTags: some View {
+        ForEach(model.tags.sorted() + model.excludedTags.sorted(), id: \.self) { t in
+            Button { model.removeTag(t) } label: { TagChip(tag: t, mark: model.tagFilter.mark(t), style: .of(t, decks.prefs.ui)) }
+                .buttonStyle(.plain)
+                .font(Theme.mono(11.z))
+        }
     }
 }
 

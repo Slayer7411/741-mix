@@ -118,6 +118,7 @@ enum UISelfTest {
             ("daw-streifen", dawStrip),
             ("master-fx", masterFX),
             ("doppelklick", doubleClickReset),
+            ("gestapelt", stackedSide),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -191,7 +192,10 @@ enum UISelfTest {
     static func waveRange(_ u: UIDriver, _ t: [Track]) {
         guard let w = u.views.compactMap({ $0 as? WaveMouseView }).first(where: { $0.d == 0 }) else { fail("Wellenform A nicht gefunden") }
         u.mix.setRange(0, nil)
+        u.mix.pull()
         let r = u.frame(w)
+        log(String(format: "wellenform %.0f × %.0f pt · position %.3f s · dauer %.1f s · %.0f s/seite", r.width, r.height,
+                   u.mix.position(0), u.mix.deck(0).duration, u.mix.prefs.ui.waveformSeconds))
         u.drag(from: NSPoint(x: r.minX + r.width * 0.56, y: r.midY), to: NSPoint(x: r.minX + r.width * 0.84, y: r.midY),
                modifiers: .control, steps: 8)
         guard let range = u.mix.range(0) else { fail("⌃ + Ziehen: kein Bereich") }
@@ -370,8 +374,38 @@ final class UITestWindow: NSWindow {
     override func setFrame(_ r: NSRect, display: Bool) { super.setFrame(NSRect(origin: Self.origin, size: r.size), display: display) }
     /// zuletzt zugestellte Taste (die App stellt sie im inaktiven Zustand nicht selbst zu)
     private(set) weak var lastKey: NSEvent?
+    /// Ansicht unter dem letzten Drücken: Ziehen und Loslassen gehen dorthin
+    private weak var downView: NSView?
+    /// vorab abgelegtes Loslassen für die Verfolgungsschleifen der Steuerelemente (NSControl holt es über
+    /// `window.nextEvent`). Nicht über die App-Warteschlange: dort gepostete Mausereignisse verlieren ihre Position
+    /// (das Fenster liegt außerhalb aller Bildschirme, AppKit ordnet sie beim Abholen neu zu)
+    var pending: [NSEvent] = []
+    func takePending(_ mask: NSEvent.EventTypeMask, dequeue: Bool) -> NSEvent? {
+        guard let i = pending.firstIndex(where: { mask.contains(NSEvent.EventTypeMask(type: $0.type)) }) else { return nil }
+        let e = pending[i]
+        if dequeue { pending.remove(at: i) }
+        return e
+    }
+    override func nextEvent(matching mask: NSEvent.EventTypeMask, until expiration: Date?, inMode mode: RunLoop.Mode, dequeue: Bool) -> NSEvent? {
+        if let e = takePending(mask, dequeue: dequeue) { return e }
+        return super.nextEvent(matching: mask, until: expiration, inMode: mode, dequeue: dequeue)
+    }
     override func sendEvent(_ e: NSEvent) {
         if e.type == .keyDown || e.type == .keyUp { lastKey = e }
+        // Die App ist im Test meist nicht aktiv (Christian arbeitet weiter): AppKit nähme den ersten Klick dann nur zum
+        // Aktivieren und stellte ihn nur Ansichten mit acceptsFirstMouse zu (Wellenform ja, Tabellenkopf nein) – Maus-
+        // ereignisse deshalb selbst an die getroffene Ansicht geben, wie bei aktiver App
+        switch e.type {
+        case .leftMouseDown, .rightMouseDown:
+            let v = (contentView?.superview ?? contentView)?.hitTest(e.locationInWindow)
+            if e.type == .leftMouseDown { downView = v }
+            if let v { e.type == .leftMouseDown ? v.mouseDown(with: e) : v.rightMouseDown(with: e); return }
+        case .leftMouseDragged:
+            if let v = downView { v.mouseDragged(with: e); return }
+        case .leftMouseUp:
+            if let v = downView { downView = nil; v.mouseUp(with: e); return }
+        default: break
+        }
         super.sendEvent(e)
     }
 }
@@ -380,6 +414,11 @@ final class UITestWindow: NSWindow {
 final class UITestApplication: NSApplication {
     nonisolated(unsafe) static weak var testWindow: NSWindow?
     override var keyWindow: NSWindow? { Self.testWindow ?? super.keyWindow }
+    /// Verfolgungsschleifen der Steuerelemente holen das Loslassen hier oder über das Fenster: vorab abgelegte Ereignisse zuerst
+    override func nextEvent(matching mask: NSEvent.EventTypeMask, until expiration: Date?, inMode mode: RunLoop.Mode, dequeue: Bool) -> NSEvent? {
+        if let e = (Self.testWindow as? UITestWindow)?.takePending(mask, dequeue: dequeue) { return e }
+        return super.nextEvent(matching: mask, until: expiration, inMode: mode, dequeue: dequeue)
+    }
 }
 
 /// Hosting-Views mit Namen (Deck, Deck-Zeilen)
@@ -478,18 +517,21 @@ final class UIDriver {
                                   pressure: type == .leftMouseUp ? 0 : 1)!
     }
 
-    /// Klick: Loslassen vorab in die Warteschlange (Steuerelemente verfolgen die Maus in einer eigenen Schleife bis dahin),
-    /// dann Drücken über die App (setzt NSApp.currentEvent wie ein echter Klick, z. B. für den Doppelklick-Fänger der Regler)
-    func click(at p: NSPoint, modifiers: NSEvent.ModifierFlags = [], count: Int = 1) {
-        // beide über die Warteschlange: die App holt sie wie echte Ereignisse (setzt NSApp.currentEvent) und stellt sie zu
-        NSApp.postEvent(mouse(.leftMouseDown, p, modifiers, clicks: count), atStart: false)
-        NSApp.postEvent(mouse(.leftMouseUp, p, modifiers, clicks: count), atStart: false)
+    /// Klick: Loslassen vorab beim Fenster ablegen (Steuerelemente verfolgen die Maus in einer eigenen Schleife und holen es
+    /// dort), dann Drücken ans Fenster; blieb das Loslassen liegen, geht es hinterher an die gedrückte Ansicht.
+    /// `viaApp`: Drücken durch die App (Ereignis-Monitore wie der Doppelklick-Fänger der Regler sehen nur diesen Weg)
+    func click(at p: NSPoint, modifiers: NSEvent.ModifierFlags = [], count: Int = 1, viaApp: Bool = false) {
+        let up = mouse(.leftMouseUp, p, modifiers, clicks: count)
+        window.pending.append(up)
+        let down = mouse(.leftMouseDown, p, modifiers, clicks: count)
+        if viaApp { NSApp.sendEvent(down) } else { window.sendEvent(down) }
+        if let i = window.pending.firstIndex(of: up) { window.pending.remove(at: i); window.sendEvent(up) }
         spin(0.05)
     }
 
     func doubleClick(at p: NSPoint) {
         click(at: p, count: 1)
-        click(at: p, count: 2)
+        click(at: p, count: 2, viaApp: true)
     }
 
     /// Kontextmenü am Punkt ohne Anzeige: `menu(for:)` der getroffenen Ansicht und ihrer Eltern (NSHostingView liefert
@@ -505,13 +547,15 @@ final class UIDriver {
     }
 
     /// Ziehen: Drücken, `steps` Bewegungen, Loslassen
+    /// Ziehen: alles direkt ans Fenster. Über die Warteschlange gepostete Zieh-Ereignisse kommen ohne ihre Position an
+    /// (das Fenster ignoriert die Maus, AppKit ordnet sie beim Abholen neu zu) – der Bereich landete dann bei 0 s
     func drag(from a: NSPoint, to b: NSPoint, modifiers: NSEvent.ModifierFlags = [], steps: Int = 6) {
+        window.sendEvent(mouse(.leftMouseDown, a, modifiers))
         for i in 1...max(1, steps) {
             let f = CGFloat(i) / CGFloat(max(1, steps))
-            NSApp.postEvent(mouse(.leftMouseDragged, NSPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f), modifiers), atStart: false)
+            window.sendEvent(mouse(.leftMouseDragged, NSPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f), modifiers))
         }
-        NSApp.postEvent(mouse(.leftMouseUp, b, modifiers), atStart: false)
-        window.sendEvent(mouse(.leftMouseDown, a, modifiers))
+        window.sendEvent(mouse(.leftMouseUp, b, modifiers))
         spin(0.2)
     }
 
@@ -873,20 +917,9 @@ extension UISelfTest {
         UndoStack.shared.undo()
         u.mix.pull()
         check(u.mix.deck(0).grid == before, "Rückgängig stellt das Grid nicht her")
-        if let out = ProcessInfo.processInfo.environment["MIX741_UITEST_DAWSHOT"], let v = u.window.contentView?.superview, let layer = v.layer {
-            // Bild des Fensters mit Streifen (zum Ansehen), Zeiger der DAW läuft 1 s
-            u.spin(1)
-            let w = Int(v.bounds.width * 2), h = Int(v.bounds.height * 2)
-            if let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
-                ctx.scaleBy(x: 2, y: 2)
-                if v.isFlipped { ctx.translateBy(x: 0, y: v.bounds.height); ctx.scaleBy(x: 1, y: -1) }
-                layer.render(in: ctx)
-                if let img = ctx.makeImage(), let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) {
-                    try? png.write(to: URL(fileURLWithPath: out))
-                    log("daw: bild \(out)")
-                }
-            }
+        if let out = ProcessInfo.processInfo.environment["MIX741_UITEST_DAWSHOT"] {
+            u.spin(1)   // Zeiger der DAW läuft 1 s
+            shot(u, out, "daw")
         }
         send(["v": 1, "t": "bye"])
         u.spin(3) { u.named("A daw") == nil }
@@ -949,6 +982,60 @@ extension UISelfTest {
         u.spin(0.2)
         check(mix.crossfader == 0, "Crossfader nach Doppelklick: \(mix.crossfader)")
         log("doppelklick: GAIN 6 → \(after), Crossfader 0.7 → \(mix.crossfader)")
+    }
+
+    /// Browser übereinander: Kopf eines Bereichs (Titel, Suche, Rollen, Tags) als Spalte links neben der Liste, die
+    /// Liste reicht bis unter die Favoritenleiste
+    static func stackedSide(_ u: UIDriver, _ t: [Track]) {
+        let layout = u.mix.prefs.ui.browserLayout
+        defer { u.mix.prefs.ui.browserLayout = layout; u.spin(0.3) }
+        check(u.named("pane side A") == nil, "Seitenspalte schon nebeneinander")
+        let m = u.browser.paneA
+        u.mix.pull()
+        let before = m.paneHeight - m.favoritesHeight - m.tableHeight   // Kopf nebeneinander: zwei Zeilen
+        u.mix.prefs.ui.browserLayout = .stacked
+        u.spin(2) { u.named("pane side B") != nil }
+        u.spin(0.3)
+        guard let a = u.named("pane side A"), let b = u.named("pane side B") else { fail("Seitenspalte fehlt") }
+        let fa = u.frame(a), fb = u.frame(b)
+        check(fa.minY > fb.maxY - 1, "A nicht über B: \(fa) \(fb)")
+        check(abs(fa.width - PaneHeader.sideWidth) < 1, "Spaltenbreite \(fa.width)")
+        // der Kopf kostet keine Höhe mehr: Tabelle = Bereich − Favoritenleiste (bis auf Ränder)
+        let after = m.paneHeight - m.favoritesHeight - m.tableHeight
+        check(after < 12 && before - after > 30,
+              "Tabelle \(m.tableHeight) pt von \(m.paneHeight) − Favoriten \(m.favoritesHeight): Rest \(after) (nebeneinander \(before))")
+        guard let sf = u.searchField(pane: 0) else { fail("Suchfeld fehlt") }
+        check(fa.contains(u.frame(sf)), "Suchfeld nicht in der Spalte: \(u.frame(sf))")
+        // Suche aus der Spalte heraus wirkt auf die Liste
+        let search = m.search, rows = m.shown.count
+        u.click(at: u.center(sf))
+        u.spin(0.3)
+        check(u.window.firstResponder is NSText, "Klick ins Suchfeld der Spalte: kein Texteditor")
+        u.type("zzqxv-nichts")
+        u.key(KeyCombo("return", []))
+        u.spin(2) { m.search == "zzqxv-nichts" }
+        check(m.search == "zzqxv-nichts", "Suche aus der Spalte kommt nicht an: „\(m.search)“")
+        u.spin(2) { m.shown.isEmpty }
+        check(m.shown.isEmpty, "Liste nicht gefiltert: \(m.shown.count) von \(rows)")
+        m.search = search
+        u.spin(2) { m.shown.count == rows }
+        if let out = ProcessInfo.processInfo.environment["MIX741_UITEST_STACKSHOT"] { shot(u, out, "gestapelt") }
+        log(String(format: "gestapelt: spalte %.0f × %.0f pt, tabelle %.0f von %.0f pt, kopf %.1f → %.1f pt", fa.width, fa.height, m.tableHeight, m.paneHeight, before, after))
+    }
+
+    /// Bild des Fensterinhalts (zum Ansehen), 2×
+    static func shot(_ u: UIDriver, _ out: String, _ what: String) {
+        guard let v = u.window.contentView?.superview, let layer = v.layer else { return }
+        let w = Int(v.bounds.width * 2), h = Int(v.bounds.height * 2)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+        ctx.scaleBy(x: 2, y: 2)
+        if v.isFlipped { ctx.translateBy(x: 0, y: v.bounds.height); ctx.scaleBy(x: 1, y: -1) }
+        layer.render(in: ctx)
+        if let img = ctx.makeImage(), let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: out))
+            log("\(what): bild \(out)")
+        }
     }
 
 }

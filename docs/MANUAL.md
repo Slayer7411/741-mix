@@ -616,6 +616,7 @@ plugin chain on the sum of the decks, after the faders and the crossfader, befor
 
 * one or two panes, side by side or stacked
 * each pane: own tree, search, sort, role chips, tags
+* stacked: the pane header is a column left of the list (more rows per pane)
 * favorites bar on top of each pane: 6 slots, source or filter. click = switch, right click = assign / rename / clear, drag a tree entry onto a slot, ⌃⌥1-6. details: [library · favorites](library.md#-favorites)
 * tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), TOOL-LOOPS (cut files with the tag `tool-loop`, see [full edit](#full-edit--tool-loops)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, MUSIC FOLDERS, then all playlists + smartlists of the collection
 * MUSIC FOLDERS = the music library on disk, folder by folder. click a folder -> its audio files (mp3, m4a, aac, aiff, wav, flac, ogg, opus)

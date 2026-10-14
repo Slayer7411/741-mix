@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* browser stacked: the pane header (title, count, search, roles, TAGS, PASST, LOKAL, active tags) becomes a column left of the list, the whole pane height goes to track rows
 * defaults: compact decks (readouts, comment, tags, phase bar, overview, transport, loop sizes; hotcues, beatjump, grid tools, pitch fader, groove off)
 * donation panel: new text (beer or tokens), only `buy a round` and `later`, nag every start or weekly; the install id travels as item_number / custom in the paypal link so a payment can be matched to the instance later
 * core: render profile of the heaviest block since the last read (deck A-D, worker wait, mix + master bus, master, preview; `RenderLoad.worstParts`). load test logs it per minute and on every overload: `schwerster Block: 1.45 ms von 2.68 (54 %) · A 0.34 B 0.38 …`
