@@ -617,7 +617,7 @@ plugin chain on the sum of the decks, after the faders and the crossfader, befor
 * one or two panes, side by side or stacked
 * each pane: own tree, search, sort, role chips, tags
 * favorites bar on top of each pane: 6 slots, source or filter. click = switch, right click = assign / rename / clear, drag a tree entry onto a slot, ⌃⌥1-6. details: [library · favorites](library.md#-favorites)
-* tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), TOOL-LOOPS (cut files with the tag `tool-loop`, see [full edit](#full-edit--tool-loops)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, SMARTLISTS 741, MUSIC FOLDERS, then all playlists + smartlists of the collection
+* tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), TOOL-LOOPS (cut files with the tag `tool-loop`, see [full edit](#full-edit--tool-loops)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, MUSIC FOLDERS, PLAYLISTS (see [playlists](#playlists))
 * MUSIC FOLDERS = the music library on disk, folder by folder. click a folder -> its audio files (mp3, m4a, aac, aiff, wav, flac, ogg, opus)
   * files in the collection show bpm, key, tags, comments like everywhere else
   * files not in the collection are grey, no grid, load and preview anyway
@@ -627,7 +627,8 @@ plugin chain on the sum of the decks, after the faders and the crossfader, befor
 * all library columns: move by drag, hide via right click on the header, saved
 * `√` = analyzed in the collection, purple `√` = own analysis (see [analyze](#analyze)), missing files show the artist in red
 * search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match, case and accents ignored
-* right click a track -> load into deck A-D, add to / remove from preparation, preview, show in finder, reset played state
+* right click a track -> load into deck A-D, add to / remove from preparation, add to a playlist, preview, show in finder, reset played state
+* drag tracks out of the list: start sideways (a vertical drag selects rows), then onto a deck, PREPARATION, a playlist or PLAYLISTS. ⌫ in PREPARATION or an own playlist removes the selected rows
 * played column ▶: ✓ = played since the last reset. reset: right click a track or TRACK COLLECTION -> Reset Played State, or ⌥⌘P
 * the left controller drives the left pane, the right controller the right one
 * tree can hide while decks are visible (setting)
@@ -637,6 +638,20 @@ plugin chain on the sum of the decks, after the faders and the crossfader, befor
 * right click tracks or a source in the tree -> `Bereitmachen (herunterladen)`, progress + ✕ in the status bar
 * ● LOKAL in the header -> local tracks only. SET-CHECK -> preparation + this list: what is not local, `ALLE HOLEN`
 * details: [library · cloud libraries](library.md#-cloud-libraries)
+
+### playlists
+
+one tree PLAYLISTS: own folders, playlists and smartlists first, below them the playlists of the collection file with their folders (read only).
+
+* `≡` playlist · `◇` smartlist · `▸` folder, own and collection alike
+* right click PLAYLISTS or an own folder -> `Neue Playlist`, `Neue Smartlist …`, `Neuer Ordner`. folders nest without limit
+* right click an own entry -> `Umbenennen …`, `Duplizieren`, `Verschieben nach`, `Löschen …` (asks first, a folder takes its content along), export, previews, analysis. smartlist: `Bearbeiten …`, `Als Playlist speichern` (fixed copy of the hits)
+* drag an own entry onto a folder = into it, onto another entry = before it, onto PLAYLISTS = top level
+* tracks onto an own playlist = appended, onto PLAYLISTS = new playlist with them. right click tracks -> `Zur Playlist hinzufügen` -> a playlist or `Neue Playlist mit der Auswahl`. a track is in a playlist once
+* inside an own playlist: drag rows to reorder (the list switches to the playlist order), `# REIHENFOLGE` in the header = back to the playlist order after a column sort, ⌫ or right click -> `Aus Playlist entfernen`
+* ⌘Z undoes every change in the tree
+* saved in `playlists.json` (MINOS-741 folder), also the own values of the smartlist editor. first start: the own smartlists of earlier versions move in, same ids (session and favorites keep them)
+* collection file: with writing on and `Preparation und History als Playlists (Ordner MINOS-741)` on, own folders + playlists also go to `$ROOT/MINOS-741/Playlists/…`, replaced on every write. smartlists stay in MINOS-741 (the format has no place for the rules). the tree hides that copy
 
 ### harmony + matching
 
@@ -732,6 +747,7 @@ what goes into the file:
 | renamed file (cut in place, other extension) | `LOCATION DIR / FILE / VOLUME / VOLUMEID` | leaves `collection-moves.json` |
 | cut copies and tool loops (`cuts.json`) | new `ENTRY` before `</COLLECTION>`, `COLLECTION ENTRIES` counted | stays in CUTS too |
 | preparation, own history sessions | `$ROOT/MINOS-741/Preparation`, `$ROOT/MINOS-741/History/History YYYY-MM-DD · NN` (`TYPE="LIST"`) | replaced on every write |
+| own folders + playlists (`playlists.json`) | `$ROOT/MINOS-741/Playlists/…`, same nesting, without smartlists | replaced on every write, `playlists.json` stays |
 
 * hotcues: the hotcues of the entry are replaced by MINOS-741's set; unchanged ones keep their text, memory cues (`HOTCUE -1`) and grid markers stay. a grid marker sitting on a hotcue slot stays where it is
 * locked entries (`LOCK="1"`): no bpm / grid written, the hand grid stays in `edits.json`
@@ -796,12 +812,32 @@ K tief kurz · B sub leicht roll · H off » BASIS
 * active filter as chips in the pane header (included filled, excluded struck through) -> click removes one, ✕ TAGS clears all. saved per pane in the session
 * whole tags, case and accents ignored (`Kühl` = `kuhl`)
 * tags get highlight colors
-* "smartlist from tags" -> saves the current tag filter as smartlist (excluded tags as `!%`)
+* `ALS SMARTLIST` in TAGS ▾ -> new smartlist under PLAYLISTS, one row per tag (`hat Tag` / `hat Tag nicht` for excluded ones)
 
 smartlists:
 
-* all smartlists of the collection work as they are
-* own ones under SMARTLISTS 741 -> + new smartlist, same query syntax, live count
+* smartlists of the collection work as they are (read only)
+* own ones live in the PLAYLISTS tree (see [playlists](#playlists)): right click PLAYLISTS or a folder -> `Neue Smartlist …`, right click a smartlist -> `Bearbeiten …`, or `✎ REGELN` in the pane header
+* editor: one row per rule `field | operator | value`, `ALLEN REGELN` (and) / `EINER DER REGELN` (or), `+ REGEL` / `−`, hits live at the bottom (counted in the background), red text = invalid row, SPEICHERN (⏎) only when all rows are valid. no row = whole collection
+* sort + limit (optional): picks the first n hits, e.g. the 50 newest imports. the list in the pane sorts by its columns afterwards
+* window scales with the zoom
+
+| field | operators | value |
+|---|---|---|
+| `Suche (alle Felder)` | enthält, enthält nicht | words, like the search field |
+| artist, title, release, mix, remixer, producer, label, genre, catalog no, comment, comment 2, file type, path / folder | ist, ist nicht, enthält, enthält nicht, beginnt mit, endet mit, ist leer, ist nicht leer | text + ▾ list |
+| tag (comment 2) | hat Tag, hat Tag nicht, ohne Tags, mit Tags | tag + ▾ list |
+| key | ist, ist nicht, ohne Key, mit Key | menu of the 24 keys (open key · note · camelot) |
+| bpm, rating 0-5, year, time (`m:ss` or s), loudness (dB), bitrate, color, plays | ist, ist nicht, größer als, kleiner als, mindestens, höchstens, zwischen (loudness, year also ohne / mit Wert) | number, red when invalid |
+| import date, release date, last played | in den letzten / nicht in den letzten n Tagen / Wochen / Monaten / Jahren, vor, nach, zwischen, ohne / mit Wert | date field |
+| gespielt, analysiert | ja, nein | – |
+| cloud status | ist, ist nicht | lokal, nur online, fehlt |
+| `Ausdruck (Regel-Text)` | passt auf | query text, syntax below |
+
+* text compares ignore case and accents (`Kühl` = `kuhl`). `ist` rounds bpm to 0.05, time to 0.5 s, loudness to 0.05 dB
+* `gespielt` = play count > 0 or played since the last reset in this history. `nicht in den letzten` includes tracks without a date. `vor` / `nach` exclude the day itself
+* own values: the ▾ list holds the values of the collection (most used first) and own values. type anything: a value no track has yet stays in the list after SPEICHERN, `+ „…“ als eigenen Wert merken` keeps it at once, ✕ removes it
+* smartlists of earlier versions (query text) move in as rows when they are a plain chain of `&` or of `|` with exact counterparts, else as one `Ausdruck` row holding the old text (same hits)
 
 ```
 $COMMENT2 % "BASIS" & $BPM >= 128 & $IMPORTDATE >= MONTHS_AGO(6)

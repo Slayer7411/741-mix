@@ -35,7 +35,7 @@ off by default (setting). browser edits go to `metadata.json` first; with write-
 * hand grid: `TEMPO BPM` + `START` of the first `TYPE="4"` marker, not for `LOCK="1"`
 * renamed file: `LOCATION DIR FILE VOLUME VOLUMEID`, key changes with it
 * new entry: `ENTRY MODIFIED_DATE MODIFIED_TIME TITLE ARTIST`, `LOCATION`, `ALBUM`, `MODIFICATION_INFO AUTHOR_TYPE="user"`, `INFO`, `TEMPO`, `LOUDNESS`, `MUSICAL_KEY`, `CUE_V2` (grid, hotcues, memory cues), no `AUDIO_ID`. `VOLUMEID` taken from an entry on the same volume
-* own playlists: `$ROOT/MINOS-741` folder node, replaced whole, `COUNT` of `$ROOT` + 1 when new, `UUID` = md5 of the node path
+* own playlists: `$ROOT/MINOS-741` folder node, replaced whole, `COUNT` of `$ROOT` + 1 when new, `UUID` = md5 of the node path. inside: `Preparation`, `History/…`, `Playlists/…` (own folders + playlists from `playlists.json`, smartlists not)
 * file size + mtime checked against the last read; changed -> reload, conflict rule, then write
 * conflict stamp: `ENTRY MODIFIED_DATE` + `MODIFIED_TIME`
 
@@ -47,8 +47,8 @@ $COMMENT2 % "» BASIS" | $COMMENT2 % " BASIS"
 $FILEPATH STARTS_WITH "/Users/me/Music/2023"
 ```
 
-* fields: `$ARTIST $TITLE $COMMENT $COMMENT2 $LABEL $GENRE $KEY $BPM $COLOR $RATING $PLAYCOUNT $PLAYED $IMPORTDATE $FILEPATH $FILESTATE` and a few more
-* operators: `%` contains, `!%` not contains, `== != >= <= > <`, `STARTS_WITH`, `&` and, `|` or, `!` not, brackets
+* fields: `$ARTIST $TITLE $COMMENT $COMMENT2 $LABEL $GENRE $KEY $BPM $COLOR $RATING $PLAYCOUNT $PLAYED $IMPORTDATE $FILEPATH $FILESTATE` and a few more, own: `$MIX $CATALOG`
+* operators: `%` contains, `!%` not contains, `== != >= <= > <`, `STARTS_WITH`, `ENDS_WITH` (own), `&` and, `|` or, `!` not, brackets
 * functions: `MONTHS_AGO(n)`, `DAYS_AGO(n)`, `TRUE` / `FALSE`
 
 ## ◆ HISTORY (read + write)
