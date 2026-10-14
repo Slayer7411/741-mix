@@ -487,8 +487,14 @@ public final class MixEngine: @unchecked Sendable {
         public var lastReconnect: Double?
         public var rateChanges = 0
         public var bufferChanges = 0
+        /// schwerster Render-Block seit dem letzten Abholen: Millisekunden je Abschnitt (A, B, C, D, Warten auf Worker,
+        /// Summe + Master-Bus, Master/Begrenzung/Clock, Vorhören) und seine Blockgröße
+        public var worstParts: [Double] = []
+        public var worstFrames = 0
+        public var worstTotalMs: Double { worstParts.reduce(0, +) }
         public init() {}
     }
+    public static let worstPartNames = ["A", "B", "C", "D", "wait", "mix", "master", "pre"]
 
     /// Werte seit dem letzten Aufruf abholen (Mittel und Spitze beginnen danach neu) – höchstens ein Abholer
     public func takeLoad() -> RenderLoad {
@@ -500,6 +506,9 @@ public final class MixEngine: @unchecked Sendable {
         r.bufferFrames = Int(output.bufferFrameSize); r.sampleRate = output.deviceRate; r.running = output.running
         let w = watch
         r.reconnects = w.reconnects; r.lastReconnect = lastReconnect; r.rateChanges = w.rateChanges; r.bufferChanges = w.bufferChanges
+        var parts = [UInt64](repeating: 0, count: 8), wf: UInt32 = 0
+        mdsp_render_profile(core, &parts, 8, &wf)
+        r.worstParts = parts.map { Double($0) / 1e6 }; r.worstFrames = Int(wf)
         return r
     }
 

@@ -195,12 +195,18 @@ enum LoadTest {
                        info.bufferFrames, info.outputLatency * 1000, minutes))
             let start = Date()
             var lastLoad = -15.0, lastSearch = 0.0, lastLink = 0.0, lastLine = 0.0, nextBlock = 30.0
+            var worstSeen: (total: Double, parts: [Double], frames: Int) = (0, [], 0)
             while true {
                 try? await Task.sleep(for: .milliseconds(50))
                 let el = Date().timeIntervalSince(start)
                 let l = engine.takeLoad()
                 current!.busy += l.average * Double(l.blocks); current!.blocks += l.blocks
                 current!.peak = max(current!.peak, l.peak)
+                // schwerster Block dieses Abhol-Fensters merken; über Budget oder Geräte-Überlast sofort mit Aufteilung loggen
+                if l.worstTotalMs > worstSeen.total { worstSeen = (l.worstTotalMs, l.worstParts, l.worstFrames) }
+                if l.overloads > current!.overloads || l.deviceOverloads > current!.deviceOverloads {
+                    log("  Überlast: " + Self.profileLine(l.worstParts, frames: l.worstFrames, rate: engine.sampleRate), stdout: false)
+                }
                 current!.overloads = l.overloads; current!.deviceOverloads = l.deviceOverloads
                 current!.reconnects = l.reconnects - r0
                 current!.rssMax = max(current!.rssMax, Mem.rss())
@@ -259,6 +265,8 @@ enum LoadTest {
                     let c = current!
                     log(String(format: "  %d · %.0f min: DSP %.1f %% · Spitze %.0f %% · über Budget %d · Gerät überlastet %d · Hänger %d · %@",
                                frames, el / 60, c.mean * 100, c.peak * 100, c.overloads, c.deviceOverloads, c.hitches, Mem.line()))
+                    log("  schwerster Block: " + Self.profileLine(worstSeen.parts, frames: worstSeen.frames, rate: engine.sampleRate), stdout: false)
+                    worstSeen = (0, [], 0)
                 }
             }
             stages.append(current!)
@@ -272,6 +280,15 @@ enum LoadTest {
             log("Datei-Dienst: Helfer gestartet \(b.spawns - a.spawns) · abgestürzt \(b.crashes - a.crashes) · abgeschossen \(b.kills - a.kills) · mlock fehlgeschlagen \(b.lockFailures - a.lockFailures)")
         }
         finish(core)
+    }
+
+    /// „1.92 ms von 5.80 (33 %) · A 0.41 B 1.02 C 0.21 D 0.19 wait 0 mix 0.05 master 0.02 pre 0.01“
+    static func profileLine(_ parts: [Double], frames: Int, rate: Double) -> String {
+        guard !parts.isEmpty, frames > 0, rate > 0 else { return "–" }
+        let total = parts.reduce(0, +), budget = Double(frames) / rate * 1000
+        let names = MixEngine.worstPartNames
+        let detail = zip(names, parts).map { String(format: "%@ %.2f", $0, $1) }.joined(separator: " ")
+        return String(format: "%.2f ms von %.2f (%.0f %%) · %@", total, budget, total / budget * 100, detail)
     }
 
     private static func summaryLine(_ c: Stage) -> String {

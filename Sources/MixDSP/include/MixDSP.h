@@ -147,6 +147,10 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames);
 /// wie seriell). Steuer-Thread; die Threads entstehen beim ersten Einschalten und bleiben bis mdsp_destroy
 void mdsp_set_parallel(MDEngine *e, bool on);
 bool mdsp_parallel(MDEngine *e);
+/// Profil des schwersten Render-Blocks seit dem letzten Aufruf: Nanosekunden je Abschnitt
+/// [0–3] Deck A–D (parallel: nur A, B–D stecken in [4]), [4] Warten auf die Worker, [5] Summe + Master-Bus,
+/// [6] Master-Lautstärke/Begrenzung/Clock, [7] Vorhören; `frames` = Blockgröße. Setzt die Messung zurück
+void mdsp_render_profile(MDEngine *e, uint64_t *parts, int count, uint32_t *frames);
 /// Diagnose: Worker gestartet, davon in der Workgroup des Geräts, davon mit Echtzeit-Policy
 void mdsp_parallel_info(MDEngine *e, int *workers, int *joined, int *realtime);
 /// Workgroup des Geräte-IO-Threads für die Worker (Apple: os_workgroup_t, wird retained; sonst ignoriert) und die

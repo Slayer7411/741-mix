@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <vector>
 #include <memory>
+#include <chrono>
 #include <mutex>
 #include <thread>
 #if defined(__x86_64__) || defined(__i386__)
@@ -1024,10 +1025,24 @@ struct MasterBus {
     std::atomic<float> rms{0}, peak{0};   // Pegel des Paars nach dem Master-Bus, vor der Master-Lautstärke
 };
 
+// Profil des Render-Blocks: Nanosekunden je Abschnitt im schwersten Block seit dem letzten Abholen (Diagnose, Lasttest).
+// Abschnitte: Deck A–D (seriell; parallel nur A, B–D stehen in `wait`), Warten auf die Worker, Summe + Master-Bus,
+// Master-Lautstärke/Begrenzung/Clock, Vorhören. Schreibt nur der Audio-Thread, liest der Steuer-Thread (Sequenzzähler)
+struct RenderProfile {
+    static constexpr int N = 8;
+    enum { A = 0, B, C, D, WAIT, MIX, MASTER, PREVIEW };
+    std::atomic<uint32_t> seq{0};
+    uint64_t worst = 0;             // Gesamtzeit des schwersten Blocks (ns)
+    uint64_t parts[N] = {};
+    uint32_t frames = 0;
+    uint64_t cur[N] = {};           // laufender Block
+};
+
 struct MDEngine {
     double fs;
     Clock clock;
     Workers workers;
+    RenderProfile profile;
     Deck decks[MDSP_DECKS];
     std::atomic<float> fxp[MDSP_FX_UNITS][MDFX_PARAM_COUNT];
     std::atomic<float> chainOn[MDSP_FX_UNITS][MDSP_FX_CHAIN];   // Platz der Plugin-Kette an (gilt für alle Decks der Unit)
@@ -1505,6 +1520,21 @@ void mdsp_set_parallel(MDEngine *e, bool on) {
 
 bool mdsp_parallel(MDEngine *e) { return e->workers.enabled.load(); }
 
+void mdsp_render_profile(MDEngine *e, uint64_t *parts, int count, uint32_t *frames) {
+    RenderProfile &prof = e->profile;
+    for (int tries = 0; tries < 8; tries++) {
+        uint32_t s0 = prof.seq.load(std::memory_order_acquire);
+        if (s0 & 1) continue;
+        uint64_t tmp[RenderProfile::N]; uint32_t f = prof.frames;
+        for (int i = 0; i < RenderProfile::N; i++) tmp[i] = prof.parts[i];
+        if (prof.seq.load(std::memory_order_acquire) != s0) continue;
+        for (int i = 0; i < count && i < RenderProfile::N; i++) parts[i] = tmp[i];
+        if (frames) *frames = f;
+        break;
+    }
+    prof.worst = 0;   // nächster Block beginnt neu (Audio-Thread schreibt nur bei total > worst; eine verlorene Aktualisierung ist egal)
+}
+
 void mdsp_parallel_info(MDEngine *e, int *workers, int *joined, int *realtime) {
     if (workers) *workers = e->workers.started ? Workers::N : 0;
     if (joined) *joined = e->workers.joined.load();
@@ -1658,9 +1688,23 @@ bool mdsp_loop(MDEngine *e, int deck, double *s, double *en) {
 bool mdsp_playing(MDEngine *e, int deck) { return e->decks[deck].p[MD_PLAYING].load() > 0.5f; }
 void mdsp_levels(MDEngine *e, int deck, float *rms, float *peak) { *rms = e->decks[deck].rms.load(); *peak = e->decks[deck].peak.load(); }
 
+/// monotone Nanosekunden (Audio-Thread: ein Systemregister, kein Aufruf ins System)
+static inline uint64_t nowNs() {
+#if defined(__APPLE__)
+    static const double ratio = [] { mach_timebase_info_data_t tb; mach_timebase_info(&tb); return double(tb.numer) / double(tb.denom); }();
+    return uint64_t(double(mach_absolute_time()) * ratio);
+#else
+    return uint64_t(std::chrono::steady_clock::now().time_since_epoch().count());
+#endif
+}
+
 void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
     if (!out || channels <= 0 || frames <= 0) return;
     DenormalGuard ftz;
+    RenderProfile &prof = e->profile;
+    for (auto &x : prof.cur) x = 0;
+    uint64_t tStart = nowNs(), t = tStart;
+    auto lap = [&](int part) { uint64_t n2 = nowNs(); prof.cur[part] += n2 - t; t = n2; };
     for (int c = 0; c < channels; c++) std::memset(out[c], 0, sizeof(float) * frames);
     Clock &k = e->clock;
     double sb = k.setBeat.exchange(NAN);
@@ -1674,8 +1718,17 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
         for (int c = 0; c < channels && c < 64; c++) o[c] = out[c] + done;
         e->fxBeat = beatStart + done * perSample; e->fxBps = perSample;
         for (int i = 0; i < MDSP_DECKS; i++) e->blockPos[i] = e->decks[i].posOut.load(std::memory_order_relaxed);
-        if (e->workers.enabled.load(std::memory_order_relaxed)) renderDecksParallel(e, n);
-        else for (auto &d : e->decks) renderDeckBlock(e, d, n);
+        if (e->workers.enabled.load(std::memory_order_relaxed)) {
+            Workers &W = e->workers;
+            W.n = n;
+            for (int w = 0; w < Workers::N; w++) dispatch_semaphore_signal(W.go[w]);
+            renderDeckBlock(e, e->decks[0], n);
+            lap(RenderProfile::A);
+            for (int w = 0; w < Workers::N; w++) dispatch_semaphore_wait(W.done, DISPATCH_TIME_FOREVER);
+            lap(RenderProfile::WAIT);
+        } else {
+            for (int i = 0; i < MDSP_DECKS; i++) { renderDeckBlock(e, e->decks[i], n); lap(RenderProfile::A + i); }
+        }
         for (auto &d : e->decks) mixDeck(e, d, o, std::min(channels, 64), n);
         // Master-Bus: nach der Summe, vor Master-Lautstärke und Begrenzung (Vorhören bleibt auf seinem Paar unberührt)
         MasterBus &mb = e->bus;
@@ -1697,6 +1750,7 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
             mb.rms.store(mb.rms.load(std::memory_order_relaxed) * 0.7f + std::sqrt(sum / n) * 0.3f, std::memory_order_relaxed);
             mb.peak.store(std::max(pk, mb.peak.load(std::memory_order_relaxed) * 0.85f), std::memory_order_relaxed);
         }
+        lap(RenderProfile::MIX);
         done += n;
     }
     float m = e->master.load();
@@ -1727,13 +1781,23 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
             k.clickEnv *= 0.9985f;
         }
     }
+    lap(RenderProfile::MASTER);
     mdpv_render(e->preview, out, channels, frames, e->fs);   // Vorhören: eigenes Paar, nach dem Master
+    lap(RenderProfile::PREVIEW);
     k.beatOut.store(k.beat);
     k.stampSeq.fetch_add(1, std::memory_order_acq_rel);
     k.stampBeat.store(beatStart, std::memory_order_relaxed);
     k.stampHost.store(e->renderHost, std::memory_order_relaxed);
     k.stampSeq.fetch_add(1, std::memory_order_release);
     e->renders.fetch_add(1);
+    // schwerster Block seit dem letzten Abholen (Steuer-Thread liest per Sequenzzähler)
+    uint64_t total = nowNs() - tStart;
+    if (total > prof.worst) {
+        prof.seq.fetch_add(1, std::memory_order_acq_rel);
+        prof.worst = total; prof.frames = uint32_t(frames);
+        for (int i = 0; i < RenderProfile::N; i++) prof.parts[i] = prof.cur[i];
+        prof.seq.fetch_add(1, std::memory_order_release);
+    }
 }
 
 void mdsp_set_render_host(MDEngine *e, uint64_t hostTime) { e->renderHost = hostTime; }

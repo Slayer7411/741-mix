@@ -87,3 +87,21 @@ private final class FourDecks {
         _ = c.render(blocks: 5)
     }   // mdsp_destroy beendet die Worker ohne zu hängen
 }
+
+@Test func renderProfileReportsWorstBlock() {
+    let c = FourDecks(parallel: false, seconds: 1)
+    _ = c.render(blocks: 20, n: 256)
+    var parts = [UInt64](repeating: 0, count: 8), frames: UInt32 = 0
+    mdsp_render_profile(c.e, &parts, 8, &frames)
+    #expect(frames == 256)
+    let total = parts.reduce(0, +)
+    #expect(total > 0 && total < 50_000_000, "Gesamt \(total) ns")           // unter 50 ms
+    #expect(parts[0] > 0 && parts[1] > 0 && parts[4] == 0, "seriell: Decks gemessen, kein Warten")
+    mdsp_set_parallel(c.e, true)
+    _ = c.render(blocks: 20, n: 256)
+    mdsp_render_profile(c.e, &parts, 8, &frames)
+    #expect(parts[0] > 0 && parts[1] == 0 && parts[4] > 0, "parallel: A hier, B–D im Warten")
+    // Abholen setzt zurück: ohne neuen Block bleibt der letzte Wert stehen (Audio-Thread schreibt nur bei total > worst)
+    mdsp_render_profile(c.e, &parts, 8, &frames)
+    #expect(frames == 256)
+}
