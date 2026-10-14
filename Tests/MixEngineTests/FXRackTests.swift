@@ -44,9 +44,9 @@ private func decode(_ json: String) throws -> FXUnitState { try JSONDecoder().de
     let off = try decode(#"{"single":true,"singleType":3,"singleOn":false,"chain":[{"id":"aufx:a:b"}]}"#)
     #expect(off.slots.map(\.on) == [false])
     // Single-REVERB mit einer Kette dahinter (vorher unsichtbar): Plugin wird Slot 2, aus; Werte rücken mit
-    let h = try decode(#"{"single":true,"singleType":2,"singleOn":true,"params":[0.6,0.1,0.9],"chain":[{"id":"aufx:oril:DeTi","on":true,"state":"AAE="}],"pluginValues":{"p5":0.3},"mapping":{"k1":"lp"},"mappingKey":"REVERB"}"#)
-    #expect(h.slots.map(\.id) == ["REVERB", "aufx:oril:DeTi"] && h.slots.map(\.on) == [true, false] && h.slots[1].state == Data([0, 1]))
-    #expect(h.pluginValues == ["s1.p5": 0.3] && h.mapping[.knob1] == "lp" && h.mappingKey == "REVERB > aufx:oril:DeTi")
+    let h = try decode(#"{"single":true,"singleType":2,"singleOn":true,"params":[0.6,0.1,0.9],"chain":[{"id":"aufx:rivr:Xmpl","on":true,"state":"AAE="}],"pluginValues":{"p5":0.3},"mapping":{"k1":"lp"},"mappingKey":"REVERB"}"#)
+    #expect(h.slots.map(\.id) == ["REVERB", "aufx:rivr:Xmpl"] && h.slots.map(\.on) == [true, false] && h.slots[1].state == Data([0, 1]))
+    #expect(h.pluginValues == ["s1.p5": 0.3] && h.mapping[.knob1] == "lp" && h.mappingKey == "REVERB > aufx:rivr:Xmpl")
     // Gruppe mit Kette: drei eingebaute, dahinter die Plugins
     let g = try decode(#"{"single":false,"chain":[{"id":"aufx:a:b"},{"id":"aufx:c:d"}]}"#)
     #expect(g.slots.map(\.id) == ["FILTER", "DELAY", "REVERB", "aufx:a:b", "aufx:c:d"].prefix(MixEngine.slotCount).map { $0 })
