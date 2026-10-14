@@ -20,6 +20,7 @@ private final class Rig {
         mdsp_set_track(e, 0, l, r, Int64(n), fs, 0)
         _ = capture(512.0 / fs)
         mdsp_set_param(e, 0, MD_FX1_ASSIGN, 1)
+        setRack(e, 0, groupRack)
         fx(MDFX_REVERB_TYPE, fdn ? 1 : 0)
     }
     deinit { mdsp_destroy(e); l.deallocate(); r.deallocate(); bufs.forEach { $0?.deallocate() } }

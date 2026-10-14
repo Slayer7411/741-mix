@@ -54,8 +54,8 @@ private func throughCore(_ inst: PluginInstance, fs: Double = 48000, seconds: Do
     for i in 0..<frames { seed = seed &* 1664525 &+ 1013904223; let v = (Float(seed >> 8) / Float(1 << 24) - 0.5) * 0.6; l[i] = v; r[i] = v }
     mdsp_set_track(e, 0, l, r, Int64(frames), fs, 0)
     mdsp_set_param(e, 0, MD_FX1_ASSIGN, 1)
-    #expect(mdsp_set_fx_plugin(e, 0, 0, inst.ptr) == nil)
-    mdsp_set_fx(e, 0, MDFX_DRYWET, 1); mdsp_set_fx(e, 0, MDFX_PLUGIN_ON, 1)
+    setSlotPlugin(e, 0, 0, inst.ptr)
+    mdsp_set_fx(e, 0, MDFX_DRYWET, 1); mdsp_set_fx_slot(e, 0, 0, true, 1)
     mdsp_set_param(e, 0, MD_PLAYING, 1)
     var outL = [Float](repeating: 0, count: 512), outR = [Float](repeating: 0, count: 512)
     var acc: Float = 0, n = 0, finite = true
@@ -72,7 +72,7 @@ private func throughCore(_ inst: PluginInstance, fs: Double = 48000, seconds: Do
         if b > Int(0.3 * fs / 512) { acc += (outL.reduce(0) { $0 + $1 * $1 } / 512).squareRoot(); n += 1 }
     }
     // Übergabe: das Plugin ist erst nach einem Block ohne es frei
-    #expect(mdsp_set_fx_plugin(e, 0, 0, nil) == inst.ptr)
+    setSlotPlugin(e, 0, 0, nil)
     #expect(!mdsp_fx_plugin_released(e, 0, 0, inst.ptr))
     outL.withUnsafeMutableBufferPointer { lp in
         outR.withUnsafeMutableBufferPointer { rp in
@@ -216,8 +216,8 @@ private func throughCore(_ inst: PluginInstance, fs: Double = 48000, seconds: Do
     for i in 0..<frames { l[i] = i < 600 ? .nan : 0.1; r[i] = l[i] }
     mdsp_set_track(e, 0, l, r, Int64(frames), fs, 0)
     mdsp_set_param(e, 0, MD_FX1_ASSIGN, 1)
-    _ = mdsp_set_fx_plugin(e, 0, 0, inst.ptr)
-    mdsp_set_fx(e, 0, MDFX_DRYWET, 1); mdsp_set_fx(e, 0, MDFX_PLUGIN_ON, 1)
+    setSlotPlugin(e, 0, 0, inst.ptr)
+    mdsp_set_fx(e, 0, MDFX_DRYWET, 1); mdsp_set_fx_slot(e, 0, 0, true, 1)
     mdsp_set_param(e, 0, MD_PLAYING, 1)
     let oL = UnsafeMutablePointer<Float>.allocate(capacity: 512), oR = UnsafeMutablePointer<Float>.allocate(capacity: 512)
     defer { oL.deallocate(); oR.deallocate() }
@@ -226,16 +226,16 @@ private func throughCore(_ inst: PluginInstance, fs: Double = 48000, seconds: Do
         ch.withUnsafeMutableBufferPointer { mdsp_render(e, $0.baseAddress, 2, 512) }
     }
     for _ in 0..<4 { block() }
-    #expect(mdsp_fx_plugin_needs_reset(e, 0, 0))
+    #expect(mdsp_fx_slot_needs_reset(e, 0, 0, 0))
     var done = false
     inst.reset { done = true }
     #expect(done)
-    mdsp_fx_plugin_reset_done(e, 0, 0)
-    #expect(!mdsp_fx_plugin_needs_reset(e, 0, 0))
+    mdsp_fx_slot_reset_done(e, 0, 0, 0)
+    #expect(!mdsp_fx_slot_needs_reset(e, 0, 0, 0))
     for _ in 0..<20 { block() }
     let last = Array(UnsafeBufferPointer(start: oL, count: 512))
     #expect(last.allSatisfy(\.isFinite) && last.contains { $0 != 0 })
-    _ = mdsp_set_fx_plugin(e, 0, 0, nil)
+    setSlotPlugin(e, 0, 0, nil)
     block()
 }
 

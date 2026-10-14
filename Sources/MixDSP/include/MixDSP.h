@@ -1,6 +1,7 @@
 // MixDSP – schlanker Echtzeit-Audiokern von MINOS-741.
 // Ein einziger Render-Callback rechnet alle Decks: Abspielen (Tempo/Keylock/Loop/Reverse/Flux),
-// Kanalzug (Gain, EQ, Filter), 4 FX-Units (Filter, Delay, Reverb – zwei Typen, Gater, Roll, Flanger, Phaser),
+// Kanalzug (Gain, EQ, Filter), 4 FX-Units mit Insert-Slots (Filter, Delay, Reverb – zwei Typen, Gater, Roll, Flanger,
+// Phaser, Plugins),
 // Fader/Crossfader, Routing auf Kanalpaare.
 // Der Audio-Thread nimmt keine Sperren und fordert keinen Speicher an. Steuerwerte sind atomar.
 #ifndef MIXDSP_H
@@ -17,8 +18,8 @@ extern "C" {
 #define MDSP_DECKS 4
 #define MDSP_FX_UNITS 4
 #define MDSP_MAX_FRAMES 4096   // größter Block je Durchlauf (größere Puffer rechnet mdsp_render in Teilen)
-#define MDSP_FX_CHAIN 4        // Plugins in Reihe je FX-Unit und im Master-Bus
-#define MDSP_MASTER_UNIT (-1)  // `unit` der Kette des Master-Busses (mdsp_set_fx_chain & Co., `deck` egal)
+#define MDSP_FX_SLOTS 6        // Insert-Slots je FX-Unit und im Master-Bus
+#define MDSP_MASTER_UNIT (-1)  // `unit` des Master-Busses (mdsp_set_fx, mdsp_set_fx_rack & Co., `deck` egal)
 
 typedef struct MDEngine MDEngine;
 typedef struct MDPlugin MDPlugin;   // Effekt-Plugin (Backend-Datei, z. B. MixDSPAUHost.h)
@@ -53,7 +54,6 @@ typedef enum {
     MDFX_REVERB_LEVEL,                      // Hall-Pegel, linear (1 = bei vollem D/W Hall ≈ 4 dB unter dem Track)
     MDFX_REVERB_BRIGHT,                     // Helligkeit 0…1 (Höhen-Nachhall 35…90 %, Hochpass vor dem Hall 150…400 Hz, Höhenregal −4…+6 dB)
     MDFX_REVERB_PREDELAY,                   // Vorverzögerung in Sekunden (0…0,2)
-    MDFX_PLUGIN_ON,                         // Plugin der Unit an (aus = Eingang zu, Fahne klingt aus)
     MDFX_REVERB_TYPE,                       // 0 = Reverb (Allpass-Ring, Standard), 1 = Reverb (FDN)
     MDFX_REVERB_FREEZE,                     // 1 = Eingang zu, Fahne steht (nur solange der Hall an ist)
     // Beat-FX im Raster der Master-Clock (AMOUNT × D/W = Anteil, 0 = trocken unverändert)
@@ -70,8 +70,20 @@ typedef enum {
     MDFX_PHASER_ON, MDFX_PHASER_AMOUNT,
     MDFX_PHASER_BEATS, MDFX_PHASER_HZ,
     MDFX_PHASER_DEPTH, MDFX_PHASER_FEEDBACK, MDFX_PHASER_STAGES, MDFX_PHASER_FREEZE,      // Stufen 4 oder 8
+    // Filter vor dem Delay bzw. nach dem Roll (eigener Filter je Effekt, wie MDFX_FILTER_*; Stärke × D/W)
+    MDFX_DELAY_FILTER_ON, MDFX_DELAY_FILTER_AMOUNT, MDFX_DELAY_FILTER_RES,
+    MDFX_ROLL_FILTER_ON, MDFX_ROLL_FILTER_AMOUNT, MDFX_ROLL_FILTER_RES,
     MDFX_PARAM_COUNT
 } MDFXParam;
+
+/// Effekt eines Insert-Slots. Jeder eingebaute Effekt hat je Unit (und Master-Bus) eine Instanz: höchstens ein Slot je Effekt
+typedef enum {
+    MDFX_KIND_NONE = 0,
+    MDFX_KIND_FILTER, MDFX_KIND_DELAY, MDFX_KIND_REVERB,
+    MDFX_KIND_GATER, MDFX_KIND_ROLL, MDFX_KIND_FLANGER, MDFX_KIND_PHASER,
+    MDFX_KIND_PLUGIN,
+    MDFX_KIND_COUNT
+} MDFXKind;
 
 MDEngine *mdsp_create(double sampleRate);
 void mdsp_destroy(MDEngine *e);
@@ -86,28 +98,22 @@ void mdsp_set_param(MDEngine *e, int deck, MDParam p, float v);
 void mdsp_set_fx(MDEngine *e, int unit, MDFXParam p, float v);
 void mdsp_set_master(MDEngine *e, float volume);
 
-/// erstes Plugin der Kette von FX-Unit × Deck setzen (NULL = keins). Liefert das vorherige; das darf erst geschlossen werden,
-/// wenn mdsp_fx_plugin_released() true liefert (Audio-Thread hat einen ganzen Block ohne es gerechnet).
-MDPlugin *mdsp_set_fx_plugin(MDEngine *e, int unit, int deck, MDPlugin *p);
-/// steht `old` in keinem Platz der Kette mehr und hat der Audio-Thread seitdem einen ganzen Block gerechnet?
+/// Insert-Slots von FX-Unit × Deck (unit = MDSP_MASTER_UNIT: Master-Bus) in einem Schritt setzen: je Slot ein Effekt
+/// (MDFXKind; Reihenfolge = Signalfluss) und für MDFX_KIND_PLUGIN das Plugin (NULL = noch nicht geladen: durchgereicht).
+/// Höchstens MDSP_FX_SLOTS Slots. Ein verschobenes Plugin behält seinen Zustand, ein eingebauter Effekt, der aus dem Rack
+/// fällt, klingt hinter den Slots aus. Ein herausgenommenes Plugin erst schließen, wenn mdsp_fx_plugin_released() true liefert
+void mdsp_set_fx_rack(MDEngine *e, int unit, int deck, const int *kinds, MDPlugin *const *plugins, int count);
+/// steht `old` in keinem Slot mehr und hat der Audio-Thread seitdem einen ganzen Block gerechnet?
 bool mdsp_fx_plugin_released(MDEngine *e, int unit, int deck, MDPlugin *old);
-/// wie mdsp_fx_chain_needs_reset/_reset_done für Platz 0
-bool mdsp_fx_plugin_needs_reset(MDEngine *e, int unit, int deck);
-void mdsp_fx_plugin_reset_done(MDEngine *e, int unit, int deck);
-
-/// Plugin-Kette von FX-Unit × Deck (unit = MDSP_MASTER_UNIT: Master-Bus) in einem Schritt setzen: bis zu MDSP_FX_CHAIN
-/// Plugins in Reihe (Platz 0 zuerst), NULL = Platz leer. Ein herausgenommenes Plugin erst schließen, wenn
-/// mdsp_fx_plugin_released() true liefert. D/W der Unit wirkt auf die ganze Kette (trocken = Eingang der Kette)
-void mdsp_set_fx_chain(MDEngine *e, int unit, int deck, MDPlugin *const *plugins, int count);
-/// Platz an/aus (gilt für alle Decks der Unit); aus = durchreichen, die Fahne des Plugins klingt aus. Standard an
-void mdsp_set_fx_chain_on(MDEngine *e, int unit, int slot, bool on);
-/// NaN im Deck oder aus dem Plugin: der Platz wird durchgereicht, bis der Steuer-Thread das Plugin zurückgesetzt hat
-/// (mdplug_reset) und mdsp_fx_chain_reset_done() meldet
-bool mdsp_fx_chain_needs_reset(MDEngine *e, int unit, int deck, int slot);
-void mdsp_fx_chain_reset_done(MDEngine *e, int unit, int deck, int slot);
-/// Master-Bus: Kette nach der Summe der Decks, vor Master-Lautstärke und Begrenzung. Aus = Eingang zu, Fahnen klingen aus
-void mdsp_set_master_fx(MDEngine *e, bool on, float dryWet);
-/// Kanalpaar des Master-Busses (erster Kanal, -1 = aus – externer Mixer hat keinen Summenpunkt)
+/// Plugin-Slot an/aus und sein Anteil (D/W des Slots, × D/W der Unit); gilt für alle Decks der Unit.
+/// Aus = Eingang des Plugins zu, trocken durch, die Fahne klingt aus. Standard an, Anteil 1
+void mdsp_set_fx_slot(MDEngine *e, int unit, int slot, bool on, float wet);
+/// NaN im Deck oder aus dem Plugin: der Slot wird durchgereicht, bis der Steuer-Thread das Plugin zurückgesetzt hat
+/// (mdplug_reset) und mdsp_fx_slot_reset_done() meldet
+bool mdsp_fx_slot_needs_reset(MDEngine *e, int unit, int deck, int slot);
+void mdsp_fx_slot_reset_done(MDEngine *e, int unit, int deck, int slot);
+/// Master-Bus: Insert-Slots nach der Summe der Decks, vor Master-Lautstärke und Begrenzung. Parameter wie eine FX-Unit
+/// (mdsp_set_fx mit MDSP_MASTER_UNIT). Kanalpaar des Master-Busses (erster Kanal, -1 = aus – externer Mixer hat keinen Summenpunkt)
 void mdsp_set_master_fx_channel(MDEngine *e, int firstChannel);
 /// Pegel des Master-Paars nach dem Master-Bus, vor der Master-Lautstärke (0, solange kein Paar gesetzt ist)
 void mdsp_master_levels(MDEngine *e, float *rms, float *peak);

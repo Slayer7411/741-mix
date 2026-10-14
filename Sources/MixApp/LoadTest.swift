@@ -6,7 +6,7 @@ import MixEngine
 /// MIX741_BENCH=loadtest (Selbsttest-Modus, schreibt keine Einstellungen): Live-Lasttest in Stufen.
 /// Je Stufe (Puffer MIX741_BENCH_BUFFERS, Standard 512,256,128; Dauer MIX741_LOADTEST_MIN, Standard 10 min; Rechenkern
 /// MIX741_BENCH_MODES=serial,parallel -> alle Puffer erst seriell, dann mit parallelen Decks):
-/// 4 Decks Keylock, B–D Sync auf A, Link an, FX 1 (A/C) und FX 2 (B/D) Gruppe Delay + Hall, FX 3 isoliertes Plugin
+/// 4 Decks Keylock, B–D Sync auf A, Link an, FX 1 (A/C) und FX 2 (B/D) Vorlage Gruppe mit Delay + Hall, FX 3 isoliertes Plugin
 /// (MIX741_BENCH_PLUGIN, Standard AUMatrixReverb isoliert, "none" = ohne) auf allen Decks. Störlast: alle 60 s
 /// Track-Wechsel (erstmals nach 45 s; B, C, D reihum, Datei-Dienst), alle 20 s Suche + Sortierung über die Collection auf dem Hauptthread,
 /// alle 5 min (erstmals nach 30 s) Hauptthread 1 s blockiert. Ab 3 Geräte-Überlastungen endet die Stufe (FAIL).
@@ -144,18 +144,21 @@ enum LoadTest {
             let want = [d % 2 == 0, d % 2 == 1, true, false]
             for u in 0..<4 where core.snapshot().decks[d].fxAssign[u] != want[u] { core.toggleFXAssign(d, u) }
         }
+        // Vorlage Gruppe: Delay und Hall an (je 0,5), Filter aus
         for u in 0..<2 {
-            core.updateFX(u) { $0.single = false; $0.slots[0].on = false
-                $0.slots[1].on = true; $0.slots[1].amount = 0.5
-                $0.slots[2].on = true; $0.slots[2].amount = 0.5; $0.dryWet = 0.5 }
+            core.updateFX(u) { fx in
+                fx.slots = FXTemplate.group.slots
+                fx.slots[1].on = true; fx.slots[1].mix = 0.5
+                fx.slots[2].on = true; fx.slots[2].mix = 0.5; fx.dryWet = 0.5
+            }
         }
         if plugin != "none" {
             if plugin == "aufx:mrev:appl" { core.pluginCatalog.setIsolation(plugin, true) }   // nur im Speicher (Selbsttest)
-            core.setPlugin(2, id: plugin)
+            core.setSlots(2, [FXSlot(id: plugin, on: true)])
             for _ in 0..<400 where core.pluginParamNames(2).isEmpty && core.snapshot().pluginErrors[2] == nil {
                 try? await Task.sleep(for: .milliseconds(50))
             }
-            core.updateFX(2) { $0.singleOn = true; $0.dryWet = 0.4 }
+            core.updateFX(2) { $0.dryWet = 0.4 }
             log("Plugin FX 3: \(plugin) \(core.pluginCatalog.isolated(plugin) ? "isoliert" : "im Prozess")"
                 + (core.snapshot().pluginErrors[2].map { " · Fehler: \($0)" } ?? ""))
         }

@@ -42,7 +42,7 @@ private final class Decks: @unchecked Sendable {
             mdsp_set_param(e, Int32(d), MD_EQ_LOW, -6)
             if fx { mdsp_set_param(e, Int32(d), MDParam(rawValue: MD_FX1_ASSIGN.rawValue + UInt32(d)), 1) }
         }
-        if fx { for u in 0..<2 { mdsp_set_fx(e, Int32(u), u == 0 ? MDFX_REVERB_ON : MDFX_DELAY_ON, 1) } }
+        if fx { for u in 0..<2 { setRack(e, Int32(u), groupRack); mdsp_set_fx(e, Int32(u), u == 0 ? MDFX_REVERB_ON : MDFX_DELAY_ON, 1) } }
     }
     deinit { mdsp_destroy(e); mem.forEach { $0.deallocate() } }
 }

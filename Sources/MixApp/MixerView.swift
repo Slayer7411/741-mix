@@ -105,104 +105,46 @@ struct LevelFader: View {
     }
 }
 
-/// FX-Unit: Gruppe (Filter · Delay · Reverb) oder Single (ein Effekt). D/W, Regler 1–3 und Tasten 1–3 liegen auf
-/// zuweisbaren Parametern (Rechtsklick, ⌘, -> MIXER & FX); der Controller geht denselben Weg.
+/// FX-Unit: Insert-Slots (Zeilen: Effekt, an/aus, D/W; das ganze Rack im Popover), dazu D/W der Unit und die
+/// Schnellregler 1–3 mit Tasten. Sie liegen auf zuweisbaren Parametern aller Slots (Rechtsklick, ⌘, -> MIXER & FX);
+/// der Controller geht denselben Weg.
 struct FXUnitView: View {
     @Environment(MixModel.self) private var mix
     let u: Int
+    @State private var rack = false
 
     private var unit: FXMirror { mix.fxUnits[u] }
 
     var body: some View {
         let fx = unit.state
-        HStack(spacing: 6.z) {
-            VStack(spacing: 2.z) {
-                Text("FX \(u + 1)").font(Theme.label(10.z, .heavy)).foregroundStyle(fx.anyOn ? Theme.state : Theme.muted)
-                DeckButton(title: fx.single ? "SNGL" : "GRP", active: fx.single, color: Theme.secondary, width: 32) {
-                    mix.updateFX(u) { $0.single.toggle() }
+        HStack(alignment: .center, spacing: 6.z) {
+            VStack(alignment: .leading, spacing: 1.z) {
+                HStack(spacing: 4.z) {
+                    Text("FX \(u + 1)").font(Theme.label(10.z, .heavy)).foregroundStyle(fx.anyOn ? Theme.state : Theme.muted)
+                    Button { rack.toggle() } label: {
+                        Text(verbatim: unit.pluginError != nil ? "⚠︎ RACK" : "RACK").font(Theme.label(8.z, .bold))
+                            .foregroundStyle(unit.pluginError != nil ? Theme.state : Theme.muted)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(unit.pluginError.map { Text(verbatim: $0) } ?? Text("Rack: Slots, Vorlagen, gemerkte Racks"))
+                    .popover(isPresented: $rack, arrowEdge: .bottom) { RackView(b: u).environment(mix) }
                 }
-                .help("Gruppe (3 Effekte) oder Single (1 Effekt, 3 Parameter)")
+                SlotRows(b: u)
             }
+            .background(UITestMark(name: "fx unit \(u)"))
             FXKnob(u: u, c: .dryWet)
-            if fx.single { single(fx) } else { group(fx) }
+            ForEach(0..<3, id: \.self) { i in
+                VStack(spacing: 1.z) {
+                    FXKnob(u: u, c: .knob(i))
+                    FXButton(u: u, i: i)
+                }
+            }
         }
         .padding(.horizontal, 6.z)
         .padding(.vertical, 2.z)
         .background(Rectangle().fill(Theme.deck))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-    }
-
-    /// Regler 1–3 mit Taste darunter
-    private var controls: some View {
-        ForEach(0..<3, id: \.self) { i in
-            VStack(spacing: 1.z) {
-                FXKnob(u: u, c: .knob(i))
-                FXButton(u: u, i: i)
-            }
-        }
-    }
-
-    @ViewBuilder private func group(_ fx: FXUnitState) -> some View {
-        // Effekt je Slot: Kürzel der 3 Slots, Menü je Slot (schon belegter Effekt tauscht den Platz)
-        Menu {
-            ForEach(0..<3, id: \.self) { i in
-                Section("Slot \(i + 1)") {
-                    ForEach(FXUnitState.Effect.groupable, id: \.self) { e in
-                        Toggle(e.name, isOn: Binding(get: { fx.slotTypes[i] == e.rawValue }, set: { _ in mix.updateFX(u) { $0.setSlot(i, e) } }))
-                    }
-                }
-            }
-        } label: {
-            Text(verbatim: fx.slotTypes.compactMap { FXUnitState.Effect(rawValue: $0)?.short }.joined(separator: "·"))
-        }
-        .menuStyle(.borderlessButton).controlSize(zoomed: .regular)
-        .font(Theme.label(9.z, .bold))
-        .fixedSize()
-        .help("Effekte der 3 Slots")
-        controls
-        if fx.slot(of: .delay) != nil { delayTime(fx) }
-        if fx.slot(of: .reverb) != nil {
-            Knob(value: Binding(get: { unit.state.reverbSize }, set: { v in mix.updateFX(u) { $0.reverbSize = v } }),
-                 range: 0...1, defaultValue: 0.6, label: "ROOM", color: Theme.state, size: 18)
-        }
-    }
-
-    @ViewBuilder private func delayTime(_ fx: FXUnitState) -> some View {
-        Menu(BeatSizes.label(MixEngine.delayBeats[fx.delayIndex])) {
-            ForEach(MixEngine.delayBeats.indices, id: \.self) { i in
-                Button("Delay \(BeatSizes.label(MixEngine.delayBeats[i])) Beat") { mix.updateFX(u) { $0.delayIndex = i } }
-            }
-        }
-        .menuStyle(.borderlessButton).controlSize(zoomed: .regular)
-        .font(Theme.label(10.z, .bold))
-        .fixedSize()
-        .help("Delay-Zeit in Beats")
-    }
-
-    @ViewBuilder private func single(_ fx: FXUnitState) -> some View {
-        let effect = FXUnitState.Effect(rawValue: fx.singleType) ?? .delay
-        VStack(spacing: 2.z) {
-            Menu(effect.name) {
-                ForEach(FXUnitState.Effect.order, id: \.self) { e in
-                    Button(e.name) { mix.updateFX(u) { $0.singleType = e.rawValue } }
-                }
-            }
-            .menuStyle(.borderlessButton).controlSize(zoomed: .regular)
-            .font(Theme.label(10.z, .bold))
-            .fixedSize()
-            DeckButton(title: "ON", active: fx.singleOn, color: Theme.state, width: 30) { mix.updateFX(u) { $0.singleOn.toggle() } }
-        }
-        if effect == .plugin { pluginControls(fx) }
-        controls
-    }
-
-    /// Plugin-Kette (Popover: Plätze, hinzufügen, Reihenfolge, Fenster) und das Fenster des ersten Platzes
-    @ViewBuilder private func pluginControls(_ fx: FXUnitState) -> some View {
-        VStack(spacing: 2.z) {
-            PluginChainButton(b: u)
-            DeckButton(title: "EDIT", active: false, color: Theme.state, width: 30) { PluginWindow.show(unit: u, core: mix.core) }
-                .help("Fenster des ersten Plugins der Kette öffnen")
-        }
     }
 }
 
@@ -300,7 +242,7 @@ struct FXAssignMenu: View {
         let unit = mix.fxUnits[u]
         let mapped = unit.state.mapping[c]
         let params = unit.params
-        let def = FXCatalog.defaultTarget(c, effect: unit.state.effectKey, params: params, fx: unit.state).flatMap { k in params.first { $0.id == k } }
+        let def = FXCatalog.defaultTarget(c, fx: unit.state, params: params).flatMap { k in params.first { $0.id == k } }
         let list = filter.isEmpty ? params : params.filter {
             $0.name.localizedCaseInsensitiveContains(filter) || $0.group.localizedCaseInsensitiveContains(filter)
         }

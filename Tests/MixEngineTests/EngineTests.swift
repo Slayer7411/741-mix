@@ -12,6 +12,7 @@ private final class Core {
 
     init(seconds: Double = 10) {
         e = mdsp_create(fs)
+        setRack(e, 0, groupRack)
         frames = Int(seconds * fs)
         left = .allocate(capacity: frames); right = .allocate(capacity: frames)
         for i in 0..<frames { let v = Float(sin(2 * .pi * 220 * Double(i) / fs)) * 0.5; left[i] = v; right[i] = v }
@@ -258,8 +259,8 @@ private final class Core {
                             "\(String(cString: err))")
     c.load(); c.render()
     c.set(MD_FX1_ASSIGN, 1)
-    #expect(mdsp_set_fx_plugin(c.e, 0, 0, plug) == nil)
-    c.fx(MDFX_DRYWET, 1); c.fx(MDFX_PLUGIN_ON, 1)
+    setSlotPlugin(c.e, 0, 0, plug)
+    c.fx(MDFX_DRYWET, 1); mdsp_set_fx_slot(c.e, 0, 0, true, 1)
     c.set(MD_PLAYING, 1)
     var finite = true
     for _ in 0..<Int(1.5 * c.fs / 512) { c.render(512); finite = finite && c.outL.allSatisfy(\.isFinite) && c.outR.allSatisfy(\.isFinite) }
@@ -267,14 +268,14 @@ private final class Core {
     #expect(finite)
     #expect(wet > 1e-3)
     // Stopp + aus: Eingang zu, Hall-Fahne klingt aus
-    c.set(MD_PLAYING, 0); c.fx(MDFX_PLUGIN_ON, 0)
+    c.set(MD_PLAYING, 0); mdsp_set_fx_slot(c.e, 0, 0, false, 1)
     let tail = c.render(seconds: 0.2)
     print(String(format: "[plugin] wet rms %.4f · tail rms %.5f", wet, tail))
     #expect(tail > 1e-5)
     c.render(seconds: 30)
     #expect(c.render(seconds: 0.5) < 1e-4)
     // Übergabe: das alte Plugin ist erst nach einem Block ohne es frei
-    #expect(mdsp_set_fx_plugin(c.e, 0, 0, nil) == plug)
+    setSlotPlugin(c.e, 0, 0, nil)
     #expect(!mdsp_fx_plugin_released(c.e, 0, 0, plug))
     c.render()
     #expect(mdsp_fx_plugin_released(c.e, 0, 0, plug))
@@ -291,13 +292,13 @@ private final class Core {
                             "\(String(cString: err))")
     c.load(); c.render()
     c.set(MD_FX1_ASSIGN, 1)
-    #expect(mdsp_set_fx_plugin(c.e, 0, 0, plug) == nil)
-    c.fx(MDFX_DRYWET, 1); c.fx(MDFX_PLUGIN_ON, 1)
+    setSlotPlugin(c.e, 0, 0, plug)
+    c.fx(MDFX_DRYWET, 1); mdsp_set_fx_slot(c.e, 0, 0, true, 1)
     c.set(MD_PLAYING, 1); c.render(seconds: 0.2)
-    c.fx(MDFX_PLUGIN_ON, 0); c.render(seconds: 0.2)   // aus: Eingang zu, die Fahne klingt noch (quiet < 1 s)
+    mdsp_set_fx_slot(c.e, 0, 0, false, 1); c.render(seconds: 0.2)   // aus: Eingang zu, die Fahne klingt noch (quiet < 1 s)
     // Unit weg vom Deck, Deck steht, Plugin heraus und zu
     c.set(MD_FX1_ASSIGN, 0); c.set(MD_PLAYING, 0); c.render()
-    #expect(mdsp_set_fx_plugin(c.e, 0, 0, nil) == plug)
+    setSlotPlugin(c.e, 0, 0, nil)
     c.render()
     #expect(mdsp_fx_plugin_released(c.e, 0, 0, plug))
     mdplug_close(plug)

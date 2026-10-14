@@ -72,8 +72,6 @@ final class ControllerManager: @unchecked Sendable {
     let status: ControllerStatus
     private var manager: IOHIDManager?
     fileprivate var units: [String: ControllerUnit] = [:]
-    /// Gruppen-Modus: welche Slots vor dem Ausschalten per Mode-Taste an waren (je FX-Unit)
-    fileprivate var groupMemory: [Int: [Bool]] = [:]
     private let lock = NSLock()
     private var _prefs = ControllerPrefs()
     /// 2 oder 4 FX-Units (aus den Einstellungen)
@@ -426,31 +424,15 @@ final class ControllerManager: @unchecked Sendable {
             else if p.browsePush == .matching { DispatchQueue.main.async { self.onMatching?(pane) } }
             else { DispatchQueue.main.async { self.onToggleBrowser?() } }
         case let .fxKnob(u, k, v):
-            // D/W + Regler 1–3 -> zugewiesene Parameter (FX-Belegung, Standard: Gruppe = Stärke, Single = Parameter)
+            // D/W + Regler 1–3 = Schnellregler der Unit (FX-Belegung; Standard: Gruppe = Stärke je Slot, sonst Slot 1)
             guard let fu = fxUnit(unit, section: u) else { return }
             core.setFXControl(fu, k == 0 ? .dryWet : .knob(k - 1), v)
         case let .fxButton(u, b, down):
             guard down, let fu = fxUnit(unit, section: u) else { return }
-            // Tasten 1–3 -> zugewiesene Parameter (Standard: Gruppe = Slot an/aus, Single = Taste 1 an/aus)
+            // Tasten 1–3 = Tasten der Unit (Standard: an/aus von Slot 1, Gruppe: an/aus je Slot)
             if b > 0 { core.pressFXButton(fu, b - 1); return }
-            let shift = unit.shift
-            core.updateFX(fu) { fx in
-                if fx.single {
-                    // Single: Mode = Effekt an/aus (Echo/Hall klingt aus), Shift + Mode = nächster Effekt
-                    if shift { fx.singleType = (FXUnitState.Effect(rawValue: fx.singleType) ?? .delay).next.rawValue } else { fx.singleOn.toggle() }
-                    return
-                }
-                // Gruppe: Mode = an/aus (merkt sich, welche Slots an waren), Shift + Mode = Delay-Zeit weiter
-                if shift {
-                    fx.delayIndex = (fx.delayIndex + 1) % MixEngine.delayBeats.count
-                } else if fx.anyOn {
-                    self.groupMemory[fu] = fx.slots.map(\.on)
-                    for i in fx.slots.indices { fx.slots[i].on = false }
-                } else {
-                    let last = self.groupMemory[fu] ?? []
-                    for i in fx.slots.indices { fx.slots[i].on = last.contains(true) ? (i < last.count && last[i]) : true }
-                }
-            }
+            // Mode = alle Slots aus (gemerkt) bzw. wieder an, Shift + Mode = nächste Vorlage
+            core.fxModeButton(fu, shift: unit.shift)
         case let .fxAssign(s, u, down):
             if down, let fu = fxUnit(unit, section: u) { core.toggleFXAssign(deck(s), fu) }
         case let .strip(s, pos, touching):

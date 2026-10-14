@@ -996,14 +996,14 @@ extension UISelfTest {
         u.key(combo)
         u.spin(1) { mix.masterFX.on == on0 }
         check(mix.masterFX.on == on0, "\(combo.symbols): Master-FX schaltet nicht zurück")
-        mix.addPlugin(MixController.masterBus, "aufx:lpas:appl")
+        mix.addSlot(MixController.masterBus, "aufx:lpas:appl")
         u.spin(10) { mix.core.pluginInstance(MixController.masterBus, slot: 0) != nil }
-        check(mix.chain(MixController.masterBus).map(\.id) == ["aufx:lpas:appl"], "Master-Kette: \(mix.chain(MixController.masterBus).map(\.id))")
-        check(mix.core.pluginInstance(MixController.masterBus, slot: 0) != nil, "Master-Kette: AULowpass lädt nicht")
-        mix.removePlugin(MixController.masterBus, slot: 0)
+        check(mix.slots(MixController.masterBus).map(\.id) == ["aufx:lpas:appl"], "Master-Rack: \(mix.slots(MixController.masterBus).map(\.id))")
+        check(mix.core.pluginInstance(MixController.masterBus, slot: 0) != nil, "Master-Rack: AULowpass lädt nicht")
+        mix.removeSlot(MixController.masterBus, slot: 0)
         mix.prefs.ui.showMixer = false
         u.spin(0.3)
-        check(mix.chain(MixController.masterBus).isEmpty, "Master-Kette nicht leer")
+        check(mix.slots(MixController.masterBus).isEmpty, "Master-Rack nicht leer")
     }
 
     /// Doppelklick auf Regler und Fader = Standardwert: GAIN-Knopf im Mixer (Kanalzug C·A·B·D: der erste ist Deck C),

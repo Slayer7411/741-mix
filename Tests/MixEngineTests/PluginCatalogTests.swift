@@ -188,8 +188,8 @@ private func renderThroughCore(_ inst: PluginInstance, fs: Double = 44100) -> Fl
     for i in 0..<frames { seed = seed &* 1664525 &+ 1013904223; let v = (Float(seed >> 8) / Float(1 << 24) - 0.5) * 0.6; l[i] = v; r[i] = v }
     mdsp_set_track(e, 0, l, r, Int64(frames), fs, 0)
     mdsp_set_param(e, 0, MD_FX1_ASSIGN, 1)
-    _ = mdsp_set_fx_plugin(e, 0, 0, inst.ptr)
-    mdsp_set_fx(e, 0, MDFX_DRYWET, 1); mdsp_set_fx(e, 0, MDFX_PLUGIN_ON, 1)
+    setSlotPlugin(e, 0, 0, inst.ptr)
+    mdsp_set_fx(e, 0, MDFX_DRYWET, 1); mdsp_set_fx_slot(e, 0, 0, true, 1)
     mdsp_set_param(e, 0, MD_PLAYING, 1)
     var outL = [Float](repeating: 0, count: 512), outR = [Float](repeating: 0, count: 512)
     var acc: Float = 0, n = 0
@@ -204,7 +204,7 @@ private func renderThroughCore(_ inst: PluginInstance, fs: Double = 44100) -> Fl
         finite = finite && outL.allSatisfy(\.isFinite)
         if b > Int(fs / 512) { acc += (outL.reduce(0) { $0 + $1 * $1 } / 512).squareRoot(); n += 1 }
     }
-    _ = mdsp_set_fx_plugin(e, 0, 0, nil)
+    setSlotPlugin(e, 0, 0, nil)
     return finite ? acc / Float(max(n, 1)) : -1
 }
 

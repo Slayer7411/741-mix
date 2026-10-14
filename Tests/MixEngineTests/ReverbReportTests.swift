@@ -26,6 +26,7 @@ private final class Rig {
         mdsp_set_track(e, 0, left, right, Int64(frames), fs, 0)
         render()
         mdsp_set_param(e, 0, MD_FX1_ASSIGN, 1)
+        setRack(e, 0, groupRack)
         mdsp_set_fx(e, 0, MDFX_REVERB_TYPE, reportType)   // Standard: FDN (reverbFreezeStaysBounded braucht ihn)
     }
     deinit { mdsp_destroy(e); left.deallocate(); right.deallocate() }
