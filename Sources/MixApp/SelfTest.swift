@@ -228,6 +228,7 @@ enum SelfTest {
             await recordProbe(mix, tracks: c)
             waveTileProbe(mix)
             ledShowProbe()
+            settingsSearchProbe()
             await ripProbe(mix, tracks: c)
             if env["MIX741_BENCH"] == "load" { await loadProbe(core, tracks: c) }
             // nur die eigene Test-History entfernen (Datei dieser Sitzung), nichts anderes anfassen
@@ -867,6 +868,20 @@ enum SelfTest {
         log(String(format: "Startsequenz: %d Frames über %.2f s, %.3f ms je Frame (Generator + Reports + Mischen) · %@",
                    frames, LEDShow.duration, ms, ok ? "OK" : "FAIL"))
         if !ok { log("STARTSEQUENZ FALSCH"); exit(1) }
+    }
+
+    /// Suche in den Einstellungen: Indexgröße, Zeit für 3 Zeichen (Mittel aus 50 Läufen), Treffer für „puffer“
+    static func settingsSearchProbe() {
+        let s = SettingsSearch.shared
+        _ = s.search("loo")
+        let t0 = CACurrentMediaTime()
+        for _ in 0..<10 { for q in ["loo", "puf", "rev", "bpm", "cue"] { _ = s.search(q) } }
+        let ms = (CACurrentMediaTime() - t0) * 1000 / 50
+        let first = s.search("puffer").first?.entry.anchor ?? "-"
+        let ok = ms < 2 && first == "audio.buffer"
+        log(String(format: "Einstellungs-Suche: %d Einträge (%d Anker), %.3f ms je Suche (3 Zeichen), puffer -> %@ · %@",
+                   s.entries.count, Set(s.entries.map(\.anchor)).count, ms, first, ok ? "OK" : "FAIL"))
+        if !ok { log("EINSTELLUNGS-SUCHE FALSCH"); exit(1) }
     }
 
     static func log(_ s: String) {

@@ -2,6 +2,15 @@
 
 everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 
+## ◆ SEARCH
+
+* field on top of the sidebar, ⌘F focuses it, esc clears. typing shows a result list instead of the page: section · group, name, hint excerpt, matches purple
+* case and accents ignored, german + english (english from `Localization/en.lproj`), several words = all must match. rank: name > keyword > section > hint, word start > part of a word. synonyms: `SettingsSearch.synonyms`
+* click / enter -> section, scroll to the row, purple for 1.5 s. ↑ / ↓ selects. the search stays until cleared or a section is clicked
+* index: `SettingsIndex` (section, group, anchor id, label key, hint key, keywords, `alt` = row shown instead while the row is hidden). one entry per key action (KEYBOARD) and per controller block field
+* every row carries `.settingsAnchor("<id>")`. unit test: each index anchor exactly once in `Sources/MixApp`, each anchor in the index, every label / section / hint key has an english string. self test line: entries, time per 3-letter search (< 2 ms). ui test `einstellungen-suche`
+* new row = `.settingsAnchor` on the row + entry in `SettingsIndex` + english string
+
 ## ◆ LAYOUT
 
 * window resizable, min 720 × 520, default 820 × 640
@@ -11,6 +20,7 @@ everything under ⌘, saved as json in the user defaults (`prefs.v1`).
 * toggles as squares (red = on), sliders with value + unit (s, ms, pt), hints in small mono
 * controller: one block per unit (side, left / right deck, browser pane, fx unit, blink, startup show)
 * new section = one line in `SettingsView.tabs`
+* sections with more than 40 rows are built lazily (tag colors, plugin list), all others completely, so every anchor exists for the search jump
 
 ## ◆ AUDIO
 

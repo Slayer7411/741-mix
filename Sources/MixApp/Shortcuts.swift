@@ -272,6 +272,7 @@ enum KeyMonitor {
             return true
         }
         guard !recording, NSApp.modalWindow == nil, let c = KeyCombo(event: e) else { return false }
+        if c == KeyCombo("f"), SettingsNav.handleFind() { return true }   // ⌘F in den Einstellungen: Suchfeld
         let keys = actions.mix.prefs.keys
         var a = keys.action(for: c)
         // Taste ohne ⌘/⌥/⌃: Shift egal, solange Shift + Taste nicht eigens belegt ist (wie bisher bei der Leertaste)

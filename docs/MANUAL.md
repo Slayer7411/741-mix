@@ -127,6 +127,14 @@ a profile = named set of view settings: decks shown (1 / 2 / 4), internal mixer,
 
 click on the meters -> details (keylock lookahead, own vs device overloads).
 
+### settings (⌘,)
+
+* sections left, page right. full list: [settings](settings.md)
+* search field on top of the sidebar, ⌘F focuses it, esc clears. typing replaces the page with a result list: section · group, setting name, part of the hint, matches in purple. name before keyword before group before hint, word start before part of a word
+* german and english terms, case and accents ignored (`hohen` finds `Höhen`), several words = all must match. a few synonyms: latency ↔ buffer, sample rate ↔ rate, bpm ↔ tempo
+* every key action of KEYBOARD and the controller blocks are in the index too (`loop` also finds the loop key)
+* click or enter -> opens the section, scrolls to the row and marks it purple for 1.5 s. ↑ / ↓ selects a result. the search stays until cleared or a section is clicked; `◆ n TREFFER` under the field returns to the list. a hidden row (e.g. preset fields while the waveform style is not 3-band) -> the row that shows it
+
 ## ◆ 04 · DECKS
 
 ### header

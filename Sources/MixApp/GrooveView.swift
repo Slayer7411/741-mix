@@ -341,15 +341,21 @@ struct GrooveSettingsSection: View {
             LabeledContent("Name der MIDI-Quelle") {
                 TextField("", text: $mix.prefs.groove.sourceName).settingsField()
             }
+            .settingsAnchor("decks.groove.name")
             Stepper("Kanal Bass: \(mix.prefs.groove.bassChannel)", value: $mix.prefs.groove.bassChannel, in: 1...16)
+                .settingsAnchor("decks.groove.bass")
             Stepper("Kanal Drums: \(mix.prefs.groove.drumChannel)", value: $mix.prefs.groove.drumChannel, in: 1...16)
+                .settingsAnchor("decks.groove.drums")
             Stepper("Oktave Bass: \(mix.prefs.groove.bassOctave) (C\(mix.prefs.groove.bassOctave) = \(12 * (mix.prefs.groove.bassOctave + 2)))",
                     value: $mix.prefs.groove.bassOctave, in: 0...3)
+            .settingsAnchor("decks.groove.octave")
             Picker("Länge ohne Loop", selection: $mix.prefs.groove.bars) {
                 Text("1 Takt").tag(1)
                 Text("2 Takte").tag(2)
             }
+            .settingsAnchor("decks.groove.bars")
             Stepper("Versatz (ms): \(Int(mix.prefs.groove.offsetMs))", value: $mix.prefs.groove.offsetMs, in: -100...100, step: 1)
+                .settingsAnchor("decks.groove.offset")
             Text("deck-zeile groove: muster des tracks am grid lesen (aktiver loop, sonst ab der nächsten eins), hats / bass dazu erzeugen. ▶ midi = virtuelle midi-quelle im takt der clock, in der daw als midi-eingang wählen. bass = grundton aus dem key, kanal 10 = drums (42 / 46 hats). ziehen aus dem raster oder .mid = midi-datei.")
                 .settingsHint()
         }

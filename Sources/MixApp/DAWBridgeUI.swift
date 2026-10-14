@@ -358,10 +358,12 @@ struct DAWBridgeSettings: View {
         let bridge = DAWBridgeModel.shared
         Section("DAW-Brücke") {
             Toggle("Warp-Marker und Position aus der DAW empfangen (Remote Script)", isOn: $mix.prefs.ui.dawBridge)
+                .settingsAnchor("browser.daw")
             Stepper(value: Binding(get: { mix.prefs.ui.dawBridgePort }, set: { mix.prefs.ui.dawBridgePort = max(1024, min(65535, $0)) }),
                     in: 1024...65535) {
                 Text(verbatim: "UDP-Port \(mix.prefs.ui.dawBridgePort)")
             }
+            .settingsAnchor("browser.dawport")
             Text(bridge.startError ?? (bridge.connected ? String(localized: "verbunden: \(bridge.clips.count) Clips")
                                                         : String(localized: "keine Verbindung")))
                 .settingsHint()

@@ -124,6 +124,7 @@ enum UISelfTest {
             ("playlist-baum", playlistTree),
             ("mehrfach-sortierung", multiSort),
             ("wellenform-preset", wavePreset),
+            ("einstellungen-suche", settingsSearch),
             ("aufnahme", recording),
             ("linien", gridLines),
             ("rip", ripCheck),
@@ -1943,5 +1944,115 @@ extension UISelfTest {
         u.spin(2) { !rips.openKeys.contains(track.key) }
         check(rips.open(track.key).isEmpty && rips.store.entry(for: track.key)?.done == [f.id], "RIP-Bereich: Befund nicht erledigt")
         log("rip-bereich: „\(label)“ · \(via) -> entfernt \(String(format: "%.1f", dur0 - dur1)) s · erledigt")
+    }
+}
+
+extension UISelfTest {
+    /// Einstellungen in eigenem Offscreen-Fenster (900 × 600, scrollt): „puffer“ ins Suchfeld, erster Treffer per Klick
+    /// -> Bereich AUDIO, Zeile Puffer lila und sichtbar; „parallel“ + Enter -> Zeile ganz unten in AUDIO sichtbar
+    /// (Sprung scrollt); esc leert. Kommt ein synthetisches Ereignis nicht an: Direktaktion (steht im Log)
+    static func settingsSearch(_ u: UIDriver, _ t: [Track]) {
+        let nav = SettingsNav(tab: "DECKS")
+        let root = SettingsView(selection: "DECKS", nav: nav).environment(u.mix).environment(u.browser).environment(u.store)
+            .environment(ControllerStatus())
+        let host = NSHostingView(rootView: root)
+        let size = NSSize(width: 900, height: 600)
+        let w = UITestWindow(contentRect: NSRect(origin: UITestWindow.origin, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        w.alphaValue = 0
+        w.ignoresMouseEvents = true
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.contentView = host
+        w.setContentSize(size)
+        w.orderFrontRegardless()
+        defer {
+            w.orderOut(nil)
+            u.spin(0.3)
+        }
+        func views() -> [NSView] {
+            func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+            return all(w.contentView?.superview ?? host)
+        }
+        func mark(_ name: String) -> NSView? { views().first { ($0 as? UITestMark.V)?.name == name } }
+        func frame(_ v: NSView) -> NSRect { v.convert(v.bounds, to: nil) }
+        u.spin(5) { mark("settings search") != nil }
+        guard let fieldMark = mark("settings search") else { fail("Einstellungen: Suchfeld nicht gefunden") }
+        let field = views().compactMap { $0 as? NSTextField }.first { $0.isEditable && frame($0).intersects(frame(fieldMark)) }
+        func type(_ text: String) {
+            if let field, w.makeFirstResponder(field), let ed = field.currentEditor() as? NSTextView {
+                ed.selectAll(nil)
+                ed.insertText(text, replacementRange: ed.selectedRange())
+            }
+            u.spin(1) { nav.query == text && nav.showResults }
+            if nav.query != text {
+                log("einstellungen-suche: tippen ins suchfeld kommt nicht an – setze direkt")
+                nav.query = text
+                u.spin(0.5)
+            }
+        }
+        /// Zeile mit lila Rahmen: sichtbar im Fenster?
+        func flashed(_ anchor: String) -> NSRect? {
+            u.spin(2) { nav.flash == anchor && mark("settings flash") != nil }
+            guard nav.flash == anchor, let m = mark("settings flash") else { return nil }
+            return frame(m)
+        }
+        let content = NSRect(origin: .zero, size: size)
+
+        // „puffer“ -> Trefferliste, Klick auf den ersten Treffer
+        type("puffer")
+        let hits = SettingsSearch.shared.search("puffer")
+        check(hits.first?.entry.anchor == "audio.buffer", "erster Treffer für „puffer“: \(hits.first?.entry.anchor ?? "-")")
+        u.spin(2) { mark("settings hit") != nil }
+        guard let hitMark = mark("settings hit") else { fail("Trefferliste ohne Treffer") }
+        let r = frame(hitMark), p = NSPoint(x: r.midX, y: r.midY)
+        let top = w.contentView?.superview ?? host
+        if let hit = top.hitTest(top.convert(p, from: nil)) {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                guard let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                                 pressure: type == .leftMouseUp ? 0 : 1) else { fail("kein Mausereignis") }
+                if type == .leftMouseDown { hit.mouseDown(with: e) } else { hit.mouseUp(with: e) }
+            }
+        }
+        u.spin(1) { nav.tab == "AUDIO" && !nav.showResults }
+        if nav.showResults {
+            log("einstellungen-suche: klick auf den treffer kommt nicht an – springe direkt")
+            nav.open(hits[0].entry)
+        }
+        check(nav.tab == "AUDIO" && !nav.showResults, "Sprung: Bereich \(nav.tab), Trefferliste \(nav.showResults)")
+        check(nav.query == "puffer", "Suche nach dem Sprung geleert")
+        guard let buf = flashed("audio.buffer") else { fail("Zeile Puffer nicht hervorgehoben (flash \(nav.flash ?? "-"))") }
+        check(content.contains(NSPoint(x: buf.midX, y: buf.midY)), "Zeile Puffer nicht sichtbar: \(buf)")
+
+        // „parallel“ + Enter: letzte Zeile von AUDIO, muss gescrollt werden
+        type("decks parallel")
+        check(nav.showResults, "Trefferliste kommt nach neuer Eingabe nicht zurück")
+        if let ed = field?.currentEditor() as? NSTextView { ed.insertNewline(nil) }
+        u.spin(1) { !nav.showResults }
+        if nav.showResults {
+            log("einstellungen-suche: enter kommt nicht an – springe direkt")
+            if let h = SettingsSearch.shared.search("decks parallel").first { nav.open(h.entry) }
+        }
+        guard let par = flashed("audio.parallel") else { fail("Zeile Decks parallel nicht hervorgehoben (flash \(nav.flash ?? "-"))") }
+        check(content.contains(NSPoint(x: par.midX, y: par.midY)), "Zeile Decks parallel nicht sichtbar (Sprung scrollt nicht): \(par)")
+
+        // Hervorhebung geht nach ~1,5 s weg; ↓ wählt den nächsten Treffer, esc leert die Suche
+        u.spin(3) { nav.flash == nil }
+        check(nav.flash == nil, "Hervorhebung bleibt stehen")
+        func key(_ chars: String, _ code: UInt16) {
+            guard let field, w.makeFirstResponder(field),
+                  let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: w.windowNumber, context: nil, characters: chars, charactersIgnoringModifiers: chars,
+                                           isARepeat: false, keyCode: code) else { return }
+            w.sendEvent(e)
+            u.spin(0.2)
+        }
+        type("loop")
+        key(String(UnicodeScalar(NSDownArrowFunctionKey)!), 125)
+        if nav.selected != 1 { log("einstellungen-suche: ↓ kommt nicht an (synthetisch), gewählt \(nav.selected)") }
+        key("\u{1b}", 53)
+        u.spin(0.5) { nav.query.isEmpty }
+        if !nav.query.isEmpty { log("einstellungen-suche: esc kommt nicht an (synthetisch)"); nav.query = "" }
+        log(String(format: "einstellungen-suche: puffer -> AUDIO y %.0f · decks parallel -> y %.0f (fenster %.0f)", buf.midY, par.midY, size.height))
     }
 }

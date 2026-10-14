@@ -201,12 +201,14 @@ struct CloudSettings: View {
         Form {
             Section("Cloud-Library") {
                 LabeledContent("Stand") { Text(verbatim: stateLine(c)).foregroundStyle((c.counts[.cloud] ?? 0) > 0 ? Theme.gold : Theme.bone) }
+                    .settingsAnchor("cloud.state")
                 LabeledContent("Geprüft") {
                     HStack(spacing: 10) {
                         Text(verbatim: c.lastScan.map { Theme.timeFormat.string(from: $0) + String(format: " · %.2f s", c.scanSeconds) } ?? "—")
                         Button("Jetzt prüfen") { c.rescan(quiet: false) }
                     }
                 }
+                .settingsAnchor("cloud.checked")
                 Text("spalte ☁ im browser: ● lokal · ☁ nur online · ↓ lädt · ✕ fehlt. rechtsklick auf tracks oder eine liste -> bereitmachen. set-check im browser-kopf: preparation + liste lokal? geprüft per dateistatus, ohne etwas zu laden; neu bei änderungen im ordner und alle 10 min.")
                     .settingsHint()
             }
@@ -214,13 +216,17 @@ struct CloudSettings: View {
                 Picker("Lokal halten", selection: $mix.prefs.cloud.keepMode) {
                     ForEach(CloudKeepMode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
+                .settingsAnchor("cloud.keep")
                 Picker("Gleichzeitige Downloads", selection: $mix.prefs.cloud.parallel) {
                     ForEach([1, 2, 3, 4], id: \.self) { Text(verbatim: "\($0)").tag($0) }
                 }
+                .settingsAnchor("cloud.parallel")
                 Picker("Mindestens frei lassen", selection: $mix.prefs.cloud.minFreeGB) {
                     ForEach([5, 10, 20, 50], id: \.self) { Text(verbatim: "\($0) GB").tag($0) }
                 }
+                .settingsAnchor("cloud.minfree")
                 Toggle("Beim Beenden offene Downloads an den Anbieter übergeben", isOn: $mix.prefs.cloud.handOffOnQuit)
+                    .settingsAnchor("cloud.handoff")
                 Text("ausgelagerte tracks (speicher optimieren) werden neu geholt. lokal halten lädt einzeln und zuletzt, bereitmachen geht vor, neue downloads warten, solange ein deck lädt. übergeben: der anbieter lädt nach dem beenden weiter, ohne MINOS-741.")
                     .settingsHint()
             }
@@ -229,9 +235,11 @@ struct CloudSettings: View {
                     Text(verbatim: c.folder.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "—")
                         .lineLimit(2).truncationMode(.head)
                 }
+                .settingsAnchor("cloud.folder")
                 LabeledContent("Offline verfügbar") {
                     Text(verbatim: pinLine(c)).foregroundStyle(c.folderStatus?.pin == .notPinned ? Theme.gold : Theme.bone)
                 }
+                .settingsAnchor("cloud.offline")
                 HStack(spacing: 8) {
                     Button("Im Finder zeigen") { c.revealFolder() }.disabled(c.folder == nil)
                     Button("Prüfen") { c.checkFolder() }.disabled(c.folder == nil)
