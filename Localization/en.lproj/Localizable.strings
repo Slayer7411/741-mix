@@ -648,6 +648,10 @@
 
 "Zeilen" = "Rows";
 "Zeilen je Deck" = "Rows per deck";
+"Größen" = "Sizes";
+"Cover-Breite (pt)" = "Cover width (pt)";
+"Übersicht Höhe (pt)" = "Overview height (pt)";
+"für alle decks, wächst mit dem zoom. cover bis 40 pt im kopf, darüber eigene spalte links über kopf und wellenform; rechts bleiben mindestens 360 pt für titel und anzeigen, sonst wird das cover schmaler. cover an/aus: ⌘, -> browser -> cover. beide werte gehören zum ansichts-profil." = "all decks, scales with the zoom. cover up to 40 pt in the header, above that its own column left of header and waveform; at least 360 pt stay on the right for title and readouts, else the cover gets narrower. cover on / off: ⌘, -> browser -> cover. both values belong to the view profile.";
 "Zusatzinfos (Zeit, BPM, Code, Key)" = "Readouts (time, BPM, code, key)";
 "Phasenbalken" = "Phase bar";
 "Übersicht" = "Overview";
@@ -862,7 +866,7 @@
 "Aktualisieren" = "Update";
 "Aktuelle Ansicht speichern …" = "Save current view …";
 "Name" = "Name";
-"profil = decks (1 / 2 / 4), mixer, fx-units, zeilen je deck, browser (anordnung, höhe, baum, groß), statusleiste, last-anzeigen, wellenform-mindesthöhe, cover, vorschau. nicht: audio, controller, wellenform-stil und farben, tags, tastatur. umschalten: profil-menü links in der werkzeugleiste, menü darstellung -> profil, die ersten vier per taste (⌘, -> tastatur), nächstes ⌃⌥⇥. ◆ = aktiv, * = ansicht seitdem geändert -> aktualisieren übernimmt sie." = "profile = decks (1 / 2 / 4), mixer, fx units, rows per deck, browser (layout, height, tree, big), status bar, load meters, waveform minimum height, cover, preview. not: audio, controller, waveform style and colors, tags, keys. switch: profile menu left in the toolbar, view menu -> profile, the first four by key (⌘, -> keyboard), next ⌃⌥⇥. ◆ = active, * = view changed since -> update takes it over.";
+"profil = decks (1 / 2 / 4), mixer, fx-units, zeilen je deck, browser (anordnung, höhe, baum, groß), statusleiste, last-anzeigen, wellenform-mindesthöhe, cover und cover-breite, übersicht-höhe, vorschau. nicht: audio, controller, wellenform-stil und farben, tags, tastatur. umschalten: profil-menü links in der werkzeugleiste, menü darstellung -> profil, die ersten vier per taste (⌘, -> tastatur), nächstes ⌃⌥⇥. ◆ = aktiv, * = ansicht seitdem geändert -> aktualisieren übernimmt sie." = "profile = decks (1 / 2 / 4), mixer, fx units, rows per deck, browser (layout, height, tree, big), status bar, load meters, waveform minimum height, cover and cover width, overview height, preview. not: audio, controller, waveform style and colors, tags, keys. switch: profile menu left in the toolbar, view menu -> profile, the first four by key (⌘, -> keyboard), next ⌃⌥⇥. ◆ = active, * = view changed since -> update takes it over.";
 "Profil löschen" = "Delete profile";
 "Rückgängig" = "Undo";
 "Wiederherstellen" = "Redo";

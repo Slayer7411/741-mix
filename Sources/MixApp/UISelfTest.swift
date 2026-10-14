@@ -127,6 +127,7 @@ enum UISelfTest {
             ("aufnahme", recording),
             ("linien", gridLines),
             ("rip", ripCheck),
+            ("deck-groessen", deckSizes),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1525,6 +1526,83 @@ extension UISelfTest {
     /// Danach gelöscht, Auswahl wie vorher
     /// Beatgrid-Linien fein / kräftig: Auswahl in ⌘, -> ANZEIGE vorhanden; umschalten ändert die Linienbreiten der
     /// Grid-Ebene im Deck (Gerätepixel aus der Ebene, kein Bildvergleich)
+    /// ⌘, DECKS: Cover-Breite und Übersicht-Höhe (Werte direkt gesetzt). Cover 120 pt: eigene Spalte links, quadratisch,
+    /// Kopf rechts daneben und nicht höher; Übersicht 90 pt hoch, Bild in passender Auflösung. 4 Decks, Cover 200 pt:
+    /// begrenzt, rechts bleiben `DeckCoverFit.minRest` pt
+    static func deckSizes(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix
+        let ui0 = mix.prefs.ui
+        defer { mix.prefs.ui = ui0; u.spin(0.5) }
+        let root = SettingsView(selection: "DECKS").environment(mix).environment(u.browser).environment(u.store)
+        let host = NSHostingView(rootView: root)
+        let w = UITestWindow(contentRect: NSRect(origin: UITestWindow.origin, size: NSSize(width: 900, height: 4000)), styleMask: [.titled],
+                             backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        w.alphaValue = 0
+        w.ignoresMouseEvents = true
+        w.contentView = host
+        w.orderFrontRegardless()
+        func marks() -> [String] {
+            func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+            return all(w.contentView?.superview ?? host).compactMap { ($0 as? UITestMark.V)?.name }
+        }
+        u.spin(5) { Set(marks()).isSuperset(of: ["cover size", "overview height"]) }
+        let found = Set(marks()).isSuperset(of: ["cover size", "overview height"])
+        w.orderOut(nil)
+        check(found, "⌘, DECKS: Regler Cover-Breite / Übersicht Höhe fehlen")
+
+        // Übersicht: LiveCanvas in Deck A, breit, unter der Wellenform (Phasenbalken 8 pt, Übersicht ab 12 pt)
+        func overview() -> NSRect? {
+            guard let deck = u.named("deck A") else { return nil }
+            func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+            let dw = u.frame(deck).width
+            return all(deck).compactMap { $0 as? LiveCanvasView }.map { u.frame($0) }
+                .filter { $0.width > dw / 2 && $0.height >= 11 }.max { $0.height < $1.height }
+        }
+        func header() -> NSRect? { u.named("A header").map { u.frame($0) } }
+        mix.prefs.ui.deckCoverSize = UIPrefs().deckCoverSize
+        mix.prefs.ui.overviewHeight = UIPrefs().overviewHeight
+        u.spin(2) { overview().map { abs($0.height - 18) < 1 } ?? false }
+        guard let ov0 = overview(), header() != nil else { fail("Deck A: Übersicht oder Kopf nicht gefunden") }
+        check(abs(ov0.height - 18) < 1, "Übersicht Standard \(ov0.height) pt statt 18")
+        check(u.named("A cover") == nil, "Cover-Spalte schon bei 32 pt")
+        // Bezug: kleinste Spalte (Kopf ohne Cover, neu gemessen; frühere Fälle können die alte Messung hinterlassen)
+        mix.prefs.ui.deckCoverSize = 44
+        u.spin(2) { u.named("A cover") != nil }
+        guard let h0 = header() else { fail("Deck A: Kopf fehlt") }
+
+        mix.prefs.ui.deckCoverSize = 120
+        mix.prefs.ui.overviewHeight = 90
+        u.spin(3) { u.named("A cover") != nil && (overview().map { abs($0.height - 90) < 1 } ?? false) }
+        guard let cv = u.named("A cover").map({ u.frame($0) }), let ov = overview(), let h1 = header() else { fail("Cover-Spalte oder Übersicht fehlt nach dem Setzen") }
+        check(abs(cv.width - cv.height) < 1, "Cover nicht quadratisch: \(cv.size)")
+        check(abs(cv.width - 120) < 1, "Cover \(cv.width) pt statt 120 (Deck \(u.frame(u.named("deck A")!).width) pt)")
+        check(abs(ov.height - 90) < 1, "Übersicht \(ov.height) pt statt 90")
+        check(abs(h1.height - h0.height) < 1 && h1.height < cv.height, "Kopf wächst mit dem Cover: \(h0.height) → \(h1.height) pt")
+        check(h1.minX >= cv.maxX, "Kopf nicht rechts vom Cover: Kopf ab \(h1.minX), Cover bis \(cv.maxX)")
+        check(ov.minX >= cv.maxX, "Übersicht nicht rechts vom Cover")
+        let want = RenderedWaveform.overviewPixels(points: 90, zoom: mix.prefs.ui.zoom)
+        let cache = WaveformCache()
+        u.spin(30) { cache.waveform(for: mix.core.trackAudio(0), ui: mix.prefs.ui, preset: mix.wavePreset)?.overview?.height == want }
+        let px = cache.waveform(for: mix.core.trackAudio(0), ui: mix.prefs.ui, preset: mix.wavePreset)?.overview?.height ?? 0
+        check(px == want, "Übersichtsbild \(px) px hoch statt \(want)")
+
+        // 4 Decks, Cover 200: Breite begrenzt, Titel und Anzeigen behalten ihren Platz
+        mix.prefs.ui.deckCount = 4
+        mix.prefs.ui.deckCoverSize = 200
+        u.spin(2)
+        u.spin(3) { u.named("A cover") != nil }
+        guard let deck4 = u.named("deck A").map({ u.frame($0) }), let h4 = header() else { fail("4 Decks: Deck A fehlt") }
+        let cv4 = u.named("A cover").map { u.frame($0) }
+        let side4 = cv4?.width ?? 0
+        check(side4 <= 200 + 0.5, "Cover \(side4) pt über 200")
+        check(h4.width >= DeckCoverFit.minRest - 8 || side4 == 0, "Kopf neben dem Cover nur \(h4.width) pt (Deck \(deck4.width) pt, Cover \(side4) pt)")
+        check(abs(h4.height - h0.height) < 1, "Kopf bei 4 Decks \(h4.height) statt \(h0.height) pt")
+        log(String(format: "deck-groessen: 2 decks cover %.0f pt, kopf %.0f pt hoch (vorher %.0f), übersicht %.0f pt / %d px · 4 decks deck %.0f pt, cover %.0f pt, kopf %.0f pt breit",
+                   cv.width, h1.height, h0.height, ov.height, px, deck4.width, side4, h4.width))
+        if let out = ProcessInfo.processInfo.environment["MIX741_UITEST_SIZESHOT"] { shot(u, out, "deck-groessen") }
+    }
+
     static func gridLines(_ u: UIDriver, _ t: [Track]) {
         let mix = u.mix
         let weight0 = mix.prefs.ui.gridLineWeight, grid0 = mix.prefs.ui.showBeatgrid

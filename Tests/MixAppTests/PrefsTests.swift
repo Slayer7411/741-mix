@@ -73,3 +73,34 @@ import Testing
     let odd = AppPrefs.decode(Data(#"{"ui": {"gridLineWeight": "xyz", "zoom": 1.25}}"#.utf8))
     #expect(odd.ui.gridLineWeight == .fine && odd.ui.zoom == 1.25)
 }
+
+@MainActor @Test func deckSizesDefaultsAndOldPrefs() throws {
+    let ui = UIPrefs()
+    #expect(ui.deckCoverSize == 32 && ui.overviewHeight == 18)
+    #expect(ui.deckCoverInHeader && !ui.deckCoverColumn)
+    // alte Einstellungen ohne die Felder: Standard, gespeicherte Werte bleiben
+    let old = AppPrefs.decode(Data(#"{"ui": {"waveformHeight": 90, "showDeckCover": false}}"#.utf8))
+    #expect(old.ui.deckCoverSize == 32 && old.ui.overviewHeight == 18 && old.ui.waveformHeight == 90 && !old.ui.showDeckCover)
+    #expect(!old.ui.deckCoverInHeader && !old.ui.deckCoverColumn)
+    // Rundreise
+    var p = AppPrefs()
+    p.ui.deckCoverSize = 120
+    p.ui.overviewHeight = 90
+    let again = AppPrefs.decode(try JSONEncoder().encode(p))
+    #expect(again.ui.deckCoverSize == 120 && again.ui.overviewHeight == 90 && again == p)
+    #expect(again.ui.deckCoverColumn && !again.ui.deckCoverInHeader)
+}
+
+@MainActor @Test func deckCoverFitKeepsRoomForHeader() {
+    // breit: gewünschte Breite
+    #expect(DeckCoverFit.side(wanted: 120, deckWidth: 800, deckHeight: 300, zoom: 1, spacing: 6) == 120)
+    // schmal: rechts bleiben minRest
+    let s = DeckCoverFit.side(wanted: 200, deckWidth: 480, deckHeight: 300, zoom: 1, spacing: 6)
+    #expect(s == 114)   // 480 − minRest 360 − Abstand 6
+    // niedrig: höchstens Deck-Höhe
+    #expect(DeckCoverFit.side(wanted: 200, deckWidth: 900, deckHeight: 150, zoom: 1, spacing: 6) == 150)
+    // zu schmal: keine Spalte
+    #expect(DeckCoverFit.side(wanted: 200, deckWidth: 380, deckHeight: 300, zoom: 1, spacing: 6) == 0)
+    // Zoom: Rest wächst mit
+    #expect(DeckCoverFit.side(wanted: 200, deckWidth: 700, deckHeight: 300, zoom: 1.5, spacing: 9) == 151)   // 700 − 540 − 9
+}
