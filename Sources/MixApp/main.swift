@@ -154,7 +154,8 @@ struct ContentView: View {
     }
 
     private var deckArea: some View {
-        VStack(spacing: 6.z) {
+        let gap = max(0, min(12, mix.prefs.ui.deckGap)).z
+        return VStack(spacing: 2.z) {
             TopBarHost()
             // Decks mit fester Höhe: zwei flexible Decks übereinander ließen SwiftUI jede Zustandsänderung
             // ~200 ms lang Layout rechnen (kombinatorische Messungen verschachtelter Stacks); jedes Deck in eigener
@@ -163,15 +164,15 @@ struct ContentView: View {
             GeometryReader { geo in
                 let n = mix.deckCount
                 let rows: CGFloat = n >= 4 ? 2 : 1
-                let deckH = max(120.z, (geo.size.height - (rows - 1) * 6.z) / rows)
-                HStack(alignment: .top, spacing: 6.z) {
-                    VStack(spacing: 6.z) {
+                let deckH = max(120.z, (geo.size.height - (rows - 1) * gap) / rows)
+                HStack(alignment: .top, spacing: gap) {
+                    VStack(spacing: gap) {
                         DeckHost(d: 0).frame(height: deckH)
                         if n >= 4 { DeckHost(d: 2).frame(height: deckH) }
                     }
                     if mix.prefs.ui.showMixer { MixerView().fixedSize(horizontal: true, vertical: false) }
                     if n >= 2 {
-                        VStack(spacing: 6.z) {
+                        VStack(spacing: gap) {
                             DeckHost(d: 1).frame(height: deckH)
                             if n >= 4 { DeckHost(d: 3).frame(height: deckH) }
                         }
@@ -179,8 +180,9 @@ struct ContentView: View {
                 }
             }
         }
-        .padding([.horizontal, .top], 6.z)
-        .padding(.bottom, 1.z)
+        .padding(.horizontal, gap)
+        .padding(.top, max(gap, 2.z))
+        .padding(.bottom, gap)
     }
 
     @ViewBuilder private var browsers: some View {

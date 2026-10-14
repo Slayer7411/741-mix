@@ -52,6 +52,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 
 ## ◆ DISPLAY
 
+* view: decks shown (1 / 2 / 4), preview start, gap between decks 0-12 pt (0 = waveforms end at the deck frame and the window edge)
 * profiles: list (rename, apply, update, ↑ / ↓, ✕), save current view -> [manual](MANUAL.md#view-profiles). `ui.layoutProfiles`, `ui.activeLayoutProfile`
 * waveform style: 3-band blend (default) / spectrum (6 bands) / mono; palette (not for spectrum): spectrum (rgb, default) / 741 bone / orange / blue / classic; high emphasis 0-3
 * palette: 741 bone, orange, blue / white, classic (not for spectrum fine, it has fixed band colors -> [manual](MANUAL.md#-05--waveform--grid))
