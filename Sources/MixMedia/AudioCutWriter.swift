@@ -1,6 +1,7 @@
 import AVFoundation
 import AudioToolbox
 import Foundation
+import MixCore
 
 /// Schreibt einen geschnittenen Track als Apple Lossless (.m4a). Nur auf einem Hintergrund-Thread aufrufen
 /// (liest und schreibt Dateien, auch im Cloud-Ordner). Das Original wird nie geöffnet zum Schreiben.
@@ -97,16 +98,24 @@ public enum AudioCutWriter {
     /// `progress` 0…1 je Block, false = abbrechen (nichts bleibt liegen)
     public static func write(_ splice: AudioSplice, source: Source, to url: URL, progress: (Double) -> Bool = { _ in true }) throws {
         guard splice.frames > 0, splice.sourceFrames <= source.frames else { throw CutError.empty }
-        let chans = source.channels.count
+        try write(frames: splice.frames, channels: source.channels.count, sampleRate: source.sampleRate, format: .alac(source.bitDepth),
+                  to: url, render: { c, out, from, n in splice.render(source.channels[c], into: out, from: from, count: n) },
+                  progress: progress)
+    }
+
+    /// Kanal `c`, Ausgabe-Frames `from ..< from + count` nach `out`
+    public typealias Render = (_ channel: Int, _ out: UnsafeMutablePointer<Float>, _ from: Int, _ count: Int) -> Void
+
+    /// Ausgabe blockweise in `url` schreiben (Format `format`, die Endung von `url` wählt den Container): versteckte
+    /// Datei daneben, fertig -> umbenennen. `gain` = Faktor je Sample (1 = Bit-genau die gerenderten Samples),
+    /// `clamp` = auf ±1 begrenzen. `progress` 0…1 je Block, false = abbrechen (nichts bleibt liegen)
+    public static func write(frames: Int, channels chans: Int, sampleRate: Double, format: Format, to url: URL, gain: Float = 1,
+                             clamp: Bool = false, render: Render, progress: (Double) -> Bool = { _ in true }) throws {
+        guard frames > 0, chans > 0 else { throw CutError.empty }
         let tmp = url.deletingLastPathComponent().appendingPathComponent("." + url.deletingPathExtension().lastPathComponent
-                                                                           + ".partial-\(UUID().uuidString.prefix(6)).m4a")
-        var settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatAppleLossless,
-            AVSampleRateKey: source.sampleRate,
-            AVNumberOfChannelsKey: chans,
-            AVEncoderBitDepthHintKey: source.bitDepth,
-        ]
-        if chans > 2 {   // Apple Lossless kennt nur feste Belegungen bis 8 Kanäle
+                                                                           + ".partial-\(UUID().uuidString.prefix(6))." + url.pathExtension)
+        var settings = try format.settings(sampleRate: sampleRate, channels: chans)
+        if format.container == .alac, chans > 2 {   // Apple Lossless kennt nur feste Belegungen bis 8 Kanäle
             let tags: [Int: AudioChannelLayoutTag] = [3: kAudioChannelLayoutTag_MPEG_3_0_B, 4: kAudioChannelLayoutTag_MPEG_4_0_B,
                                                       5: kAudioChannelLayoutTag_MPEG_5_0_D, 6: kAudioChannelLayoutTag_MPEG_5_1_D,
                                                       7: kAudioChannelLayoutTag_MPEG_6_1_A, 8: kAudioChannelLayoutTag_MPEG_7_1_A]
@@ -122,13 +131,16 @@ public enum AudioCutWriter {
                   let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(block)),
                   let out = buf.floatChannelData else { throw CutError.format }
             var at = 0
-            while at < splice.frames {
-                let n = min(block, splice.frames - at)
-                for c in 0..<chans { splice.render(source.channels[c], into: out[c], from: at, count: n) }
+            while at < frames {
+                let n = min(block, frames - at)
+                for c in 0..<chans {
+                    render(c, out[c], at, n)
+                    Amplify.apply(out[c], count: n, factor: gain, clamp: clamp)
+                }
                 buf.frameLength = AVAudioFrameCount(n)
                 try file.write(from: buf)
                 at += n
-                if !progress(Double(at) / Double(splice.frames)) { throw CutError.cancelled }
+                if !progress(Double(at) / Double(frames)) { throw CutError.cancelled }
             }
             file.close()
             try FileManager.default.moveItem(at: tmp, to: url)
