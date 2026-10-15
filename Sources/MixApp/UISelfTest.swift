@@ -2138,7 +2138,7 @@ extension UISelfTest {
         // Sprung aus der Effekt-Auswahl (gesperrtes Plugin): Bereich PLUGINS, eine stehende Suche geht weg
         type("reverb")
         u.mix.settingsRequest = "PLUGINS"
-        u.spin(1) { nav.tab == "PLUGINS" && u.mix.settingsRequest == nil }
+        u.spin(3) { nav.tab == "PLUGINS" && u.mix.settingsRequest == nil }   // unter Last (Load > 40) braucht der Umschalt-Durchlauf > 1 s
         check(nav.tab == "PLUGINS" && nav.query.isEmpty && !nav.showResults && u.mix.settingsRequest == nil,
               "settingsRequest: Bereich \(nav.tab), Suche „\(nav.query)“")
         log(String(format: "einstellungen-suche: puffer -> AUDIO y %.0f · decks parallel -> y %.0f (fenster %.0f)", buf.midY, par.midY, size.height))
