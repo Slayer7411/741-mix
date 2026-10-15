@@ -190,6 +190,29 @@ struct SlotParamsView: View {
     }
 }
 
+/// EDIT eines Plugin-Slots: Plugin-Fenster öffnen (ein offenes wird nach vorn geholt, wie die übrigen Fenster).
+/// Gesperrt, solange das Plugin lädt oder nicht geladen ist (dann mit Grund als Hilfe)
+struct PluginEditButton: View {
+    @Environment(MixModel.self) private var mix
+    let b: Int
+    let k: Int
+    var compact = false
+    var width: CGFloat? = nil
+
+    var body: some View {
+        let ready = mix.slotReady(b, k)
+        let err = mix.pluginError(b)   // liest den Fehlerstand mit, damit die Hilfe nach dem Laden neu kommt
+        let loading = mix.core.slotLoading(b, slot: k).loading
+        DeckButton(title: "EDIT", width: width, compact: compact) { PluginWindow.show(unit: b, slot: k, core: mix.core) }
+            .disabled(!ready)
+            .opacity(ready ? 1 : 0.4)
+            .help(Text(verbatim: ready ? String(localized: "Plugin-Fenster öffnen")
+                       : loading ? String(localized: "Plugin lädt noch")
+                       : err.map { String(localized: "Plugin nicht geladen · \($0)") } ?? String(localized: "Plugin nicht geladen")))
+            .background(UITestMark(name: "fx edit \(b) \(k)"))
+    }
+}
+
 /// das ganze Rack (Popover): je Slot an/aus, Effekt (Klick = anderer), D/W, ▲▼, EDIT, ✕; + SLOT, Vorlagen, gemerkte Racks
 struct RackView: View {
     @Environment(MixModel.self) private var mix
@@ -289,18 +312,18 @@ struct RackView: View {
             DeckButton(title: "▼", width: 12, verbatim: true) { mix.moveSlot(b, slot: k, by: 1) }
                 .opacity(k < count - 1 ? 1 : 0.3).disabled(k >= count - 1)
                 .help("später im Signalfluss")
-            DeckButton(title: "EDIT", width: 26) { edit(k, slot) }
-                .help(slot.isPlugin ? "Plugin-Fenster öffnen" : "Parameter des Effekts")
-                .popover(isPresented: Binding(get: { params == k }, set: { if !$0 { params = nil } }), arrowEdge: .bottom) {
-                    SlotParamsView(b: b, k: k).environment(mix)
-                }
+            if slot.isPlugin {
+                PluginEditButton(b: b, k: k, width: 26)
+            } else {
+                DeckButton(title: "EDIT", width: 26) { params = k }
+                    .help("Parameter des Effekts")
+                    .popover(isPresented: Binding(get: { params == k }, set: { if !$0 { params = nil } }), arrowEdge: .bottom) {
+                        SlotParamsView(b: b, k: k).environment(mix)
+                    }
+            }
             DeckButton(title: "✕", width: 12, verbatim: true) { mix.removeSlot(b, slot: k) }
                 .help("Slot entfernen")
         }
-    }
-
-    private func edit(_ k: Int, _ slot: FXSlot) {
-        if slot.isPlugin { PluginWindow.show(unit: b, slot: k, core: mix.core) } else { params = k }
     }
 
     private func slotHelp(_ s: FXSlot, _ latency: Double?) -> String {
@@ -411,6 +434,11 @@ private struct SlotRow: View {
             .buttonStyle(.plain)
             .help("an/aus (aus = durchgereicht, Fahne klingt aus)")
             MixBar(value: slot.mix) { mix.setSlotMix(b, slot: k, $0) }
+            if slot.isPlugin {
+                PluginEditButton(b: b, k: k, compact: true, width: 24)
+            } else {
+                Color.clear.frame(width: 24.z, height: 11.z)
+            }
         }
         .frame(height: 11.z)
         .background(Rectangle().fill(dropping ? Theme.secondary.opacity(0.25) : .clear))
@@ -420,6 +448,7 @@ private struct SlotRow: View {
             Button(slot.isPlugin ? "Plugin-Fenster öffnen" : "Parameter …") {
                 if slot.isPlugin { PluginWindow.show(unit: b, slot: k, core: mix.core) } else { editing = true }
             }
+            .disabled(slot.isPlugin && !ready)
             Button(slot.on ? "Aus" : "An") { mix.setSlotOn(b, slot: k, !slot.on) }
             Divider()
             Button("Früher im Signalfluss") { mix.moveSlot(b, slot: k, by: -1) }.disabled(k == 0)

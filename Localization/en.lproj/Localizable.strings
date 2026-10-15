@@ -1118,6 +1118,8 @@
 "Master-FX an/aus" = "Master FX on/off";
 "Plugin nicht geladen · %@" = "plugin not loaded · %@";
 "Plugin nicht ladbar · %@" = "plugin cannot be loaded · %@";
+"Plugin lädt noch" = "plugin still loading";
+"Plugin nicht geladen" = "plugin not loaded";
 "MASTER: %@ antwortet nicht rechtzeitig – %lld Blöcke trocken" = "MASTER: %@ not responding in time – %lld blocks dry";
 
 "BUY ME A BEER 🍺 … ODER EIN PAAR TOKENS" = "BUY ME A BEER 🍺 … OR A FEW TOKENS";

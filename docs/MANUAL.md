@@ -635,11 +635,13 @@ FX 1  RACK  +          D/W   knob 1   knob 2   knob 3
 3 REVERB  ○ ▬
 ```
 
-* row: slot number · effect (click = pick another) · ON dot · D/W bar (drag, double click = 100 %)
+* row: slot number · effect (click = pick another) · ON dot · D/W bar (drag, double click = 100 %) · EDIT on plugin rows
 * right click a row: parameters / plugin window, on / off, earlier / later, remove slot. drag a row onto another = move it there
 * `+` -> effect picker (add a slot at the end). up to 4 rows per column, 5-6 slots = 2 columns
 * RACK -> the whole rack: ON, effect, D/W, ▲ ▼, EDIT, ✕ per slot, `+ SLOT`, VORLAGEN, RACKS, plugin latency
 * EDIT on a built-in effect -> its parameters (D/W, knobs, switches, value with unit). on a plugin -> its window
+* EDIT on a plugin row (top bar and rack) opens the plugin window, raises it when open. greyed while the plugin loads or is not loaded (help says why). built-in rows have no EDIT in the top bar
+* master bus: no rows in the top bar, its slots and EDIT sit in the rack (`RACK` on MASTER)
 
 ### effect picker
 
