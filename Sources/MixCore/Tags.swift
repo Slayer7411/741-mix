@@ -70,21 +70,77 @@ public final class TagIndex {
     public struct Entry: Sendable {
         public let tags: [String]
         public let keys: [String]
+        /// Gruppe je Tag (`TagGroups.of`)
+        public let groups: [String?]
     }
 
     private var separators = ""
     private var cache: [String: Entry] = [:]
+    /// zuletzt gesehene Gruppe je Tag (Chips ohne ihren Kommentar-2-Text, z. B. der Filter im Kopf)
+    private var groupOf: [String: String] = [:]
 
     public init() {}
 
+    public func group(of tag: String) -> String? { groupOf[tag] }
+
     public func entry(_ text: String, separators seps: String) -> Entry {
-        if seps != separators { cache.removeAll(keepingCapacity: true); separators = seps }
+        if seps != separators { cache.removeAll(keepingCapacity: true); groupOf.removeAll(); separators = seps }
         if let e = cache[text] { return e }
         let tags = Tags.split(text, separators: seps)
-        let e = Entry(tags: tags, keys: tags.map(Tags.key))
+        let e = Entry(tags: tags, keys: tags.map(Tags.key), groups: TagGroups.of(tags))
+        for (t, g) in zip(tags, e.groups) where g != nil && g != t { groupOf[t] = g }
         cache[text] = e
         return e
     }
 
     public var count: Int { cache.count }
+}
+
+/// Gruppen in Kommentar 2: ein einzelner Großbuchstabe (`K`) beginnt eine Gruppe, die folgenden Tags gehören zu ihr;
+/// ein Wort nur aus Großbuchstaben (`BASIS`) ist eine Rolle und beendet die Gruppe.
+/// `K tief lang B sub schwer H off DRUMS` -> K: tief lang · B: sub schwer · H: off · Rolle: DRUMS
+public enum TagGroups {
+    /// Gruppe der Rollen-Tags
+    public static let role = "»"
+
+    public static func isMarker(_ tag: String) -> Bool {
+        tag.count == 1 && tag.first.map { $0.isLetter && $0.isUppercase } == true
+    }
+
+    public static func isRole(_ tag: String) -> Bool {
+        tag.count >= 2 && tag.allSatisfy { $0.isLetter && $0.isUppercase }
+    }
+
+    /// Gruppe je Tag: Marker = er selbst, Rolle = `role`, vor dem ersten Marker / nach einer Rolle nil
+    public static func of(_ tags: [String]) -> [String?] {
+        var cur: String?
+        return tags.map { t in
+            if isMarker(t) { cur = t; return t }
+            if isRole(t) { cur = nil; return role }
+            return cur
+        }
+    }
+}
+
+/// Gruppen-Profil eines Tracks für „passt zum Master“: erstes Wort je Gruppe (`K tief`, `B sub`, `H off`) und Rollen,
+/// alles in Vergleichsform
+public struct TagProfile: Hashable, Sendable {
+    public var primary: [String: String] = [:]
+    public var roles: Set<String> = []
+
+    public init() {}
+
+    public init(tags: [String], groups: [String?]) {
+        for (t, g) in zip(tags, groups) {
+            guard let g, !TagGroups.isMarker(t) else { continue }
+            if g == TagGroups.role { roles.insert(Tags.key(t)) } else if primary[g] == nil { primary[g] = Tags.key(t) }
+        }
+    }
+
+    public init(_ text: String, separators: String) {
+        let tags = Tags.split(text, separators: separators)
+        self.init(tags: tags, groups: TagGroups.of(tags))
+    }
+
+    public var isEmpty: Bool { primary.isEmpty && roles.isEmpty }
 }

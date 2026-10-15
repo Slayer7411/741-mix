@@ -787,7 +787,6 @@
 "Vorhören nicht möglich: %@" = "Preview not possible: %@";
 "Match (Harmonie, Tempo zum Master)" = "Match (harmony, tempo to the master)";
 "◆ PASST" = "◆ MATCH";
-"Nur Tracks, die zum Master passen: Key (gleich, ±1, Relativ) und Tempo im Fenster – einstellbar unter ⌘, → Browser" = "Only tracks that fit the master: key (same, ±1, relative) and tempo within the window – set under ⌘, → Browser";
 "Browser: Matching an/aus (passt zum Master)" = "Browser: matching on/off (fits the master)";
 "BROWSER" = "BROWSER";
 "Harmonie zum Master" = "Harmony to the master";
@@ -1533,3 +1532,15 @@
 "Bewertung" = "Rating";
 "Keine" = "None";
 "UNGESPIELT aus: der Track ist gespielt" = "UNPLAYED off: the track is played";
+"Nur Tracks, die zum Master passen: Key (gleich, ±1, Relativ), Tempo im Fenster, optional Tag-Gruppen (≈ ähnlich, ⇄ ergänzend) – einstellbar unter ⌘, → Browser" = "Only tracks that fit the master: key (same, ±1, relative), tempo within the window, optional tag groups (≈ similar, ⇄ complementary) – set under ⌘, → Browser";
+"Gruppen (K / B / H …)" = "Groups (K / B / H …)";
+"Tag-Gruppen (Kommentar 2)" = "Tag groups (comment 2)";
+"ähnlich" = "similar";
+"ergänzend" = "complementary";
+"gleich" = "same";
+"anders" = "different";
+"ROLLE" = "ROLE";
+"OHNE GRUPPE" = "NO GROUP";
+"Gruppe %@" = "Group %@";
+"einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe" = "single capital letter = group, the following tags belong to it and take its color. word in capitals only (BASIS) = role. tags ▾ shows one column per group";
+"gruppen-marker mit leerzeichen, es zählt das erste wort der gruppe (K tief, B sub, H off). ähnlich: diese gruppen gleich wie beim master. ergänzend: „gleich“ gleich, „anders“ anders, keine gemeinsame rolle (BASIS, SYNTH …). master ohne gruppen: egal, track ohne gruppen: passt nicht" = "group markers separated by spaces, the first word of a group counts (K tief, B sub, H off). similar: these groups same as the master. complementary: “same” same, “different” different, no shared role (BASIS, SYNTH …). master without groups: ignored, track without groups: no match";

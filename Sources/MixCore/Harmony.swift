@@ -117,7 +117,30 @@ public struct MatchRule: Hashable, Sendable, Codable {
     public var energy = false
     public var bpmWindow = 4.0
     public var halfDouble = false
+    /// Gruppen aus Kommentar 2 (TagProfile): ähnlich = Gruppen in `similar` mit gleichem ersten Wort; ergänzend =
+    /// `keep` gleich, `change` anders, keine gemeinsame Rolle. Master ohne Gruppen: egal; Track ohne: nein
+    public enum Groove: String, Codable, Sendable, CaseIterable { case off, similar, complement }
+    public var groove = Groove.off
+    public var similar = "K B"
+    public var keep = "K"
+    public var change = "H"
     public init() {}
+
+    private static func groups(_ s: String) -> [String] { s.split(whereSeparator: { $0 == " " || $0 == "," }).map(String.init) }
+
+    public func matchesTags(_ t: TagProfile, _ ref: TagProfile) -> Bool {
+        guard groove != .off, !ref.isEmpty else { return true }
+        guard !t.isEmpty else { return false }
+        func same(_ g: String) -> Bool { ref.primary[g] == nil || t.primary[g] == ref.primary[g] }
+        switch groove {
+        case .off: return true
+        case .similar: return Self.groups(similar).allSatisfy(same)
+        case .complement:
+            return Self.groups(keep).allSatisfy(same)
+                && Self.groups(change).allSatisfy { g in ref.primary[g] == nil || (t.primary[g] != nil && t.primary[g] != ref.primary[g]) }
+                && t.roles.isDisjoint(with: ref.roles)
+        }
+    }
 
     public func accepts(_ s: Harmony.Step) -> Bool {
         switch s {

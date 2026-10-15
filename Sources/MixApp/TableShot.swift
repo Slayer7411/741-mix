@@ -306,7 +306,9 @@ enum TableShot {
             pane.search = ""
             pane.roles = [.basis]
             settle(); spin(0.3); settle()
-            check("rolle", tv.numberOfRows == pane.shown.count && pane.shown.allSatisfy { $0.comment2.localizedCaseInsensitiveContains("» BASIS") })
+            check("rolle", tv.numberOfRows == pane.shown.count && !pane.shown.isEmpty && pane.shown.allSatisfy {
+                $0.comment2.localizedCaseInsensitiveContains("» BASIS") || Tags.split($0.comment2, separators: mix.prefs.ui.tagSeparators).contains("BASIS")
+            })
             pane.roles = []
             // Matching (◆ PASST) und Sortierung „Harmonie“ (Kopf der Match-Spalte) mit festem Bezug 1m @ 128
             let ref = HarmonyRef(key: 21, bpm: 128)

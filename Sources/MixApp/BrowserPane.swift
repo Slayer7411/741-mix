@@ -100,6 +100,8 @@ final class BrowserPaneModel: Identifiable {
     struct HarmonyInput: Hashable, Sendable {
         var ref: HarmonyRef?
         var rule = MatchRule()
+        /// Gruppen des Bezugs-Tracks (nur mit `rule.groove`)
+        var tags = TagProfile()
     }
 
     var harmonySorted: Bool { sortOrder.contains { $0.keyPath == \Track.harmonySort } }
@@ -153,7 +155,7 @@ final class BrowserPaneModel: Identifiable {
         var all = base + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0,
                           ripOnly, ripOnly ? RipChecks.shared.revision : 0,
                           excl != nil, excl != nil ? history?.playedRevision ?? 0 : 0] as [AnyHashable]
-        if matching, let h { all += [h.ref, h.rule] as [AnyHashable] }
+        if matching, let h { all += [h.ref, h.rule, h.tags] as [AnyHashable] }
         return (base, all)
     }
 
@@ -266,7 +268,7 @@ final class BrowserPaneModel: Identifiable {
         var tags = TagFilter()
         var words: [[UInt8]] = []
         var separators = ""
-        var match: (ref: HarmonyRef, rule: MatchRule)?
+        var match: (ref: HarmonyRef, rule: MatchRule, tags: TagProfile)?
         /// gespielte Tracks (Schlüssel), die nicht in der Liste stehen sollen
         var exclude: Set<String>?
         var isEmpty: Bool { roles.isEmpty && tags.isEmpty && words.isEmpty && match == nil && exclude == nil }
@@ -274,7 +276,7 @@ final class BrowserPaneModel: Identifiable {
 
     private func criteria(_ separators: String, _ h: HarmonyInput?, _ excl: Set<String>? = nil) -> Criteria {
         Criteria(roles: roles, tags: tagFilter, words: search.split(separator: " ").map { Track.fold(String($0)) }, separators: separators,
-                 match: matching ? h.flatMap { h in h.ref.map { ($0, h.rule) } } : nil, exclude: excl)
+                 match: matching ? h.flatMap { h in h.ref.map { ($0, h.rule, h.tags) } } : nil, exclude: excl)
     }
 
     /// Sortierwert „Harmonie“ (nur mit Bezug)
@@ -313,14 +315,23 @@ final class BrowserPaneModel: Identifiable {
     nonisolated static func filteredCounting(_ base: [Track], _ c: Criteria, index: TagIndex) -> (rows: [Track], hidden: Int) {
         var list = base
         if !c.roles.isEmpty {
-            let needles = c.roles.map { "» " + $0.rawValue }
-            list = list.filter { t in needles.contains { t.comment2.localizedCaseInsensitiveContains($0) } }
+            // `» BASIS` im Text oder `BASIS` als ganzer Tag
+            let needles = c.roles.map { "» " + $0.rawValue }, keys = c.roles.map { Tags.key($0.rawValue) }
+            list = list.filter { t in
+                needles.contains { t.comment2.localizedCaseInsensitiveContains($0) }
+                    || keys.contains(where: index.entry(t.comment2, separators: c.separators).keys.contains)
+            }
         }
         if !c.tags.isEmpty {
             list = list.filter { c.tags.matches(keys: index.entry($0.comment2, separators: c.separators).keys) }
         }
         if !c.words.isEmpty { list = list.filter { $0.matches(words: c.words) } }
-        if let m = c.match { list = list.filter { m.rule.matches($0, m.ref) } }
+        if let m = c.match {
+            list = list.filter { m.rule.matches($0, m.ref) }
+            if m.rule.groove != .off, !m.tags.isEmpty {
+                list = list.filter { let e = index.entry($0.comment2, separators: c.separators); return m.rule.matchesTags(TagProfile(tags: e.tags, groups: e.groups), m.tags) }
+            }
+        }
         guard let x = c.exclude else { return (list, 0) }
         let kept = list.filter { !x.contains($0.key) }
         return (kept, list.count - kept.count)
@@ -609,8 +620,9 @@ struct MatchChip: View {
         let on = model.matching
         let ref = on ? mix.harmonyKey.map(Track.openKey(code:)) ?? "–" : ""
         let bpm = on && mix.harmonyBPM > 0 ? String(format: " %.1f", mix.harmonyBPM) : ""
-        DeckButton(title: String(localized: "◆ PASST") + (on ? " · \(ref)\(bpm)" : ""), active: on, verbatim: true) { model.matching.toggle() }
-            .help("Nur Tracks, die zum Master passen: Key (gleich, ±1, Relativ) und Tempo im Fenster – einstellbar unter ⌘, → Browser")
+        let groove = on ? [MatchRule.Groove.off: "", .similar: " ≈", .complement: " ⇄"][mix.prefs.ui.match.groove] ?? "" : ""
+        DeckButton(title: String(localized: "◆ PASST") + (on ? " · \(ref)\(bpm)\(groove)" : ""), active: on, verbatim: true) { model.matching.toggle() }
+            .help("Nur Tracks, die zum Master passen: Key (gleich, ±1, Relativ), Tempo im Fenster, optional Tag-Gruppen (≈ ähnlich, ⇄ ergänzend) – einstellbar unter ⌘, → Browser")
     }
 }
 
@@ -644,7 +656,8 @@ struct SearchField: View {
     }
 }
 
-/// Alle Tags der aktuellen Quelle (aus Kommentar 2) mit Anzahl – Klick filtert.
+/// Alle Tags der aktuellen Quelle (aus Kommentar 2) mit Anzahl – Klick filtert. Mit Gruppen (⌘, → TAGS) eine Spalte
+/// je Gruppe (Marker im Kopf, Klick = Tracks mit dieser Gruppe), dann Rollen, dann Tags ohne Gruppe.
 struct TagPicker: View {
     @Environment(LibraryStore.self) private var store
     @Environment(HistoryStore.self) private var history
@@ -654,11 +667,49 @@ struct TagPicker: View {
     @Environment(MixModel.self) private var mix
     private var ui: UIPrefs { mix.prefs.ui }
 
+    /// Spalte: Gruppe (nil = ohne), Kopf, Tags nach Anzahl
+    struct Column: Identifiable {
+        let group: String?
+        let title: String
+        var count = 0
+        var tags: [(tag: String, n: Int)] = []
+        var id: String { group ?? "" }
+    }
+
+    /// Spalten aus den Tracks: je Tag die häufigste Gruppe, Gruppen nach ihrer mittleren Stelle im Text
+    static func columns(_ tracks: [Track], separators: String, ui: UIPrefs) -> [Column] {
+        var counts: [String: Int] = [:], groupOf: [String: [String: Int]] = [:]
+        var markerN: [String: Int] = [:], markerPos: [String: Int] = [:]
+        for t in tracks {
+            let e = BrowserPaneModel.tagIndex.entry(t.comment2, separators: separators)
+            for (i, tag) in e.tags.enumerated() {
+                counts[tag, default: 0] += 1
+                guard ui.tagGroups, let g = e.groups[i] else { continue }
+                if g == tag { markerN[g, default: 0] += 1; markerPos[g, default: 0] += i } else { groupOf[tag, default: [:]][g, default: 0] += 1 }
+            }
+        }
+        func title(_ g: String?) -> String {
+            guard let g else { return String(localized: "OHNE GRUPPE") }
+            if g == TagGroups.role { return String(localized: "ROLLE") }
+            return ui.tagGroupNames[g].map { "\($0) · \(g)" } ?? g
+        }
+        var cols: [String: Column] = [:]
+        for (tag, n) in counts where markerN[tag] == nil {
+            let g = groupOf[tag]?.max { $0.value == $1.value ? $0.key > $1.key : $0.value < $1.value }?.key
+            cols[g ?? "", default: Column(group: g, title: title(g))].tags.append((tag, n))
+        }
+        for (g, n) in markerN { cols[g, default: Column(group: g, title: title(g))].count = n }
+        let order = markerN.keys.sorted { Double(markerPos[$0]!) / Double(markerN[$0]!) < Double(markerPos[$1]!) / Double(markerN[$1]!) }
+        return (order + [TagGroups.role, ""]).compactMap { k in
+            guard var c = cols[k] else { return nil }
+            c.tags.sort { $0.n == $1.n ? $0.tag < $1.tag : $0.n > $1.n }
+            return c
+        }
+    }
+
     var body: some View {
-        let counts = Dictionary(model.base(from: store, history: history)
-            .flatMap { BrowserPaneModel.tags(of: $0, separators: separators) }.map { ($0, 1) }, uniquingKeysWith: +)
-        let list = counts.filter { filter.isEmpty || $0.key.localizedCaseInsensitiveContains(filter) }
-            .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+        let cols = Self.columns(model.base(from: store, history: history), separators: separators, ui: ui)
+        let grouped = cols.contains { $0.group != nil }
         let tf = model.tagFilter
         VStack(alignment: .leading, spacing: 6.z) {
             Text("TAGS · KOMMENTAR 2").font(Theme.label(12.z, .bold))
@@ -666,28 +717,16 @@ struct TagPicker: View {
             Text("klick = filter · ⌥-klick = ausschließen · auch in der liste").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
             TextField("FILTERN", text: $filter).textFieldStyle(.plain).font(Theme.mono(11.z))
                 .padding(4.z).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2.z) {
-                    ForEach(list, id: \.key) { k, n in
-                        let mark = tf.mark(k)
-                        Button {
-                            model.toggleTag(k, exclude: NSApp.currentEvent?.modifierFlags.contains(.option) == true)
-                        } label: {
-                            HStack {
-                                Text(mark == .include ? "■" : mark == .exclude ? "⊘" : "□")
-                                    .foregroundStyle(mark == .none ? Theme.muted : Theme.state)
-                                TagChip(tag: k, mark: mark, style: TagChipStyle.of(k, ui))
-                                Spacer()
-                                Text("\(n)").foregroundStyle(Theme.muted)
-                            }
-                            .font(Theme.mono(11.z))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+            if grouped {
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: 10.z) {
+                        ForEach(cols) { c in column(c, tf).frame(width: 150.z) }
                     }
                 }
+                .frame(height: 340.z)
+            } else {
+                ScrollView { rows(cols.first?.tags ?? [], group: nil, tf) }.frame(height: 320.z)
             }
-            .frame(height: 320.z)
             if !tf.isEmpty {
                 HStack {
                     DeckButton(title: "✕ TAGS") { model.clearTags() }
@@ -704,8 +743,46 @@ struct TagPicker: View {
             }
         }
         .padding(10.z)
-        .frame(width: 320.z)
+        .frame(width: grouped ? min(CGFloat(cols.count), 5) * 160.z + 20.z : 320.z)
         .background(Theme.chitin)
+    }
+
+    private func column(_ c: Column, _ tf: TagFilter) -> some View {
+        VStack(alignment: .leading, spacing: 4.z) {
+            if let g = c.group, g != TagGroups.role {
+                // Marker = Tag: Klick filtert auf Tracks mit dieser Gruppe
+                tagButton(g, n: c.count, group: g, tf, title: c.title)
+            } else {
+                Text(c.title).font(Theme.label(11.z, .bold)).foregroundStyle(Theme.muted).padding(.vertical, 1.z)
+            }
+            ScrollView { rows(c.tags, group: c.group, tf) }
+        }
+    }
+
+    private func rows(_ tags: [(tag: String, n: Int)], group: String?, _ tf: TagFilter) -> some View {
+        VStack(alignment: .leading, spacing: 2.z) {
+            ForEach(tags.filter { filter.isEmpty || $0.tag.localizedCaseInsensitiveContains(filter) }, id: \.tag) { t in
+                tagButton(t.tag, n: t.n, group: group, tf)
+            }
+        }
+    }
+
+    private func tagButton(_ k: String, n: Int, group: String?, _ tf: TagFilter, title: String? = nil) -> some View {
+        let mark = tf.mark(k)
+        return Button {
+            model.toggleTag(k, exclude: NSApp.currentEvent?.modifierFlags.contains(.option) == true)
+        } label: {
+            HStack {
+                Text(mark == .include ? "■" : mark == .exclude ? "⊘" : "□")
+                    .foregroundStyle(mark == .none ? Theme.muted : Theme.state)
+                TagChip(tag: title ?? k, mark: mark, style: TagChipStyle.of(k, group: group, ui))
+                Spacer(minLength: 2.z)
+                Text("\(n)").foregroundStyle(Theme.muted)
+            }
+            .font(title == nil ? Theme.mono(11.z) : Theme.label(11.z, .bold))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

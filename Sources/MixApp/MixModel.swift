@@ -90,6 +90,8 @@ final class MixModel {
     /// nur am Key, Filter und Sortierung (nur wenn eingeschaltet) am Tempo
     private(set) var harmonyKey: Int?
     private(set) var harmonyBPM = 0.0
+    /// Gruppen aus Kommentar 2 des Bezugs-Tracks (◆ PASST mit Gruppen)
+    private(set) var harmonyTags = TagProfile()
     /// Selbsttest-Bilder: fester Bezug statt der Decks
     @ObservationIgnored var harmonyFixed: HarmonyRef? { didSet { updateHarmony() } }
     var prefs = AppPrefs.load() {
@@ -216,7 +218,8 @@ final class MixModel {
         FileServiceSetup.attach(core)
         BrowserPaneModel.harmonySource = { [weak self] in
             BrowserPaneModel.HarmonyInput(ref: self.flatMap { m in m.harmonyKey != nil || m.harmonyBPM > 0 ? HarmonyRef(key: m.harmonyKey, bpm: m.harmonyBPM) : nil },
-                                          rule: self?.prefs.ui.match ?? MatchRule())
+                                          rule: self?.prefs.ui.match ?? MatchRule(),
+                                          tags: self.flatMap { $0.prefs.ui.match.groove != .off ? $0.harmonyTags : nil } ?? TagProfile())
         }
         loadSetup()
         for d in decks.indices { decks[d].editing = prefs.ui.editing(d) }
@@ -370,7 +373,7 @@ final class MixModel {
 
     /// Bezugs-Deck: spielender Master, sonst Fokus-Deck; Key = Track-Key um die hörbare Abweichung (gerundet) verschoben
     private func updateHarmony() {
-        var key: Int?, bpm = 0.0
+        var key: Int?, bpm = 0.0, tags = TagProfile()
         if let f = harmonyFixed {
             key = f.key; bpm = f.bpm
         } else {
@@ -379,11 +382,24 @@ final class MixModel {
             if decks.indices.contains(d), let t = decks[d].state.track {
                 key = t.harmonyCode.map { Harmony.shifted($0, by: Int(keyDeviation(d).rounded())) }
                 bpm = m != nil || state.clockMaster ? state.masterTempo : decks[d].state.bpm
+                if prefs.ui.match.groove != .off { tags = harmonyProfile(t.comment2) }
             }
         }
         bpm = (bpm * 10).rounded() / 10
         if key != harmonyKey { harmonyKey = key }
         if bpm != harmonyBPM { harmonyBPM = bpm }
+        if tags != harmonyTags { harmonyTags = tags }
+    }
+
+    /// Gruppen-Profil je Kommentar-2-Text (läuft mit jedem Abgleich, neu nur bei anderem Text)
+    @ObservationIgnored private var profileMemo: (text: String, seps: String, profile: TagProfile)?
+    private func harmonyProfile(_ text: String) -> TagProfile {
+        let seps = prefs.ui.tagSeparators
+        if let m = profileMemo, m.text == text, m.seps == seps { return m.profile }
+        let e = BrowserPaneModel.tagIndex.entry(text, separators: seps)
+        let p = TagProfile(tags: e.tags, groups: e.groups)
+        profileMemo = (text, seps, p)
+        return p
     }
 
     /// Lage des Decks im „Code“ (Bar-Zähler); Phrase wie in der Wellenform (⌘, → Anzeige), nil ohne Grid
