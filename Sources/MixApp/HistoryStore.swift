@@ -37,8 +37,9 @@ final class HistoryStore {
         try? FileManager.default.createDirectory(at: Self.historyDir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: Self.prepDir, withIntermediateDirectories: true)
         if !Session.isSelfTest, let d = try? Data(contentsOf: Self.playedURL), let k = try? JSONDecoder().decode([String].self, from: d) {
-            played = Set(k)
-            if AppPrefs.load().ui.resetPlayedOnStart, !played.isEmpty { played = []; savePlayed() }   // ⌘, -> BROWSER
+            let loaded = Set(k)
+            played = Self.playedAtStart(loaded, ui: AppPrefs.load().ui)   // ⌘, -> BROWSER
+            if played != loaded { savePlayed() }
         }
         let day = HistorySession.dayString(sessionStart)
         let used = ((try? FileManager.default.contentsOfDirectory(atPath: Self.historyDir.path)) ?? []).filter { $0.hasPrefix("history_\(day)-") }.count
@@ -69,14 +70,31 @@ final class HistoryStore {
 
     // MARK: History
 
-    func resetPlayed() {
+    /// alle Gespielt-Markierungen zurücksetzen (⌥⌘P, Rechtsklick auf TRACK COLLECTION)
+    func resetPlayed() { resetPlayed(keys: played) }
+
+    /// Gespielt-Markierungen nur für diese Tracks zurücksetzen (Auswahl, Playlist, Ordner, Preparation); der Rest bleibt
+    func resetPlayed(keys: Set<String>) {
         let old = played
-        setPlayed([])
+        let rest = Self.playedAfterReset(old, keys: keys)
         StatusCenter.post(.ok, String(localized: "Gespielt-Markierungen zurückgesetzt"), key: "played")
-        guard !old.isEmpty else { return }
-        UndoStack.shared.record("Reset Played State", before: old, after: Set<String>()) { [weak self] b, a, undo in
-            self?.setPlayed(undo ? b.union(self?.played ?? []) : a)   // inzwischen gespielte bleiben markiert
+        guard rest != old else { return }
+        setPlayed(rest)
+        UndoStack.shared.record("Reset Played State", before: old, after: rest) { [weak self] b, _, undo in
+            // Rückgängig: die Markierungen kommen zurück, inzwischen gespielte bleiben markiert; Wiederholen: wieder nur `keys`
+            guard let self else { return }
+            self.setPlayed(undo ? b.union(self.played) : self.played.subtracting(keys))
         }
+    }
+
+    /// gespielt nach dem Zurücksetzen von `keys` (pur)
+    nonisolated static func playedAfterReset(_ played: Set<String>, keys: Set<String>) -> Set<String> {
+        played.subtracting(keys)
+    }
+
+    /// gespielt beim Start (pur): leer, wenn „Played-Status beim Start zurücksetzen“ an ist
+    nonisolated static func playedAtStart(_ played: Set<String>, ui: UIPrefs) -> Set<String> {
+        ui.resetPlayedOnStart ? [] : played
     }
 
     /// Gespielt-Markierungen setzen (Reset, Rückgängig, Selbsttest)

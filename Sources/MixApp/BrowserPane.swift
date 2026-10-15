@@ -794,7 +794,9 @@ struct SourceTree: View {
     // Zeilen in eigenen Ansichten: ein Quellenwechsel wertet nur die Auswahl der Liste neu aus, nicht alle Zeilen
     // (Baum bleibt auch ausgeblendet in der Ansicht, siehe BrowserPane)
     var body: some View {
-        List(selection: Binding<BrowserSource?>(get: { selection }, set: { if let s = $0 { selection = s } })) {
+        // Markiert ist immer die Quelle; ⌘ / ⇧ Klick nimmt Einträge dazu oder weg (Menü „Reset Played State“ gilt für alle)
+        List(selection: Binding<Set<BrowserSource>>(get: { treeUI.marked.contains(selection) ? treeUI.marked : [selection] },
+                                                    set: { pick($0) })) {
             SourceTreeFixed()
             MusicFolderTree(selection: $selection)
             PlaylistsSection(selection: $selection)
@@ -804,6 +806,26 @@ struct SourceTree: View {
         .background(Theme.chitin)
         .environment(treeUI)
         .modifier(PlaylistTreeDialogs(ui: treeUI, selection: $selection))
+        .onChange(of: selection) { if !treeUI.marked.contains(selection) { treeUI.marked = [selection] } }
+    }
+
+    /// Auswahl aus der Liste übernehmen: ein Eintrag = die Quelle; bei mehreren nimmt die Quelle den neu dazugekommenen
+    /// Eintrag (⌘-Klick), bleibt sie bei einem Bereich (⇧-Klick) stehen, wenn sie noch dabei ist
+    private func pick(_ new: Set<BrowserSource>) {
+        guard !new.isEmpty else { return }   // ⌘-Klick auf den einzigen Eintrag lässt die Quelle stehen
+        let primary = Self.primary(new, marked: treeUI.marked, selection: selection)
+        treeUI.marked = new
+        if let primary, primary != selection { selection = primary }
+    }
+
+    /// Quelle nach einer Auswahl im Baum (pur): ein Eintrag = er; mehrere: der neu dazugekommene (⌘-Klick), bei einem
+    /// Bereich (⇧-Klick) bleibt die Quelle, wenn sie dabei ist
+    nonisolated static func primary(_ new: Set<BrowserSource>, marked: Set<BrowserSource>, selection: BrowserSource) -> BrowserSource? {
+        guard !new.isEmpty else { return nil }
+        if new.count == 1 { return new.first }
+        let added = new.subtracting(marked)
+        if added.count == 1 { return added.first }
+        return new.contains(selection) ? selection : new.first
     }
 }
 
@@ -812,6 +834,7 @@ struct SourceTreeFixed: View, SourceMenus {
     @Environment(LibraryStore.self) var store
     @Environment(HistoryStore.self) var history
     @Environment(MixModel.self) private var decks
+    @Environment(PlaylistTreeUI.self) private var ui
 
     var body: some View {
         row("≣", "TRACK COLLECTION").tag(BrowserSource.collection)
@@ -857,6 +880,7 @@ struct SourceTreeFixed: View, SourceMenus {
             }
             .contextMenu {
                 exportMenu(.preparation)
+                resetPlayedButton(.preparation, marked: ui.marked)
                 OverviewMenuButton { store.tracks(for: .preparation) }
                 AnalysisMenuButtons { store.tracks(for: .preparation) }
                 CloudMenuButton(label: "Preparation") { store.tracks(for: .preparation) }
@@ -910,6 +934,25 @@ extension SourceMenus {
     /// Tracks eines Knotens, Ordner mit allen Unterknoten
     func nodeTracks(_ n: PlaylistNode) -> [Track] {
         n.kind == .folder ? n.children.flatMap(nodeTracks) : store.tracks(for: .node(n))
+    }
+
+    /// Track-Schlüssel eines Baum-Eintrags (Ordner mit allen darunter) für „Reset Played State“
+    func treeKeys(_ src: BrowserSource) -> Set<String> {
+        switch src {
+        case .preparation: Set(store.preparation)
+        case let .own(r): Set(store.ownTracksDeep(r.id).map(\.key))
+        case let .node(n): Set(nodeTracks(n).map(\.key))
+        case let .folder(p): Set(store.folders.tracks(in: p, recursive: true, library: store).map(\.key))
+        default: Set(store.tracks(for: src).map(\.key))
+        }
+    }
+
+    /// „Reset Played State“ an einem Baum-Eintrag: sind mehrere markiert und dieser ist dabei, gilt es für alle markierten
+    @ViewBuilder func resetPlayedButton(_ src: BrowserSource, marked: Set<BrowserSource>) -> some View {
+        Button("Reset Played State") {
+            let srcs = marked.contains(src) ? marked : [src]
+            history.resetPlayed(keys: srcs.reduce(into: Set<String>()) { $0.formUnion(treeKeys($1)) })
+        }
     }
 
     func icon(_ n: PlaylistNode) -> String {

@@ -1069,9 +1069,9 @@ struct BrowserSettings: View {
                     .settingsAnchor("browser.dimplayed")
                 Toggle("Gespielte Tracks ausblenden", isOn: $mix.prefs.ui.hidePlayedTracks)
                     .settingsAnchor("browser.hideplayed")
-                Toggle("Gespielt beim Start zurücksetzen", isOn: $mix.prefs.ui.resetPlayedOnStart)
+                Toggle("Played-Status beim Start zurücksetzen", isOn: $mix.prefs.ui.resetPlayedOnStart)
                     .settingsAnchor("browser.resetplayed")
-                Text("gespielt = in der history (ab der schwelle unter history & preparation), bis zum zurücksetzen. ausblenden (auch ◆ UNGESPIELT im kopf des bereichs, menü browser) gilt für collection, playlists, smartlists, ordner und suche; history, running tracks und preparation zeigen sie weiter. zurücksetzen jederzeit: rechtsklick auf track collection -> reset played state").settingsHint()
+                Text("gespielt = in der history (ab der schwelle unter history & preparation), bis zum zurücksetzen. ausblenden (auch ◆ UNGESPIELT im kopf des bereichs, menü browser) gilt für collection, playlists, smartlists, ordner und suche; history, running tracks und preparation zeigen sie weiter. zurücksetzen jederzeit: rechtsklick auf track collection (alles), auf playlist, smartlist, ordner, music folder, preparation oder auf markierte tracks (nur diese) -> reset played state. im baum mehrere einträge mit ⌘ / ⇧ markieren").settingsHint()
             }
             Section("History & Preparation") {
                 sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f", unit: "s")

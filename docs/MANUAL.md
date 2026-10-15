@@ -793,7 +793,8 @@ insert slots on the sum of the decks, after the faders and the crossfader, befor
 * search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match, case and accents ignored
 * right click a track -> load into deck A-D, add to / remove from preparation, add to a playlist, preview, show in finder, reset played state
 * drag tracks out of the list in any direction: onto a deck, PREPARATION, a playlist or PLAYLISTS (several rows: select with ⇧ / ⌘ first). a deck title drags too: onto another deck, PREPARATION or a playlist. ⌫ in PREPARATION or an own playlist removes the selected rows
-* played column ▶: ✓ = played since the last reset. reset: right click a track or TRACK COLLECTION -> Reset Played State, or ⌥⌘P
+* played column ▶: ✓ = played since the last reset. reset: right click TRACK COLLECTION (all), a playlist, smartlist, folder, music folder or PREPARATION in the tree (folders with everything inside), or the selected tracks in the list -> Reset Played State; ⌥⌘P resets all. several tree entries: select with ⌘ / ⇧ first, the menu resets all marked ones. undo like any other step
+* `Played-Status beim Start zurücksetzen` (⌘, -> BROWSER -> played tracks, `ui.resetPlayedOnStart`, on by default): the played state is reset at every start, like ⌥⌘P
 * `UNGESPIELT` (`UNPLAYED`) in the header -> played tracks hidden in collection, playlists, smartlists, music folders and search. history, running tracks and preparation (+ archive) keep showing them. count in the header: `812 · 14 ausgeblendet`. one setting for both panes, same as ⌘, -> BROWSER -> played tracks and browser menu -> `Gespielte Tracks ausblenden`, key assignable (no default). load lock, decks, controller browse unchanged
 * the left controller drives the left pane, the right controller the right one
 * tree can hide while decks are visible (setting)
@@ -1066,6 +1067,7 @@ full syntax -> [nml files](nml-files.md#-smartlist-queries).
 history:
 
 * a track counts as played after 30 s audible (⌘, -> BROWSER -> history & preparation)
+* played state is reset at every start by default (⌘, -> BROWSER -> played tracks -> `Played-Status beim Start zurücksetzen`); the history itself stays
 * internal mode: only with fader / crossfader open. external mode: always
 * saved as nml under `history_2026-10-10-01.nml` (day + session number), optional copy into the collection's history folder (time-stamped name)
 * quitting asks first (also the red close button and ⌘W on the main window), then session and history are written
