@@ -1104,6 +1104,20 @@ struct BrowserSettings: View {
                 Toggle("Halbes / doppeltes Tempo mitzählen", isOn: $mix.prefs.ui.match.halfDouble)
                     .settingsAnchor("browser.match.halfdouble")
                 Text("gleicher key zählt immer. track ohne key passt nicht, master ohne key: nur das tempo. an/aus: chip ◆ PASST im kopf des bereichs, tastatur (⌘, → tastatur) oder browse-taste am controller").settingsHint()
+                Picker("Tag-Gruppen (Kommentar 2)", selection: $mix.prefs.ui.match.groove) {
+                    Text("aus").tag(MatchRule.Groove.off)
+                    Text("ähnlich").tag(MatchRule.Groove.similar)
+                    Text("ergänzend").tag(MatchRule.Groove.complement)
+                }
+                .settingsAnchor("browser.match.groove")
+                if mix.prefs.ui.match.groove == .similar {
+                    LabeledContent("gleich") { TextField("", text: $mix.prefs.ui.match.similar).settingsField().frame(width: 120) }
+                }
+                if mix.prefs.ui.match.groove == .complement {
+                    LabeledContent("gleich") { TextField("", text: $mix.prefs.ui.match.keep).settingsField().frame(width: 120) }
+                    LabeledContent("anders") { TextField("", text: $mix.prefs.ui.match.change).settingsField().frame(width: 120) }
+                }
+                Text("gruppen-marker mit leerzeichen, es zählt das erste wort der gruppe (K tief, B sub, H off). ähnlich: diese gruppen gleich wie beim master. ergänzend: „gleich“ gleich, „anders“ anders, keine gemeinsame rolle (BASIS, SYNTH …). master ohne gruppen: egal, track ohne gruppen: passt nicht").settingsHint()
             }
             PreviewSettings()
             Section("Cover") {

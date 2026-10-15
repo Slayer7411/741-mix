@@ -168,9 +168,10 @@ final class DetailBarView: NSView {
         let filter = table?.tagFilter ?? TagFilter()
         var x = r.minX
         let h = ceil(f.ascender - f.descender) + 2
-        for tag in tags {
+        let groups = TagGroups.of(tags)
+        for (i, tag) in tags.enumerated() {
             let mark = filter.isEmpty ? .none : filter.mark(tag)
-            let s = TagChipStyle.of(tag, ui ?? UIPrefs())
+            let s = TagChipStyle.of(tag, group: groups[i], ui ?? UIPrefs())
             let color: NSColor = mark == .include ? TableStyle.void : mark == .exclude ? TableStyle.muted : TableStyle.bone
             let str = NSAttributedString(string: tag, attributes: TableStyle.attrs(f, color))
             let w = ceil(str.size().width) + 6 * z

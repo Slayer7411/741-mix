@@ -90,3 +90,27 @@ import Testing
     #expect(try JSONDecoder().decode([BrowserFavorite].self, from: data) == [f, g])
     #expect(!String(decoding: try JSONEncoder().encode(g), as: UTF8.self).contains("excludedTags"))
 }
+
+@Test func tagGroupsFromMarkersAndRoles() {
+    let tags = Tags.split("drums K tief lang B sub schwer H off SYNTH ATMO extra", separators: " ")
+    #expect(TagGroups.of(tags) == [nil, "K", "K", "K", "B", "B", "B", "H", "H", "»", "»", nil])
+    #expect(TagIndex().entry("K hoch B mid", separators: " ").groups == ["K", "K", "B", "B"])
+    #expect(!TagGroups.isMarker("k") && !TagGroups.isMarker("KB") && TagGroups.isRole("VOLL") && !TagGroups.isRole("2/takt"))
+    let p = TagProfile("K tief lang B sub schwer H off SYNTH ATMO", separators: " ")
+    #expect(p.primary == ["K": "tief", "B": "sub", "H": "off"] && p.roles == ["synth", "atmo"])
+    #expect(TagProfile("drums offbeat", separators: " ").isEmpty)
+}
+
+@Test func matchRuleTagGroups() {
+    let ref = TagProfile("K tief lang B sub schwer H off BASIS", separators: " ")
+    let near = TagProfile("K tief kurz B sub leicht H 16tel BASIS", separators: " ")
+    let layer = TagProfile("K tief B mid H 16tel SYNTH", separators: " ")
+    let other = TagProfile("K hoch B sub H off BASIS", separators: " ")
+    var r = MatchRule()
+    #expect(r.matchesTags(other, ref) && r.matchesTags(TagProfile(), ref))
+    r.groove = .similar
+    #expect(r.matchesTags(near, ref) && !r.matchesTags(other, ref) && !r.matchesTags(layer, ref))
+    #expect(!r.matchesTags(TagProfile(), ref) && r.matchesTags(other, TagProfile()))
+    r.groove = .complement
+    #expect(r.matchesTags(layer, ref) && !r.matchesTags(near, ref) && !r.matchesTags(other, ref))
+}

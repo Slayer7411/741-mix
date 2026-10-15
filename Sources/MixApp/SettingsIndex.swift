@@ -271,6 +271,7 @@ enum SettingsIndex {
             e(t, m, "browser.match.relative", "Relativ Dur/Moll (◇)", kw: "matching key"),
             e(t, m, "browser.match.energy", "Energie-Wechsel ±2", kw: "matching key"),
             e(t, m, "browser.match.bpm", "BPM-Fenster", kw: "matching"),
+            e(t, m, "browser.match.groove", "Tag-Gruppen (Kommentar 2)", kw: "matching tags gruppen kick bass hats rolle"),
             e(t, m, "browser.match.halfdouble", "Halbes / doppeltes Tempo mitzählen",
               hint: "gleicher key zählt immer. track ohne key passt nicht, master ohne key: nur das tempo. an/aus: chip ◆ PASST im kopf des bereichs, tastatur (⌘, → tastatur) oder browse-taste am controller",
               kw: "matching"),
@@ -314,6 +315,7 @@ enum SettingsIndex {
     private static let tags: [SettingsEntry] = [
         e("TAGS", "Tags (Kommentar 2)", "tags.separator", "Trennzeichen", kw: "separator kommentar"),
         e("TAGS", "Tags (Kommentar 2)", "tags.highlight", "Tags farbig markieren"),
+        e("TAGS", "Tags (Kommentar 2)", "tags.groups", "Gruppen (K / B / H …)", kw: "gruppe marker kick bass hats rolle"),
         e("TAGS", "Tag-Farben", "tags.colors", "Tag-Farben", kw: "farbe filtern"),
     ]
 

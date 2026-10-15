@@ -11,9 +11,9 @@ struct TagChipStyle {
     static let plain = TagChipStyle(marker: .clear, fill: Theme.bone)
     @MainActor private static var cache: [String: TagChipStyle] = [:]
 
-    @MainActor static func of(_ tag: String, _ ui: UIPrefs) -> TagChipStyle {
+    @MainActor static func of(_ tag: String, group: String? = nil, _ ui: UIPrefs) -> TagChipStyle {
         guard ui.tagHighlight else { return plain }
-        let hex = TagColors.hex(tag, ui)
+        let hex = TagColors.hex(tag, group: group, ui)
         if let s = cache[hex] { return s }
         let v = UInt32(hex, radix: 16) ?? 0
         let n = NSColor(srgbRed: CGFloat(v >> 16 & 0xFF) / 255, green: CGFloat(v >> 8 & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1)
@@ -59,9 +59,10 @@ struct TagChips: View {
     @Environment(\.zoomExempt) private var exempt
 
     var body: some View {
+        let groups = TagGroups.of(tags).enumerated().map { i, g in g ?? BrowserPaneModel.tagIndex.group(of: tags[i]) }
         HStack(spacing: 3 * (exempt ? 1 : 1.z)) {
-            ForEach(Array(tags.enumerated()), id: \.offset) { _, t in
-                let chip = TagChip(tag: t, mark: filter.mark(t), style: .of(t, ui))
+            ForEach(Array(tags.enumerated()), id: \.offset) { i, t in
+                let chip = TagChip(tag: t, mark: filter.mark(t), style: .of(t, group: groups[i], ui))
                 if let onTap {
                     Button { onTap(t, NSApp.currentEvent?.modifierFlags.contains(.option) == true) } label: { chip }
                         .buttonStyle(.plain)
@@ -113,10 +114,11 @@ struct TagChipsText: View {
 
     @MainActor static func text(tags: [String], keys: [String], ui: UIPrefs, filter: TagFilter) -> AttributedString {
         var out = AttributedString()
+        let groups = TagGroups.of(tags)
         for (i, t) in tags.enumerated() {
             if i > 0 { out += AttributedString(" ") }
             let m = filter.isEmpty ? .none : filter.mark(key: keys[i])
-            let st = TagChipStyle.of(t, ui)
+            let st = TagChipStyle.of(t, group: groups[i], ui)
             var run = AttributedString(inset + t + inset)
             switch m {
             case .include:

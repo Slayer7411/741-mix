@@ -1252,7 +1252,8 @@ extension SelfTest {
                 let byKey = Dictionary(after.tracks.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
                 let newKey = job.moves[m.key]!.key
                 let cueOK = byKey[t.key]?.hotcues.contains { $0.hotcue == 7 && $0.kind == .loop && abs($0.lengthMs - 1875) < 0.001 } == true
-                let own = after.root.children.last
+                // eigener Ordner nach Namen (Playlists, die danach in der Collection angelegt wurden, stehen dahinter)
+                let own = after.root.children.first { $0.name == CollectionWriter.ownFolder }
                 let ok = r.changed && r.backup != nil && after.tracks.count == c.tracks.count + 1 && byKey[loop.key] != nil && cueOK
                     && byKey[newKey] != nil && byKey[m.key] == nil && own?.name == CollectionWriter.ownFolder
                     && own?.children.first?.trackKeys.count == 3 && own?.children.last?.children.first?.trackKeys == [t.key, newKey]

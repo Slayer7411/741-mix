@@ -1272,7 +1272,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         for (i, tag) in e.tags.enumerated() {
             if i > 0 { out.append(NSAttributedString(string: " ", attributes: ctAttrs(font, TableStyle.bone))) }
             let m = l.filter.isEmpty ? .none : l.filter.mark(key: e.keys[i])
-            let st = chipColors(tag, l.ui)
+            let st = chipColors(tag, e.groups[i], l.ui)
             let color: NSColor
             switch m {
             case .include: fills.append(st.fill); color = TableStyle.void
@@ -1306,11 +1306,11 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     }
 
     private var chipColorCache: [String: (marker: NSColor, fill: NSColor)] = [:]
-    private func chipColors(_ tag: String, _ ui: UIPrefs) -> (marker: NSColor, fill: NSColor) {
+    private func chipColors(_ tag: String, _ group: String?, _ ui: UIPrefs) -> (marker: NSColor, fill: NSColor) {
         guard ui.tagHighlight else { return (.clear, TableStyle.bone) }
-        let hex = TagColors.hex(tag, ui)
+        let hex = TagColors.hex(tag, group: group, ui)
         if let c = chipColorCache[hex] { return c }
-        let st = TagChipStyle.of(tag, ui)
+        let st = TagChipStyle.of(tag, group: group, ui)
         let c = (NSColor(st.marker), NSColor(st.fill))
         chipColorCache[hex] = c
         return c

@@ -319,7 +319,7 @@ struct DeckMetaRow: View {
     var inline = false
 
     /// cover = Breite des Covers im Kopf (pt vor dem Zoom, 0 = keins)
-    struct Model: Equatable { var cover = 0.0, comment = "", tags: [String] = [], tagHighlight = true, tagColors: [String: String] = [:] }
+    struct Model: Equatable { var cover = 0.0, comment = "", tags: [String] = [], tagHighlight = true, tagGroups = true, tagColors: [String: String] = [:] }
 
     var body: some View {
         let s = mix.deck(d), ui = mix.prefs.ui
@@ -331,6 +331,7 @@ struct DeckMetaRow: View {
                 m.tags = BrowserPaneModel.tags(of: t, separators: ui.tagSeparators)
                 m.tagHighlight = ui.tagHighlight
                 m.tagColors = ui.tagColors
+                m.tagGroups = ui.tagGroups
             }
         }
         return Content(d: d, m: m, inline: inline).equatable()
@@ -368,6 +369,7 @@ struct DeckMetaRow: View {
             var ui = UIPrefs()
             ui.tagHighlight = m.tagHighlight
             ui.tagColors = m.tagColors
+            ui.tagGroups = m.tagGroups
             // ohne Filter liest TagChipsText die Vergleichsformen nicht
             var text = TagChipsText.text(tags: m.tags, keys: [], ui: ui, filter: TagFilter())
             let comment = m.comment.split(whereSeparator: \.isNewline).joined(separator: " ")

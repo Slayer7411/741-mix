@@ -222,6 +222,10 @@ struct UIPrefs: Codable, Equatable {
     var historyToExternal = false
     /// Trennzeichen für Tags in Kommentar 2 (jedes Zeichen trennt; Standard Leerzeichen)
     var tagSeparators = " "
+    /// Gruppen in Kommentar 2 (`K tief lang B sub …`, TagGroups): Farbe der Gruppe, Spalten in TAGS ▾
+    var tagGroups = true
+    /// Anzeigename je Gruppen-Marker
+    var tagGroupNames = ["K": "KICK", "B": "BASS", "H": "HATS"]
     /// Beatgrid farbig (Phrasen/Takte/Beats) oder schlicht
     var colorfulGrid = true
     /// Linienstärke des Beatgrids

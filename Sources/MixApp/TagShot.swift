@@ -164,6 +164,11 @@ enum TagShot {
         win.makeKey()
         for _ in 0..<8 { h.layoutSubtreeIfNeeded(); spin(0.2) }
         let shot = png(h, "tags-selected.png")
+        // Bild: TAGS ▾ (mit Gruppen eine Spalte je Gruppe)
+        let (ph, pwin) = host(TagPicker(model: model, separators: seps), size: NSSize(width: 840, height: 480))
+        for _ in 0..<4 { ph.layoutSubtreeIfNeeded(); spin(0.1) }
+        png(ph, "tags-picker.png")
+        pwin.close()
 
         // Klicks: auf den ersten Chip der ersten Zeile, neben die Chips, zweiter Klick daneben = Inline-Bearbeitung
         var ok = true
