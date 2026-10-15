@@ -253,6 +253,7 @@ struct MusicFolderSettings: View {
         LabeledContent("Musik-Ordner (MUSIC FOLDERS)") {
             Button("Ordner hinzufügen …") { add() }
         }
+        .settingsAnchor("browser.musicfolders")
         if list.isEmpty {
             Text("automatisch: \(store.folders.defaultRoot ?? "—")")
                 .font(Theme.mono(10)).foregroundStyle(Theme.muted).lineLimit(2).truncationMode(.middle)

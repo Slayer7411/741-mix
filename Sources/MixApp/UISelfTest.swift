@@ -110,7 +110,7 @@ enum UISelfTest {
 
         let u = UIDriver(mix: mix, store: store, browser: browser, history: history)
         let cases: [(String, (UIDriver, [Track]) -> Void)] = [
-            ("deck-menü", deckMenu), ("drop aufs deck", dropOnDeck), ("bereich in der wellenform", waveRange),
+            ("deck-menü", deckMenu), ("deck-menü-fläche", deckMenuArea), ("drop aufs deck", dropOnDeck), ("bereich in der wellenform", waveRange),
             ("spaltenbreite per doppelklick", fitColumn), ("statusleiste automatisch", autoStatusBar),
             ("tastenkürzel", shortcuts), ("werkzeugleiste", toolbar), ("zoom", zoom),
             ("edit-modus", editMode),
@@ -124,6 +124,7 @@ enum UISelfTest {
             ("playlist-baum", playlistTree),
             ("mehrfach-sortierung", multiSort),
             ("wellenform-preset", wavePreset),
+            ("einstellungen-suche", settingsSearch),
             ("aufnahme", recording),
             ("linien", gridLines),
             ("rip", ripCheck),
@@ -205,6 +206,87 @@ enum UISelfTest {
         pane.editSession = nil
         u.spin(5) { u.window.attachedSheet == nil }
         check(u.window.attachedSheet == nil, "Bearbeiten-Fenster schließt nicht")
+    }
+
+    /// Rechtsklick auf Übersicht, Cover-Spalte und Wellenform von Deck A: Track-Menü (Wellenform mit Bereich: „Track ▸“ oben).
+    /// „Im Browser zeigen“ wählt den Track im aktiven Bereich (aus PREPARATION zurück auf TRACK COLLECTION). Spielend:
+    /// „Auswerfen“ ausgegraut; Deck B auswerfen -> leer, Menü mit „Track laden …“, danach wieder geladen
+    static func deckMenuArea(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, ui0 = mix.prefs.ui
+        let edit = String(localized: "Track bearbeiten …"), reveal = String(localized: "Im Browser zeigen")
+        let eject = String(localized: "Auswerfen")
+        func has(_ m: NSMenu?, _ title: String) -> Bool { m?.items.contains { $0.title == title } ?? false }
+        func overview(_ deck: String) -> NSRect? {
+            guard let v = u.named("deck " + deck) else { return nil }
+            func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+            let dw = u.frame(v).width
+            return all(v).compactMap { $0 as? LiveCanvasView }.map { u.frame($0) }
+                .filter { $0.width > dw / 2 && $0.height >= 11 }.max { $0.height < $1.height }
+        }
+        guard let key = mix.deck(0).track?.key else { fail("Deck A ohne Track") }
+        if mix.deck(0).playing { mix.togglePlay(0) }
+        guard let ov = overview("A") else { fail("Deck A: Übersicht nicht gefunden") }
+        let om = u.rightClick(at: NSPoint(x: ov.midX, y: ov.midY))
+        check(has(om, edit) && has(om, reveal), "Rechtsklick auf die Übersicht: \(om?.items.map(\.title) ?? [])")
+        check(om?.items.first { $0.title == eject }?.isEnabled == true, "Übersicht: „\(eject)“ ausgegraut, Deck steht")
+        log("menü an der übersicht: " + (om?.items.map(\.title).joined(separator: " · ") ?? ""))
+
+        // Cover als eigene Spalte
+        defer { mix.prefs.ui = ui0; u.spin(0.5) }
+        mix.prefs.ui.deckCoverSize = 120
+        u.spin(3) { u.named("A cover") != nil }
+        guard let cv = u.named("A cover").map({ u.frame($0) }) else { fail("Cover-Spalte fehlt") }
+        let cm = u.rightClick(at: NSPoint(x: cv.midX, y: cv.midY))
+        check(has(cm, edit) && has(cm, reveal), "Rechtsklick auf das Cover: \(cm?.items.map(\.title) ?? [])")
+
+        // Wellenform: ohne Bereich das Track-Menü, mit Bereich dessen Menü und oben „Track ▸“
+        guard let w = u.views.compactMap({ $0 as? WaveMouseView }).first(where: { $0.d == 0 }) else { fail("Wellenform A nicht gefunden") }
+        mix.setRange(0, nil)
+        let wr = u.frame(w)
+        let wm = u.rightClick(at: NSPoint(x: wr.midX, y: wr.midY))
+        check(has(wm, edit), "Rechtsklick in die Wellenform ohne Bereich: \(wm?.items.map(\.title) ?? [])")
+        let pos = mix.position(0)
+        mix.setRange(0, TrackRange(max(0, pos - 2), pos + 2))
+        let rm = u.rightClick(at: NSPoint(x: wr.midX, y: wr.midY))
+        mix.setRange(0, nil)
+        check(rm?.items.first?.title == String(localized: "Track") && has(rm?.items.first?.submenu, edit)
+              && has(rm, String(localized: "Bereich aufheben")), "Wellenform mit Bereich: \(rm?.items.map(\.title) ?? [])")
+
+        // Im Browser zeigen
+        let pane = u.browser.activePane, source0 = pane.source
+        pane.selection = []
+        pane.source = .preparation
+        u.spin(0.5)
+        guard let m = u.rightClick(at: NSPoint(x: cv.midX, y: cv.midY)), let ri = m.items.firstIndex(where: { $0.title == reveal }) else { fail("„\(reveal)“ fehlt") }
+        check(m.items[ri].isEnabled, "„\(reveal)“ ausgegraut")
+        m.performActionForItem(at: ri)
+        u.spin(2) { pane.selection == [key] && pane.shown.contains { $0.key == key } }
+        check(u.browser.activePane === pane && pane.selection == [key], "Im Browser zeigen: Auswahl \(pane.selection) statt \(key)")
+        check(pane.shown.contains { $0.key == key }, "Im Browser zeigen: Track steht nicht in der Liste (Quelle \(pane.source))")
+        pane.source = source0
+        u.spin(0.3)
+
+        // spielend: Auswerfen ausgegraut
+        mix.togglePlay(0)
+        u.spin(1) { mix.deck(0).playing }
+        let pm = u.rightClick(at: NSPoint(x: ov.midX, y: ov.midY))
+        mix.togglePlay(0)
+        u.spin(1) { !mix.deck(0).playing }
+        let pe = pm?.items.first { $0.title.hasPrefix(eject) }
+        check(pe != nil && pe?.isEnabled == false, "Deck spielt: „\(eject)“ nicht ausgegraut: \(pm?.items.map(\.title) ?? [])")
+
+        // Deck B auswerfen und wieder laden
+        guard let ovb = overview("B"), let bm = u.rightClick(at: NSPoint(x: ovb.midX, y: ovb.midY)),
+              let ei = bm.items.firstIndex(where: { $0.title == eject }) else { fail("Deck B: kein „\(eject)“") }
+        bm.performActionForItem(at: ei)
+        u.spin(1) { mix.deck(1).track == nil }
+        check(mix.deck(1).track == nil && mix.core.trackAudio(1) == nil, "Deck B nach dem Auswerfen nicht leer")
+        let em = u.rightClick(at: NSPoint(x: ovb.midX, y: ovb.midY))
+        check(has(em, String(localized: "Track laden …")) && em?.items.first { $0.title == edit }?.isEnabled == false,
+              "leeres Deck: \(em?.items.map(\.title) ?? [])")
+        _ = mix.load(t[1], deck: 1, force: true)
+        u.spin(30) { mix.core.trackAudio(1) != nil && mix.deck(1).grid != nil }
+        check(mix.core.trackAudio(1) != nil, "Deck B lädt nach dem Auswerfen nicht")
     }
 
     /// Track (wie vom Deck gezogen) auf den Kopf von Deck A fallen lassen: Ziel ist die Hosting-View, die SwiftUI für
@@ -1930,7 +2012,7 @@ extension UISelfTest {
         let item = String(localized: "Markierten Bereich entfernen")
         var via = "rechtsklick"
         if let menu = u.rightClick(at: NSPoint(x: r.midX, y: r.midY)), let i = menu.items.firstIndex(where: { $0.title == item }) {
-            check(i <= 3, "RIP-Bereich: „\(item)“ nicht oben: \(menu.items.map(\.title))")
+            check(i <= 5, "RIP-Bereich: „\(item)“ nicht oben: \(menu.items.map(\.title))")   // unter „Track ▸“
             check(menu.items.contains { $0.title == String(localized: "Markierten Bereich entfernen (neue Datei)") }, "RIP-Bereich: ohne „… (neue Datei)“")
             menu.performActionForItem(at: i)
         } else {
@@ -1945,6 +2027,122 @@ extension UISelfTest {
         u.spin(2) { !rips.openKeys.contains(track.key) }
         check(rips.open(track.key).isEmpty && rips.store.entry(for: track.key)?.done == [f.id], "RIP-Bereich: Befund nicht erledigt")
         log("rip-bereich: „\(label)“ · \(via) -> entfernt \(String(format: "%.1f", dur0 - dur1)) s · erledigt")
+    }
+}
+
+extension UISelfTest {
+    /// Einstellungen in eigenem Offscreen-Fenster (900 × 600, scrollt): „puffer“ ins Suchfeld, erster Treffer per Klick
+    /// -> Bereich AUDIO, Zeile Puffer lila und sichtbar; „parallel“ + Enter -> Zeile ganz unten in AUDIO sichtbar
+    /// (Sprung scrollt); esc leert; `settingsRequest` öffnet PLUGINS. Kommt ein synthetisches Ereignis nicht an: Direktaktion (steht im Log)
+    static func settingsSearch(_ u: UIDriver, _ t: [Track]) {
+        let nav = SettingsNav(tab: "DECKS")
+        let root = SettingsView(selection: "DECKS", nav: nav).environment(u.mix).environment(u.browser).environment(u.store)
+            .environment(ControllerStatus())
+        let host = NSHostingView(rootView: root)
+        let size = NSSize(width: 900, height: 600)
+        let w = UITestWindow(contentRect: NSRect(origin: UITestWindow.origin, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        w.alphaValue = 0
+        w.ignoresMouseEvents = true
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.contentView = host
+        w.setContentSize(size)
+        w.orderFrontRegardless()
+        defer {
+            w.orderOut(nil)
+            u.spin(0.3)
+        }
+        func views() -> [NSView] {
+            func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+            return all(w.contentView?.superview ?? host)
+        }
+        func mark(_ name: String) -> NSView? { views().first { ($0 as? UITestMark.V)?.name == name } }
+        func frame(_ v: NSView) -> NSRect { v.convert(v.bounds, to: nil) }
+        u.spin(5) { mark("settings search") != nil }
+        guard let fieldMark = mark("settings search") else { fail("Einstellungen: Suchfeld nicht gefunden") }
+        let field = views().compactMap { $0 as? NSTextField }.first { $0.isEditable && frame($0).intersects(frame(fieldMark)) }
+        func type(_ text: String) {
+            if let field, w.makeFirstResponder(field), let ed = field.currentEditor() as? NSTextView {
+                ed.selectAll(nil)
+                ed.insertText(text, replacementRange: ed.selectedRange())
+            }
+            u.spin(1) { nav.query == text && nav.showResults }
+            if nav.query != text {
+                log("einstellungen-suche: tippen ins suchfeld kommt nicht an – setze direkt")
+                nav.query = text
+                u.spin(0.5)
+            }
+        }
+        /// Zeile mit lila Rahmen: sichtbar im Fenster?
+        func flashed(_ anchor: String) -> NSRect? {
+            u.spin(2) { nav.flash == anchor && mark("settings flash") != nil }
+            guard nav.flash == anchor, let m = mark("settings flash") else { return nil }
+            return frame(m)
+        }
+        let content = NSRect(origin: .zero, size: size)
+
+        // „puffer“ -> Trefferliste, Klick auf den ersten Treffer
+        type("puffer")
+        let hits = SettingsSearch.shared.search("puffer")
+        check(hits.first?.entry.anchor == "audio.buffer", "erster Treffer für „puffer“: \(hits.first?.entry.anchor ?? "-")")
+        u.spin(2) { mark("settings hit") != nil }
+        guard let hitMark = mark("settings hit") else { fail("Trefferliste ohne Treffer") }
+        let r = frame(hitMark), p = NSPoint(x: r.midX, y: r.midY)
+        let top = w.contentView?.superview ?? host
+        if let hit = top.hitTest(top.convert(p, from: nil)) {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                guard let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                                 pressure: type == .leftMouseUp ? 0 : 1) else { fail("kein Mausereignis") }
+                if type == .leftMouseDown { hit.mouseDown(with: e) } else { hit.mouseUp(with: e) }
+            }
+        }
+        u.spin(1) { nav.tab == "AUDIO" && !nav.showResults }
+        if nav.showResults {
+            log("einstellungen-suche: klick auf den treffer kommt nicht an – springe direkt")
+            nav.open(hits[0].entry)
+        }
+        check(nav.tab == "AUDIO" && !nav.showResults, "Sprung: Bereich \(nav.tab), Trefferliste \(nav.showResults)")
+        check(nav.query == "puffer", "Suche nach dem Sprung geleert")
+        guard let buf = flashed("audio.buffer") else { fail("Zeile Puffer nicht hervorgehoben (flash \(nav.flash ?? "-"))") }
+        check(content.contains(NSPoint(x: buf.midX, y: buf.midY)), "Zeile Puffer nicht sichtbar: \(buf)")
+
+        // „parallel“ + Enter: letzte Zeile von AUDIO, muss gescrollt werden
+        type("decks parallel")
+        check(nav.showResults, "Trefferliste kommt nach neuer Eingabe nicht zurück")
+        if let ed = field?.currentEditor() as? NSTextView { ed.insertNewline(nil) }
+        u.spin(1) { !nav.showResults }
+        if nav.showResults {
+            log("einstellungen-suche: enter kommt nicht an – springe direkt")
+            if let h = SettingsSearch.shared.search("decks parallel").first { nav.open(h.entry) }
+        }
+        guard let par = flashed("audio.parallel") else { fail("Zeile Decks parallel nicht hervorgehoben (flash \(nav.flash ?? "-"))") }
+        check(content.contains(NSPoint(x: par.midX, y: par.midY)), "Zeile Decks parallel nicht sichtbar (Sprung scrollt nicht): \(par)")
+
+        // Hervorhebung geht nach ~1,5 s weg; ↓ wählt den nächsten Treffer, esc leert die Suche
+        u.spin(3) { nav.flash == nil }
+        check(nav.flash == nil, "Hervorhebung bleibt stehen")
+        func key(_ chars: String, _ code: UInt16) {
+            guard let field, w.makeFirstResponder(field),
+                  let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: w.windowNumber, context: nil, characters: chars, charactersIgnoringModifiers: chars,
+                                           isARepeat: false, keyCode: code) else { return }
+            w.sendEvent(e)
+            u.spin(0.2)
+        }
+        type("loop")
+        key(String(UnicodeScalar(NSDownArrowFunctionKey)!), 125)
+        if nav.selected != 1 { log("einstellungen-suche: ↓ kommt nicht an (synthetisch), gewählt \(nav.selected)") }
+        key("\u{1b}", 53)
+        u.spin(0.5) { nav.query.isEmpty }
+        if !nav.query.isEmpty { log("einstellungen-suche: esc kommt nicht an (synthetisch)"); nav.query = "" }
+        // Sprung aus der Effekt-Auswahl (gesperrtes Plugin): Bereich PLUGINS, eine stehende Suche geht weg
+        type("reverb")
+        u.mix.settingsRequest = "PLUGINS"
+        u.spin(3) { nav.tab == "PLUGINS" && u.mix.settingsRequest == nil }   // unter Last (Load > 40) braucht der Umschalt-Durchlauf > 1 s
+        check(nav.tab == "PLUGINS" && nav.query.isEmpty && !nav.showResults && u.mix.settingsRequest == nil,
+              "settingsRequest: Bereich \(nav.tab), Suche „\(nav.query)“, Anfrage \(u.mix.settingsRequest ?? "-")")
+        log(String(format: "einstellungen-suche: puffer -> AUDIO y %.0f · decks parallel -> y %.0f (fenster %.0f)", buf.midY, par.midY, size.height))
     }
 }
 

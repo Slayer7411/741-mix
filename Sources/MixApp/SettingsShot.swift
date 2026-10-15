@@ -50,6 +50,17 @@ enum SettingsShot {
                 .frame(width: 643).background(Theme.chitin).preferredColorScheme(.dark))
             render(page, to: dir.appendingPathComponent("\(name)-page.png"), fitHeight: true)
         }
+        // Suche: Trefferliste für „loop“
+        let nav = SettingsNav(tab: "AUDIO")
+        nav.query = "loop"
+        nav.showResults = true
+        render(AnyView(SettingsView(nav: nav).environment(mix).environment(store).environment(status).environment(browser).frame(width: 820, height: 640)),
+               to: dir.appendingPathComponent("00-suche.png"))
+        // Sprung: Bereich AUDIO, Zeile Puffer lila
+        nav.showResults = false
+        nav.flash = "audio.buffer"
+        render(AnyView(SettingsView(nav: nav).environment(mix).environment(store).environment(status).environment(browser).frame(width: 820, height: 640)),
+               to: dir.appendingPathComponent("00-suche-sprung.png"))
         restore()
         print("[shot] \(SettingsView.tabs.count) Bereiche -> \(dir.path)")
         exit(0)

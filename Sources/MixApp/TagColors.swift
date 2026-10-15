@@ -43,10 +43,13 @@ struct TagColorSettings: View {
                 LabeledContent("Trennzeichen") {
                     TextField("", text: $mix.prefs.ui.tagSeparators).settingsField().frame(width: 80)
                 }
+                .settingsAnchor("tags.separator")
                 Toggle("Tags farbig markieren", isOn: $mix.prefs.ui.tagHighlight)
+                    .settingsAnchor("tags.highlight")
             }
             Section("Tag-Farben") {
                 TextField("Filtern", text: $filter).settingsField().frame(maxWidth: 260)
+                    .settingsAnchor("tags.colors")
                 ForEach(list.prefix(300), id: \.key) { tag, n in
                     HStack {
                         TagChip(tag: tag, mark: .none, style: .of(tag, mix.prefs.ui)).font(Theme.mono(12))

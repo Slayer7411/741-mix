@@ -35,6 +35,7 @@ struct ShortcutTable: View {
                 Spacer()
                 DeckButton(title: "ALLE ZURÜCKSETZEN") { stop(); keys = ShortcutMap() }
                     .help("Alle Kürzel auf Standard")
+                    .settingsAnchor("keys.reset")
             }
             Text("kürzel anklicken -> neue taste drücken · esc = abbrechen · ✕ = frei · ↺ = standard")
                 .font(Theme.mono(10)).foregroundStyle(Theme.muted).padding(.top, 4)
@@ -49,7 +50,7 @@ struct ShortcutTable: View {
                     .padding(.top, 14).padding(.bottom, 4)
                 Rectangle().fill(Theme.hairline).frame(height: 1)
                 ForEach(ShortcutID.allCases.filter { $0.group == g }) { a in
-                    row(a)
+                    row(a).settingsAnchor(SettingsIndex.keyAnchor(a))
                     Rectangle().fill(Theme.hairline.opacity(0.5)).frame(height: 1)
                 }
             }

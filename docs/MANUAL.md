@@ -127,6 +127,14 @@ a profile = named set of view settings: decks shown (1 / 2 / 4), internal mixer,
 
 click on the meters -> details (keylock lookahead, own vs device overloads).
 
+### settings (⌘,)
+
+* sections left, page right. full list: [settings](settings.md)
+* search field on top of the sidebar, ⌘F focuses it, esc clears. typing replaces the page with a result list: section · group, setting name, part of the hint, matches in purple. name before keyword before group before hint, word start before part of a word
+* german and english terms, case and accents ignored (`hohen` finds `Höhen`), several words = all must match. a few synonyms: latency ↔ buffer, sample rate ↔ rate, bpm ↔ tempo
+* every key action of KEYBOARD and the controller blocks are in the index too (`loop` also finds the loop key)
+* click or enter -> opens the section, scrolls to the row and marks it purple for 1.5 s. ↑ / ↓ selects a result. the search stays until cleared or a section is clicked; `◆ n TREFFER` under the field returns to the list. a hidden row (e.g. preset fields while the waveform style is not 3-band) -> the row that shows it
+
 ## ◆ 04 · DECKS
 
 ### header
@@ -158,6 +166,21 @@ sizes (⌘, -> DECKS -> sizes, all decks, scale with the zoom):
 * pitch fader off -> waveform and rows take its width
 * DECKS -> compact decks (⌥⌘K) -> pitch fader, hotcues and grid tools off / on together -> more room for waveform and beatgrid
 * hidden rows keep working from keys and controller
+
+### right click
+
+anywhere on the deck (header, cover, tags, readouts, overview, empty space) -> track menu. buttons with their own menu (DBL, hotcues, loop sizes) keep it. waveform: its own menu (range, edit mode) with `Track ▸` on top, without one the track menu.
+
+* `Track bearbeiten …`: edit window, PREV / NEXT through the list of the active pane
+* `Im Browser zeigen`: selects the track in the active pane and scrolls to it. not in the list -> TRACK COLLECTION, search and filters cleared (UNPLAYED off if the track is played)
+* `Im Finder zeigen`
+* `Auf Deck … kopieren`: instant double onto that deck (load lock applies)
+* `Grid des DAW-Clips übernehmen` (only with a DAW clip of the same file)
+* `Auswerfen`: empties the deck (also a running load or a load error). greyed out while the deck plays
+* `An Preparation anhängen`, `Zur Playlist hinzufügen ▸`
+* `Analysieren`, `Neu analysieren`, `Vorschau berechnen`, `Rip prüfen` with the open findings
+* `Bewertung ▸`: 0-5 stars (collection tracks)
+* empty deck: `Track laden …` -> focus on this deck and the list of the active pane
 
 ### transport
 
@@ -319,7 +342,7 @@ in MINOS:
 * status bar `DAW-Brücke: 3 Spuren · 4 Clips`, no packet for 2 s -> `keine Verbindung`, the list empties
 * tree entry `DAW` (only while connected): the clips as tracks (title = clip, artist = DAW track, collection values when the file is in the collection), bpm + grid from the warp markers. above the list one row per clip: grid strip (bars, beats, DAW loop, DAW position in purple). double click / load = deck with that grid (load lock applies); the grid is not saved, it comes from the DAW each time
 * deck with the same file (path) as a reported clip: strip below the overview, grid lines from the warp markers, DAW position purple, deck position red, `Δ ms` = deck minus DAW
-* right click on the deck title -> `Grid des DAW-Clips übernehmen`: warp markers -> grid of the deck, undo like every grid edit, saved in `edits.json` with source `daw`
+* right click on the deck -> `Grid des DAW-Clips übernehmen`: warp markers -> grid of the deck, undo like every grid edit, saved in `edits.json` with source `daw`
 * warp markers -> grid: MINOS has one tempo per track. the longest stretch of markers with the same tempo (±0.5 %) gives bpm and phase (least squares), anchor = beat 0 of the clip (bar one), before the file start -> the first bar one in the file. tempo changes inside the clip: grid off outside that stretch (status bar shows `min–max BPM, Grid x`)
 * position between packets: last DAW position + elapsed time × DAW tempo (at most 0.5 s ahead). with link on, DAW and MINOS share tempo and phase anyway
 * `.asd` clip analysis files: reader in MixCore (`ClipAnalysisFile`, warp markers saved with the clip), not yet in the ui

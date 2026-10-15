@@ -641,9 +641,22 @@ final class WaveMouseView: NSView {
     /// Wartezeit vor einer Marke (Doppelklick-Zeit des Systems, höchstens 0,35 s)
     static var markDelay: Double { min(0.35, NSEvent.doubleClickInterval) }
 
-    /// Rechtsklick (nicht ⌃-Klick) in den Bereich: Menü; im EDIT-Modus überall das Menü der Schnittliste
+    /// Rechtsklick (nicht ⌃-Klick) in den Bereich: Menü; im EDIT-Modus überall das Menü der Schnittliste. Oben „Track ▸“
+    /// mit dem Track-Menü des Decks; ohne eigenes Menü gleich das Track-Menü
     override func menu(for event: NSEvent) -> NSMenu? {
         guard event.type == .rightMouseDown, let mix else { return nil }
+        let track = enclosingAreaMenu(for: event)
+        guard let m = waveMenu(event, mix) else { return track }
+        if let track {
+            let i = NSMenuItem(title: String(localized: "Track"), action: nil, keyEquivalent: "")
+            i.submenu = track
+            m.insertItem(i, at: 0)
+            m.insertItem(.separator(), at: 1)
+        }
+        return m
+    }
+
+    private func waveMenu(_ event: NSEvent, _ mix: MixModel) -> NSMenu? {
         let t = time(point(event), mix)
         if editing {
             if mix.focusedDeck != d { mix.focusedDeck = d }

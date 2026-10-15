@@ -220,6 +220,7 @@ struct WavePresetSettings: View {
             .labelsHidden()
         }
         .background(UITestMark(name: "wave picker"))
+        .settingsAnchor("display.wave.preset")
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
                 Button("Neu") { askName(String(localized: "Neues Preset (aus dem aktuellen)"), String(localized: "Eigenes Preset")) { mix.newWavePreset(name: $0) } }
@@ -277,6 +278,7 @@ struct WavePresetFields: View {
         let p = mix.wavePreset
         Group {
             freqRow("Trennfrequenz Tief", bind(\.analysis.low), 40...400).background(UITestMark(name: "wave low"))
+                .settingsAnchor("display.wave.low")
             LabeledContent("Trennfrequenz Mitte") {
                 HStack(spacing: 10) {
                     Toggle("auto", isOn: Binding(get: { p.analysis.mid == nil },
@@ -287,37 +289,61 @@ struct WavePresetFields: View {
                     hz(p.analysis.midHz)
                 }
             }
+            .settingsAnchor("display.wave.mid")
             freqRow("Trennfrequenz Hoch", bind(\.analysis.high), 1000...8000)
+                .settingsAnchor("display.wave.high")
             Text("tief = tiefpass, mitte = bandpass, hoch = hochpass. auto = geometrisches mittel aus tief und hoch. änderungen rechnen geladene tracks im hintergrund neu.")
                 .settingsHint()
-            msRow("Anstieg Tief", \.analysis.attackMs.low, 0.5...50); msRow("Abfall Tief", \.analysis.releaseMs.low, 5...400)
-            msRow("Anstieg Mitte", \.analysis.attackMs.mid, 0.5...50); msRow("Abfall Mitte", \.analysis.releaseMs.mid, 5...400)
-            msRow("Anstieg Hoch", \.analysis.attackMs.high, 0.5...50); msRow("Abfall Hoch", \.analysis.releaseMs.high, 5...400)
+            msRow("Anstieg Tief", \.analysis.attackMs.low, 0.5...50).settingsAnchor("display.wave.attack.low")
+            msRow("Abfall Tief", \.analysis.releaseMs.low, 5...400).settingsAnchor("display.wave.release.low")
+            msRow("Anstieg Mitte", \.analysis.attackMs.mid, 0.5...50).settingsAnchor("display.wave.attack.mid")
+            msRow("Abfall Mitte", \.analysis.releaseMs.mid, 5...400).settingsAnchor("display.wave.release.mid")
+            msRow("Anstieg Hoch", \.analysis.attackMs.high, 0.5...50).settingsAnchor("display.wave.attack.high")
+            msRow("Abfall Hoch", \.analysis.releaseMs.high, 5...400).settingsAnchor("display.wave.release.high")
             row("Analyse-Gewicht Tief", num(\.analysis.weights.low), 0...3)
+                .settingsAnchor("display.wave.weight.low")
             row("Analyse-Gewicht Mitte", num(\.analysis.weights.mid), 0...3)
+                .settingsAnchor("display.wave.weight.mid")
             row("Analyse-Gewicht Hoch", num(\.analysis.weights.high), 0...3)
+                .settingsAnchor("display.wave.weight.high")
         }
         Group {
             Toggle("Bandanteile direkt als Rot / Grün / Blau", isOn: bind(\.look.direct))
+                .settingsAnchor("display.wave.direct")
             if !p.look.direct {
                 colorRow("Farbe Tief", \.look.low)
+                    .settingsAnchor("display.wave.color.low")
                 colorRow("Farbe Mitte", \.look.mid)
+                    .settingsAnchor("display.wave.color.mid")
                 colorRow("Farbe Hoch", \.look.high)
+                    .settingsAnchor("display.wave.color.high")
             }
             colorRow("Gehaltene Höhen (offene Hats)", \.look.highOpen)
+                .settingsAnchor("display.wave.color.highopen")
             colorRow("Gehaltene Tiefen (Bassline)", \.look.lowWarm)
+                .settingsAnchor("display.wave.color.lowwarm")
             row("Lautstärke Tief", num(\.look.gain.low), 0...3)
+                .settingsAnchor("display.wave.gain.low")
             row("Lautstärke Mitte", num(\.look.gain.mid), 0...3)
+                .settingsAnchor("display.wave.gain.mid")
             row("Lautstärke Hoch", num(\.look.gain.high), 0...4)
+                .settingsAnchor("display.wave.gain.high")
             row("Höhen-Betonung", num(\.look.highBoost), 0...3, step: 0.25)
+                .settingsAnchor("display.wave.preset.highboost")
         }
         Group {
             row("Energie-Anteil (base)", num(\.look.base), 0...1)
+                .settingsAnchor("display.wave.base")
             row("Übergänge (fade)", num(\.look.fade), 0.01...0.5)
+                .settingsAnchor("display.wave.fade")
             row("Stapel-Kurve", num(\.look.stackCurve), 0.2...1.5)
+                .settingsAnchor("display.wave.stack")
             row("Sättigung (RGB)", num(\.look.saturation), 0.5...3)
+                .settingsAnchor("display.wave.saturation")
             row("Orange gehaltener Tiefen", num(\.look.warmth), 0...1)
+                .settingsAnchor("display.wave.warmth")
             row("Hellblau gehaltener Höhen", num(\.look.openness), 0...1)
+                .settingsAnchor("display.wave.openness")
             Text("rot / grün / blau direkt: bandanteile als farbkanäle (kick-anschlag rot, mitten grün, kurze höhen blau), sonst die drei farben. lautstärke = gewicht des bands in farbe und stapelhöhe. energie-anteil 1 = nur mischung, 0 = nur stapel (stärkstes band innen). sättigung nur bei rot / grün / blau direkt.")
                 .settingsHint()
         }

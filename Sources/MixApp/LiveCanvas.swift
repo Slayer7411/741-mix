@@ -41,6 +41,9 @@ final class LiveCanvasView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Rechtsklick: Menü der umgebenden Fläche (Übersicht im Deck -> Track-Menü)
+    override func menu(for e: NSEvent) -> NSMenu? { super.menu(for: e) ?? enclosingAreaMenu(for: e) }
+
     func configure(fps: Float, running: Bool) {
         guard fps != self.fps || running != self.running else { return }
         self.fps = fps

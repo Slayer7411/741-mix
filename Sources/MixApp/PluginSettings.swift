@@ -229,10 +229,12 @@ struct PluginSettingsPage: View {
         Form {
             Section("Laden") {
                 Toggle("Plugins im Prozess (riskant)", isOn: Binding(get: { s.allowInProcess }, set: { pm.setAllowInProcess($0) }))
+                    .settingsAnchor("plugins.inprocess")
                 Text("aus (standard, live): audio units anderer hersteller laufen nur isoliert in einem eigenen systemdienst. stürzt eins ab oder antwortet nicht, läuft minos weiter, die fx-unit bleibt trocken, das plugin lädt nach 2 s neu und ist nach 3 abstürzen blockiert. vst3 und plugins aus eigenen ordnern laufen nur im prozess und werden nicht geladen. an: auch im prozess – ein absturz des plugins beendet minos, ein hänger stoppt den ton. apple-plugins laufen immer im prozess. gilt ab dem nächsten laden des plugins.")
                     .settingsHint()
                 if s.allowInProcess {
                     Toggle("Drittanbieter-Plugins isoliert laden", isOn: Binding(get: { s.isolateThirdParty }, set: { pm.setIsolateThirdParty($0) }))
+                        .settingsAnchor("plugins.isolate")
                     Text("isoliert kostet je block etwas zeit (siehe handbuch). der dienst kennt nur installierte audio units, vst3 und eigene ordner laufen immer im prozess.")
                         .settingsHint()
                 }
@@ -262,6 +264,7 @@ struct PluginSettingsPage: View {
                     if pm.scanning { Text("liest …").font(Theme.mono(10)).foregroundStyle(Theme.muted) }
                 }
                 .padding(.top, 4)
+                .settingsAnchor("plugins.folders")
                 Text("installieren kopiert .component-bundles (auch aus ordnern oder .zip) nach ~/Library/Audio/Plug-Ins/Components, .vst3 nach ~/Library/Audio/Plug-Ins/VST3, nie in den system-ordner. nicht signierte oder nicht beglaubigte plugins kann gatekeeper blockieren; die quarantäne-markierung aus dem download wird nur nach rückfrage entfernt. eigene ordner: bundles werden nur in minos geladen und registriert, nicht installiert.")
                     .settingsHint()
                 if let m = pm.message {
@@ -284,6 +287,7 @@ struct PluginSettingsPage: View {
                     }
                 }
                 .padding(.bottom, 4)
+                .settingsAnchor("plugins.list")
                 let list = filtered(pm.entries)
                 if list.isEmpty {
                     Text(LocalizedStringKey(pm.scanning ? "liest …" : "keine plugins gefunden")).settingsHint()
