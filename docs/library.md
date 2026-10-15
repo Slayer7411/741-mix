@@ -5,6 +5,7 @@
 * one, two side by side or two stacked browser panes (toolbar)
 * every pane has its own tree selection, search, sort (up to three columns, header click stacks them), role filter and tags
 * stacked: the pane header (title, search, roles, tags) is a column left of the list, the pane height goes to rows
+* rows one or two lines per pane (`≡` / `☰` in the header): two lines put title · artist on top and comment · tags · label below in one column `Track`; detail bar below the list (`▭`) with all fields of the selected track -> [manual](MANUAL.md#rows--detail-bar--short-values--selection)
 * left controller drives the left pane, right controller the right one
 * space / browse push = big browser
 * split line between decks and browser can be dragged

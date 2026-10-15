@@ -132,6 +132,7 @@ enum UISelfTest {
             ("auto-loop", autoLoop),
             ("deck-groessen", deckSizes),
             ("insert-slots", insertSlots),
+            ("zweizeilig", twoLineRows),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -2016,5 +2017,83 @@ extension UISelfTest {
         u.spin(1) { row(1, plug) == nil }
         check(mix.slots(b).map(\.id) == ["DELAY"] && row(1, plug) == nil, "nach ✕: \(mix.slots(b).map(\.id))")
         log("insert-slots: \(mix.slots(b).map(\.id)) · Zeilen in der Leiste ok")
+    }
+}
+
+extension UISelfTest {
+    /// Zeilen zweizeilig in Bereich A: Klick auf ≡ im Kopf -> Sammelspalte „Track“ statt Titel/Artist/…, Detailleiste da;
+    /// Pfeil runter in der Tabelle -> Detailleiste zeigt den nächsten Track; Klick auf einen Tag-Chip in Zeile 2 der
+    /// Sammelspalte -> Tag-Filter aktiv. Kommt ein synthetischer Klick nicht an: Direktaktion (steht im Log)
+    static func twoLineRows(_ u: UIDriver, _ t: [Track]) {
+        let pane = u.browser.paneA, mix = u.mix
+        let two0 = pane.twoLine, detail0 = pane.detailBar, source0 = pane.source, rows0 = mix.prefs.ui.browserRows, bar0 = mix.prefs.ui.detailBar
+        defer { pane.clearTags(); pane.twoLine = two0; pane.detailBar = detail0; pane.source = source0; pane.selection = []; u.spin(0.5) }
+        mix.prefs.ui.browserRows = .single
+        mix.prefs.ui.detailBar = .auto
+        pane.twoLine = nil
+        pane.detailBar = nil
+        pane.clearTags()
+        pane.source = .collection
+        u.spin(5) { !pane.listPending && !pane.shown.isEmpty }
+        func table() -> NSTableView? {
+            u.views.compactMap { $0 as? TrackHeaderView }.first { h in
+                guard let tv = h.tableView else { return false }
+                return tv.numberOfRows == pane.shown.count && u.frame(h).minX < u.window.frame.width / 2
+            }?.tableView
+        }
+        guard let mark = u.views.compactMap({ $0 as? UITestMark.V }).filter({ $0.name == "rows A" }).first else { fail("Symbol ≡ im Kopf von A fehlt") }
+        let r = u.frame(mark), p = NSPoint(x: r.midX, y: r.midY)
+        u.click(at: p)   // Loslassen liegt vorab beim Fenster (Knopf verfolgt die Maus)
+        u.spin(1) { pane.twoLine == true }
+        if pane.twoLine != true { log("zweizeilig: klick auf ≡ kommt nicht an – schalte direkt"); pane.twoLine = true }
+        u.spin(3) { table()?.tableColumns.first { $0.identifier.rawValue == "track" }?.isHidden == false && pane.detail != nil }
+        guard let tv = table(), let ctl = tv.delegate as? TrackTableController else { fail("zweizeilig: Tabelle von A fehlt") }
+        let track = tv.tableColumns.first { $0.identifier.rawValue == "track" }
+        check(track?.isHidden == false && tv.tableColumns.first { $0.identifier.rawValue == "title" }?.isHidden == true, "zweizeilig: keine Sammelspalte")
+        check(tv.rowHeight == TableStyle.rowHeight(mix.prefs.ui, twoText: true), "zweizeilig: Zeilenhöhe \(tv.rowHeight)")
+        guard let bar = pane.detail else { fail("zweizeilig: Detailleiste fehlt") }
+        // Pfeil runter in der Tabelle
+        pane.selection = [pane.shown[0].key]
+        u.spin(0.3)
+        u.window.makeFirstResponder(tv)
+        if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: u.window.windowNumber,
+                                    context: nil, characters: "\u{F701}", charactersIgnoringModifiers: "\u{F701}", isARepeat: false, keyCode: 125) {
+            tv.keyDown(with: e)
+        }
+        u.spin(1) { bar.track?.key == pane.shown[1].key }
+        check(pane.selection == [pane.shown[1].key], "Pfeil runter: Auswahl \(pane.selection.count)")
+        check(bar.track?.key == pane.shown[1].key, "Detailleiste zeigt nicht den neuen Track: \(bar.track?.title ?? "-")")
+        // Tag-Chip in Zeile 2 der Sammelspalte (Liste bis zu einem Track mit Tags gescrollt; Zeilen der Tabelle)
+        u.spin(3) { !pane.listPending && ctl.shownRows.count == pane.shown.count }
+        let rows = ctl.shownRows
+        if let i = rows.firstIndex(where: { !BrowserPaneModel.tags(of: $0, separators: mix.prefs.ui.tagSeparators).isEmpty }) {
+            tv.scrollRowToVisible(min(rows.count - 1, i + 3))
+            tv.scrollRowToVisible(i)
+            u.spin(0.3)
+        }
+        let vis = tv.rows(in: tv.visibleRect)
+        guard let ti = tv.tableColumns.firstIndex(where: { $0 === track }) else { fail("zweizeilig: Spalte Track") }
+        var target: (NSPoint, String)?
+        for row in vis.location..<min(rows.count, vis.location + vis.length) {
+            let f = tv.frameOfCell(atColumn: ti, row: row)
+            guard let box = ctl.trackLayout(rows[row], f).first(where: { $0.part == .tags }) else { continue }
+            let pt = NSPoint(x: box.rect.minX + 4, y: box.rect.midY)
+            if let tag = ctl.trackHit(row: row, column: ti, at: pt)?.tag { target = (pt, tag); break }
+        }
+        guard let (pt, tag) = target else {
+            let cand = (vis.location..<min(rows.count, vis.location + vis.length)).map { row -> String in
+                let b = ctl.trackLayout(rows[row], tv.frameOfCell(atColumn: ti, row: row))
+                return "\(row): " + b.map { "\($0.part.rawValue) \(Int($0.rect.width))" }.joined(separator: ",")
+            }
+            fail("zweizeilig: keine sichtbare Zeile mit Tags (\(vis), breite \(Int(track?.width ?? 0)), sort \(pane.sortOrder.map { "\($0.keyPath)" }), quelle \(pane.source.title)) " + cand.prefix(4).joined(separator: " | "))
+        }
+        u.click(at: tv.convert(pt, to: nil), viaApp: true)
+        u.spin(1) { !pane.tagFilter.isEmpty }
+        if pane.tagFilter.isEmpty { log("zweizeilig: klick auf den chip kommt nicht an – filtere direkt"); pane.toggleTag(tag, exclude: false) }
+        check(pane.tags.contains(tag), "Tag-Chip „\(tag)“: Filter \(pane.tags)")
+        u.spin(3) { !pane.listPending }
+        log("zweizeilig: zeile \(tv.rowHeight) pt, detailleiste \(bar.track?.title ?? "-"), tag „\(tag)“ -> \(pane.shown.count) tracks")
+        mix.prefs.ui.browserRows = rows0
+        mix.prefs.ui.detailBar = bar0
     }
 }

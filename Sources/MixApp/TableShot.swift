@@ -20,6 +20,127 @@ enum TableShot {
         override var canBecomeMain: Bool { true }
     }
 
+    /// Pixel der Zeile (Gerätepixel 1×) als RGBA
+    private static func pixels(_ v: NSView) -> (NSBitmapImageRep, (CGFloat, CGFloat) -> (CGFloat, CGFloat, CGFloat))? {
+        guard let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { return nil }
+        v.cacheDisplay(in: v.bounds, to: rep)
+        let sx = CGFloat(rep.pixelsWide) / v.bounds.width, sy = CGFloat(rep.pixelsHigh) / v.bounds.height
+        return (rep, { x, y in
+            // Zeile ist gespiegelt (y nach unten), das Bitmap auch (Zeile 0 oben)
+            // über dem Hintergrund der Tabelle (Void) zusammengesetzt: Zeilen füllen mit Deckung
+            let c = rep.colorAt(x: Int(x * sx), y: Int(y * sy))?.usingColorSpace(.sRGB) ?? .black
+            let v = TableStyle.void.usingColorSpace(.sRGB) ?? .black, a = c.alphaComponent
+            return (c.redComponent * a + v.redComponent * (1 - a), c.greenComponent * a + v.greenComponent * (1 - a), c.blueComponent * a + v.blueComponent * (1 - a))
+        })
+    }
+
+    /// Zweizeilig: Sammelspalte statt der Textspalten, Zeilenhöhe, beide Textzeilen gezeichnet, schmale Spalten mittig,
+    /// Sortierung über den Kopf der Sammelspalte, Return/Tab durch ihre Felder, Detailleiste folgt der Auswahl (Zeit je
+    /// Wechsel), Auswahlfarbe und Streifen
+    static func twoLineChecks(_ tv: NSTableView, _ pane: BrowserPaneModel, _ h: NSView, _ settle: () -> Void,
+                              _ check: (String, Bool) -> Void, _ log: (String) -> Void) {
+        guard let ctl = tv.delegate as? TrackTableController, let mix = ctl.mix else { check("zweizeilig: controller", false); return }
+        let single = tv.rowHeight
+        pane.twoLine = true
+        pane.detailBar = true
+        settle(); settle()
+        func col(_ id: String) -> NSTableColumn? { tv.tableColumns.first { $0.identifier.rawValue == id } }
+        let shown = tv.tableColumns.filter { !$0.isHidden }.map(\.identifier.rawValue)
+        check("zweizeilig: sammelspalte", col("track")?.isHidden == false && ["title", "artist", "comment", "comment2", "label"].allSatisfy { col($0)?.isHidden == true })
+        let want = TableStyle.rowHeight(mix.prefs.ui, twoText: true)
+        log(String(format: "zweizeilig: zeile %.0f pt (einzeilig %.0f) · spalten %@", tv.rowHeight, single, shown.joined(separator: ",")))
+        check("zweizeilig: zeilenhöhe", tv.rowHeight == want && tv.rowHeight >= single * 1.3 && tv.rowHeight <= single * 1.8)
+        // Zeile mit Titel und Kommentar (beide Zeilen haben Text)
+        guard let r = pane.shown.indices.prefix(4000).first(where: { pane.shown[$0].title.count > 4 && pane.shown[$0].comment.count > 4 && pane.shown[$0].bpm > 0 }),
+              let ti = tv.tableColumns.firstIndex(where: { $0.identifier.rawValue == "track" }),
+              let bi = tv.tableColumns.firstIndex(where: { $0.identifier.rawValue == "bpm" }) else { check("zweizeilig: testzeile", false); return }
+        tv.scrollRowToVisible(r)
+        pane.selection = []
+        settle()
+        let cell = tv.frameOfCell(atColumn: ti, row: r), row = tv.rect(ofRow: r)
+        let lines = ctl.trackLines(cell)
+        check("zweizeilig: zeilen in der zelle", lines[0].minY >= row.minY && lines[1].maxY <= row.maxY && lines[1].minY >= lines[0].maxY - 0.5)
+        if let rv = tv.rowView(atRow: r, makeIfNecessary: false), let (_, px) = pixels(rv) {
+            func ink(_ l: CGRect) -> Int {
+                var n = 0
+                for x in stride(from: l.minX - row.minX + 1, to: min(l.maxX - row.minX, l.minX - row.minX + 300), by: 1) {
+                    for y in stride(from: l.minY - row.minY + 2, to: l.maxY - row.minY - 1, by: 1) { let c = px(x, y); if c.0 + c.1 + c.2 > 1.2 { n += 1 } }
+                }
+                return n
+            }
+            let a = ink(lines[0]), b = ink(lines[1])
+            log("zweizeilig: helle pixel zeile 1 \(a), zeile 2 \(b)")
+            check("zweizeilig: beide zeilen sichtbar", a > 20 && b > 20)
+        }
+        let bpm = tv.frameOfCell(atColumn: bi, row: r)
+        check("zweizeilig: schmale spalten mittig", abs(bpm.midY - row.midY) < 1)
+        // Kopf der Sammelspalte sortiert nach dem Titel, Kopf-Menü wählt Artist
+        // Kopf der Sammelspalte: sortiert nach ihrem Teil (bisher Artist), Kopf-Menü wählt den Titel
+        let partPaths = TrackPart.sortable.compactMap { $0.sort?.keyPath }
+        tv.sortDescriptors = [NSSortDescriptor(key: "track", ascending: false)] + tv.sortDescriptors.filter { $0.key != "track" }
+        settle()
+        check("zweizeilig: sortieren über track", pane.sortOrder.first.map { partPaths.contains($0.keyPath) && $0.order == .reverse } == true)
+        if let menu = tv.headerView?.menu {
+            menu.delegate?.menuNeedsUpdate?(menu)
+            let head = menu.items.firstIndex { $0.title == String(localized: "Spalte Track sortieren nach") } ?? 999
+            if let item = menu.items.enumerated().first(where: { $0.offset > head && $0.element.title == TrackPart.title.name })?.element,
+               let a = item.action { NSApp.sendAction(a, to: item.target, from: item) }
+            settle()
+            check("zweizeilig: kopf-menü titel", pane.sortOrder.first?.keyPath == \Track.title && tv.sortDescriptors.first?.key == "track")
+        }
+        // Return: erstes Feld der Sammelspalte (Titel), Tab: Artist
+        let key = pane.shown[r].key
+        pane.selection = [key]
+        settle()
+        // nach dem Sortieren steht der Track woanders: sichtbar machen (wie die Tabelle nach einer neuen Liste)
+        let r2 = pane.shown.firstIndex { $0.key == key } ?? r
+        tv.scrollRowToVisible(r2)
+        settle()
+        ctl.inline?.beginFromKeyboard([key])
+        settle()
+        let ed = pane.inline
+        let editorShown = tv.subviews.contains { $0 is NSTableRowView && $0.subviews.contains { $0 is InlineFieldCell } }
+        if let ed { ctl.inline?.finish(ed, commit: false, move: 1) }
+        settle()
+        let order = ctl.trackFields
+        let next = ed.flatMap { e in order.firstIndex(of: e.field).map { $0 + 1 < order.count ? order[$0 + 1] : nil } } ?? nil
+        log("zweizeilig: return -> \(ed?.field.rawValue ?? "-") (feld da: \(editorShown)), tab -> \(pane.inline?.field.rawValue ?? "-") · reihenfolge \(order.map(\.rawValue))")
+        check("zweizeilig: return/tab", ed.map { order.contains($0.field) } == true && editorShown && next != nil && pane.inline?.field == next)
+        if let e = pane.inline { ctl.inline?.finish(e, commit: false, move: 0) }
+        settle()
+        // Detailleiste: Auswahl Schritt für Schritt, Zeit je Wechsel (Auswahl + Zeichnen der Leiste)
+        guard let bar = pane.detail else { check("detailleiste da", false); return }
+        check("detailleiste zeigt auswahl", bar.track?.key == key)
+        var ms: [Double] = []
+        for i in 1...30 {
+            let k = pane.shown[(r + i) % pane.shown.count].key
+            let t0 = CACurrentMediaTime()
+            pane.selection = [k]
+            ctl.listArrived()
+            bar.display()
+            ms.append((CACurrentMediaTime() - t0) * 1000)
+            if bar.track?.key != k { check("detailleiste folgt", false); break }
+        }
+        ms.sort()
+        log(String(format: "detailleiste: wechsel median %.2f ms · max %.2f ms · zeichnen %.2f ms", ms[ms.count / 2], ms.last ?? 0, bar.lastMs))
+        check("detailleiste < 2 ms", ms[ms.count / 2] < 2)
+        // Auswahlfarbe: Streifen links voll rot, Fläche rot getönt
+        pane.selection = [key]
+        settle()
+        tv.scrollRowToVisible(r2)
+        settle()
+        if let rv = tv.rowView(atRow: r2, makeIfNecessary: false), let (_, px) = pixels(rv) {
+            let stripe = px(0.5, rv.bounds.midY), area = px(rv.bounds.width - 30, 2)
+            log(String(format: "auswahl: streifen %.2f/%.2f/%.2f · fläche %.2f/%.2f/%.2f", stripe.0, stripe.1, stripe.2, area.0, area.1, area.2))
+            check("auswahl: streifen und fläche", stripe.0 > 0.7 && stripe.0 > stripe.1 + 0.4 && area.0 > area.1 + 0.05 && area.0 < 0.4)
+        }
+        pane.selection = []
+        pane.twoLine = nil
+        pane.detailBar = nil
+        settle()
+        check("zurück einzeilig", col("track")?.isHidden == true && col("title")?.isHidden == false && tv.rowHeight == single)
+    }
+
     static func run(_ path: String) -> Never {
         let dir = URL(fileURLWithPath: path, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -239,10 +360,11 @@ enum TableShot {
                 // Spalten-Einträge bis zum Trenner, dahinter die Sortierung (Titel, je Spalte, zurücksetzen)
                 let columns = menu.items.prefix { !$0.isSeparatorItem }.count
                 let sortItems = menu.items.drop { !$0.isSeparatorItem }.dropFirst().count
-                check("kopf-menü", columns == TrackColumn.all.count - 1 && sortItems == 3 && item?.state == .off && before == true
+                check("kopf-menü", columns == TrackColumn.all.count - 2 && sortItems == 3 && item?.state == .off && before == true
                       && tv.tableColumns.first { $0.identifier.rawValue == "genre" }?.isHidden == false)
             }
             check("spalten", back?.order.first == "bpm" && back?.hidden["label"] == true)
+            twoLineChecks(tv, pane, h, settle, check, log)
             // Zoom: Zeilenhöhe und Breiten wachsen mit (Fenster wächst wie in der App mit)
             func width(_ id: String) -> CGFloat { tv.tableColumns.first { $0.identifier.rawValue == id }?.width ?? 0 }
             let w0 = width("artist"), b0 = width("bpm"), r0 = tv.rowHeight
@@ -291,6 +413,33 @@ enum TableShot {
             win.contentView = nil
             win.close()
         }
+        // Zeilen zweizeilig (Sammelspalte), Detailleiste, Auswahl (drei Zeilen gewählt, eine davon gespielt-gedimmt):
+        // table-<name>.png; MIX741_SHOT_MODES=two,two-row,two-detail,one-detail,select
+        let looks: [(String, PreviewMode, Bool, Bool)] = [("two", .off, true, false), ("two-row", .fullRow, true, false),
+                                                          ("two-detail", .off, true, true), ("one-detail", .off, false, true), ("select", .off, false, false)]
+        for (name, mode, two, detail) in looks where only?.contains(name) ?? false || only == nil {
+            mix.prefs.ui.previewMode = mode
+            pane.twoLine = two
+            pane.detailBar = detail
+            let width = Double(env["MIX741_SHOT_W"] ?? "") ?? 1400
+            let (h, win) = host(size: NSSize(width: width, height: 640))
+            for _ in 0..<8 { h.layoutSubtreeIfNeeded(); spin(0.2) }
+            guard let tv = table(h) else { log("keine tabelle"); exit(1) }
+            tv.scroll(NSPoint(x: 0, y: tv.rect(ofRow: first).minY))
+            if rows.count > first + 6 {
+                pane.selection = [rows[first + 1].key, rows[first + 2].key, rows[first + 4].key]
+                history.setPlayed(history.played.union([rows[first + 2].key, rows[first + 3].key]))
+            }
+            for _ in 0..<4 { h.layoutSubtreeIfNeeded(); spin(0.3) }
+            spin(1)
+            png(h, "table-\(name).png")
+            log("\(name): zeile \(tv.rowHeight) pt · spalten " + tv.tableColumns.filter { !$0.isHidden }.map { "\($0.identifier.rawValue) \(Int($0.width))" }.joined(separator: ", "))
+            pane.selection = []
+            win.contentView = nil
+            win.close()
+        }
+        pane.twoLine = nil
+        pane.detailBar = nil
         // Harmonie: Bezug fest gesetzt (MIX741_SHOT_KEY=<open key>@<bpm>, sonst Key und Tempo einer Zeile der Liste),
         // Key-Farben nach Artist, nach Master-Wechsel, nach „Harmonie“ sortiert, Matching an
         if only?.contains("harmony") ?? true, rows.count > first + 5 {

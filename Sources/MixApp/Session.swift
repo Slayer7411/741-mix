@@ -20,6 +20,9 @@ struct Session: Codable {
         var favorites: [BrowserFavorite?]?
         /// ausgeschlossene Tags (⌥-Klick)
         var excludedTags: [String]?
+        /// Zeilen 1 / 2 (nil = Einstellung), Detailleiste (nil = Einstellung)
+        var rows: Int?
+        var detailBar: Bool?
     }
     var decks: [Deck]?
     var fx: [FXUnitState]?
@@ -77,7 +80,8 @@ struct Session: Codable {
                         sorts: p.sortOrder.count > 1 ? p.sortOrder.compactMap { c in Session.sortName(c).map { "\($0):\(c.order == .forward ? "asc" : "desc")" } } : nil,
                         subfolders: p.subfolders,
                         favorites: p.favorites.contains { $0 != nil } ? p.favorites : nil,
-                        excludedTags: p.excludedTags.isEmpty ? nil : p.excludedTags.sorted())
+                        excludedTags: p.excludedTags.isEmpty ? nil : p.excludedTags.sorted(),
+                        rows: p.twoLine.map { $0 ? 2 : 1 }, detailBar: p.detailBar)
         }
         maximized = browser.maximized
     }
@@ -132,6 +136,8 @@ struct Session: Codable {
             if let v = p.showTree { pane.showTree = v }
             if let v = p.subfolders { pane.subfolders = v }
             if let f = p.favorites { pane.favorites = BrowserFavorite.normalized(f) }
+            pane.twoLine = p.rows.map { $0 >= 2 }
+            pane.detailBar = p.detailBar
         }
     }
 

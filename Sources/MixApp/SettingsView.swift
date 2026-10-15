@@ -911,6 +911,7 @@ struct BrowserSettings: View {
                 Text("zeilenhöhe = schrift + luft (11 pt = bisher, 5 pt = eng). gilt für alle listen, auch mit vorschau.")
                     .settingsHint()
             }
+            BrowserRowsSettings()
             Section("Gespielte Tracks") {
                 Toggle("Gespielte Tracks dimmen", isOn: $mix.prefs.ui.dimPlayedTracks)
                 Toggle("Gespielte Tracks ausblenden", isOn: $mix.prefs.ui.hidePlayedTracks)

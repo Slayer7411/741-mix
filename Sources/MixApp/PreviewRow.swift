@@ -9,9 +9,10 @@ enum PreviewRow {
     /// Mindesthöhe des Zelleninhalts zweizeilig; mit dem Rand der Tabelle ~34 pt je Zeile (Text ~17 pt + Band).
     /// Größere Schrift: Zeile wächst mit, das Band bleibt gleich hoch
     static func rowHeight(textSize: Double) -> CGFloat { 26 + max(0, CGFloat(textSize) - 12) * 1.5 }
-    /// Band: untere Hälfte, 2 pt Luft unten
-    @MainActor static func band(in row: NSRect) -> NSRect {
-        NSRect(x: row.minX + 2.z, y: row.minY + row.height * 0.5, width: row.width - 4.z, height: row.height * 0.5 - 2.z)
+    /// Band: untere Hälfte (zweizeiliger Text: unter dem Textbereich, `top` pt ab Zeilenoberkante), 2 pt Luft unten
+    @MainActor static func band(in row: NSRect, top: CGFloat? = nil) -> NSRect {
+        let y = top ?? row.height * 0.5
+        return NSRect(x: row.minX + 2.z, y: row.minY + y, width: row.width - 4.z, height: row.height - y - 2.z)
     }
 }
 
@@ -22,6 +23,8 @@ final class PreviewRowController {
     private var pending: Set<Int> = []
     /// Zeilen der Tabelle (dieselbe Liste, die sie zeigt)
     var rows: () -> [Track] = { [] }
+    /// Oberkante des Bands in der Zeile (Tabelle), nil = Hälfte
+    var bandTop: () -> CGFloat? = { nil }
     var mix: MixModel?
     var on = false { didSet { if on != oldValue { sync() } } }
     /// Deckkraft des Bandes (Prefs)
@@ -85,7 +88,7 @@ final class PreviewRowController {
         guard on, let key = previewKey, let tv = inline?.table else { return nil }
         let range = tv.rows(in: tv.visibleRect), rows = rows()
         for r in range.location..<min(rows.count, range.location + range.length) where rows[r].key == key {
-            return v.convert(PreviewRow.band(in: tv.rect(ofRow: r)), from: tv)
+            return v.convert(PreviewRow.band(in: tv.rect(ofRow: r), top: bandTop()), from: tv)
         }
         return nil
     }
@@ -173,9 +176,9 @@ final class PreviewRowController {
             if let tv = table, let c = controller {
                 let range = tv.rows(in: tv.visibleRect)
                 let opacity = Float(c.alpha)
-                let rows = c.rows()
+                let rows = c.rows(), top = c.bandTop()
                 for r in range.location..<min(rows.count, range.location + range.length) {
-                    let rect = convert(PreviewRow.band(in: tv.rect(ofRow: r)), from: tv)
+                    let rect = convert(PreviewRow.band(in: tv.rect(ofRow: r), top: top), from: tv)
                     guard rect.intersects(bounds), let img = c.image(rows[r]) else { continue }
                     if used == bands.count {
                         let l = CALayer()

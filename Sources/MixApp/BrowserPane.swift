@@ -43,6 +43,23 @@ final class BrowserPaneModel: Identifiable {
     var editSession: TrackEditSession?
     /// Favoritenleiste (6 Plätze, BrowserFavorites.swift)
     var favorites: [BrowserFavorite?] = BrowserFavorite.normalized(nil)
+    /// Zeilen dieses Bereichs zweizeilig (nil = Einstellung ⌘, -> BROWSER), Symbol im Kopf
+    var twoLine: Bool?
+    /// Detailleiste dieses Bereichs (nil = Einstellung), Symbol im Kopf
+    var detailBar: Bool?
+    /// sichtbare Detailleiste (die Tabelle meldet ihr den Track direkt, ohne SwiftUI)
+    @ObservationIgnored weak var detail: DetailBarView?
+    @ObservationIgnored var onDetail: (() -> Void)?
+
+    func twoText(_ ui: UIPrefs) -> Bool { twoLine ?? (ui.browserRows == .double) }
+    func showsDetail(_ ui: UIPrefs) -> Bool {
+        if let detailBar { return detailBar }
+        switch ui.detailBar {
+        case .auto: return twoText(ui)
+        case .on: return true
+        case .off: return false
+        }
+    }
 
     init(name: String, source: BrowserSource = .collection) {
         self.name = name
@@ -359,6 +376,7 @@ struct BrowserPane: View {
                     } else {
                         TrackTable(model: model)
                             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.tableHeight = $0 }
+                        if model.showsDetail(decks.prefs.ui) { DetailBar(model: model) }
                     }
                 }
                 .frame(minWidth: 380.z)
@@ -496,6 +514,7 @@ struct PaneHeader: View {
             Text(model.source.title.uppercased()).font(Theme.label(13.z, .bold)).lineLimit(1)
             RowCount(model: model)
             OwnSmartlistEditButton(model: model)
+            if !model.source.isHistory { RowsButtons(model: model) }
         }
     }
 
@@ -540,6 +559,32 @@ struct PaneHeader: View {
             Button { model.removeTag(t) } label: { TagChip(tag: t, mark: model.tagFilter.mark(t), style: .of(t, decks.prefs.ui)) }
                 .buttonStyle(.plain)
                 .font(Theme.mono(11.z))
+        }
+    }
+}
+
+/// Symbole im Kopf: Zeilen ein-/zweizeilig, Detailleiste ein/aus (je Bereich, in der Sitzung gespeichert)
+struct RowsButtons: View {
+    @Environment(MixModel.self) private var mix
+    let model: BrowserPaneModel
+    @Environment(BrowserState.self) private var browser
+
+    var body: some View {
+        let ui = mix.prefs.ui, two = model.twoText(ui), detail = model.showsDetail(ui)
+        let side = model === browser.paneA ? "A" : "B"
+        HStack(spacing: 4.z) {
+            Button { model.twoLine = !two } label: {
+                Text(two ? "☰" : "≡").font(Theme.mono(13.z)).foregroundStyle(two ? Theme.bone : Theme.muted)
+            }
+            .buttonStyle(.borderless)
+            .help(two ? "Zeilen einzeilig (eine Spalte je Feld)" : "Zeilen zweizeilig: Titel · Artist, darunter Kommentar · Tags · Label")
+            .background(UITestMark(name: "rows \(side)"))
+            Button { model.detailBar = !detail } label: {
+                Text("▭").font(Theme.mono(13.z)).foregroundStyle(detail ? Theme.bone : Theme.muted)
+            }
+            .buttonStyle(.borderless)
+            .help("Detailleiste unter der Liste ein/aus")
+            .background(UITestMark(name: "detail \(side)"))
         }
     }
 }
@@ -871,11 +916,13 @@ struct TrackTable: View {
         let tick = ui.previewMode == .column || ui.previewMode == .behindTitle ? Overviews.shared.tick : 0
         let look = TrackTableController.Look(ui: ui, zoom: UIZoom.shared.factor, filter: model.tagFilter, inline: model.inline,
                                              played: history.played, cloud: CloudLibrary.shared.revision, rip: RipChecks.shared.revision, tick: tick,
-                                             preview: ui.previewMode == .column || ui.previewMode == .behindTitle ? decks.previewing?.key : nil)
+                                             preview: ui.previewMode == .column || ui.previewMode == .behindTitle ? decks.previewing?.key : nil,
+                                             twoText: model.twoText(ui))
         TrackTableView(controller: table, look: look, selection: model.selection, sort: model.sortOrder) { table in
                 table.model = model
                 table.fixedRows = rows
                 model.onList = { [weak table] in table?.listArrived() }
+                model.onDetail = { [weak table] in table?.refreshDetail() }
                 table.store = store
                 table.history = history
                 table.mix = decks
@@ -883,6 +930,7 @@ struct TrackTable: View {
                 inlineCtl.model = model
                 inlineCtl.store = store
                 inlineCtl.tableView = table.table
+                inlineCtl.tableCtl = table
                 inlineCtl.rows = { [table] in table.shownRows }
                 inlineCtl.writeBack = { [decks] in decks.prefs.ui.writeCollection }
                 // Tag-Chip unter dem Klick, nur ganz sichtbare (abgeschnittene enden in „…“)
@@ -890,9 +938,10 @@ struct TrackTable: View {
                     let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: decks.prefs.ui.tagSeparators).tags
                     return TagChipsText.spans(tags: tags, .of(decks.prefs.ui)).firstIndex { $0.contains(x) && $0.upperBound <= width }.map { tags[$0] }
                 }
-                inlineCtl.twoLine = { [decks] in decks.prefs.ui.previewMode == .fullRow }
+                inlineCtl.textTop = { [weak table] in table?.bandTop }
                 rowBand.inline = inlineCtl
                 rowBand.rows = { [weak table] in table?.shownRows ?? [] }
+                rowBand.bandTop = { [weak table] in table?.bandTop }
                 table.onReload = { [rowBand] in rowBand.refresh() }
             }
             .background(PreviewRowLayer(controller: rowBand, mix: decks, on: ui.previewMode == .fullRow))

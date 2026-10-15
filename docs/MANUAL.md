@@ -795,6 +795,18 @@ one tree PLAYLISTS: own folders, playlists and smartlists first, below them the 
 * saved in `playlists.json` (MINOS-741 folder), also the own values of the smartlist editor. first start: the own smartlists of earlier versions move in, same ids (session and favorites keep them)
 * collection file: with writing on and `Preparation und History als Playlists (Ordner MINOS-741)` on, own folders + playlists also go to `$ROOT/MINOS-741/Playlists/…`, replaced on every write. smartlists stay in MINOS-741 (the format has no place for the rules). the tree hides that copy
 
+### rows · detail bar · short values · selection
+
+* rows: one line (one column per field, default) or two lines. two lines: a column `Track` replaces title, artist, comment, comment 2 and label. line 1 **title** · artist, line 2 comment · tags (chips) · label. narrow columns (☁✓, ▶, bpm, key, match, time, plays …) stay, centred over both lines
+* per pane: `≡` / `☰` in the pane header switches, `▭` shows / hides the detail bar; both saved with the session. defaults: ⌘, -> BROWSER -> rows & fields
+* order of the parts: ⌘, -> BROWSER -> rows & fields, ▲ ▼ ✕ and `+`; title, artist, comment, tags, label, album, remixer, `— Zeile 2 —` splits the lines. template `KOMMENTAR ZUERST`: comment · title, then artist · tags
+* column `Track`: header click sorts by its part (title by default), header right click -> `Spalte Track sortieren nach` title / artist / comment / label (becomes the first sort key). tag chips in line 2 filter like in comment 2 (⌥-click excludes). inline edit: click the field in its line, Return = last field, Tab walks title -> artist -> comment … in reading order
+* with preview `Ganze Zeile`: two text lines and the band below (row 52 pt at 12 pt text), without preview 38 pt (padding 11)
+* own column layout per mode (`columns.<pane>` / `columns.<pane>.2`): the first switch builds the two-line layout from the one-line one
+* detail bar below the list (default: on with two lines): cover, artist – title (mix), album, label, cat no, genre, bpm, key (harmony colors), length, comment, tags (click = filter), rating, plays, last played, file (click = show in finder). selected track, with several selected the last clicked one. one line from 1500 pt pane width, else two. follows arrows and controller browse without a list rebuild (~0.5 ms per step)
+* short values (⌘, -> BROWSER, on): version at the title end as a small tag (`Original Mix` -> `OM`, `Extended Mix` -> `EXT`, `Foo Remix` -> `Foo RMX`, radio edit, dub, vip, instrumental …, case ignored), title and artist cut in the middle when too long (the end stays visible), bpm without decimals when within 0.05 of a whole number (else one), import / last played `14.10.` (younger than ~11 months) or `Okt 24`. sort and search use the full values
+* selection: red tint (32 %, without focus 20 %) and a 2 pt red stripe at the left of every selected row
+
 ### harmony + matching
 
 reference = audible key of the master deck (track key + key shift, without keylock + tempo, rounded to semitones). no master playing -> focused deck.

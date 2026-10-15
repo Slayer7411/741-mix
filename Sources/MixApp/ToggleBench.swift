@@ -435,7 +435,7 @@ enum StateBench {
 /// MIX741_BENCH=browser: Browser-Aktionen bei 4 spielenden Decks (MIX741_BENCH_UI=live: 2 Browser nebeneinander).
 /// Je Aktion „natural“ (Änderung bis Hauptthread frei) und alle Lücken des Hauptthreads > 16 ms im Abschnitt.
 /// Abschnitte: model search typing role tag sort source scroll prep load analysis session idle (MIX741_BENCH_ONLY=a,b),
-/// MIX741_BENCH_N Wiederholungen, MIX741_BENCH_ALL=1 alle Werte, MIX741_BENCH_PREVIEW=row|column|title|off,
+/// MIX741_BENCH_N Wiederholungen, MIX741_BENCH_ALL=1 alle Werte, MIX741_BENCH_PREVIEW=row|column|title|off, MIX741_BENCH_ROWS=2,
 /// MIX741_BENCH_PROFILE=<abschnitt> Hauptthread-Profil (MainSampler), MIX741_BENCH_SAMPLE=<datei> `sample` des Prozesses.
 extension StateBench {
     static func browser(mix: MixModel, store: LibraryStore, browser: BrowserState, host: NSView, log: (String) -> Void) async {
@@ -483,6 +483,11 @@ extension StateBench {
         // MIX741_BENCH_PREVIEW=row|column|title|off: Browser-Vorschau
         if let m = env["MIX741_BENCH_PREVIEW"] {
             mix.prefs.ui.previewMode = ["row": .fullRow, "column": .column, "title": .behindTitle][m] ?? .off
+            try? await Task.sleep(for: .seconds(1))
+        }
+        // MIX741_BENCH_ROWS=2: beide Bereiche zweizeilig mit Detailleiste
+        if env["MIX741_BENCH_ROWS"] == "2" {
+            for p in [browser.paneA, browser.paneB] { p.twoLine = true; p.detailBar = true }
             try? await Task.sleep(for: .seconds(1))
         }
         let sampler = startSample(seconds: Int(env["MIX741_BENCH_SECS"] ?? "") ?? 20)

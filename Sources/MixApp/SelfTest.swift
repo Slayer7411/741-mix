@@ -224,6 +224,7 @@ enum SelfTest {
             await nmlProbe()
             await dawBridgeProbe(mix, store: store)
             await hidePlayedProbe(mix, store: store, browser: browser, tracks: c)
+            detailBarProbe(mix, store: store)
             await prepareProbe(mix)
             await playlistTreeProbe(store: store)
             await wavePresetProbe(mix)
@@ -1446,6 +1447,24 @@ extension SelfTest {
 
     /// gespielte ausblenden (◆ UNGESPIELT): Collection ohne die gespielten Tracks (A + die der Sitzung), Anzahl im Kopf
     /// stimmt, History, RUNNING und Preparation zeigen sie weiter. Gespielt-Markierungen danach wie vorher
+    /// Detailleiste: 60 Track-Wechsel (Anzeigen + Zeichnen, ein- und zweizeilige Breite), Hauptthread je Wechsel < 2 ms
+    static func detailBarProbe(_ mix: MixModel, store: LibraryStore) {
+        let tracks = Array(store.tracks.prefix(60))
+        guard tracks.count > 10 else { log("Detailleiste: zu wenige Tracks"); return }
+        let ctl = TrackTableController()
+        var ms: [Double] = []
+        for w in [1200.0, 1700.0] {
+            let bar = DetailBarView(frame: NSRect(x: 0, y: 0, width: w, height: DetailBarView.height(width: w)))
+            _ = bar.measure(tracks[0], table: ctl)   // erste Zeichnung (Schriften) nicht mitzählen
+            for t in tracks.dropFirst() { ms.append(bar.measure(t, table: ctl)) }
+        }
+        ms.sort()
+        let med = ms[ms.count / 2], p95 = ms[Int(Double(ms.count) * 0.95)]
+        let ok = med < 2
+        log(String(format: "Detailleiste: %d Wechsel, median %.2f ms, p95 %.2f ms, max %.2f ms · %@", ms.count, med, p95, ms.last ?? 0, ok ? "OK" : "FAIL"))
+        if !ok { log("DETAILLEISTE FALSCH"); exit(1) }
+    }
+
     static func hidePlayedProbe(_ mix: MixModel, store: LibraryStore, browser: BrowserState, tracks c: [Track]) async {
         guard let history = browser.history else { log("UNGESPIELT: keine History"); log("UNGESPIELT FALSCH"); exit(1) }
         let played0 = history.played, live0 = history.live.count

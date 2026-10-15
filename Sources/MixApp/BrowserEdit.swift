@@ -18,6 +18,8 @@ struct InlineEdit: Equatable {
 @MainActor
 final class InlineEditController {
     weak var tableView: NSTableView?
+    /// Sammelspalte (zweizeilig): Teil und Tag-Chip unter dem Klick, Felder für Tab
+    weak var tableCtl: TrackTableController?
     weak var model: BrowserPaneModel?
     weak var store: LibraryStore?
     var rows: () -> [Track] = { [] }
@@ -57,8 +59,8 @@ final class InlineEditController {
 
     /// Tag-Chip in Kommentar 2 unter dem Klick: (Track, x ab linkem Zellrand, Zellbreite) -> Tag oder nil
     var chipAt: ((Track, CGFloat, CGFloat) -> String?)?
-    /// Zeilen zweizeilig (Vorschau „ganze Zeile“): Chips nur in der oberen Hälfte, unten liegt das Band
-    var twoLine: () -> Bool = { false }
+    /// Vorschau „ganze Zeile“: Höhe des Textbereichs über dem Band (Chips nur dort), nil = kein Band
+    var textTop: () -> CGFloat? = { nil }
 
     /// Zeit des letzten Chip-Klicks (Folgeklicks eines Doppelklicks verfallen)
     private var lastChipClick: TimeInterval = -1
@@ -73,10 +75,17 @@ final class InlineEditController {
         let p = tv.convert(e.locationInWindow, from: nil)
         guard tv.visibleRect.contains(p) else { return false }
         let r = tv.row(at: p), c = tv.column(at: p), list = rows()
-        guard r >= 0, r < list.count, field(ofColumn: c, in: tv) == .comment2,
-              !twoLine() || p.y < tv.rect(ofRow: r).midY else { return false }
-        let f = tv.frameOfCell(atColumn: c, row: r)
-        guard p.x - f.minX < f.width, let tag = chipAt(list[r], p.x - f.minX, f.width) else { return false }
+        guard r >= 0, r < list.count else { return false }
+        let tag: String
+        if let hit = tableCtl?.trackHit(row: r, column: c, at: p) {
+            guard let t = hit.tag else { return false }
+            tag = t
+        } else {
+            guard field(ofColumn: c, in: tv) == .comment2, textTop().map({ p.y < tv.rect(ofRow: r).minY + $0 }) ?? true else { return false }
+            let f = tv.frameOfCell(atColumn: c, row: r)
+            guard p.x - f.minX < f.width, let t = chipAt(list[r], p.x - f.minX, f.width) else { return false }
+            tag = t
+        }
         pending?.cancel()
         pending = nil
         if e.clickCount == 1 {
@@ -95,9 +104,14 @@ final class InlineEditController {
     }
 
     /// sichtbare bearbeitbare Spalten in der Reihenfolge der Tabelle (für Tab)
+    /// zweizeilig: die Sammelspalte steht für ihre Felder in Lesereihenfolge
     func visibleFields() -> [TrackField] {
         guard let tv = table else { return TrackField.allCases }
-        let fields = tv.tableColumns.indices.filter { !tv.tableColumns[$0].isHidden }.compactMap { field(ofColumn: $0, in: tv) }
+        var fields: [TrackField] = []
+        for i in tv.tableColumns.indices where !tv.tableColumns[i].isHidden {
+            if tv.tableColumns[i].identifier.rawValue == "track" { fields += tableCtl?.trackFields ?? [] }
+            else if let f = field(ofColumn: i, in: tv), !fields.contains(f) { fields.append(f) }
+        }
         return fields.isEmpty ? TrackField.allCases : fields
     }
 
@@ -115,7 +129,7 @@ final class InlineEditController {
         let p = tv.convert(e.locationInWindow, from: nil)
         let inside = tv.visibleRect.contains(p)
         let r = inside ? tv.row(at: p) : -1, c = inside ? tv.column(at: p) : -1
-        let f = field(ofColumn: c, in: tv), key = rowKey(r)
+        let f = tableCtl?.trackHit(row: r, column: c, at: p).map { $0.field } ?? field(ofColumn: c, in: tv), key = rowKey(r)
         // Klick neben die bearbeitete Zelle: Sterne -> abbrechen; Textfeld ohne Fokus -> übernehmen
         // (mit Fokus übernimmt das Feld selbst, sobald es den Fokus verliert)
         if let cur = model.inline, !(key == cur.key && f == cur.field) {

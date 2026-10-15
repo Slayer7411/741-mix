@@ -79,6 +79,7 @@ saved as json in `~/Library/Application Support/MINOS-741/plugins.json`, not in 
 ## ◆ BROWSER
 
 * rows: padding around the text 3-16 pt, line between rows, height snaps to whole rows
+* rows & fields: rows one line (default) / two lines (`ui.browserRows`), detail bar automatic (on with two lines, default) / on / off (`ui.detailBar`), short values (on, `ui.shortValues`), parts and order of the column `Track` (`ui.trackParts`, templates standard / comment first). panes override rows and detail bar from their header (session) -> [manual](MANUAL.md#rows--detail-bar--short-values--selection)
 * played tracks: dim (on), hide (`ui.hidePlayedTracks`, off; also `UNGESPIELT` in the pane header, browser menu, assignable key `browser.hideplayed`), reset on start (off). hidden in collection, playlists, smartlists, music folders, search; not in history, running tracks, preparation (+ archive) -> [manual](MANUAL.md#-09--browser)
 * history & preparation: played after x seconds audible (`engine.historyThreshold`), optional copy into the collection's history folder
 * preview: start position of the browser preview (share of the track)

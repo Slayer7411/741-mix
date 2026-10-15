@@ -6,10 +6,12 @@ import MixEngine
 // Track-Liste auf NSTableView: Zeilen über den Index aus der Liste, neue Liste = reloadData (gebaut werden nur die
 // sichtbaren Zeilen), feste Zeilenhöhe, eigene Zellen (zeichnen Text/Bild selbst, eine Ebene je Zeile).
 // Vorher SwiftUI-Table: jeder große Listenwechsel verglich bzw. baute alle Zeilen neu, ~0,25 s Hauptthread.
+// Zweizeilig: Sammelspalte „Track“ (Teile aus ⌘, -> BROWSER) zeichnet die Zeile genauso selbst; Lage der Teile aus
+// `trackLayout` (Zeichnen, Klicks, Inline-Bearbeitung), eigene gespeicherte Anordnung `columns.<bereich>.2`.
 
 /// Spalte der Track-Tabelle. `id` = Schlüssel in der gespeicherten Anordnung (`columns.<bereich>`), Breiten bei 100 %
 struct TrackColumn {
-    enum Kind { case played, cloud, analyzed, info, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file, rip }
+    enum Kind { case played, cloud, analyzed, info, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file, rip, track }
     let id: String
     let title: String
     let kind: Kind
@@ -64,6 +66,8 @@ struct TrackColumn {
         .flex("file", "File Name", .file, min: 80, ideal: 220, hidden: true, sort: KeyPathComparator(\Track.fileName)),
         .flex("mix", "Mix", .field(.mix), min: 60, ideal: 110, hidden: true, sort: KeyPathComparator(\Track.mix)),
         .fixed("rip", "Rip", .rip, 92, hidden: true, menu: String(localized: "Rip (Befund der Rip-Prüfung)")),
+        // Sammelspalte, nur zweizeilig sichtbar (ersetzt die Spalten ihrer Teile)
+        .flex("track", "Track", .track, min: 160, ideal: 420, hidden: true, sort: KeyPathComparator(\Track.title)),
     ]
     static let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 }
@@ -132,6 +136,21 @@ enum ColumnLayout {
         for c in TrackColumn.all where !order.contains(c.id) { order.append(c.id) }
         return order
     }
+
+    /// Anordnung für zweizeilige Zeilen aus der einzeiligen: Sammelspalte an der Stelle der ersten ersetzten Spalte,
+    /// so breit wie die sichtbaren ersetzten Spalten zusammen; ersetzte Spalten versteckt
+    static func twoLine(from s: State, replacing parts: Set<String>) -> State {
+        var order = placed(s).filter { $0 != "track" }
+        let at = order.firstIndex { parts.contains($0) } ?? order.count
+        order.insert("track", at: at)
+        var out = State(order: order, widths: s.widths, hidden: s.hidden)
+        let shown = parts.filter { id in !(s.hidden[id] ?? TrackColumn.byID[id]?.hidden ?? true) }
+        let w = shown.reduce(CGFloat(0)) { $0 + (s.widths[$1] ?? TrackColumn.byID[$1]?.width ?? 0) }
+        if w > 0 { out.widths["track"] = Swift.max(TrackColumn.byID["track"]?.min ?? 160, w) }
+        for id in parts { out.hidden[id] = true }
+        out.hidden["track"] = false
+        return out
+    }
 }
 
 /// Farben und Schriften der Tabelle (741: Void, Knochenweiß, Rot nur als Zustand, Lila = zweiter Zustand)
@@ -150,20 +169,33 @@ enum TableStyle {
         case .clash: clash
         }
     }
-    /// Auswahl: leicht rot, auch ohne Fokus (dann etwas schwächer)
-    static let selected = state.withAlphaComponent(0.24), selectedDim = state.withAlphaComponent(0.15)
+    /// Auswahl: rot getönt, auch ohne Fokus (dann schwächer), dazu ein voller Streifen links (`selectionStripe` pt)
+    static let selected = state.withAlphaComponent(0.32), selectedDim = state.withAlphaComponent(0.20)
+    static let selectionStripe: CGFloat = 2
     static let trackColors: [NSColor] = (0...7).map { NSColor(Theme.trackColor($0)) }
 
     /// Zeilenhöhe: einzeilig wie vorher (100 %: 24 pt), eigene Vorschau-Spalte 17 pt Bild + Rand, zweizeilig
-    /// PreviewRow.rowHeight + 8 pt
-    static func rowHeight(_ ui: UIPrefs) -> CGFloat {
+    /// PreviewRow.rowHeight + 8 pt. Zweizeiliger Text (`twoText`): zwei Textzeilen + Luft, mit Band darunter (`textHeight`)
+    static func rowHeight(_ ui: UIPrefs, twoText: Bool = false) -> CGFloat {
         let z = UIZoom.shared.factor, pad = CGFloat(ui.browserRowPadding)
+        if twoText {
+            let text = textHeight(ui)
+            guard ui.previewMode == .fullRow else { return (text + max(3, pad * 0.6) * z).rounded() }
+            return (text + bandHeight.z + max(2, pad - 5)).rounded()
+        }
         switch ui.previewMode {
         case .fullRow: return PreviewRow.rowHeight(textSize: ui.previewTextSize).z + max(2, pad - 3)
         case .column: return max((13 * z + pad).rounded(), 17 * z + max(2, pad - 3))
         default: return (13 * z + pad).rounded()
         }
     }
+
+    /// Abstand der zwei Textzeilen (Grundlinie zu Grundlinie) bei Schrift `size`
+    static func lineStep(_ size: CGFloat) -> CGFloat { (size * 1.3).rounded() }
+    /// Höhe des Textbereichs zweizeilig (zwei Zeilen + 3 pt Luft)
+    static func textHeight(_ ui: UIPrefs) -> CGFloat { 2 * lineStep(TagChipsText.Metrics.of(ui).size) + 3.z }
+    /// Band der Vorschau unter zwei Textzeilen (100 %)
+    static let bandHeight: CGFloat = 11
 
     static func mono(_ size: CGFloat, bold: Bool = false) -> NSFont {
         NSFont(name: bold ? "IBMPlexMono-SemiBold" : "IBMPlexMono-Regular", size: size) ?? .monospacedSystemFont(ofSize: size, weight: bold ? .semibold : .regular)
@@ -205,6 +237,8 @@ final class TrackRowView: NSTableRowView, NSViewToolTipOwner {
     override func drawSelection(in dirtyRect: NSRect) {
         (isEmphasized ? TableStyle.selected : TableStyle.selectedDim).setFill()
         bounds.fill()
+        TableStyle.state.setFill()
+        NSRect(x: 0, y: 0, width: TableStyle.selectionStripe, height: bounds.height).fill()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -314,7 +348,8 @@ final class InlineFieldCell: NSView, NSTextFieldDelegate {
     var edit: InlineEdit?
     weak var model: BrowserPaneModel?
     var finish: ((InlineEdit, Bool) -> Void)?
-    var twoLine = false
+    /// Zeile des Felds in der Zelle (oben = 0); nil = ganze Zelle
+    var lineRect: CGRect?
     override var isFlipped: Bool { true }
 
     init() {
@@ -349,7 +384,7 @@ final class InlineFieldCell: NSView, NSTextFieldDelegate {
 
     override func layout() {
         super.layout()
-        let line = twoLine ? NSRect(x: 0, y: 0, width: bounds.width, height: (bounds.height * 0.5).rounded()) : bounds
+        let line = lineRect.map { NSRect(x: 0, y: $0.minY, width: bounds.width, height: $0.height) } ?? bounds
         let h = ceil((field.font?.ascender ?? 10) - (field.font?.descender ?? -3)) + 4
         box.frame = NSRect(x: 0, y: (line.midY - h / 2).rounded(), width: bounds.width, height: h)
         field.frame = box.bounds.insetBy(dx: 2.z, dy: 1)
@@ -377,7 +412,7 @@ final class StarsCell: NSView {
     var value = 0
     var font: NSFont = TableStyle.mono(13)
     var set: ((Int) -> Void)?
-    var twoLine = false
+    var lineRect: CGRect?
     override var isFlipped: Bool { true }
 
     private var starWidth: CGFloat { NSAttributedString(string: "★", attributes: [.font: font]).size().width + 1.z }
@@ -385,7 +420,7 @@ final class StarsCell: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let s = String((1...5).map { $0 <= value ? "★" : "☆" })
         let a = TableStyle.attrs(font, TableStyle.bone)
-        let line = twoLine ? NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height * 0.5) : bounds
+        let line = lineRect ?? bounds
         var x: CGFloat = 0
         for ch in s {
             let t = NSAttributedString(string: String(ch), attributes: a)
@@ -429,16 +464,31 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         var tick: Int
         /// vorgehörter Track (Strich in Vorschau-Spalte bzw. hinter dem Titel)
         var preview: String?
+        /// Zeilen zweizeilig mit Sammelspalte (Bereich bzw. ⌘, -> BROWSER)
+        var twoText = false
     }
 
     private var rows: [Track] = []
     private var generation = -1
-    private var look: Look?
+    private(set) var look: Look?
     private var shownSelection: Set<String> = []
     private var applying = false
     private var saveWork: DispatchWorkItem?
     private var font: NSFont = TableStyle.mono(11)
-    private var twoLine = false
+    /// Band der Vorschau „ganze Zeile“: Abstand vom oberen Zeilenrand (nil = kein Band)
+    private(set) var bandTop: CGFloat?
+    /// zweizeilig mit Sammelspalte „Track“
+    private(set) var twoText = false
+    /// Teile der Sammelspalte (⌘, -> BROWSER)
+    private(set) var parts: [TrackPart] = TrackParts.standard
+    private var shortValues = true
+    /// Sammelspalte: Titel halbfett, Rest normal (gleiche Dickte in Plex Mono), Breite eines Zeichens
+    private var boldFont: NSFont = TableStyle.mono(11, bold: true)
+    private var plainFont: NSFont = TableStyle.mono(11)
+    private var badgeFont: NSFont = TableStyle.mono(9, bold: true)
+    private var advance: CGFloat = 6.6
+    /// gewählter bzw. zuletzt angeklickter Track (Detailleiste)
+    private(set) var detailKey: String?
     /// Trennlinie unter jeder Zeile (⌘, -> BROWSER)
     var rowLines = true
 
@@ -503,9 +553,18 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     // MARK: Spalten
 
+    /// Schlüssel der gespeicherten Anordnung: einzeilig `columns.<bereich>`, zweizeilig `columns.<bereich>.2`
+    private var layoutKey: String? { model.map { "columns.\($0.name)" + (twoText ? ".2" : "") } }
+
+    /// von der Sammelspalte ersetzte Spalten (zweizeilig immer versteckt)
+    private var replaced: Set<String> { twoText ? Set(parts.compactMap(\.column)) : [] }
+
     private func buildColumns(_ ui: UIPrefs) {
         guard let tv = table, tv.tableColumns.isEmpty else { return }
-        let saved = model.flatMap { UserDefaults.standard.data(forKey: "columns.\($0.name)") }.flatMap(ColumnLayout.decode) ?? ColumnLayout.State()
+        let d0 = UserDefaults.standard, replaced = self.replaced
+        let single = model.flatMap { d0.data(forKey: "columns.\($0.name)") }.flatMap(ColumnLayout.decode) ?? ColumnLayout.State()
+        let saved = twoText ? layoutKey.flatMap { d0.data(forKey: $0) }.flatMap(ColumnLayout.decode)
+            ?? ColumnLayout.twoLine(from: single, replacing: replaced) : single
         for id in ColumnLayout.placed(saved) {
             guard let d = TrackColumn.byID[id] else { continue }
             let c = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
@@ -517,7 +576,8 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             c.maxWidth = d.max == .greatestFiniteMagnitude ? d.max : d.max.z
             c.width = d.fixed ? d.width.z : Swift.min(c.maxWidth, Swift.max(c.minWidth, saved.widths[id] ?? d.width.z))
             c.resizingMask = d.fixed ? [] : [.autoresizingMask, .userResizingMask]
-            c.isHidden = id == "preview" ? ui.previewMode != .column : saved.hidden[id] ?? d.hidden
+            c.isHidden = id == "preview" ? ui.previewMode != .column : id == "track" ? !twoText
+                : replaced.contains(id) ? true : saved.hidden[id] ?? d.hidden
             if d.sort != nil { c.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true) }
             tv.addTableColumn(c)
         }
@@ -532,15 +592,30 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     }
 
     private func save() {
-        guard let tv = table, let model else { return }
+        guard let tv = table, let key = layoutKey else { return }
         var s = ColumnLayout.State()
+        let replaced = self.replaced
         for c in tv.tableColumns {
             let id = c.identifier.rawValue
             s.order.append(id)
             s.widths[id] = c.width
-            if let d = TrackColumn.byID[id], c.isHidden != d.hidden { s.hidden[id] = c.isHidden }
+            // Sammelspalte und ersetzte Spalten folgen dem Modus, nicht der gespeicherten Sichtbarkeit
+            if let d = TrackColumn.byID[id], id != "track", !replaced.contains(id), c.isHidden != d.hidden { s.hidden[id] = c.isHidden }
         }
-        UserDefaults.standard.set(ColumnLayout.encode(s), forKey: "columns.\(model.name)")
+        UserDefaults.standard.set(ColumnLayout.encode(s), forKey: key)
+    }
+
+    /// Zeilen-Modus oder Teile der Sammelspalte geändert: Anordnung des alten Modus sichern, Spalten neu aus der des neuen
+    private func rebuildColumns(_ ui: UIPrefs, twoText two: Bool) {
+        guard let tv = table else { return }
+        saveWork?.cancel()
+        if !Session.isSelfTest { save() }
+        applying = true
+        for c in tv.tableColumns { tv.removeTableColumn(c) }
+        twoText = two
+        parts = TrackParts.normalized(ui.trackParts)
+        buildColumns(ui)
+        applying = false
     }
 
     func tableViewColumnDidMove(_ n: Notification) { redrawVisible(); scheduleSave() }
@@ -560,7 +635,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     func fitColumn(_ i: Int) {
         guard let tv = table, i >= 0, i < tv.tableColumns.count else { return }
         let c = tv.tableColumns[i]
-        guard let d = TrackColumn.byID[c.identifier.rawValue], !d.fixed else { return }
+        guard let d = TrackColumn.byID[c.identifier.rawValue], !d.fixed, d.id != "track" else { return }
         var best: [(Int, String)] = []   // (Zeichen, Text), die längsten
         var seen: Set<String> = []
         for t in rows {
@@ -611,7 +686,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         case .bitrate: t.bitrate > 0 ? "\(t.bitrate)" : ""
         case .file: t.fileName
         case .rip: RipChecks.shared.columnText(t.key)
-        case .played, .cloud, .analyzed, .info, .color, .cover, .preview: nil
+        case .played, .cloud, .analyzed, .info, .color, .cover, .preview, .track: nil
         }
     }
 
@@ -640,21 +715,33 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         guard let tv = table, let model else { return }
         let newRows = fixedRows ?? model.shown, gen = model.tableGeneration
         let first = look == nil
-        if first { buildColumns(l.ui) }
+        if first {
+            twoText = l.twoText
+            parts = TrackParts.normalized(l.ui.trackParts)
+            buildColumns(l.ui)
+        }
         let old = look
         look = l
         if let old {
+            if old.twoText != l.twoText || (l.twoText && old.ui.trackParts != l.ui.trackParts) { rebuildColumns(l.ui, twoText: l.twoText) }
             if old.zoom != l.zoom { applyZoom(from: old.zoom, to: l.zoom) }
             if old.ui.previewMode != l.ui.previewMode, let c = tv.tableColumns.first(where: { $0.identifier.rawValue == "preview" }) {
                 c.isHidden = l.ui.previewMode != .column
             }
         }
-        let styleChanged = first || old?.ui != l.ui || old?.zoom != l.zoom
+        let styleChanged = first || old?.ui != l.ui || old?.zoom != l.zoom || old?.twoText != l.twoText
         if styleChanged {
             let m = TagChipsText.Metrics.of(l.ui)
             font = m.nsFont
-            twoLine = l.ui.previewMode == .fullRow
-            tv.rowHeight = TableStyle.rowHeight(l.ui)
+            boldFont = TableStyle.mono(m.size, bold: true)
+            plainFont = TableStyle.mono(m.size)
+            badgeFont = TableStyle.mono((m.size * 0.78).rounded(), bold: true)
+            advance = NSAttributedString(string: "0", attributes: [.font: plainFont]).size().width
+            badgeWidths = [:]
+            shortValues = l.ui.shortValues
+            let h = TableStyle.rowHeight(l.ui, twoText: l.twoText)
+            bandTop = l.ui.previewMode != .fullRow ? nil : l.twoText ? TableStyle.textHeight(l.ui) : (h * 0.5).rounded()
+            tv.rowHeight = h
             rowLines = l.ui.browserRowLines
             if let h = tv.headerView, h.frame.height != (24.z).rounded() { h.frame.size.height = (24.z).rounded(); tv.tile() }
         }
@@ -682,6 +769,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         }
         generation = gen
         if model.selection != shownSelection { applySelection(model.selection) }
+        if !same || styleChanged { updateDetail() }
         syncSort(model.sortOrder)
         followPreview()
     }
@@ -811,6 +899,24 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         if tv.selectedRowIndexes != ix { tv.selectRowIndexes(ix, byExtendingSelection: false) }
         applying = false
         shownSelection = sel
+        updateDetail()
+    }
+
+    /// Detailleiste neu angemeldet: aktuellen Track zeigen
+    func refreshDetail() { updateDetail(); model?.detail?.refresh() }
+
+    /// Detailleiste: angeklickte Zeile der Auswahl, sonst der einzige gewählte Track, sonst der bisherige (auch ohne
+    /// Auswahl: zuletzt angeklickt), bei Mehrfachauswahl ohne ihn die erste gewählte Zeile
+    private func updateDetail(clicked: Int = -1) {
+        guard let model, let tv = table else { return }
+        let sel = model.selection
+        var key = detailKey
+        if clicked >= 0, clicked < rows.count, sel.contains(rows[clicked].key) { key = rows[clicked].key }
+        else if sel.count == 1 { key = sel.first }
+        else if !sel.isEmpty, key.map({ !sel.contains($0) }) ?? true, let i = tv.selectedRowIndexes.first, i < rows.count { key = rows[i].key }
+        detailKey = key
+        guard let bar = model.detail else { return }
+        bar.show(key.flatMap { k in store?.byKey[k] ?? rows.first { $0.key == k } }, table: self)
     }
 
     /// neue Liste (Quelle, Sortierung, Filter): zur Auswahl, sonst nach oben
@@ -824,15 +930,36 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         tv.scrollRowToVisible(r)
     }
 
+    /// Teil der Sammelspalte, nach dem sie gerade sortiert (erste passende Sortierspalte), nur zweizeilig
+    private var trackSortPart: TrackPart? {
+        guard twoText, let model else { return nil }
+        for c in model.sortOrder {
+            if let p = TrackPart.sortable.first(where: { $0.sort?.keyPath == c.keyPath }), parts.contains(p) { return p }
+        }
+        return nil
+    }
+
+    /// Spalte einer Sortierung: zweizeilig die Sammelspalte für ihre Teile (einmal), sonst die Spalte des Felds
+    private func sortColumn(_ c: KeyPathComparator<Track>, track: inout Bool) -> String? {
+        if twoText, !track, let p = TrackPart.sortable.first(where: { $0.sort?.keyPath == c.keyPath }), parts.contains(p) {
+            track = true
+            return "track"
+        }
+        return TrackColumn.all.first { $0.id != "track" && $0.sort?.keyPath == c.keyPath }?.id
+    }
+
     private func syncSort(_ order: [KeyPathComparator<Track>]) {
         guard let tv = table else { return }
+        var track = false
         let want: [NSSortDescriptor] = order.compactMap { c in
-            TrackColumn.all.first { $0.sort?.keyPath == c.keyPath }.map { NSSortDescriptor(key: $0.id, ascending: c.order == .forward) }
+            sortColumn(c, track: &track).map { NSSortDescriptor(key: $0, ascending: c.order == .forward) }
         }
-        // Marke je Sortierspalte: erste ▲ / ▼, weitere mit Rang (▼2, ▼3)
+        let part = trackSortPart
+        // Marke je Sortierspalte: erste ▲ / ▼, weitere mit Rang (▼2, ▼3); Sammelspalte mit dem Teil davor
         for c in tv.tableColumns {
             guard let h = c.headerCell as? TrackHeaderCell else { continue }
-            let m = want.firstIndex { $0.key == c.identifier.rawValue }.map { i in (want[i].ascending ? "▲" : "▼") + (i == 0 ? "" : "\(i + 1)") } ?? ""
+            var m = want.firstIndex { $0.key == c.identifier.rawValue }.map { i in (want[i].ascending ? "▲" : "▼") + (i == 0 ? "" : "\(i + 1)") } ?? ""
+            if c.identifier.rawValue == "track", !m.isEmpty, let part { m = part.name.uppercased() + " " + m }
             if h.sortMark != m { h.sortMark = m; tv.headerView?.needsDisplay = true }
         }
         if tv.sortDescriptors != want {
@@ -848,11 +975,14 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     func tableView(_ tv: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
         guard !applying, let model else { return }
-        let order: [KeyPathComparator<Track>] = tv.sortDescriptors.prefix(Self.maxSortKeys).compactMap { d in
-            guard let k = d.key, var c = TrackColumn.byID[k]?.sort else { return nil }
+        let part = trackSortPart ?? .title
+        var order: [KeyPathComparator<Track>] = []
+        for d in tv.sortDescriptors {
+            guard let k = d.key, var c = k == "track" ? part.sort : TrackColumn.byID[k]?.sort else { continue }
             c.order = d.ascending ? .forward : .reverse
-            return c
+            if !order.contains(where: { $0.keyPath == c.keyPath }) { order.append(c) }
         }
+        order = Array(order.prefix(Self.maxSortKeys))
         if !order.isEmpty, order != model.sortOrder { model.sortOrder = order }
     }
 
@@ -862,6 +992,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         for i in tv.selectedRowIndexes where i < rows.count { sel.insert(rows[i].key) }
         shownSelection = sel
         if model.selection != sel { model.selection = sel }
+        updateDetail(clicked: tv.clickedRow)
     }
 
     // MARK: Zellen
@@ -883,9 +1014,23 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     /// nur die Inline-Bearbeitung ist eine Ansicht, alle anderen Zellen zeichnet die Zeile
     func tableView(_ tv: NSTableView, viewFor col: NSTableColumn?, row: Int) -> NSView? {
-        guard let col, row < rows.count, let e = model?.inline, e.key == rows[row].key,
-              InlineEditController.columnFields[col.identifier.rawValue] == e.field else { return nil }
-        return editor(e)
+        guard let col, row < rows.count, let e = model?.inline, e.key == rows[row].key else { return nil }
+        let id = col.identifier.rawValue
+        if id == "track" {
+            guard twoText, let li = partLine(e.field) else { return nil }
+            let f = tv.frameOfCell(atColumn: tv.column(withIdentifier: col.identifier), row: row)
+            let l = trackLines(f)[li]
+            return editor(e, line: CGRect(x: 0, y: l.minY - f.minY, width: f.width, height: l.height))
+        }
+        guard InlineEditController.columnFields[id] == e.field else { return nil }
+        return editor(e, line: bandTop.map { CGRect(x: 0, y: 0, width: 1, height: $0) })
+    }
+
+    /// Spalte, in der das Feld bearbeitet wird (zweizeilig: Sammelspalte für ihre Teile)
+    private func editColumn(_ field: TrackField) -> Int? {
+        guard let tv = table else { return nil }
+        if twoText, partLine(field) != nil { return tv.tableColumns.firstIndex { $0.identifier.rawValue == "track" } }
+        return tv.tableColumns.firstIndex { InlineEditController.columnFields[$0.identifier.rawValue] == field }
     }
 
     /// Inline-Bearbeitung an/aus/gewechselt: nur die betroffenen Zellen
@@ -894,7 +1039,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         var rs = IndexSet(), cs = IndexSet()
         for e in [old, new].compactMap({ $0 }) {
             if let r = rows.firstIndex(where: { $0.key == e.key }) { rs.insert(r) }
-            if let c = tv.tableColumns.firstIndex(where: { InlineEditController.columnFields[$0.identifier.rawValue] == e.field }) { cs.insert(c) }
+            if let c = editColumn(e.field) { cs.insert(c) }
         }
         guard !rs.isEmpty, !cs.isEmpty else { return }
         tv.reloadData(forRowIndexes: rs, columnIndexes: cs)
@@ -924,11 +1069,11 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             let id = col.identifier.rawValue
             if id == "cloud" || id == "analyzed" || id == "info" || id == "rip" { tips.append(f) }
             guard f.intersects(dirty), let d = TrackColumn.byID[id] else { continue }
-            if let editing, InlineEditController.columnFields[id] == editing { continue }
+            if let editing, id != "track", InlineEditController.columnFields[id] == editing { continue }
             ctx.saveGState()
             ctx.clip(to: f)
             if dimmed { ctx.setAlpha(0.42) }
-            drawCell(d, t, row: r, in: f, ctx)
+            if d.id == "track" { drawTrack(t, f, ctx, editing: editing) } else { drawCell(d, t, row: r, in: f, ctx) }
             ctx.restoreGState()
         }
         if tips != rv.tips {
@@ -962,9 +1107,9 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         }
     }
 
-    /// Zeile der Schrift: einzeilig die ganze Zelle, zweizeilig die obere Hälfte (unten liegt das Band)
+    /// Textbereich der Zelle: ohne Band die ganze Zelle, mit Band (Vorschau „ganze Zeile“) der Teil darüber
     private func line(_ f: CGRect) -> CGRect {
-        twoLine ? CGRect(x: f.minX, y: f.minY, width: f.width, height: (f.height * 0.5).rounded()) : f
+        bandTop.map { CGRect(x: f.minX, y: f.minY, width: f.width, height: $0) } ?? f
     }
 
     private func drawCell(_ d: TrackColumn, _ t: Track, row: Int, in f: CGRect, _ ctx: CGContext) {
@@ -995,17 +1140,17 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
                 fetch("cover|" + t.path, row: row, key: t.key) { await ArtworkCache.shared.image(t.path, .small) }
             }
         case .artist:
-            draw(t.artist, t.loose ? TableStyle.muted : t.fileExists ? TableStyle.bone : TableStyle.state, l, ctx)
+            drawText(t.artist, t.loose ? TableStyle.muted : t.fileExists ? TableStyle.bone : TableStyle.state, l, ctx, font: font, middle: true)
         case .title:
             if look?.ui.previewMode == .behindTitle, let img = preview(t, row: row) { image(img, l.insetBy(dx: 0, dy: 1), 0.25, ctx) }
-            draw(t.title, t.loose ? TableStyle.muted : TableStyle.bone, l, ctx)
+            drawTitle(t.title, t.loose ? TableStyle.muted : TableStyle.bone, l, ctx, font: font)
         case .preview:
             let h = PreviewRenderer.heightPt.z
             if let img = preview(t, row: row) { image(img, CGRect(x: l.minX, y: (l.midY - h / 2).rounded(), width: l.width, height: h), 1, ctx) }
         case let .field(fd):
             draw(fd.value(of: t), TableStyle.bone, l, ctx)
         case .bpm:
-            draw(t.bpm > 0 ? String(format: "%.2f", t.bpm) : "", TableStyle.bone, l, ctx)
+            draw(shortValues ? ShortValues.bpm(t.bpm) : t.bpm > 0 ? String(format: "%.2f", t.bpm) : "", TableStyle.bone, l, ctx)
         case .key:
             drawKey(t, l, ctx)
         case .harmony:
@@ -1023,15 +1168,17 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         case .plays:
             draw(t.playsText, TableStyle.bone, l, ctx)
         case .lastPlayed:
-            draw(Track.dateText(t.lastPlayed), TableStyle.bone, l, ctx)
+            draw(shortValues ? Self.shortDate(t.lastPlayed) : Track.dateText(t.lastPlayed), TableStyle.bone, l, ctx)
         case .importDate:
-            draw(t.importText, TableStyle.bone, l, ctx)
+            draw(shortValues ? Self.shortDate(t.importDate) : t.importText, TableStyle.bone, l, ctx)
         case .bitrate:
             draw(t.bitrate > 0 ? "\(t.bitrate)" : "", TableStyle.bone, l, ctx)
         case .file:
             draw(t.fileName, TableStyle.bone, l, ctx)
         case .rip:
             draw(RipChecks.shared.columnText(t.key), TableStyle.state, l, ctx)
+        case .track:
+            break
         }
     }
 
@@ -1169,13 +1316,207 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         return c
     }
 
-    private func editor(_ e: InlineEdit) -> NSView {
+    // MARK: Werte kürzen, Sammelspalte
+
+    /// kurzes Datum (je Tag einmal gerechnet)
+    private static var dateCache: [Int: String] = [:]
+    static func shortDate(_ d: Date?) -> String {
+        guard let d else { return "" }
+        let day = Int(d.timeIntervalSinceReferenceDate / 86400)
+        if let s = dateCache[day] { return s }
+        let s = ShortValues.date(d, locale: Locale(identifier: Bundle.main.preferredLocalizations.first ?? "de"))
+        dateCache[day] = s
+        return s
+    }
+
+    /// Version am Titelende (je Titel einmal erkannt)
+    private var versions: [String: (base: String, short: String)?] = [:]
+    private func version(_ title: String) -> (base: String, short: String)? {
+        if let hit = versions[title] { return hit }
+        let v = ShortValues.version(title)
+        versions[title] = v
+        return v
+    }
+
+    /// Text in einer Zeile: Werte kürzen -> zu lang in der Mitte gekürzt (Plex Mono: Zeichen = Breite / Dickte), sonst rechts
+    private func drawText(_ s: String, _ color: NSColor, _ l: CGRect, _ ctx: CGContext, font f: NSFont, middle: Bool) {
+        var s = s
+        if middle, shortValues, advance > 0 {
+            let n = Int(((l.width + 1) / advance).rounded(.down))
+            if s.count > n { s = ShortValues.middle(s, max: n) }
+        }
+        draw(s, color, l, ctx, font: f)
+    }
+
+    private func textWidth(_ s: String, _ f: NSFont) -> CGFloat {
+        CGFloat(CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(string: s, attributes: ctAttrs(f, TableStyle.bone))), nil, nil, nil))
+    }
+
+    /// Breite des Versions-Kürzels samt Abstand davor (je Kürzel einmal gemessen, neu mit der Schrift)
+    private var badgeWidths: [String: CGFloat] = [:]
+    private func badgeWidth(_ short: String) -> CGFloat {
+        if let w = badgeWidths[short] { return w }
+        let w = textWidth(short, badgeFont) + 6.z + (advance * 0.6).rounded()
+        badgeWidths[short] = w
+        return w
+    }
+
+    /// Titel; Werte kürzen: Version als Kürzel-Kästchen am Ende (bleibt sichtbar), Titel davor in der Mitte gekürzt
+    private func drawTitle(_ title: String, _ color: NSColor, _ l: CGRect, _ ctx: CGContext, font f: NSFont) {
+        guard shortValues, let v = version(title) else { drawText(title, color, l, ctx, font: f, middle: true); return }
+        let bw = badgeWidth(v.short)
+        guard l.width > bw + advance * 4 else { drawText(title, color, l, ctx, font: f, middle: true); return }
+        var shown = v.base
+        let n = Int(((l.width - bw + 1) / advance).rounded(.down))
+        if shown.count > n { shown = ShortValues.middle(shown, max: n) }
+        let tw = Swift.min(CGFloat(shown.count) * advance, l.width - bw)
+        draw(shown, color, CGRect(x: l.minX, y: l.minY, width: l.width - bw, height: l.height), ctx, font: f)
+        let gap = (advance * 0.6).rounded(), w = bw - gap
+        let h = ceil(badgeFont.ascender - badgeFont.descender) + 1
+        let r = CGRect(x: (l.minX + tw + gap).rounded(), y: (l.midY - h / 2).rounded(), width: w, height: h)
+        ctx.setFillColor(TableStyle.bone.withAlphaComponent(0.13).cgColor)
+        ctx.fill(r)
+        draw(v.short, TableStyle.bone.withAlphaComponent(0.8), r.insetBy(dx: 3.z, dy: 0), ctx, font: badgeFont)
+    }
+
+    /// Lage eines Teils der Sammelspalte (Koordinaten wie die Zelle)
+    struct PartBox { let part: TrackPart; let rect: CGRect; let line: Int }
+
+    /// zwei Textzeilen mittig im Textbereich der Zelle
+    func trackLines(_ f: CGRect) -> [CGRect] {
+        let a = line(f), step = TableStyle.lineStep(font.pointSize)
+        let top = (a.midY - step).rounded()
+        return [CGRect(x: a.minX, y: top, width: a.width, height: step), CGRect(x: a.minX, y: top + step, width: a.width, height: step)]
+    }
+
+    /// Zeile (0 / 1) eines Felds in der Sammelspalte, nil = kein Teil
+    func partLine(_ field: TrackField) -> Int? {
+        let (a, b) = TrackParts.lines(parts)
+        if a.contains(where: { $0.field == field }) { return 0 }
+        if b.contains(where: { $0.field == field }) { return 1 }
+        return nil
+    }
+
+    /// Felder der Sammelspalte in Lesereihenfolge (Tab der Inline-Bearbeitung); einzeilig leer
+    var trackFields: [TrackField] { twoText ? TrackParts.fields(parts) : [] }
+
+    private func partText(_ p: TrackPart, _ t: Track) -> String {
+        switch p {
+        case .title: t.title
+        case .artist: t.artist
+        case .comment: t.comment
+        case .tags: t.comment2
+        case .label: t.label
+        case .album: t.album
+        case .remixer: t.remixer
+        case .lineBreak: ""
+        }
+    }
+
+    /// Breite, die ein Teil ungekürzt braucht (0 = leer)
+    private func naturalWidth(_ p: TrackPart, _ t: Track) -> CGFloat {
+        switch p {
+        case .tags:
+            guard let c = chips(t.comment2) else { return 0 }
+            return CGFloat(CTLineGetTypographicBounds(c.line, nil, nil, nil))
+        case .title:
+            guard !t.title.isEmpty else { return 0 }
+            if shortValues, let v = version(t.title) { return CGFloat(v.base.count) * advance + badgeWidth(v.short) }
+            return CGFloat(t.title.count) * advance
+        default:
+            return CGFloat(partText(p, t).count) * advance
+        }
+    }
+
+    /// Teile beider Zeilen nebeneinander, getrennt durch „ · “. Zu wenig Platz: gleich verteilt, kurze Teile behalten
+    /// ihre Breite, der Rest teilt sich den Platz
+    func trackLayout(_ t: Track, _ f: CGRect) -> [PartBox] {
+        let lines = trackLines(f), (a, b) = TrackParts.lines(parts)
+        return place(a, t, lines[0], 0) + place(b, t, lines[1], 1)
+    }
+
+    private func place(_ ps: [TrackPart], _ t: Track, _ l: CGRect, _ li: Int) -> [PartBox] {
+        var items: [(TrackPart, CGFloat)] = []
+        for p in ps { let w = naturalWidth(p, t); if w > 0 { items.append((p, w)) } }
+        guard !items.isEmpty else { return [] }
+        let sep = 3 * advance
+        var alloc = items.map(\.1), open = Set(items.indices)
+        var rest = Swift.max(0, l.width - sep * CGFloat(items.count - 1))
+        if alloc.reduce(0, +) > rest {
+            while !open.isEmpty {
+                let share = rest / CGFloat(open.count)
+                let small = open.filter { items[$0].1 <= share }
+                if small.isEmpty { for i in open { alloc[i] = share }; break }
+                for i in small { rest -= items[i].1; open.remove(i) }
+            }
+        }
+        var x = l.minX, out: [PartBox] = []
+        for (i, it) in items.enumerated() {
+            out.append(PartBox(part: it.0, rect: CGRect(x: x, y: l.minY, width: alloc[i].rounded(.up), height: l.height), line: li))
+            x += alloc[i] + sep
+        }
+        return out
+    }
+
+    /// Sammelspalte zeichnen: Titel kräftig, Artist 70 %, Kommentar / Album 55 %, Label gedämpft, Tags als Chips
+    private func drawTrack(_ t: Track, _ f: CGRect, _ ctx: CGContext, editing: TrackField?) {
+        let boxes = trackLayout(t, f)
+        let dot = TableStyle.muted
+        for (i, b) in boxes.enumerated() {
+            if i > 0, boxes[i - 1].line == b.line {
+                let prev = boxes[i - 1].rect
+                draw("·", dot, CGRect(x: prev.maxX + advance, y: b.rect.minY, width: advance, height: b.rect.height), ctx, font: plainFont)
+            }
+            guard b.part.field != editing else { continue }
+            switch b.part {
+            case .title: drawTitle(t.title, t.loose ? TableStyle.muted : TableStyle.bone, b.rect, ctx, font: boldFont)
+            case .artist: drawText(t.artist, t.fileExists ? TableStyle.bone.withAlphaComponent(0.7) : TableStyle.state, b.rect, ctx, font: plainFont, middle: true)
+            case .remixer: drawText(t.remixer, TableStyle.bone.withAlphaComponent(0.7), b.rect, ctx, font: plainFont, middle: true)
+            case .comment: draw(t.comment, TableStyle.bone.withAlphaComponent(0.55), b.rect, ctx, font: plainFont)
+            case .album: draw(t.album, TableStyle.bone.withAlphaComponent(0.55), b.rect, ctx, font: plainFont)
+            case .label: draw(t.label, TableStyle.muted, b.rect, ctx, font: plainFont)
+            case .tags: drawChips(t.comment2, b.rect, ctx)
+            case .lineBreak: break
+            }
+        }
+    }
+
+    /// Sammelspalte unter einem Punkt (Tabellen-Koordinaten): Feld des Teils (leere Stelle: erster Teil der Zeile) und
+    /// Tag-Chip (nur ganz sichtbare). nil = nicht die Sammelspalte bzw. unter dem Text (Band)
+    func trackHit(row r: Int, column c: Int, at p: NSPoint) -> (field: TrackField?, tag: String?)? {
+        guard twoText, let tv = table, r >= 0, r < rows.count, c >= 0, c < tv.tableColumns.count,
+              tv.tableColumns[c].identifier.rawValue == "track" else { return nil }
+        let f = tv.frameOfCell(atColumn: c, row: r), t = rows[r]
+        let lines = trackLines(f)
+        let li: Int
+        if p.y < lines[0].maxY { li = 0 } else if p.y < lines[1].maxY || bandTop == nil { li = 1 } else { return nil }
+        let box = trackLayout(t, f).first { $0.line == li && $0.rect.minX <= p.x && p.x < $0.rect.maxX }
+        var tag: String?
+        if let box, box.part == .tags, let l = look, let ch = chips(t.comment2) {
+            let x = p.x - box.rect.minX
+            let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: l.ui.tagSeparators).tags
+            if let i = ch.spans.firstIndex(where: { $0.contains(x) && $0.upperBound <= box.rect.width }), i < tags.count { tag = tags[i] }
+        }
+        let (a, b) = TrackParts.lines(parts)
+        return (box?.part.field ?? (li == 0 ? a : b).first?.field, tag)
+    }
+
+    /// Key-Farbe wie in der Key-Spalte (Harmonie zum Master)
+    func keyColor(_ t: Track) -> NSColor {
+        guard look?.ui.harmonyColors == true, let ref = refKey else { return TableStyle.bone }
+        guard let code = t.harmonyCode else { return TableStyle.clash }
+        return TableStyle.harmony(Harmony.relation(code, to: ref).step)
+    }
+
+    var tagFilter: TagFilter { look?.filter ?? TagFilter() }
+
+    private func editor(_ e: InlineEdit, line: CGRect?) -> NSView {
         guard let model, let ctl = inline else { return NSView() }
         if e.field == .rating {
             let v = StarsCell()
             v.value = Int(model.inlineText) ?? 0
             v.font = TableStyle.mono(13.z)
-            v.twoLine = twoLine
+            v.lineRect = line
             v.set = { [weak model, weak ctl] n in
                 guard let model, let ctl else { return }
                 model.inlineText = String(n)
@@ -1185,7 +1526,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         }
         let v = InlineFieldCell()
         v.model = model
-        v.twoLine = twoLine
+        v.lineRect = line
         v.finish = { [weak ctl] e, commit in ctl?.finish(e, commit: commit, move: 0) }
         v.configure(e, text: model.inlineText, font: TableStyle.mono(11.z))
         return v
@@ -1197,6 +1538,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         let id = col.identifier.rawValue
         let sortID = tv.sortDescriptors.first?.key ?? "artist"
         guard id == sortID, let d = TrackColumn.byID[id] else { return nil }
+        if d.id == "track" { return (trackSortPart ?? .title).field?.value(of: rows[row]) }
         switch d.kind {
         case .artist: return rows[row].artist
         case .title: return rows[row].title
@@ -1277,7 +1619,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             (TrackColumn.all.firstIndex { $0.id == a.identifier.rawValue } ?? 0) < (TrackColumn.all.firstIndex { $0.id == b.identifier.rawValue } ?? 0)
         }) {
             let id = c.identifier.rawValue
-            guard id != "preview", let d = TrackColumn.byID[id] else { continue }
+            guard id != "preview", id != "track", !replaced.contains(id), let d = TrackColumn.byID[id] else { continue }
             let item = ActionItem(d.menuTitle ?? d.title) { [weak self, weak c] in
                 guard let c else { return }
                 c.isHidden.toggle()
@@ -1288,6 +1630,23 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         }
         // aktuelle Sortierung: je Spalte ein Eintrag zum Herausnehmen, dazu Zurücksetzen
         guard let model else { return }
+        // Sammelspalte: nach welchem Teil (wird erste Sortierspalte, bisherige dahinter)
+        if twoText {
+            menu.addItem(.separator())
+            let head = NSMenuItem(title: String(localized: "Spalte Track sortieren nach"), action: nil, keyEquivalent: "")
+            head.isEnabled = false
+            menu.addItem(head)
+            let current = trackSortPart
+            for p in TrackPart.sortable where parts.contains(p) {
+                guard let c = p.sort else { continue }
+                let item = ActionItem(p.name) { [weak model] in
+                    guard let model else { return }
+                    model.sortOrder = Array(([c] + model.sortOrder.filter { $0.keyPath != c.keyPath }).prefix(Self.maxSortKeys))
+                }
+                item.state = current == p ? .on : .off
+                menu.addItem(item)
+            }
+        }
         let order = model.sortOrder
         menu.addItem(.separator())
         let title = NSMenuItem(title: String(localized: "Sortierung (Klick auf den Kopf = erste Spalte, bisherige dahinter)"), action: nil, keyEquivalent: "")
