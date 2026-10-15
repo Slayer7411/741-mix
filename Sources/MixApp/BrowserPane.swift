@@ -102,6 +102,12 @@ final class BrowserPaneModel: Identifiable {
         var rule = MatchRule()
         /// Gruppen des Bezugs-Tracks (nur mit `rule.groove`)
         var tags = TagProfile()
+        /// weitere Bezugs-Decks: auch zu ihnen muss ein Track passen
+        var extra: [HarmonyExtra] = []
+    }
+    struct HarmonyExtra: Hashable, Sendable {
+        var ref: HarmonyRef
+        var tags: TagProfile
     }
 
     var harmonySorted: Bool { sortOrder.contains { $0.keyPath == \Track.harmonySort } }
@@ -155,7 +161,7 @@ final class BrowserPaneModel: Identifiable {
         var all = base + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0,
                           ripOnly, ripOnly ? RipChecks.shared.revision : 0,
                           excl != nil, excl != nil ? history?.playedRevision ?? 0 : 0] as [AnyHashable]
-        if matching, let h { all += [h.ref, h.rule, h.tags] as [AnyHashable] }
+        if matching, let h { all += [h.ref, h.rule, h.tags, h.extra] as [AnyHashable] }
         return (base, all)
     }
 
@@ -268,7 +274,7 @@ final class BrowserPaneModel: Identifiable {
         var tags = TagFilter()
         var words: [[UInt8]] = []
         var separators = ""
-        var match: (ref: HarmonyRef, rule: MatchRule, tags: TagProfile)?
+        var match: (ref: HarmonyRef, rule: MatchRule, tags: TagProfile, extra: [HarmonyExtra])?
         /// gespielte Tracks (Schlüssel), die nicht in der Liste stehen sollen
         var exclude: Set<String>?
         var isEmpty: Bool { roles.isEmpty && tags.isEmpty && words.isEmpty && match == nil && exclude == nil }
@@ -276,7 +282,7 @@ final class BrowserPaneModel: Identifiable {
 
     private func criteria(_ separators: String, _ h: HarmonyInput?, _ excl: Set<String>? = nil) -> Criteria {
         Criteria(roles: roles, tags: tagFilter, words: search.split(separator: " ").map { Track.fold(String($0)) }, separators: separators,
-                 match: matching ? h.flatMap { h in h.ref.map { ($0, h.rule, h.tags) } } : nil, exclude: excl)
+                 match: matching ? h.flatMap { h in h.ref.map { ($0, h.rule, h.tags, h.extra) } } : nil, exclude: excl)
     }
 
     /// Sortierwert „Harmonie“ (nur mit Bezug)
@@ -327,9 +333,13 @@ final class BrowserPaneModel: Identifiable {
         }
         if !c.words.isEmpty { list = list.filter { $0.matches(words: c.words) } }
         if let m = c.match {
-            list = list.filter { m.rule.matches($0, m.ref) }
-            if m.rule.groove != .off, !m.tags.isEmpty {
-                list = list.filter { let e = index.entry($0.comment2, separators: c.separators); return m.rule.matchesTags(TagProfile(tags: e.tags, groups: e.groups), m.tags) }
+            // alle Bezüge: erstes Deck (oder AUTO) und die weiteren gewählten
+            let refs = [HarmonyExtra(ref: m.ref, tags: m.tags)] + m.extra
+            for r in refs { list = list.filter { m.rule.matches($0, r.ref) } }
+            if m.rule.groove != .off {
+                for r in refs where !r.tags.isEmpty {
+                    list = list.filter { let e = index.entry($0.comment2, separators: c.separators); return m.rule.matchesTags(TagProfile(tags: e.tags, groups: e.groups), r.tags) }
+                }
             }
         }
         guard let x = c.exclude else { return (list, 0) }
@@ -621,8 +631,49 @@ struct MatchChip: View {
         let ref = on ? mix.harmonyKey.map(Track.openKey(code:)) ?? "–" : ""
         let bpm = on && mix.harmonyBPM > 0 ? String(format: " %.1f", mix.harmonyBPM) : ""
         let groove = on ? [MatchRule.Groove.off: "", .similar: " ≈", .complement: " ⇄"][mix.prefs.ui.match.groove] ?? "" : ""
-        DeckButton(title: String(localized: "◆ PASST") + (on ? " · \(ref)\(bpm)\(groove)" : ""), active: on, verbatim: true) { model.matching.toggle() }
+        let chosen = mix.prefs.ui.matchDecks.sorted().map { deckLetters[$0] }.joined(separator: "+")
+        let deckText = on && !chosen.isEmpty ? " \(chosen):" : ""
+        VStack(alignment: .leading, spacing: 1.z) {
+            MatchDeckTiles()
+            DeckButton(title: String(localized: "◆ PASST") + (on ? " ·\(deckText) \(ref)\(bpm)\(groove)" : ""), active: on, verbatim: true) { model.matching.toggle() }
             .help("Nur Tracks, die zum Master passen: Key (gleich, ±1, Relativ), Tempo im Fenster, optional Tag-Gruppen (≈ ähnlich, ⇄ ergänzend) – einstellbar unter ⌘, → Browser")
+        }
+    }
+}
+
+/// Kacheln über ◆ PASST: AUTO (spielender Master, sonst Fokus-Deck) oder feste Decks, mehrere = Track muss zu allen passen.
+/// Hell = Deck spielt, gefüllt = gewählt
+struct MatchDeckTiles: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        let sel = mix.prefs.ui.matchDecks, n = max(2, mix.prefs.ui.deckCount)
+        HStack(spacing: 1.z) {
+            tile("AUTO", on: sel.isEmpty, playing: false) { mix.prefs.ui.matchDecks = [] }
+                .help("Bezug: spielendes Master-Deck, sonst das Fokus-Deck")
+            ForEach(0..<n, id: \.self) { d in
+                tile(deckLetters[d], on: sel.contains(d), playing: mix.deck(d).playing) {
+                    var s = Set(sel)
+                    if s.contains(d) { s.remove(d) } else { s.insert(d) }
+                    mix.prefs.ui.matchDecks = s.sorted()
+                }
+                .help("Bezug Deck \(deckLetters[d]) – mehrere Decks: Track muss zu allen passen")
+            }
+        }
+    }
+
+    private func tile(_ t: String, on: Bool, playing: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(verbatim: t)
+                .font(Theme.label(7.5.z, .bold))
+                .frame(minWidth: 11.z)
+                .frame(height: 9.z)
+                .padding(.horizontal, 2.z)
+                .foregroundStyle(on ? Theme.void : playing ? Theme.bone : Theme.muted)
+                .background(Rectangle().fill(on ? Theme.state.opacity(0.85) : Theme.void))
+                .overlay(Rectangle().stroke(on ? Theme.state : playing ? Theme.bone.opacity(0.6) : Theme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 }
 
