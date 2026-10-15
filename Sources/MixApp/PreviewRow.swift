@@ -68,8 +68,15 @@ final class PreviewRowController {
                      nc.addObserver(forName: NSTableView.columnDidMoveNotification, object: tv, queue: .main, using: redraw)]
     }
 
+    /// Inhaltsbereich ohne den Spaltenkopf: ab macOS 26 läuft der Inhalt unter dem Kopf weiter, die Bänder sonst darüber
     private func place(_ v: NSView, _ scroll: NSScrollView) {
-        if v.frame != scroll.contentView.frame { v.frame = scroll.contentView.frame }
+        var f = scroll.contentView.frame
+        if let head = (v as? BandView)?.table?.headerView?.superview, head.superview === scroll, head.frame.intersects(f) {
+            let h = head.frame
+            f = scroll.isFlipped ? NSRect(x: f.minX, y: h.maxY, width: f.width, height: max(0, f.maxY - h.maxY))
+                                 : NSRect(x: f.minX, y: f.minY, width: f.width, height: max(0, h.minY - f.minY))
+        }
+        if v.frame != f { v.frame = f }
     }
 
     /// Strich 10 × je Sekunde nachführen, solange vorgehört wird (eine Ebene, nur ihr Rahmen)
@@ -131,6 +138,7 @@ final class PreviewRowController {
         override init(frame: NSRect) {
             super.init(frame: frame)
             wantsLayer = true
+            layer?.masksToBounds = true
             layerContentsRedrawPolicy = .onSetNeedsDisplay
             playhead.backgroundColor = NSColor(Theme.state).cgColor
             playhead.zPosition = 1

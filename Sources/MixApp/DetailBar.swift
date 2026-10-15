@@ -70,7 +70,7 @@ final class DetailBarView: NSView {
         add(&a, String(localized: "LÄNGE"), t.duration > 0 ? Theme.time(t.duration) : "", bone)
         var b: [Seg] = []
         add(&b, String(localized: "KOMMENTAR"), t.comment, bone.withAlphaComponent(0.6))
-        let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: ui?.tagSeparators ?? " ").tags
+        let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: ui?.tagSeparators ?? " ").shown(groups: ui?.tagGroups ?? true).tags
         if !tags.isEmpty { b.append(Seg(label: String(localized: "TAGS"), text: "", color: bone, font: mono(11), tags: tags)) }
         if t.rating > 0 { add(&b, String(localized: "BEWERTUNG"), String(repeating: "★", count: min(5, t.rating)), bone) }
         add(&b, "PLAYS", t.playsText, bone)
@@ -168,7 +168,7 @@ final class DetailBarView: NSView {
         let filter = table?.tagFilter ?? TagFilter()
         var x = r.minX
         let h = ceil(f.ascender - f.descender) + 2
-        let groups = TagGroups.of(tags)
+        let groups = TagChipStyle.groups(tags)
         for (i, tag) in tags.enumerated() {
             let mark = filter.isEmpty ? .none : filter.mark(tag)
             let s = TagChipStyle.of(tag, group: groups[i], ui ?? UIPrefs())

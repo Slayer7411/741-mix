@@ -328,7 +328,7 @@ struct DeckMetaRow: View {
             if ui.deckRows.comment { m.comment = t.comment }
             if ui.deckRows.tags {
                 // Zerlegung aus dem Speicher des Browsers (je Text einmal)
-                m.tags = BrowserPaneModel.tags(of: t, separators: ui.tagSeparators)
+                m.tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: ui.tagSeparators).shown(groups: ui.tagGroups).tags
                 m.tagHighlight = ui.tagHighlight
                 m.tagColors = ui.tagColors
                 m.tagGroups = ui.tagGroups

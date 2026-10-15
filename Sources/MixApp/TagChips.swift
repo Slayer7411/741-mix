@@ -9,6 +9,11 @@ struct TagChipStyle {
     let fill: Color
 
     static let plain = TagChipStyle(marker: .clear, fill: Theme.bone)
+
+    /// Gruppen zu angezeigten Tags: aus den Markern davor, sonst die zuletzt gesehene Gruppe des Tags (Marker ausgeblendet)
+    @MainActor static func groups(_ tags: [String]) -> [String?] {
+        TagGroups.of(tags).enumerated().map { i, g in g ?? BrowserPaneModel.tagIndex.group(of: tags[i]) }
+    }
     @MainActor private static var cache: [String: TagChipStyle] = [:]
 
     @MainActor static func of(_ tag: String, group: String? = nil, _ ui: UIPrefs) -> TagChipStyle {
@@ -59,7 +64,7 @@ struct TagChips: View {
     @Environment(\.zoomExempt) private var exempt
 
     var body: some View {
-        let groups = TagGroups.of(tags).enumerated().map { i, g in g ?? BrowserPaneModel.tagIndex.group(of: tags[i]) }
+        let groups = TagChipStyle.groups(tags)
         HStack(spacing: 3 * (exempt ? 1 : 1.z)) {
             ForEach(Array(tags.enumerated()), id: \.offset) { i, t in
                 let chip = TagChip(tag: t, mark: filter.mark(t), style: .of(t, group: groups[i], ui))
@@ -114,7 +119,7 @@ struct TagChipsText: View {
 
     @MainActor static func text(tags: [String], keys: [String], ui: UIPrefs, filter: TagFilter) -> AttributedString {
         var out = AttributedString()
-        let groups = TagGroups.of(tags)
+        let groups = TagChipStyle.groups(tags)
         for (i, t) in tags.enumerated() {
             if i > 0 { out += AttributedString(" ") }
             let m = filter.isEmpty ? .none : filter.mark(key: keys[i])

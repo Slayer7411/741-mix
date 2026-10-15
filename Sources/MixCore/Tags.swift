@@ -72,6 +72,16 @@ public final class TagIndex {
         public let keys: [String]
         /// Gruppe je Tag (`TagGroups.of`)
         public let groups: [String?]
+
+        /// ohne die Marker selbst (Anzeige: die Gruppe zeigt die Farbe)
+        public var withoutMarkers: Entry {
+            let keep = tags.indices.filter { groups[$0] != tags[$0] }
+            guard keep.count < tags.count else { return self }
+            return Entry(tags: keep.map { tags[$0] }, keys: keep.map { keys[$0] }, groups: keep.map { groups[$0] })
+        }
+
+        /// Anzeige: mit Gruppen ohne Marker
+        public func shown(groups on: Bool) -> Entry { on ? withoutMarkers : self }
     }
 
     private var separators = ""

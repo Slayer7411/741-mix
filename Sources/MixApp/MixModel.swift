@@ -94,6 +94,8 @@ final class MixModel {
     private(set) var harmonyTags = TagProfile()
     /// Selbsttest-Bilder: fester Bezug statt der Decks
     @ObservationIgnored var harmonyFixed: HarmonyRef? { didSet { updateHarmony() } }
+    /// … und feste Tag-Gruppen dazu (Spalte „Tags ≈“)
+    @ObservationIgnored var harmonyFixedTags: String?
     var prefs = AppPrefs.load() {
         didSet {
             guard prefs != oldValue else { return }
@@ -216,6 +218,7 @@ final class MixModel {
         }
         if let c = core.pluginCatalog.crashedLastRun { print("[plugin] beim letzten Lauf abgestürzt beim Öffnen: \(c.name) -> blockiert") }
         FileServiceSetup.attach(core)
+        TagColors.wave = { [weak self] in self?.wavePreset.palette }
         BrowserPaneModel.harmonySource = { [weak self] in
             BrowserPaneModel.HarmonyInput(ref: self.flatMap { m in m.harmonyKey != nil || m.harmonyBPM > 0 ? HarmonyRef(key: m.harmonyKey, bpm: m.harmonyBPM) : nil },
                                           rule: self?.prefs.ui.match ?? MatchRule(),
@@ -376,13 +379,14 @@ final class MixModel {
         var key: Int?, bpm = 0.0, tags = TagProfile()
         if let f = harmonyFixed {
             key = f.key; bpm = f.bpm
+            if let s = harmonyFixedTags { tags = harmonyProfile(s) }
         } else {
             let m = effectiveMaster.flatMap { decks[$0].state.playing ? $0 : nil }
             let d = m ?? focusedDeck
             if decks.indices.contains(d), let t = decks[d].state.track {
                 key = t.harmonyCode.map { Harmony.shifted($0, by: Int(keyDeviation(d).rounded())) }
                 bpm = m != nil || state.clockMaster ? state.masterTempo : decks[d].state.bpm
-                if prefs.ui.match.groove != .off { tags = harmonyProfile(t.comment2) }
+                tags = harmonyProfile(t.comment2)
             }
         }
         bpm = (bpm * 10).rounded() / 10

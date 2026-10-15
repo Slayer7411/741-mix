@@ -6,16 +6,37 @@ import MixCore
 enum TagColors {
     static let palette = ["6E5A12", "2E6638", "1F4C78", "6B2D5C", "7A3A1C", "40601E", "56307A", "1E6464", "7A1F30", "5C5C1E", "1E3F7A", "6B4A2D"]
 
-    /// eigene Farbe des Tags, sonst die seiner Gruppe (Farbe des Markers), sonst aus dem Namen
-    static func hex(_ tag: String, group: String? = nil, _ ui: UIPrefs) -> String {
+    /// Farben der Wellenform (aktives Preset), gesetzt vom MixModel
+    @MainActor static var wave: () -> BlendPaint.Palette? = { nil }
+
+    /// Gruppen K / B / H wie die Wellenform: Kick = tiefe Schläge, Bass = gehaltene Tiefen, Hats = Höhen.
+    /// Abgedunkelt auf die Helligkeit der Palette (knochenweiße Schrift bleibt lesbar)
+    @MainActor static func waveHex(_ marker: String) -> String? {
+        guard let p = wave() else { return nil }
+        let c: BlendPaint.RGB
+        switch marker {
+        case "K": c = p.low
+        case "B": c = p.lowWarm
+        case "H": c = p.high
+        default: return nil
+        }
+        let n = NSColor(srgbRed: CGFloat(c.r), green: CGFloat(c.g), blue: CGFloat(c.b), alpha: 1)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        n.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        let d = NSColor(hue: h, saturation: min(s, 0.85), brightness: min(b, 0.5), alpha: 1)
+        return String(format: "%02X%02X%02X", Int(d.redComponent * 255), Int(d.greenComponent * 255), Int(d.blueComponent * 255))
+    }
+
+    /// eigene Farbe des Tags, sonst die seiner Gruppe (Farbe des Markers, K / B / H aus der Wellenform), sonst aus dem Namen
+    @MainActor static func hex(_ tag: String, group: String? = nil, _ ui: UIPrefs) -> String {
         if let h = ui.tagColors[tag] { return h }
-        if ui.tagGroups, let g = group, g != tag, g != TagGroups.role { return hex(g, ui) }
+        if ui.tagGroups, let g = group, g != TagGroups.role { if g != tag { return hex(g, group: g, ui) } else if let w = waveHex(g) { return w } }
         var h: UInt32 = 5381
         for b in tag.utf8 { h = (h &* 33) ^ UInt32(b) }
         return palette[Int(h % UInt32(palette.count))]
     }
 
-    static func color(_ tag: String, group: String? = nil, _ ui: UIPrefs) -> Color { color(hex: hex(tag, group: group, ui)) }
+    @MainActor static func color(_ tag: String, group: String? = nil, _ ui: UIPrefs) -> Color { color(hex: hex(tag, group: group, ui)) }
 
     static func color(hex: String) -> Color {
         let v = UInt32(hex, radix: 16) ?? 0

@@ -11,7 +11,7 @@ import MixEngine
 
 /// Spalte der Track-Tabelle. `id` = Schlüssel in der gespeicherten Anordnung (`columns.<bereich>`), Breiten bei 100 %
 struct TrackColumn {
-    enum Kind { case played, cloud, analyzed, info, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file, rip, track }
+    enum Kind { case played, cloud, analyzed, info, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, groove, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file, rip, track }
     let id: String
     let title: String
     let kind: Kind
@@ -49,6 +49,7 @@ struct TrackColumn {
         .fixed("bpm", "BPM", .bpm, 56, sort: KeyPathComparator(\Track.bpm)),
         .fixed("key", "Key", .key, 36, sort: KeyPathComparator(\Track.openKey)),
         .fixed("harmony", "Match", .harmony, 44, sort: KeyPathComparator(\Track.harmonySort), menu: String(localized: "Match (Harmonie, Tempo zum Master)")),
+        .fixed("groove", "Tags ≈", .groove, 58, menu: String(localized: "Tags ≈ (Tag-Gruppen zum Master)")),
         .fixed("keytext", "Key Text", .field(.keyText), 40, hidden: true, sort: KeyPathComparator(\Track.keyText)),
         .fixed("time", "Time", .time, 44, sort: KeyPathComparator(\Track.duration)),
         .fixed("gain", "Gain", .gain, 42, hidden: true, sort: KeyPathComparator(\Track.gainSort)),
@@ -133,6 +134,7 @@ enum ColumnLayout {
         if !order.contains("cover") { order.insert("cover", at: order.firstIndex(of: "color").map { $0 + 1 } ?? min(3, order.count)) }
         if !order.contains("preview") { order.insert("preview", at: order.firstIndex(of: "title").map { $0 + 1 } ?? order.count) }
         if !order.contains("harmony") { order.insert("harmony", at: order.firstIndex(of: "key").map { $0 + 1 } ?? order.count) }
+        if !order.contains("groove") { order.insert("groove", at: order.firstIndex(of: "harmony").map { $0 + 1 } ?? order.count) }
         for c in TrackColumn.all where !order.contains(c.id) { order.append(c.id) }
         return order
     }
@@ -676,6 +678,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         case .bpm: t.bpm > 0 ? String(format: "%.2f", t.bpm) : ""
         case .key: t.openKey
         case .harmony: refBPM > 0 ? "+00.0" : ""
+        case .groove: refTags.isEmpty ? "" : "⇄ K B H"
         case .time: Theme.time(t.duration)
         case .gain: t.perceivedDb.map { String(format: "%+.1f", $0) } ?? ""
         case .rating: String(repeating: "★", count: Swift.max(0, Swift.min(5, t.rating)))
@@ -746,6 +749,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             if let h = tv.headerView, h.frame.height != (24.z).rounded() { h.frame.size.height = (24.z).rounded(); tv.tile() }
         }
         if styleChanged || old?.filter != l.filter { chipCache = [:] }
+        if styleChanged { profileCache = [:] }
         let same = rows.count == newRows.count && rows.withUnsafeBufferPointer { a in newRows.withUnsafeBufferPointer { a.baseAddress == $0.baseAddress } }
         if !same || styleChanged {
             Self.trace(styleChanged ? "reload(style: ui \(old?.ui != l.ui) zoom \(old?.zoom != l.zoom))" : "reload(rows)")
@@ -779,20 +783,57 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     /// Bezug, mit dem die Zellen gezeichnet sind (Key-Code, Tempo)
     private var refKey: Int?
     private var refBPM = 0.0
+    /// Tag-Gruppen des Bezugs-Tracks (Spalte „Tags ≈“)
+    private var refTags = TagProfile()
+    /// Gruppen-Profil je Kommentar-2-Text
+    private var profileCache: [String: TagProfile] = [:]
+
+    private func profile(_ t: Track) -> TagProfile {
+        if let p = profileCache[t.comment2] { return p }
+        let e = BrowserPaneModel.tagIndex.entry(t.comment2, separators: look?.ui.tagSeparators ?? " ")
+        let p = TagProfile(tags: e.tags, groups: e.groups)
+        profileCache[t.comment2] = p
+        return p
+    }
+
+    /// `≈` ähnlich / `⇄` ergänzend (Regeln aus ⌘, → BROWSER), dann die Gruppen des Masters: gleich in der Gruppenfarbe,
+    /// anders grau, fehlt `·`
+    private func drawGroove(_ t: Track, _ l: CGRect, _ ctx: CGContext) {
+        guard !refTags.isEmpty, let ui = look?.ui else { return }
+        let p = profile(t)
+        guard !p.isEmpty else { return }
+        var rule = ui.match
+        rule.groove = .similar
+        let similar = rule.matchesTags(p, refTags)
+        rule.groove = .complement
+        let complement = rule.matchesTags(p, refTags)
+        let out = NSMutableAttributedString(string: similar ? "≈" : complement ? "⇄" : " ", attributes: ctAttrs(font, TableStyle.bone))
+        let order = ["K", "B", "H"]
+        let groups = refTags.primary.keys.sorted { (order.firstIndex(of: $0) ?? 9, $0) < (order.firstIndex(of: $1) ?? 9, $1) }
+        for g in groups {
+            let v = p.primary[g]
+            let color = v == refTags.primary[g] ? NSColor(TagChipStyle.of(g, group: g, ui).fill) : TableStyle.muted
+            out.append(NSAttributedString(string: " " + (v == nil ? "·" : g), attributes: ctAttrs(font, color)))
+        }
+        let line = CTLineCreateWithAttributedString(out)
+        ctx.textPosition = CGPoint(x: l.minX, y: (l.midY + (font.ascender + font.descender) / 2).rounded())
+        CTLineDraw(fitted(line, font, TableStyle.bone, l.width), ctx)
+    }
 
     /// eigene Beobachtung von Key und Tempo des Bezugs (ohne SwiftUI): ein Wechsel zeichnet nur Key- und Match-Zellen
     /// der sichtbaren Zeilen neu, die Liste bleibt
     private func observeHarmony() {
         guard let mix else { return }
-        withObservationTracking { refKey = mix.harmonyKey; refBPM = mix.harmonyBPM } onChange: { [weak self] in
+        withObservationTracking { refKey = mix.harmonyKey; refBPM = mix.harmonyBPM; refTags = mix.harmonyTags } onChange: { [weak self] in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.harmonyChanged() } }
         }
     }
 
     private func harmonyChanged() {
-        let k = refKey, b = refBPM
+        let k = refKey, b = refBPM, g = refTags
         observeHarmony()
         if k != refKey { redrawColumns(["key", "harmony"]) } else if b != refBPM { redrawColumns(["harmony"]) }
+        if g != refTags { redrawColumns(["groove"]) }
     }
 
     /// nur diese Spalten der sichtbaren Zeilen neu zeichnen
@@ -1157,6 +1198,8 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             guard refBPM > 0, let off = look?.ui.match.tempoOffset(t.bpm, to: refBPM), let rule = look?.ui.match else { return }
             let v = (off * 10).rounded() / 10
             draw(v == 0 ? "0.0" : String(format: "%+.1f", v), abs(off) <= rule.bpmWindow ? TableStyle.bone : TableStyle.clash, l, ctx)
+        case .groove:
+            drawGroove(t, l, ctx)
         case .time:
             draw(Theme.time(t.duration), TableStyle.bone, l, ctx)
         case .gain:
@@ -1266,7 +1309,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     private func chips(_ s: String) -> Chips? {
         guard !s.isEmpty, let l = look else { return nil }
         if let hit = chipCache[s] { return hit }
-        let e = BrowserPaneModel.tagIndex.entry(s, separators: l.ui.tagSeparators)
+        let e = BrowserPaneModel.tagIndex.entry(s, separators: l.ui.tagSeparators).shown(groups: l.ui.tagGroups)
         let out = NSMutableAttributedString()
         var fills: [NSColor?] = [], struck: [Bool] = []
         for (i, tag) in e.tags.enumerated() {
@@ -1494,7 +1537,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         var tag: String?
         if let box, box.part == .tags, let l = look, let ch = chips(t.comment2) {
             let x = p.x - box.rect.minX
-            let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: l.ui.tagSeparators).tags
+            let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: l.ui.tagSeparators).shown(groups: l.ui.tagGroups).tags
             if let i = ch.spans.firstIndex(where: { $0.contains(x) && $0.upperBound <= box.rect.width }), i < tags.count { tag = tags[i] }
         }
         let (a, b) = TrackParts.lines(parts)

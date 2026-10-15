@@ -1012,7 +1012,7 @@ struct TrackTable: View {
                 inlineCtl.writeBack = { [decks] in decks.prefs.ui.writeCollection }
                 // Tag-Chip unter dem Klick, nur ganz sichtbare (abgeschnittene enden in „…“)
                 inlineCtl.chipAt = { [decks] t, x, width in
-                    let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: decks.prefs.ui.tagSeparators).tags
+                    let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: decks.prefs.ui.tagSeparators).shown(groups: decks.prefs.ui.tagGroups).tags
                     return TagChipsText.spans(tags: tags, .of(decks.prefs.ui)).firstIndex { $0.contains(x) && $0.upperBound <= width }.map { tags[$0] }
                 }
                 inlineCtl.textTop = { [weak table] in table?.bandTop }
