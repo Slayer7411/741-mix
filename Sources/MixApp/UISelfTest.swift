@@ -134,6 +134,7 @@ enum UISelfTest {
             ("deck-groessen", deckSizes),
             ("insert-slots", insertSlots),
             ("zweizeilig", twoLineRows),
+            ("browser-höhe", splitDrag),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -664,11 +665,13 @@ final class UIDriver {
     /// Ziehen: Drücken, `steps` Bewegungen, Loslassen
     /// Ziehen: alles direkt ans Fenster. Über die Warteschlange gepostete Zieh-Ereignisse kommen ohne ihre Position an
     /// (das Fenster ignoriert die Maus, AppKit ordnet sie beim Abholen neu zu) – der Bereich landete dann bei 0 s
-    func drag(from a: NSPoint, to b: NSPoint, modifiers: NSEvent.ModifierFlags = [], steps: Int = 6) {
+    /// `each`: nach jedem Schritt aufrufen (Messung während des Ziehens)
+    func drag(from a: NSPoint, to b: NSPoint, modifiers: NSEvent.ModifierFlags = [], steps: Int = 6, each: (() -> Void)? = nil) {
         window.sendEvent(mouse(.leftMouseDown, a, modifiers))
         for i in 1...max(1, steps) {
             let f = CGFloat(i) / CGFloat(max(1, steps))
             window.sendEvent(mouse(.leftMouseDragged, NSPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f), modifiers))
+            if let each { spin(0.05); each() }
         }
         window.sendEvent(mouse(.leftMouseUp, b, modifiers))
         spin(0.2)
@@ -2293,5 +2296,30 @@ extension UISelfTest {
         log("zweizeilig: zeile \(tv.rowHeight) pt, detailleiste \(bar.track?.title ?? "-"), tag „\(tag)“ -> \(pane.shown.count) tracks")
         mix.prefs.ui.browserRows = rows0
         mix.prefs.ui.detailBar = bar0
+    }
+}
+
+extension UISelfTest {
+    /// Trenner Decks/Browser in Schritten ziehen (nach oben, Fensterkoordinaten): die Browser-Höhe steigt in jedem Schritt
+    /// ohne Umkehr (vorher zitterte sie, weil der Griff mit der Höhe wanderte), gespeichert wird erst beim Loslassen
+    static func splitDrag(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, pane = u.browser.paneA
+        let h0 = mix.prefs.ui.browserHeight
+        defer { mix.prefs.ui.browserHeight = h0; u.spin(0.3) }
+        u.mix.pull()
+        guard let grip = u.named("split handle") else { fail("Trenner fehlt") }
+        let c = u.center(grip)
+        var seen: [Double] = [Double(pane.paneHeight)]
+        var savedDuring: [Double] = []
+        u.drag(from: c, to: NSPoint(x: c.x, y: c.y + 90), steps: 12, each: {
+            seen.append(Double(pane.paneHeight))
+            savedDuring.append(mix.prefs.ui.browserHeight)
+        })
+        let h1 = mix.prefs.ui.browserHeight
+        log("trenner: \(seen.map { Int($0) }) · gespeichert \(h0) → \(h1)")
+        check(seen.last! > seen.first! + 30, "Browser wächst nicht: \(seen.first!) → \(seen.last!)")
+        check(zip(seen, seen.dropFirst()).allSatisfy { $1 >= $0 - 0.5 }, "Höhe springt beim Ziehen: \(seen.map { Int($0) })")
+        check(savedDuring.allSatisfy { $0 == h0 }, "Höhe während des Ziehens gespeichert: \(savedDuring)")
+        check(abs(h1 - seen.last!) < 1.5, "gespeicherte Höhe \(h1) ≠ Browser \(seen.last!)")
     }
 }

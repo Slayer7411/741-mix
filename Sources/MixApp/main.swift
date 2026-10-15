@@ -26,6 +26,8 @@ struct ContentView: View {
     /// Höhe der Deck-Fläche vor dem Zuklappen – ohne Beobachtung, Messen löst kein neues Layout aus
     private final class Height { var value: CGFloat = 0 }
     @State private var deckAreaHeight = Height()
+    /// Browser-Höhe während des Ziehens am Trenner; gespeichert wird sie erst beim Loslassen
+    @State private var dragHeight: Double?
     @State private var donate = false
 
     var body: some View {
@@ -43,10 +45,12 @@ struct ContentView: View {
                 .clipped()
                 .layoutPriority(big ? 0 : 1)
             if !big {
-                SplitHandle(height: Binding(get: { mix.prefs.ui.browserHeight }, set: { mix.prefs.ui.browserHeight = $0 }), snap: snapBrowserHeight)
+                SplitHandle(height: Binding(get: { dragHeight ?? mix.prefs.ui.browserHeight }, set: { dragHeight = $0 }),
+                            snap: snapBrowserHeight, onEnd: endSplitDrag)
+                    .onDisappear { endSplitDrag() }   // Browser groß mitten im Ziehen: Höhe trotzdem speichern
             }
             browsers
-                .frame(height: big ? nil : mix.prefs.ui.browserHeight.z)
+                .frame(height: big ? nil : (dragHeight ?? mix.prefs.ui.browserHeight).z)
                 .frame(maxHeight: big ? .infinity : nil)
                 .layoutPriority(big ? 1 : 0)
             if mix.prefs.ui.statusBar == .always { statusBar }
@@ -141,11 +145,19 @@ struct ContentView: View {
         return BrowserSnap.height(h, chrome: chrome, row: TableStyle.rowHeight(ui, twoText: m.twoText(ui)) / 1.z)
     }
 
-    /// Ziehbarer Trenner zwischen Decks und Browser; Höhe wird gespeichert, `snap` rundet sie beim Ziehen. Sichtbar 3 pt
-    /// (Linie + 1 pt Luft), greifbar 9 pt: die Griff-Fläche ragt nach oben in den Deck-Rand (unten gewinnt der Browser)
+    /// Ende des Ziehens am Trenner: Höhe speichern (einmal, nicht bei jeder Bewegung)
+    private func endSplitDrag() {
+        guard let h = dragHeight else { return }
+        mix.prefs.ui.browserHeight = h
+        dragHeight = nil
+    }
+
+    /// Ziehbarer Trenner zwischen Decks und Browser; `snap` rundet die Höhe beim Ziehen, `onEnd` beim Loslassen.
+    /// Sichtbar 3 pt (Linie + 1 pt Luft), greifbar 9 pt: die Griff-Fläche ragt nach oben in den Deck-Rand (unten gewinnt der Browser)
     struct SplitHandle: View {
         @Binding var height: Double
         var snap: (Double) -> Double = { $0 }
+        var onEnd: () -> Void = {}
         @State private var start: Double?
         var body: some View {
             Rectangle().fill(Theme.hairline).frame(height: 1)
@@ -153,13 +165,17 @@ struct ContentView: View {
                 .overlay {
                     Color.clear.frame(height: 9.z)
                         .contentShape(Rectangle())
+                        .background(UITestMark(name: "split handle"))
                         .onHover { inside in if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
-                        .gesture(DragGesture(minimumDistance: 1)
+                        // Fensterkoordinaten: der Griff wandert mit der Höhe, lokal gemessen würde die Verschiebung gegen die
+                        // Bewegung zurückgedreht (Zittern). Höhe = Starthöhe − Verschiebung seit dem Griff
+                        .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                             .onChanged { g in
-                                if start == nil { start = height }
-                                height = snap(max(120, min(900, (start ?? height) - g.translation.height / 1.z)))
+                                let s = start ?? height
+                                start = s
+                                height = BrowserDrag.height(start: s, translation: g.translation.height / 1.z, snap: snap)
                             }
-                            .onEnded { _ in start = nil })
+                            .onEnded { _ in start = nil; onEnd() })
                 }
         }
     }
@@ -553,6 +569,14 @@ enum BrowserSnap {
         guard row > 0, h > chrome else { return h }
         let rows = max(1, ((h - chrome) / row).rounded())
         return chrome + rows * row
+    }
+}
+
+/// Browser-Höhe beim Ziehen am Trenner: nur Starthöhe und Verschiebung seit dem Griff (unskaliert), nie die laufende Höhe.
+/// Damit ist jede Verschiebung genau einer Höhe zugeordnet – das Einrasten wirkt nicht gegen die Bewegung
+enum BrowserDrag {
+    static func height(start: Double, translation: Double, snap: (Double) -> Double) -> Double {
+        snap(max(120, min(900, start - translation)))
     }
 }
 
