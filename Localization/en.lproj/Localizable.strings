@@ -379,6 +379,10 @@
 "Voll" = "Full";
 "Gedämpft" = "Dimmed";
 "Leicht" = "Light";
+"Band-Breite" = "Band width";
+"sichtbare breite: das band liegt nur über dem teil der zeile, den der browser zeigt, und bleibt beim scrollen im bild. ganze zeile: über alle spalten, auch die ausgescrollten" = "visible width: the band covers only the part of the row the browser shows and stays in view while scrolling. whole row: across all columns, including the ones scrolled out of view";
+"Sichtbare Breite" = "Visible width";
+"Ganze Zeile" = "Whole row";
 "immer (gedrosselt)" = "always (throttled)";
 "nur wenn kein Deck spielt" = "only while no deck plays";
 "aus" = "off";

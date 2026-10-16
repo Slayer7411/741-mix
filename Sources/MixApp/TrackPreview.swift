@@ -10,6 +10,12 @@ enum PreviewMode: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Breite des Bandes (Modus „ganze Zeile“): nur die sichtbare Breite der Tabelle (bleibt beim Scrollen am Platz) oder ganze Zeile
+enum PreviewBandSpan: String, CaseIterable, Codable, Identifiable {
+    case visible = "Sichtbare Breite", row = "Ganze Zeile"
+    var id: String { rawValue }
+}
+
 /// Farben der Browser-Vorschau: Spektrum (rot = Bass, grün = Mitten, blau = Höhen) oder wie die Deck-Wellenform
 enum PreviewColors: String, CaseIterable, Codable, Identifiable {
     case spectrum = "Spektrum (rot/grün/blau)", waveform = "wie Wellenform"
@@ -662,6 +668,10 @@ struct PreviewSettings: View {
                     Text("Leicht").tag(0.5)
                 }
                 .settingsAnchor("browser.preview.band")
+                Picker("Band-Breite", selection: $mix.prefs.ui.previewBandSpan) {
+                    ForEach(PreviewBandSpan.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                .settingsAnchor("browser.preview.bandspan")
             }
             Text("mini-übersicht je track: wellenform (spektrum: rot = bass, grün = mitten/synths, blau = höhen/drums, helle linie = großer energiesprung), phrasen, marker alle 16 / 32 takte, hotcues, start-cue. entsteht beim laden ins deck, per rechtsklick auf eine quelle -> vorschauen berechnen, oder im hintergrund: sichtbare zeilen zuerst, dann die neuesten tracks. immer: läuft auch beim spielen, gedrosselt (eine datei nach der anderen, halbe rechenzeit, niedrige priorität). nur wenn kein deck spielt: wartet, solange ein deck spielt. pausiert immer, solange ein deck lädt, und 4 s danach. dateien nur in der cloud lädt der hintergrund nicht herunter. gespeichert in ~/Library/Application Support/MINOS-741/overviews.")
                 .font(Theme.mono(10)).foregroundStyle(Theme.muted)

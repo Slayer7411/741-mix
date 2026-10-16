@@ -852,6 +852,7 @@ reference = audible key of the master deck (track key + key shift, without keylo
 a mini overview of the whole track per row. modes (⌘, -> BROWSER -> browser preview):
 
 * `Ganze Zeile (zweizeilig)` (default): rows twice as high, text on top, the overview as a band across the full row width underneath, continuous over all columns. selection and inline edit work as usual (the editor sits in the text line)
+* band width (`Band-Breite`, with `Ganze Zeile`, `ui.previewBandSpan`): `Sichtbare Breite` (default) = the band covers only the part of the row the browser shows and stays in view while scrolling sideways. `Ganze Zeile` = across all columns, most of it off screen with many columns. click into the band and the playhead use the same band
 * `Eigene Spalte`: PREVIEW column after the title
 * `Hinter dem Titel`: 25 % under the title text
 * `Aus`
