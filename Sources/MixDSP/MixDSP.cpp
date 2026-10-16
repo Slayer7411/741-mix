@@ -1888,6 +1888,9 @@ void mdsp_seek(MDEngine *e, int deck, double s) {
     double ts = d.trimStartReq.load(std::memory_order_relaxed), te = d.trimEndReq.load(std::memory_order_relaxed);
     s = std::max(s, std::max(0.0, ts));
     if (te > ts) s = std::min(s, te);
+    // Sprung beendet das Nachlaufen nach einem Scratch (sonst zöge der Kern zurück aufs alte Ziel); gehalten: Ziel mitnehmen
+    int two = 2;
+    if (!d.scratchMode.compare_exchange_strong(two, 0) && two == 1) d.scratchTarget.store(s);   // Sekunden wie mdsp_scratch
     d.pendingSeek.store(s);
 }
 

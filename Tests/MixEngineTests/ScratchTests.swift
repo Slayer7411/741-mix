@@ -85,3 +85,13 @@ private final class ScratchDeck {
     k.run(blocks: 600)                            // höchstens 4× Tempo: 15 s brauchen rund 320 Blöcke
     #expect(abs(k.position - 20) < 1e-3)
 }
+
+@Test func seekRightAfterReleaseIsNotPulledBack() {
+    let k = ScratchDeck(start: 10, playing: false)
+    k.run(blocks: 4)
+    mdsp_scratch(k.e, 0, 12, false)   // losgelassen, Lesekopf läuft noch aufs Ziel
+    k.render()
+    mdsp_seek(k.e, 0, 3)              // Sprung (Hotcue) direkt danach
+    k.run(blocks: 60)
+    #expect(abs(k.position - 3) < 1e-3)
+}

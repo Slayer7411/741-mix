@@ -640,7 +640,10 @@ final class WaveMouseView: NSView {
             mix.grabBend(d, WaveGrabMath.bend(speed: grabSpeed))
         default:
             if grabBending { grabBending = false; mix.grabBend(d, 0); mix.grab(d, false) }
-            mix.scrub(d, seconds: mix.position(d) + WaveGrabMath.seconds(dragPx: dragPx, span: scene.span, width: w))
+            // eigenes Ziel wie bei Vinyl: die gemeldete Position hängt beim Suchen nach, Schritte darauf summierten den Fehler
+            let t = (grabTarget ?? mix.position(d)) + WaveGrabMath.seconds(dragPx: dragPx, span: scene.span, width: w)
+            grabTarget = t
+            mix.scrub(d, seconds: t)
         }
     }
 
