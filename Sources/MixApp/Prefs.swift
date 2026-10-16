@@ -325,6 +325,8 @@ struct UIPrefs: Codable, Equatable {
     var hidePlayedTracks = false
     /// Played-Status beim Start der App zurücksetzen (wie ⌥⌘P), Standard an
     var resetPlayedOnStart = true
+    /// Zwei-Mac-Modus (wirkt nach Neustart)
+    var pairRole = PairRole.off
     /// Schneiden (Bereich entfernen / auf Bereich kürzen): Ergebnis gleich ins selbe Deck laden (Lade-Schutz gilt)
     var cutLoadsResult = false
     /// EDIT-Modus: Raster beim Markieren (Ziehen in der Wellenform), ⌥ = frei

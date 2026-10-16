@@ -339,6 +339,8 @@ struct MixApp: App {
     @State private var controller: ControllerManager?
     @State private var sessionTimer: Timer?
 
+    init() { PairLink.applyLabels(AppPrefs.load().ui.pairRole) }
+
     /// Version und Build für die Marke in der Leiste („0.8.1 · db052b1“), gleiche Quelle wie der Fenstertitel
     static var versionLine: String {
         let info = Bundle.main.infoDictionary
@@ -532,6 +534,7 @@ extension MixApp {
         browser.history = history
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
         history.start(store: store, mix: mix)
+        PairLink.shared.start(role: mix.prefs.ui.pairRole, history: history, mix: mix)
         store.history = history
         mix.autoMix.store = store
         mix.autoMix.history = history
