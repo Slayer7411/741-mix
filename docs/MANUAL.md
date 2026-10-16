@@ -140,6 +140,12 @@ click on the meters -> details (keylock lookahead, own vs device overloads).
 * every key action of KEYBOARD and the controller blocks are in the index too (`loop` also finds the loop key)
 * click or enter -> opens the section, scrolls to the row and marks it purple for 1.5 s. ↑ / ↓ selects a result. the search stays until cleared or a section is clicked; `◆ n TREFFER` under the field returns to the list. a hidden row (e.g. preset fields while the waveform style is not 3-band) -> the row that shows it
 
+### help mode
+
+* `?` in the top bar (or menu View -> `Hilfe-Modus`) switches it on. rest the mouse 2 s over a control: a small card with name, function and key (if assigned). off: nothing changes, the normal tooltips stay
+* the card is in the app language (german / english). texts in one table (`HelpTable`); covered: top bar clock (LINK, AUTO, MASTER, TAP), deck transport and sync, loop, hotcues, beatjump, FX assign, mixer fader, browser chips (TAGS, UNGESPIELT, ◆ PASST), tree rows, FX slots, RIP
+* one timer at a time while the mode is on; no work per frame
+
 ## ◆ 04 · DECKS
 
 ### header
@@ -178,7 +184,7 @@ anywhere on the deck (header, cover, tags, readouts, overview, empty space) -> t
 
 * `Track bearbeiten …`: edit window, PREV / NEXT through the list of the active pane
 * `Im Browser zeigen`: selects the track in the active pane and scrolls to it. not in the list -> TRACK COLLECTION, search and filters cleared (UNPLAYED off if the track is played)
-* `Im Finder zeigen`
+* `Im Finder zeigen`, `Pfad kopieren`, `Artist – Titel kopieren`, `Vorhören`
 * `Auf Deck … kopieren`: instant double onto that deck (load lock applies)
 * `Grid des DAW-Clips übernehmen` (only with a DAW clip of the same file)
 * `Auswerfen`: empties the deck (also a running load or a load error). greyed out while the deck plays
@@ -841,6 +847,11 @@ one tree PLAYLISTS: own folders, playlists and smartlists first, below them the 
 * detail bar below the list (default: on with two lines): cover, artist – title (mix), album, label, cat no, genre, bpm, key (harmony colors), length, comment, tags (click = filter), rating, plays, last played, file (click = show in finder). selected track, with several selected the last clicked one. one line from 1500 pt pane width, else two. follows arrows and controller browse without a list rebuild (~0.5 ms per step)
 * short values (⌘, -> BROWSER, on): version at the title end as a small tag (`Original Mix` -> `OM`, `Extended Mix` -> `EXT`, `Foo Remix` -> `Foo RMX`, radio edit, dub, vip, instrumental …, case ignored), title and artist cut in the middle when too long (the end stays visible), bpm without decimals when within 0.05 of a whole number (else one), import / last played `14.10.` (younger than ~11 months) or `Okt 24`. sort and search use the full values
 * selection: red tint (32 %, without focus 20 %) and a 2 pt red stripe at the left of every selected row
+
+### right click
+
+* track rows (selection or the row under the mouse): `In Deck A … D laden`, `Bearbeiten …`, `Eigene Änderungen verwerfen`, `Bewertung ▸` (0-5 stars, the current one checked; several tracks: no check), `Analysieren`, `Neu analysieren`, `Analyse verwerfen`, `Rip prüfen`, `An Preparation anhängen`, `Aus Preparation entfernen`, `Zur Playlist hinzufügen ▸`, `Aus Playlist entfernen` (⌫), `Bereitmachen (herunterladen)` (cloud), `Vorhören`, `Im Finder zeigen`, `Artist – Titel kopieren`, `Pfad kopieren` (one line per track), `Nach Artist suchen`, `Nach Label suchen` (first track of the selection), `Alle auswählen`, `Reset Played State`
+* collection: `Exportieren`, `Collection prüfen …`, `Collection neu laden`, `Reset Played State`, `Gespielte Tracks ausblenden`, `Vorschauen berechnen`, analysis, `Bereitmachen`. music folder: `Neu einlesen`, `Pfad kopieren`, `Im Finder zeigen`
 
 ### harmony + matching
 

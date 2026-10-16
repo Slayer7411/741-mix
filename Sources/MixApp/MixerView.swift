@@ -49,11 +49,12 @@ struct ChannelStrip: View {
             knob(\.filter, -1...1, "FILTER", color: Theme.state)
             HStack(spacing: 2.z) {
                 ForEach(0..<mix.prefs.ui.fxUnitCount, id: \.self) { u in
-                    DeckButton(title: "\(u + 1)", active: deck.fxAssign[u], color: Theme.state) { mix.toggleFXAssign(d, u) }
+                    DeckButton(title: "\(u + 1)", active: deck.fxAssign[u], color: Theme.state) { mix.toggleFXAssign(d, u) }.helpInfo("mixer.fxassign")
                 }
             }
             if mix.mixerMode == .internalMixer {
                 LevelFader(value: Binding(get: { deck.fader }, set: { v in mix.updateDeck(d) { $0.fader = v } }))
+                .helpInfo("mixer.fader")
                     .frame(width: 22.z, height: 84.z)
                 Picker("", selection: Binding(get: { deck.xf }, set: { v in mix.updateDeck(d) { $0.xf = v } })) {
                     ForEach(XFAssign.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
@@ -371,6 +372,7 @@ struct TopBar: View {
             BarCounter()
             SessionClockView()
             RecordPanel()
+            HelpModeButton()
             Button { mix.core.resetSession() } label: {
                 Text("↺").font(Theme.mono(14.z)).foregroundStyle(Theme.bone).frame(width: 22.z, height: 42.z)
             }
@@ -420,10 +422,11 @@ struct MasterClockPanel: View {
                 .help(s.linkEnabled ? Text("Link: MINOS gibt das Tempo vor · Neusetzungen \(s.linkForces) · Rechtsklick: Diagnose")
                                     : Text("Link: MINOS gibt das Tempo vor"))
                 .contextMenu { Button("Link-Diagnose") { mix.showLinkDiagnosis() } }
+                .helpInfo("clock.link")
             VStack(spacing: 2.z) {
-                DeckButton(title: "AUTO", active: !s.clockMaster, width: 40) { mix.setClockMaster(false) }
+                DeckButton(title: "AUTO", active: !s.clockMaster, width: 40) { mix.setClockMaster(false) }.helpInfo("clock.auto")
                     .help("Ein Deck ist Master (automatisch oder per MASTER-Taste)")
-                DeckButton(title: "MASTER", active: s.clockMaster, color: Theme.secondary, width: 40) { mix.setClockMaster(true) }
+                DeckButton(title: "MASTER", active: s.clockMaster, color: Theme.secondary, width: 40) { mix.setClockMaster(true) }.helpInfo("clock.master")
                     .help("Clock ist Master: MINOS gibt das Tempo vor, gesyncte Decks folgen")
             }
             VStack(spacing: 0) {
@@ -447,7 +450,7 @@ struct MasterClockPanel: View {
                     DeckButton(title: "−", width: 12) { mix.setClockMaster(true); mix.nudgeClock(-0.1) }
                     DeckButton(title: "+", width: 12) { mix.setClockMaster(true); mix.nudgeClock(0.1) }
                 }
-                DeckButton(title: "TAP", width: 34) { mix.tap() }
+                DeckButton(title: "TAP", width: 34) { mix.tap() }.helpInfo("clock.tap")
             }
             DeckButton(title: "SEMI", active: s.semiSync, color: Theme.state, width: 38) { mix.setSemiSync(!s.semiSync) }
                 .help("Semi-Sync: neue Tracks laden mit dem Tempo des Masters, ohne Phasen-Sync")

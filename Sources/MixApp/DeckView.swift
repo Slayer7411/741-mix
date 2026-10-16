@@ -406,27 +406,27 @@ struct TransportRow: View {
 
         var body: some View {
             HStack(spacing: 3.z) {
-                DeckButton(title: "CUP", width: 26) { mix.cup(d) }.stable()
+                DeckButton(title: "CUP", width: 26) { mix.cup(d) }.stable().helpInfo("deck.cup")
                 PressButton(title: "CUE", active: m.cueHeld, width: 30, down: { mix.cueDown(d) }, up: { mix.cueUp(d) })
                 DeckButton(title: m.playing ? "❚❚" : "▶", active: m.playing, color: Theme.state, width: 30) { mix.togglePlay(d) }.stable()
                 Divider().frame(height: 14.z)
-                DeckButton(title: "SYNC", active: m.sync, color: Theme.state) { mix.toggleSync(d) }.stable()
+                DeckButton(title: "SYNC", active: m.sync, color: Theme.state) { mix.toggleSync(d) }.stable().helpInfo("deck.sync")
                 DeckButton(title: "MASTER", active: m.master,
-                           color: Theme.secondary) { mix.toggleMaster(d) }.stable()
-                DeckButton(title: "KEY", active: m.keylock, color: Theme.state) { mix.toggleKeylock(d) }.stable()
+                           color: Theme.secondary) { mix.toggleMaster(d) }.stable().helpInfo("deck.master")
+                DeckButton(title: "KEY", active: m.keylock, color: Theme.state) { mix.toggleKeylock(d) }.stable().helpInfo("deck.keylock")
                 DeckButton(title: "−") { mix.shiftKey(d, -1) }.stable()
                 DeckButton(title: "+") { mix.shiftKey(d, 1) }.stable()
-                DeckButton(title: "REV", active: m.reverse, color: Theme.state) { mix.toggleReverse(d) }.stable()
-                DeckButton(title: "FLUX", active: m.flux, color: Theme.state) { mix.toggleFlux(d) }.stable()
+                DeckButton(title: "REV", active: m.reverse, color: Theme.state) { mix.toggleReverse(d) }.stable().helpInfo("deck.rev")
+                DeckButton(title: "FLUX", active: m.flux, color: Theme.state) { mix.toggleFlux(d) }.stable().helpInfo("deck.flux")
                 Spacer(minLength: 2.z)
-                DeckButton(title: "DBL") { mix.instantDouble(from: d ^ 1, to: d) }.stable()
+                DeckButton(title: "DBL") { mix.instantDouble(from: d ^ 1, to: d) }.stable().helpInfo("deck.dbl")
                     .help(String(localized: "Instant Double: Track, Position, Tempo, Key, Loop von Deck \(deckLetters[d ^ 1]) übernehmen, läuft synchron mit (⌥-Klick: auch wenn dieses Deck spielt, Rechtsklick: anderes Deck)"))
                     .contextMenu {
                         ForEach((0..<4).filter { $0 != d }, id: \.self) { s in
                             Button(String(localized: "Double von Deck \(deckLetters[s])")) { mix.instantDouble(from: s, to: d) }
                         }
                     }
-                DeckButton(title: "EDIT", active: m.edit, color: Theme.state) { mix.toggleEdit(d) }.stable()
+                DeckButton(title: "EDIT", active: m.edit, color: Theme.state) { mix.toggleEdit(d) }.stable().helpInfo("deck.edit")
                     .help("EDIT-Modus: Schnitt und Grid setzen (⌥⌘E)")
             }
         }
@@ -638,7 +638,7 @@ struct CueRow: View {
                     let c = m.colors[n]
                     DeckButton(title: m.active[n] ? "\(n + 1) •" : "\(n + 1)", active: c != nil, color: c ?? .gray, fill: true) {
                         mix.hotcue(d, n, delete: NSEvent.modifierFlags.contains(.option))
-                    }.stable()
+                    }.stable().helpInfo("deck.hotcue")
                     .help(m.loops[n] ? "Klick: springen/setzen · ⌥-Klick: löschen · Rechtsklick: Active Loop" : "Klick: springen/setzen · ⌥-Klick: löschen")
                     .contextMenu {
                         if m.loops[n] {
@@ -648,9 +648,9 @@ struct CueRow: View {
                     }
                 }
                 Divider().frame(height: 14.z)
-                DeckButton(title: "IN", active: m.inArmed, color: Theme.state) { mix.setLoopIn(d) }.stable()
-                DeckButton(title: "OUT") { mix.setLoopOut(d) }.stable()
-                DeckButton(title: "RE") { mix.reloop(d) }.stable()
+                DeckButton(title: "IN", active: m.inArmed, color: Theme.state) { mix.setLoopIn(d) }.stable().helpInfo("deck.loopIn")
+                DeckButton(title: "OUT") { mix.setLoopOut(d) }.stable().helpInfo("deck.loopOut")
+                DeckButton(title: "RE") { mix.reloop(d) }.stable().helpInfo("deck.reloop")
             }
         }
     }
@@ -677,7 +677,7 @@ struct LoopRow: View {
 
         var body: some View {
             HStack(spacing: 3.z) {
-                DeckButton(title: "LOOP", active: m.active, color: Theme.state, width: 30) { mix.autoLoop(d) }.stable()
+                DeckButton(title: "LOOP", active: m.active, color: Theme.state, width: 30) { mix.autoLoop(d) }.stable().helpInfo("deck.loop")
                 ForEach(BeatSizes.loop, id: \.self) { s in
                     let selected = DeckView.same(m.size, s)
                     DeckButton(title: BeatSizes.label(s), active: selected, color: Theme.secondary, fill: true) {
@@ -706,13 +706,13 @@ struct JumpRow: View {
 
         var body: some View {
             HStack(spacing: 3.z) {
-                DeckButton(title: "◀◀", width: 30) { mix.beatjump(d, beats: -mix.deck(d).jumpSize) }.stable()
+                DeckButton(title: "◀◀", width: 30) { mix.beatjump(d, beats: -mix.deck(d).jumpSize) }.stable().helpInfo("deck.beatjump")
                 ForEach(BeatSizes.jump, id: \.self) { s in
                     DeckButton(title: BeatSizes.label(s), active: DeckView.same(size, s), color: Theme.state, fill: true) {
                         mix.setJumpSize(d, s)
                     }.stable()
                 }
-                DeckButton(title: "▶▶", width: 30) { mix.beatjump(d, beats: mix.deck(d).jumpSize) }.stable()
+                DeckButton(title: "▶▶", width: 30) { mix.beatjump(d, beats: mix.deck(d).jumpSize) }.stable().helpInfo("deck.beatjump")
             }
         }
     }
