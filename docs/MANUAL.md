@@ -75,7 +75,8 @@ tracks without an analysis in the collection play, but have no grid -> no sync. 
 ## ◆ 03 · SCREEN
 
 ```
-┌ toolbar ─ PROFILE ▾ ───── MIXER · 1 / 2 / 4 · browser layout · DECKS · ↻ ┐
+┌ toolbar ─ ◆ MINOS-741 0.8.1 · db052b1 · PROFILE ▾ ── CLOCK · TAKT · LINK · HID · CPU · TRACKS ── MIXER │ 1 2 4 │ ▭ ◫ ⬒ │ DECKS │ ↻ ┐
+├ phrase of the master deck ─────────────────────────────────────────────────┤
 ├ FX 1 ───────┬ master clock + link + metronome ─┬ bars ┬ clock ┬ REC ┬ FX 2 ─┤
 ├ deck A ───────────────────────┬ deck B ────────────────────────────┤
 ├ deck C ───────────────────────┼ deck D ────────────────────────────┤
@@ -83,12 +84,15 @@ tracks without an analysis in the collection play, but have no grid -> no sync. 
 └ status: message · detail ─ device · routing · prep ─ DSP LAT DROP RAM CPU ┘
 ```
 
-* PROFILE ▾ (left) -> view profile, see [view profiles](#view-profiles)
-* MIXER -> internal mixer on / off (⌥⌘M)
-* 1 / 2 / 4 -> decks shown. 1 = deck A over the full width (mixer next to it when on), 2 = A + B, 4 = A-D. hidden decks keep playing. ⌥⌘4 switches 2 ↔ 4 (from 1 -> 4)
-* browser layout -> one pane, side by side, stacked
-* DECKS -> hide decks, big browser (⌥⌘B)
-* ↻ -> reload the collection
+* left: `◆ MINOS-741` with version and build (the window title, also in the window menu), PROFILE chip -> view profile, see [view profiles](#view-profiles). the chip shows the active profile in caps (`DEFAULT SETUP *`, `*` = view changed)
+* middle, status line (ticks 10 times a second, each value on its own, nothing hidden): CLOCK = master tempo · TAKT = bar in the phrase cycle (`3/16`, `—/16` without a playing master) · LINK = ● peers, ○ = link off, red = peers gone · HID = connected controllers, red = one missing · CPU = process cpu, red = DSP over the 70 % budget · TRACKS = tracks in the collection. too narrow -> the last values drop out
+* right, groups separated by hairlines, all cells 18 pt:
+  * MIXER -> internal mixer on / off (⌥⌘M)
+  * 1 / 2 / 4 -> decks shown. 1 = deck A over the full width (mixer next to it when on), 2 = A + B, 4 = A-D. hidden decks keep playing. ⌥⌘4 switches 2 ↔ 4 (from 1 -> 4)
+  * ▭ ◫ ⬒ -> browser layout: one pane, side by side, stacked
+  * DECKS -> hide decks, big browser (⌥⌘B)
+  * ↻ -> reload the collection
+* the thin line under the toolbar = phrase of the master deck (phrase length, default 16 bars): filled up to the playhead, red in the last bar before the phrase change. no master -> plain line
 * the line between decks and browser can be dragged, the height is saved
 * fullscreen -> toolbar hides, comes back with the mouse at the top
 * zoom like a web browser -> ⌘+ / ⌘− / ⌘0 (view menu), 50 · 67 · 75 · 80 · 90 · 100 · 110 · 125 · 150 · 175 · 200 %, step shown in the status bar, saved. text, controls, waveform marks and table columns scale at full resolution. minimum window size × zoom, capped at what fits the screen. toolbar, settings and dialogs stay at 100 %

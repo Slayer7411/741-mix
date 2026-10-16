@@ -159,7 +159,6 @@
 "Darstellung" = "View";
 "Mixer" = "Mixer";
 "Neue Smartlist" = "New smartlist";
-"Externer Mixer" = "External mixer";
 "Main-Volume" = "Main volume";
 "FX" = "FX";
 "history und preparation werden als nml gespeichert (~/Library/Application Support/MINOS-741) -> direkt in die collection importierbar. preparation wird bei jedem start archiviert und geleert." = "history and preparation are saved as nml (~/Library/Application Support/MINOS-741) -> import them straight into the collection. preparation is archived and cleared on every start.";
@@ -171,7 +170,6 @@
 "kräftig" = "bold";
 "BARS · ab erstem Play" = "BARS · from first play";
 "Bar-Zähler: läuft ab dem ersten Play · Doppelklick = neu auf Takt 1" = "Bar counter: runs from the first play · double click = back to bar 1";
-"Sprache" = "Language";
 "Browser" = "Browser";
 "Sync-Modus" = "Sync mode";
 "Dynamisch (zurück auf Phase 0)" = "Dynamic (back to phase 0)";
@@ -794,12 +792,10 @@
 "Match (Harmonie, Tempo zum Master)" = "Match (harmony, tempo to the master)";
 "◆ PASST" = "◆ MATCH";
 "Browser: Matching an/aus (passt zum Master)" = "Browser: matching on/off (fits the master)";
-"BROWSER" = "BROWSER";
 "Harmonie zum Master" = "Harmony to the master";
 "Key-Spalte färben" = "Color the key column";
 "Gespielte Tracks" = "Played tracks";
 "Gespielte Tracks dimmen" = "Dim played tracks";
-"Zeilen" = "Rows";
 "Luft um den Text" = "Space around the text";
 "Trennlinie zwischen den Zeilen" = "Line between rows";
 "Höhe rastet auf ganze Zeilen" = "Height snaps to whole rows";
@@ -1444,7 +1440,6 @@
 "Klang wechselt" = "sound changes";
 "anderes Tempo %@" = "other tempo %@";
 "Loop %lld Takte" = "loop %lld bars";
-"%lld Takte" = "%lld bars";
 "Anker im fremden Anfang" = "anchor in the foreign start";
 "Beat am Anfang um %@ ms versetzt" = "beat at the start off by %@ ms";
 "Tempo am Anfang %@" = "tempo at the start %@";
@@ -1564,3 +1559,17 @@
 "Tags ≈ (Tag-Gruppen zum Master)" = "Tags ≈ (tag groups to the master)";
 "Bezug: spielendes Master-Deck, sonst das Fokus-Deck" = "Reference: playing master deck, else the focused deck";
 "Bezug Deck %@ – mehrere Decks: Track muss zu allen passen" = "Reference deck %@ – several decks: a track must fit all of them";
+
+/* Werkzeugleiste (WindowBar.swift) */
+"CLOCK" = "CLOCK";
+"TAKT" = "BAR";
+"LINK" = "LINK";
+"HID" = "HID";
+"CPU" = "CPU";
+"TITEL" = "TRACKS";
+"Tempo des Masters (Clock)" = "Master tempo (clock)";
+"Takt im Phrasen-Zyklus" = "Bar in the phrase cycle";
+"Link: ● Teilnehmer · rot = Teilnehmer weg" = "Link: ● peers · red = peers gone";
+"Angeschlossene Controller · rot = einer fehlt" = "Connected controllers · red = one missing";
+"Prozess-CPU (100 % = ein Kern) · rot = DSP über 70 % Budget" = "Process CPU (100 % = one core) · red = DSP over 70 % budget";
+"Phrase des Master-Decks · rot = letzter Takt vor dem Phrasenwechsel" = "Phrase of the master deck · red = last bar before the phrase change";

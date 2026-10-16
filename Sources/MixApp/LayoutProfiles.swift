@@ -319,8 +319,16 @@ struct LayoutProfileMenu: View {
             Button("Profil aktualisieren") { LayoutProfiles.update(mix: mix, browser: browser) }
                 .disabled(ui.activeProfile == nil)
         } label: {
-            if let title { Text(verbatim: title).font(Theme.label(11)) } else { Text("PROFIL").font(Theme.label(11)) }
+            // Chip wie DeckButton: aktives Profil in Versalien (DEFAULT SETUP *)
+            Text(verbatim: (title?.uppercased() ?? String(localized: "PROFIL")) + " ▾")
+                .font(Theme.label(10, .bold)).foregroundStyle(Theme.bone).lineLimit(1)
+                .padding(.horizontal, 6)
+                .frame(height: 18)
+                .background(Rectangle().fill(Theme.void))
+                .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("Ansichts-Profil (⌃⌥⌘1–4, ⌃⌥⇥ nächstes; * = Ansicht geändert)")
     }
