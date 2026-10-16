@@ -84,6 +84,19 @@ extension ShortcutID: Identifiable {
         case .reconnectAudio: String(localized: "Audio-Interface neu verbinden")
         case .undo: String(localized: "Rückgängig")
         case .redo: String(localized: "Wiederherstellen")
+        case .audioEditSelectAll: String(localized: "AUDIO-EDIT: alles markieren")
+        case .audioEditDelete: String(localized: "AUDIO-EDIT: Auswahl löschen")
+        case .audioEditCrop: String(localized: "AUDIO-EDIT: nur Auswahl behalten")
+        case .audioEditSilence: String(localized: "AUDIO-EDIT: Stille einfügen")
+        case .audioEditReverse: String(localized: "AUDIO-EDIT: Auswahl rückwärts")
+        case .audioEditCut: String(localized: "AUDIO-EDIT: ausschneiden")
+        case .audioEditCopy: String(localized: "AUDIO-EDIT: kopieren")
+        case .audioEditPaste: String(localized: "AUDIO-EDIT: einfügen am Cursor")
+        case .audioEditMarker: String(localized: "AUDIO-EDIT: Marke am Cursor")
+        case .audioEditSnap: String(localized: "AUDIO-EDIT: Raster ein/aus")
+        case .audioEditZoomSelection: String(localized: "AUDIO-EDIT: auf Auswahl zoomen")
+        case .audioEditBack: String(localized: "AUDIO-EDIT: 5 s zurück")
+        case .audioEditStop: String(localized: "AUDIO-EDIT: stoppen")
         }
     }
 }
@@ -95,6 +108,7 @@ extension ShortcutGroup {
         case .browser: String(localized: "BROWSER")
         case .view: String(localized: "DARSTELLUNG")
         case .general: String(localized: "ALLGEMEIN")
+        case .editor: String(localized: "AUDIO-EDIT")
         }
     }
 }
@@ -173,6 +187,8 @@ struct AppActions {
     let history: HistoryStore
 
     func callAsFunction(_ a: ShortcutID) {
+        // AUDIO-EDIT hat Vorrang (Leertaste, Zoom, L, Editor-Kürzel); was er nicht kennt, läuft wie sonst
+        if AudioEditMode.shared.active, AudioEditMode.shared.perform(a) { return }
         let d = mix.focusedDeck
         switch a {
         case .focusDeckA, .focusDeckB, .focusDeckC, .focusDeckD: mix.focusedDeck = a.index ?? 0
@@ -249,6 +265,10 @@ struct AppActions {
         case .reconnectAudio: mix.reconnect()
         case .undo: UndoStack.shared.perform(redo: false)
         case .redo: UndoStack.shared.perform(redo: true)
+        case .audioEditSelectAll, .audioEditDelete, .audioEditCrop, .audioEditSilence, .audioEditReverse, .audioEditCut,
+             .audioEditCopy, .audioEditPaste, .audioEditMarker, .audioEditSnap, .audioEditZoomSelection, .audioEditBack,
+             .audioEditStop:
+            AudioEditMode.shared.perform(a)   // Editor nicht offen: ohne Wirkung
         }
     }
 }
@@ -287,6 +307,8 @@ enum KeyMonitor {
         if a == nil, c.isPlain, c.mods == .shift { a = keys.action(for: KeyCombo(c.key, [])) }
         guard let a, a != .settings else { return false }
         if c.isPlain, NSApp.keyWindow?.firstResponder is NSText { return false }
+        // Editor-Kürzel: nur im AUDIO-EDIT-Modus und nie in Textfeldern (⌘C, ⌘V, ⌘A bleiben beim Text)
+        if a.audioEditOnly, !AudioEditMode.shared.active || NSApp.keyWindow?.firstResponder is NSText { return false }
         // Rückgängig im Textfeld: Text-Undo des Felds (das Menü Bearbeiten führt sonst die App-Schritte aus)
         if a == .undo || a == .redo, NSApp.keyWindow?.firstResponder is NSText {
             _ = NSApp.sendAction(Selector((a == .undo ? "undo:" : "redo:")), to: nil, from: nil)

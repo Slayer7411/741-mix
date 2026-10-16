@@ -182,8 +182,7 @@ enum CutJob {
             guard Double(splice.frames) >= rate * TrackTrim.minLength else { throw AudioCutWriter.CutError.empty }
             name = TrackCut.fileName(src.lastPathComponent, taken: taken)
         case let .edit(edl):
-            let f = edl.frames(rate: rate, sourceFrames: source.frames)
-            splice = AudioSplice(pieces: f.pieces, sourceFrames: source.frames, fade: fade, muted: f.muted)
+            splice = AudioSplice(edl, rate: rate, sourceFrames: source.frames, fade: fade)
             guard Double(splice.frames) >= rate * TrackTrim.minLength else { throw AudioCutWriter.CutError.empty }
             name = TrackCut.fileName(src.lastPathComponent, taken: taken)
         case let .toolLoop(beats, r, bpm, _):

@@ -16,6 +16,8 @@ struct UndoEntry {
     var time = 0.0
     /// Vorher-Stand; ein verschmolzener Eintrag behält den ersten
     var before: Any?
+    /// Uhrzeit des Schritts (Liste der Schritte)
+    var wall = Date()
 }
 
 /// Rückgängig-Stapel der App (flüchtig, höchstens `limit` Einträge). Während Rückgängig/Wiederherstellen läuft,
@@ -31,9 +33,25 @@ final class UndoStack {
     @ObservationIgnored private(set) var done: [UndoEntry] = []
     @ObservationIgnored private(set) var undone: [UndoEntry] = []
     @ObservationIgnored private(set) var replaying = false
+    /// zählt jede Änderung des Stapels (Listen beobachten diesen Stand)
+    private(set) var revision = 0
 
     var canUndo: Bool { !done.isEmpty }
     var canRedo: Bool { !undone.isEmpty }
+
+    /// Zeitleiste der Schritte, älteste zuerst; `undone` = zurückgenommen (liegt nach dem aktuellen Stand)
+    var timeline: [(label: String, wall: Date, undone: Bool)] {
+        _ = revision
+        return done.map { ($0.label, $0.wall, false) } + undone.reversed().map { ($0.label, $0.wall, true) }
+    }
+
+    /// Zum Schritt `i` der Zeitleiste springen: rückgängig bis dahin oder wiederherstellen (bis einschließlich `i`)
+    func jump(to i: Int) {
+        let target = i + 1
+        while done.count > target, undo() != nil {}
+        while done.count < target, redo() != nil {}
+        refresh()
+    }
 
     nonisolated static var now: Double { ProcessInfo.processInfo.systemUptime }
 
@@ -112,6 +130,7 @@ final class UndoStack {
     }
 
     private func refresh() {
+        revision += 1
         let u = done.last?.label, r = undone.last?.label
         if u != undoLabel { undoLabel = u }
         if r != redoLabel { redoLabel = r }

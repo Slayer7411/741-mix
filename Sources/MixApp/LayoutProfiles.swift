@@ -97,8 +97,8 @@ struct LayoutProfile: Codable, Equatable, Identifiable {
     static let prepareID = UUID(uuidString: "741D0000-0000-4000-8000-000000000003")!
     static let audioEditID = UUID(uuidString: "741D0000-0000-4000-8000-000000000004")!
 
-    /// „Audio-Edit“ (nur während des Modus, nicht in der Profilliste): ein Deck, Browser klein mit der Arbeitsliste,
-    /// Deck = Kopf, Übersicht (größer), Vorbereiten-Zeile, Hotcues
+    /// „Audio-Edit“ (nur während des Modus, nicht in der Profilliste): ein Deck, unten der Editor (Werkzeuge, Wellenform)
+    /// und die Arbeitsliste, Deck = Kopf, Übersicht, Vorbereiten-Zeile, Hotcues
     static func audioEdit(from ui: UIPrefs) -> LayoutProfile {
         var p = LayoutProfile(name: String(localized: "Audio-Edit"), ui: ui)
         p.id = audioEditID
@@ -111,7 +111,7 @@ struct LayoutProfile: Codable, Equatable, Identifiable {
         r.hotcues = true; r.prepare = true
         p.deckRows = r
         p.showGridTools = false
-        p.browserHeight = 300
+        p.browserHeight = 540
         p.browserMaximized = false
         p.hideTreeWithDecks = false
         p.overviewHeight = max(ui.overviewHeight, 48)

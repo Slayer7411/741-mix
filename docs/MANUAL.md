@@ -943,6 +943,20 @@ work list for the import analysis: one deck, the tracks that still need work, su
 * `erledigt` is kept in `audioedit.json` (MINOS-741 folder), never in the collection. ⌘, -> BROWSER -> analyse -> `Import-Lauf und erledigt zurücksetzen` clears the run time and all done marks
 * writes only through the existing paths (`edits.json`, new files). nothing is cut automatically
 
+#### editor
+
+above the work list: toolbar, waveform of deck A (the output of its edit list), readout, markers, steps. deck A runs in EDIT for as long as the mode is on (back to its old state on leave). the original file is never written; results go through the edit list (`edits.json`) and render, as in edit mode
+
+* zoom: `+` / `−`, pinch, scroll wheel (up = in, at the pointer), `ALLES` (whole track), `AUF AUSWAHL` (`z`). horizontal scroll or `⇧` + scroll pans. down to the sample level: from 1 point per sample a line through the samples, dots from 8 points per sample, sample numbers on the ruler
+* selection: drag (free, to the sample). `⇧` + click or drag extends from the nearer edge. drag an edge to move it (a loupe shows the samples around the edit point). double click = the piece under the pointer. `⌘A` selects all. click = cursor (deck A jumps there when stopped)
+* `RASTER` (`g`): snap to the beats of the grid. off when the mode opens; default setting `Audio-Edit: Raster beim Markieren`
+* readout: start, end, length in `m:ss.mmm` and in samples; type into a field, enter applies. cursor on the right
+* keys: `space` play / stop (from the cursor), `l` play from the cursor, `k` stop, `j` 5 s back, `+ − 0` zoom (they stay zoom keys in this mode), `⌫` delete the selection, `⌥⌫` keep only the selection, `i` silence, `r` reverse, `⌘X` / `⌘C` / `⌘V` cut / copy / paste at the cursor, `m` marker at the cursor, `⌘Z` / `⇧⌘Z` undo / redo
+* delete, keep only, silence, reverse, cut, copy, paste: edit list operations, each one undo step. silence over a selection keeps its length; silence at the cursor asks for the length. reverse: the pieces in the range play backwards with a 2 ms crossfade at each joint. paste inserts at the cursor and only into the track the clip came from. the clipboard lives in memory
+* markers (`MARKEN`): `m` or `+ CURSOR` at the cursor, `BEREICH → MARKE` for the selection (a range from its two ends). double click = name, click = jump, `✕` = delete. stored in source time in `audioedit-marks.json` next to `edits.json`, per track, not in the collection, not in undo. a marker whose spot was cut away is listed as `–`
+* `SCHRITTE`: the undo steps, newest on top with the time. click a step = go back to it (or forward again for undone ones). the highlighted row is the current state
+* settings: `⌘,` -> BROWSER -> analyse -> `Audio-Edit: Raster beim Markieren` (default off). keys: `⌘,` -> KEYBOARD -> `AUDIO-EDIT` (the group lists every editor key; `space`, `l`, `+ − 0` and `⌘Z` are the usual ones and work here too)
+
 ### edit tracks
 
 editable: title, artist, release, mix, remixer, producer, label, catalog no, genre, comment, comment 2, key text, track #, release date, bpm (not for tracks locked in the collection), rating. not editable: file, time, bitrate, import, plays, played, key (analysis).

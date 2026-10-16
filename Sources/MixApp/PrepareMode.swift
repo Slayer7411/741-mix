@@ -49,10 +49,7 @@ enum PrepareRender {
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         var format = AudioCutWriter.format(matching: src)
         let base = source.fromDeck ? 0 : 0.4
-        func splice(_ e: EditList) -> AudioSplice {
-            let f = e.frames(rate: rate, sourceFrames: source.frames)
-            return AudioSplice(pieces: f.pieces, sourceFrames: source.frames, fade: fade, muted: f.muted)
-        }
+        func splice(_ e: EditList) -> AudioSplice { AudioSplice(e, rate: rate, sourceFrames: source.frames, fade: fade) }
         func render(_ s: AudioSplice) -> AudioCutWriter.Render {
             { c, out, from, n in s.render(source.channels[c], into: out, from: from, count: n) }
         }
