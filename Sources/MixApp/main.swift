@@ -26,8 +26,12 @@ struct ContentView: View {
     /// Höhe der Deck-Fläche vor dem Zuklappen – ohne Beobachtung, Messen löst kein neues Layout aus
     private final class Height { var value: CGFloat = 0 }
     @State private var deckAreaHeight = Height()
-    /// Browser-Höhe während des Ziehens am Trenner; gespeichert wird sie erst beim Loslassen
-    @State private var dragHeight: Double?
+    /// Decks fest in ihrer Höhe: während des Ziehens, kurz nach dem Loslassen und beim Umschalten Browser groß/klein.
+    /// Sonst baute jeder Schritt das Deck-Layout und die Wellenform (Gitter, Kacheln) neu
+    @State private var freezeDeck = false
+    /// Browser-Höhe beim Zugbeginn: der Inhalt des Browsers bleibt darin, solange gezogen wird (sonst Tabelle je Bild neu)
+    @State private var browserFrozen: Double?
+    @State private var deckGate = DeckGate()
     @State private var donate = false
 
     var body: some View {
@@ -37,24 +41,23 @@ struct ContentView: View {
             // nicht neu aufgebaut (sonst dauert das Umschalten mit 14k Zeilen spürbar). Zugeklappt behalten sie
             // ihre letzte Höhe: kein neues Deck-Layout, keine neuen Wellenform-Kacheln
             let big = browserState.maximized
+            let fixed: CGFloat? = (big || freezeDeck) && deckAreaHeight.value > 0 ? deckAreaHeight.value : nil
             deckArea
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if !browserState.maximized { deckAreaHeight.value = $0 } }
-                .frame(height: big && deckAreaHeight.value > 0 ? deckAreaHeight.value : nil)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if !big && !freezeDeck { deckAreaHeight.value = $0 } }
+                .frame(height: fixed)
                 .frame(maxHeight: big ? 0 : .infinity, alignment: .top)
                 .opacity(big ? 0 : 1)
                 .allowsHitTesting(!big)
                 .clipped()
                 .layoutPriority(big ? 0 : 1)
-            if !big {
-                SplitHandle(height: Binding(get: { dragHeight ?? mix.prefs.ui.browserHeight }, set: { dragHeight = $0 }),
-                            snap: snapBrowserHeight, onEnd: endSplitDrag)
-                    .onDisappear { endSplitDrag() }   // Browser groß mitten im Ziehen: Höhe trotzdem speichern
+            SplitArea(frozen: browserFrozen, onBegin: beginSplitDrag, onEnd: endSplitDrag) {
+                BrowserAreas(layout: layout, paneA: paneA, paneB: paneB).equatable()
             }
-            browsers
-                .frame(height: big ? nil : (dragHeight ?? mix.prefs.ui.browserHeight).z)
-                .frame(maxHeight: big ? .infinity : nil)
-                .layoutPriority(big ? 1 : 0)
             if mix.prefs.ui.statusBar == .always { statusBar }
+        }
+        .animation(.easeOut(duration: 0.1), value: browserState.maximized)   // Browser groß/klein: kurz, nur die Höhen
+        .onChange(of: browserState.maximized) { _, big in
+            if big { deckGate.gen += 1; freezeDeck = true } else { settleDeck() }
         }
         .overlay(alignment: .bottom) { if mix.prefs.ui.statusBar == .auto { AutoStatusBar() } }
         .background(Theme.background)
@@ -130,18 +133,81 @@ struct ContentView: View {
         return BrowserSnap.height(h, chrome: chrome, row: TableStyle.rowHeight(ui, twoText: m.twoText(ui)) / 1.z)
     }
 
-    /// Ende des Ziehens am Trenner: Höhe speichern (einmal, nicht bei jeder Bewegung)
-    private func endSplitDrag() {
-        guard let h = dragHeight else { return }
-        mix.prefs.ui.browserHeight = h
-        dragHeight = nil
+    /// Beginn des Ziehens am Trenner: Decks fest in ihrer Höhe
+    private func beginSplitDrag() {
+        deckGate.gen += 1
+        freezeDeck = true
+        browserFrozen = mix.prefs.ui.browserHeight
     }
 
-    /// Ziehbarer Trenner zwischen Decks und Browser; `snap` rundet die Höhe beim Ziehen, `onEnd` beim Loslassen.
+    /// Ende des Ziehens am Trenner: auf ganze Zeilen einrasten und speichern (einmal, nicht bei jeder Bewegung)
+    private func endSplitDrag(_ h: Double) {
+        mix.prefs.ui.browserHeight = snapBrowserHeight(h)
+        settleDeck()
+    }
+
+    /// Übergang läuft (Einrasten, Browser groß/klein): Decks bleiben bis zum Ende in ihrer Höhe, dann Layout neu.
+    /// Ein neuer Übergang oder Zug davor hebt das auf (Zähler)
+    private func settleDeck() {
+        freezeDeck = true
+        deckGate.gen += 1
+        let g = deckGate.gen, gate = deckGate
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            if gate.gen == g, !browserState.maximized { freezeDeck = false; browserFrozen = nil }
+        }
+    }
+
+    /// Zähler für `settleDeck` (Klasse: der Zustand bleibt über Ansichtsaktualisierungen erhalten)
+    final class DeckGate { var gen = 0 }
+
+    /// Trenner und Browser-Fläche. Die Ziehhöhe lebt hier, nicht in ContentView: ein Zugschritt wertet nur diese Fläche
+    /// neu aus, nicht die ganze Oberfläche (Werkzeugleiste, Deckbereich). `frozen`: Browser-Höhe beim Zugbeginn, der
+    /// Inhalt bleibt darin, solange gezogen wird; sichtbar ist nur der Rahmen bis zur Maus (sonst Tabelle je Bild neu)
+    struct SplitArea<Browsers: View>: View {
+        @Environment(MixModel.self) private var mix
+        @Environment(BrowserState.self) private var browserState
+        @State private var dragHeight: Double?
+        var frozen: Double?
+        var onBegin: () -> Void
+        var onEnd: (Double) -> Void
+        @ViewBuilder var browsers: Browsers
+
+        var body: some View {
+            let big = browserState.maximized
+            VStack(spacing: 0) {
+                if !big {
+                    SplitHandle(height: Binding(get: { dragHeight ?? mix.prefs.ui.browserHeight }, set: { dragHeight = $0 }),
+                                onBegin: onBegin, onEnd: commit)
+                        .onDisappear { commit() }   // Browser groß mitten im Ziehen: Höhe trotzdem speichern
+                }
+                browsers
+                    .frame(height: big ? nil : frozen?.z)
+                    .frame(height: big ? nil : (dragHeight ?? mix.prefs.ui.browserHeight).z, alignment: .top)
+                    .clipped()
+                    .frame(maxHeight: big ? .infinity : nil)
+                    .layoutPriority(big ? 1 : 0)
+            }
+            .frame(maxHeight: big ? .infinity : nil)
+            .layoutPriority(big ? 1 : 0)
+        }
+
+        /// Loslassen: Höhe einrasten (kurz animiert), Browser-Rahmen springt auf die gespeicherte Höhe
+        private func commit() {
+            guard let h = dragHeight else { return }
+            withAnimation(.easeOut(duration: 0.1)) {
+                onEnd(h)
+                dragHeight = nil
+            }
+        }
+    }
+
+    /// Ziehbarer Trenner zwischen Decks und Browser; `onBegin` beim ersten Zug, `onEnd` beim Loslassen.
     /// Sichtbar 3 pt (Linie + 1 pt Luft), greifbar 9 pt: die Griff-Fläche ragt nach oben in den Deck-Rand (unten gewinnt der Browser)
     struct SplitHandle: View {
         @Binding var height: Double
         var snap: (Double) -> Double = { $0 }
+        var onBegin: () -> Void = {}
         var onEnd: () -> Void = {}
         @State private var start: Double?
         var body: some View {
@@ -156,6 +222,7 @@ struct ContentView: View {
                         // Bewegung zurückgedreht (Zittern). Höhe = Starthöhe − Verschiebung seit dem Griff
                         .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                             .onChanged { g in
+                                if start == nil { onBegin() }
                                 let s = start ?? height
                                 start = s
                                 height = BrowserDrag.height(start: s, translation: g.translation.height / 1.z, snap: snap)
@@ -197,23 +264,33 @@ struct ContentView: View {
         .padding(.bottom, gap)
     }
 
-    /// Audio-Edit: Arbeitsliste und Vorschläge statt der Browser-Bereiche
-    @ViewBuilder private var browsers: some View {
-        if AudioEditMode.shared.active {
-            AudioEditArea()
-        } else {
-            switch layout {
-            case .single:
-                BrowserPane(model: paneA)
-            case .sideBySide:
-                HSplitView {
+    /// Browser-Bereiche (Equatable: ein Zugschritt baut sie nicht neu, solange Anordnung und Modelle gleich bleiben)
+    struct BrowserAreas: View, Equatable {
+        let layout: BrowserLayout
+        let paneA: BrowserPaneModel
+        let paneB: BrowserPaneModel
+        static func == (a: BrowserAreas, b: BrowserAreas) -> Bool {
+            a.layout == b.layout && a.paneA === b.paneA && a.paneB === b.paneB
+        }
+
+        /// Audio-Edit: Arbeitsliste und Vorschläge statt der Browser-Bereiche
+        @ViewBuilder var body: some View {
+            if AudioEditMode.shared.active {
+                AudioEditArea()
+            } else {
+                switch layout {
+                case .single:
                     BrowserPane(model: paneA)
-                    BrowserPane(model: paneB)
-                }
-            case .stacked:
-                VSplitView {
-                    BrowserPane(model: paneA)
-                    BrowserPane(model: paneB)
+                case .sideBySide:
+                    HSplitView {
+                        BrowserPane(model: paneA)
+                        BrowserPane(model: paneB)
+                    }
+                case .stacked:
+                    VSplitView {
+                        BrowserPane(model: paneA)
+                        BrowserPane(model: paneB)
+                    }
                 }
             }
         }

@@ -297,11 +297,21 @@ enum UISelfTest {
     static func dropOnDeck(_ u: UIDriver, _ t: [Track]) {
         if u.mix.deck(0).playing { u.mix.togglePlay(0) }
         guard let hdr = u.named("A header") else { fail("Deck-Kopf A nicht gefunden") }
+        // die Zeile der Tabelle A wie beim echten Ziehen: der Eintrag, den die Tabelle selbst schreibt
+        guard let table = u.views.compactMap({ $0 as? TrackNSTable }).min(by: { u.frame($0).minX < u.frame($1).minX }),
+              let item = table.dataSource?.tableView?(table, pasteboardWriterForRow: 0) as? NSPasteboardItem,
+              let s = item.string(forType: .string) else { fail("Tabelle A: Zeile nicht ziehbar") }
+        let key = String(s.dropFirst(TrackDrag.prefix.count))
         let r = u.frame(hdr)
-        let ok = u.drop(string: TrackDrag.prefix + t[2].key, at: NSPoint(x: r.midX, y: r.midY))
+        let ok = u.drop(string: s, at: NSPoint(x: r.midX, y: r.midY))
         check(ok, "Drop auf Deck A nicht angenommen")
-        u.spin(5) { u.mix.deck(0).track?.key == t[2].key }
-        check(u.mix.deck(0).track?.key == t[2].key, "Deck A hat nach dem Drop \(u.mix.deck(0).track?.title ?? "nichts") statt \(t[2].title) · spielt \(u.mix.deck(0).playing) · Meldung \(StatusCenter.shared.current.map { "\($0.level) \($0.text)" } ?? "-")")
+        u.spin(5) { u.mix.deck(0).track?.key == key }
+        check(u.mix.deck(0).track?.key == key, "Deck A hat nach dem Drop \(u.mix.deck(0).track?.title ?? "nichts") statt \(key) · spielt \(u.mix.deck(0).playing) · Meldung \(StatusCenter.shared.current.map { "\($0.level) \($0.text)" } ?? "-")")
+        // Datei aus dem Finder auf Deck A: lädt den Track der Collection mit diesem Pfad
+        let other = t[1]
+        check(u.drop(file: URL(fileURLWithPath: other.path), at: NSPoint(x: r.midX, y: r.midY)), "Finder-Datei auf Deck A nicht angenommen")
+        u.spin(5) { u.mix.deck(0).track?.key == other.key }
+        check(u.mix.deck(0).track?.key == other.key, "Finder-Datei: Deck A hat \(u.mix.deck(0).track?.title ?? "nichts") statt \(other.title)")
         u.spin(30) { u.mix.core.trackAudio(0) != nil && u.mix.deck(0).grid != nil }
         check(u.mix.core.trackAudio(0) != nil, "Deck A lädt nach dem Drop nicht")
     }
@@ -770,7 +780,8 @@ final class UIDriver {
     }
 
     /// Ziehen und Ablegen eines Texts (Pasteboard) auf die Ansicht am Punkt, die Ziehen annimmt
-    func drop(string: String, at p: NSPoint) -> Bool {
+    /// `string`: Text-Eintrag (eigene Tracks); `file`: Dateieintrag wie vom Finder
+    func drop(string: String? = nil, file: URL? = nil, at p: NSPoint) -> Bool {
         // wie AppKit: Ziel ist die innerste Ansicht am Punkt mit angemeldeten Typen (SwiftUI legt dafür eigene Ansichten
         // neben den Inhalt, die beim Treffer-Test nicht auftauchen)
         guard let target = views.filter({ !$0.registeredDraggedTypes.isEmpty && frame($0).contains(p) && $0.isDescendant(of: host) })
@@ -779,7 +790,8 @@ final class UIDriver {
         let pb = UIDriver.dragPasteboard ?? NSPasteboard.withUniqueName()
         UIDriver.dragPasteboard = pb
         pb.clearContents()
-        pb.setString(string, forType: .string)
+        if let string { pb.setString(string, forType: .string) }
+        if let file { pb.setString(file.absoluteString, forType: .fileURL) }
         let info = UITestDragInfo(window: window, location: p, pasteboard: pb)
         // wie beim echten Ziehen: Betreten, einige Bewegungen über dem Ziel (SwiftUI wertet sie im nächsten Durchlauf aus), Ablegen
         guard target.draggingEntered(info) != [] else { return false }
@@ -1641,7 +1653,7 @@ extension UISelfTest {
         // Track auf eine eigene Playlist im Baum ziehen (letzte eigene Zeile = neueste Playlist), dann ⌫ in der Liste
         let pl = store.addOwn(.playlist, into: nil, name: "UI Playlist")
         u.spin(3) { tree.numberOfRows == rows0 + 2 }
-        let targets = u.views.filter { $0 is TreeDropView && u.frame($0).minX < u.window.frame.width / 2 && $0.window === u.window }
+        let targets = u.views.filter { ($0 as? UITestNamed)?.name == "tree drop" && u.frame($0).minX < u.window.frame.width / 2 && $0.window === u.window }
         guard let last = targets.min(by: { u.frame($0).minY < u.frame($1).minY }) else { fail("keine Ablage-Ansichten im Baum") }
         check(u.drop(string: TrackDrag.prefix + t[0].key, at: u.center(last)), "Drop auf die Playlist nicht angenommen")
         u.spin(3) { store.playlists.item(pl.id)?.tracks == [t[0].key] }
@@ -1660,7 +1672,7 @@ extension UISelfTest {
         // Eintrag (wie aus dem Baum gezogen) auf einen eigenen Ordner: hinein
         let folder = store.addOwn(.folder, into: nil, name: "UI Ordner")
         u.spin(3) { tree.numberOfRows == rows0 + 3 }
-        let targets2 = u.views.filter { $0 is TreeDropView && u.frame($0).minX < u.window.frame.width / 2 && $0.window === u.window }
+        let targets2 = u.views.filter { ($0 as? UITestNamed)?.name == "tree drop" && u.frame($0).minX < u.window.frame.width / 2 && $0.window === u.window }
         guard let fv = targets2.min(by: { u.frame($0).minY < u.frame($1).minY }) else { fail("Ordner-Zeile fehlt") }
         check(u.drop(string: TreeDrag.prefix + pl.id.uuidString, at: u.center(fv)), "Drop eines Eintrags auf den Ordner nicht angenommen")
         u.spin(1) { store.playlists.parent(of: pl.id) == .some(folder.id) }
@@ -1671,8 +1683,9 @@ extension UISelfTest {
         pane.sortOrder = [KeyPathComparator(\Track.title)]
         u.spin(3) { pane.shown.count == 3 }
         let shownKeys = pane.shown.map(\.key)
-        let w = table.dataSource?.tableView?(table, pasteboardWriterForRow: 0) as? String
-        check(w == TrackDrag.prefix + shownKeys[0], "Zeile ziehen: \(w ?? "nichts")")
+        let w = table.dataSource?.tableView?(table, pasteboardWriterForRow: 0) as? NSPasteboardItem
+        check(w?.string(forType: .string) == TrackDrag.prefix + shownKeys[0], "Zeile ziehen: \(w?.string(forType: .string) ?? "nichts")")
+        check((w?.string(forType: .fileURL) != nil) == (store.track(shownKeys[0])?.fileExists ?? false), "Zeile ziehen: Datei-Eintrag falsch")
         let pb = NSPasteboard.withUniqueName()
         pb.clearContents()
         pb.setString(TrackDrag.prefix + t[2].key, forType: .string)
@@ -2501,22 +2514,55 @@ extension UISelfTest {
     /// ohne Umkehr (vorher zitterte sie, weil der Griff mit der Höhe wanderte), gespeichert wird erst beim Loslassen
     static func splitDrag(_ u: UIDriver, _ t: [Track]) {
         let mix = u.mix, pane = u.browser.paneA
-        let h0 = mix.prefs.ui.browserHeight
+        var h0 = mix.prefs.ui.browserHeight
         defer { mix.prefs.ui.browserHeight = h0; u.spin(0.3) }
         u.mix.pull()
         guard let grip = u.named("split handle") else { fail("Trenner fehlt") }
-        let c = u.center(grip)
-        var seen: [Double] = [Double(pane.paneHeight)]
+        // Aufwärmen (nicht gemessen): ein Zug über den ganzen Bereich hoch und zurück; danach sind die Zeilen bis dahin
+        // einmal aufgebaut (sonst fällt der Erstaufbau neuer Zeilen in die Messung, nicht der Dauerbetrieb)
+        var w = u.center(grip)
+        u.drag(from: w, to: NSPoint(x: w.x, y: w.y + 120), steps: 40)
+        w = u.center(grip)
+        u.drag(from: w, to: NSPoint(x: w.x, y: w.y - 120), steps: 40)
+        h0 = mix.prefs.ui.browserHeight
+        // Messung: 40 Schritte hoch (+120 pt), 40 zurück; je Schritt ein Ziehen-Ereignis, gemessen bis der Hauptthread frei ist
+        FrameProbe.install()
+        let b0 = WaveLayerNSView.builds
+        var seen: [Double] = [Double(u.frame(grip).minY)]
         var savedDuring: [Double] = []
-        u.drag(from: c, to: NSPoint(x: c.x, y: c.y + 90), steps: 12, each: {
-            seen.append(Double(pane.paneHeight))
+        var ms: [Double] = [], moved: [Double] = []
+        let step: () -> Void = {
+            let dt = FrameProbe.take()
+            ms.append(dt)
+            let y = Double(u.frame(grip).minY)   // Trenner folgt der sichtbaren Browser-Höhe
+            if y != seen.last { moved.append(dt) }   // Schritte, die die Höhe ändern
+            FrameProbe.begin()
+            seen.append(y)
             savedDuring.append(mix.prefs.ui.browserHeight)
-        })
+        }
+        let c = u.center(grip)
+        FrameProbe.begin()
+        u.drag(from: c, to: NSPoint(x: c.x, y: c.y + 120), steps: 40, each: step)
+        let up = ms.count
+        let upMs = Array(ms.prefix(up))
+        let hMid = mix.prefs.ui.browserHeight   // nach dem ersten Loslassen: eingerastet und gespeichert
+        let c2 = u.center(grip)
+        u.drag(from: c2, to: NSPoint(x: c2.x, y: c2.y - 120), steps: 40, each: step)
+        // nach dem Loslassen: Einrasten und das Deck-Layout nach kurzer Übergangszeit (unter Last später)
+        u.spin(3) { abs(mix.prefs.ui.browserHeight - Double(pane.paneHeight)) < 1.5 }
+        let b1 = WaveLayerNSView.builds
         let h1 = mix.prefs.ui.browserHeight
-        log("trenner: \(seen.map { Int($0) }) · gespeichert \(h0) → \(h1)")
-        check(seen.last! > seen.first! + 30, "Browser wächst nicht: \(seen.first!) → \(seen.last!)")
-        check(zip(seen, seen.dropFirst()).allSatisfy { $1 >= $0 - 0.5 }, "Höhe springt beim Ziehen: \(seen.map { Int($0) })")
-        check(savedDuring.allSatisfy { $0 == h0 }, "Höhe während des Ziehens gespeichert: \(savedDuring)")
-        check(abs(h1 - seen.last!) < 1.5, "gespeicherte Höhe \(h1) ≠ Browser \(seen.last!)")
+        log("trenner hoch: \(FrameProbe.summary(upMs))")
+        log("trenner zurück: \(FrameProbe.summary(Array(ms.dropFirst(up))))")
+        log("trenner, Schritte mit Höhenänderung: \(FrameProbe.summary(moved))")
+        log("trenner: wellenform-aufbau \(b1.rebuild - b0.rebuild)× · gitter \(b1.grid - b0.grid)× · kacheln leeren \(b1.tiles - b0.tiles)×")
+        log("trenner: \(seen.map { Int($0) }) · gespeichert \(h0) → \(hMid) → \(h1)")
+        let forth = Array(seen.prefix(up + 1)), back = Array(seen.dropFirst(up + 1))
+        check(seen[up] > seen[0] + 100, "Browser wächst nicht: \(seen[0]) → \(seen[up])")
+        check(zip(forth, forth.dropFirst()).allSatisfy { $1 >= $0 - 0.5 }, "Höhe springt beim Ziehen: \(seen.map { Int($0) })")
+        check(zip(back, back.dropFirst()).allSatisfy { $1 <= $0 + 0.5 }, "Höhe springt beim Zurückziehen: \(seen.map { Int($0) })")
+        check(savedDuring.prefix(up).allSatisfy { $0 == h0 }, "Höhe während des Ziehens gespeichert: \(savedDuring)")
+        check(savedDuring.dropFirst(up).allSatisfy { $0 == hMid }, "Höhe während des Zurückziehens gespeichert: \(savedDuring)")
+        check(abs(h1 - Double(pane.paneHeight)) < 1.5, "gespeicherte Höhe \(h1) ≠ Browser \(pane.paneHeight)")
     }
 }

@@ -530,7 +530,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         tv.onReturn = { [weak self] in self?.returnKey() }
         tv.onDelete = { [weak self] in self?.deleteKey() ?? false }
         // Tracks ziehen (Baum, Decks, Preparation); in eigenen Playlists auch innerhalb der Tabelle (Reihenfolge)
-        tv.registerForDraggedTypes([.string])
+        tv.registerForDraggedTypes([.string, .fileURL])   // Finder-Dateien: in eigene Playlists (nur Collection-Tracks)
         tv.setDraggingSourceOperationMask(.copy, forLocal: false)
         tv.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         // Ziehen beginnt in jede Richtung (zu den Decks geht es nach oben); mehrere Zeilen über ⇧ / ⌘, nicht durch Aufziehen

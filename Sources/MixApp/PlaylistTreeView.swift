@@ -363,59 +363,18 @@ struct PlaylistTreeDialogs: ViewModifier {
     }
 }
 
-/// Ablegen auf eine Baum-Zeile über AppKit: eine Ansicht hinter der Zeile, für Text angemeldet (die Liste selbst nimmt
-/// in Zeilen nur ihr eigenes Umsortieren an). Klicks gehen durch (`hitTest` = nil)
+/// Ablegen auf eine Baum-Zeile: SwiftUI-Ziel wie bei den Decks. Früher eine AppKit-Ansicht mit `hitTest` = nil (Klicks
+/// gehen durch): AppKit liefert echtes Ziehen über die Trefferprüfung, also kam es nie an – nur der UI-Test (der die
+/// Ansicht direkt ansprach) sah Ablegen. Akzeptiert werden eigene Tracks und Baum-Einträge, andere Texte nicht
 extension View {
     func treeDrop(targeted: Binding<Bool>, _ perform: @escaping @MainActor ([String]) -> Bool) -> some View {
-        background(TreeDropTarget(targeted: targeted, perform: perform))
-    }
-}
-
-struct TreeDropTarget: NSViewRepresentable {
-    @Binding var targeted: Bool
-    let perform: @MainActor ([String]) -> Bool
-
-    func makeNSView(context: Context) -> TreeDropView {
-        let v = TreeDropView()
-        v.registerForDraggedTypes([.string])
-        return v
-    }
-
-    func updateNSView(_ v: TreeDropView, context: Context) {
-        v.perform = perform
-        v.onTarget = { on in if targeted != on { targeted = on } }
-    }
-}
-
-final class TreeDropView: NSView {
-    var perform: (@MainActor ([String]) -> Bool)?
-    var onTarget: ((Bool) -> Void)?
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    /// eigene Texte (Track- oder Baum-Eintrag) auf dem Pasteboard
-    static func strings(_ pb: NSPasteboard) -> [String] {
-        (pb.pasteboardItems ?? []).compactMap { $0.string(forType: .string) }
-            .filter { $0.hasPrefix(TrackDrag.prefix) || $0.hasPrefix(TreeDrag.prefix) }
-    }
-
-    private func operation(_ info: NSDraggingInfo) -> NSDragOperation {
-        let s = Self.strings(info.draggingPasteboard)
-        if s.isEmpty { return [] }
-        return s.contains { $0.hasPrefix(TreeDrag.prefix) } ? .move : .copy
-    }
-
-    override func draggingEntered(_ info: NSDraggingInfo) -> NSDragOperation {
-        let op = operation(info)
-        onTarget?(op != [])
-        return op
-    }
-    override func draggingUpdated(_ info: NSDraggingInfo) -> NSDragOperation { operation(info) }
-    override func draggingExited(_ info: NSDraggingInfo?) { onTarget?(false) }
-    override func prepareForDragOperation(_ info: NSDraggingInfo) -> Bool { operation(info) != [] }
-    override func performDragOperation(_ info: NSDraggingInfo) -> Bool {
-        onTarget?(false)
-        let s = Self.strings(info.draggingPasteboard)
-        return !s.isEmpty && (perform?(s) ?? false)
+        background(UITestMark(name: "tree drop"))
+            .onDrop(of: [.text], isTargeted: targeted) { providers in
+                MainActor.assumeIsolated {
+                    TreeDrag.strings(providers) { all in
+                        _ = perform(all.filter { $0.hasPrefix(TrackDrag.prefix) || $0.hasPrefix(TreeDrag.prefix) })
+                    }
+                }
+            }
     }
 }

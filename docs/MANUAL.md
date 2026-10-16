@@ -874,6 +874,14 @@ one tree PLAYLISTS: own folders, playlists and smartlists first, below them the 
 * saved in `playlists.json` (MINOS-741 folder), also the own values of the smartlist editor. first start: the own smartlists of earlier versions move in, same ids (session and favorites keep them)
 * collection file: with writing on and `Preparation und History als Playlists (Ordner MINOS-741)` on, own folders + playlists also go to `$ROOT/MINOS-741/Playlists/…`, replaced on every write. smartlists stay in MINOS-741 (the format has no place for the rules). the tree hides that copy
 
+### drag & drop
+
+* rows: drag one or several (select with ⇧ / ⌘) onto a deck title = load the first track (a playing deck stays, ⌥ forces, the status line says when loading is locked), onto PREPARATION or a playlist = added, onto a folder = into it, onto PLAYLISTS = new playlist with them
+* inside an own playlist: drag rows within the list to reorder; a drop from the browser inserts at the row
+* from the finder: onto a deck title or into an own playlist list. a file counts when it is in the collection, other files are ignored
+* to the finder: rows drag out as files (the track's file, copy). a track whose file is missing drags as text only
+* hover: the target deck gets a red frame, the tree row or PLAYLISTS a lighter background
+
 ### rows · detail bar · short values · selection
 
 * rows: one line (one column per field, default) or two lines. two lines: a column `Track` replaces title, artist, comment, comment 2 and label. line 1 **title** · artist, line 2 comment · tags (chips) · label. narrow columns (☁✓, ▶, bpm, key, match, time, plays …) stay, centred over both lines
