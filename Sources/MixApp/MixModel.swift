@@ -514,6 +514,17 @@ final class MixModel {
         originals[d]?.key == key ? (savedEdit[d] ?? nil)?.edl : edits.edit(for: key)?.edl
     }
 
+    /// neue Analyse eines geladenen Tracks: sofort ins Deck (Grid ohne eigene Änderung, BPM, Key, Lautheit), ohne neu laden
+    func analysisUpdated(_ key: String, store: LibraryStore?) {
+        guard let a = store?.analysis.entry(for: key) else { return }
+        for d in decks.indices {
+            guard let o = originals[d], o.key == key else { continue }
+            let t = a.apply(to: o)
+            originals[d] = t
+            core.applyAnalysis(d, track: t)
+        }
+    }
+
     /// Tracks stehen nach dem Schreiben neu in der Collection-Datei (Hotcues, Grid): geladene Decks vergleichen ihre
     /// Hotcues ab jetzt mit diesem Stand (sonst bliebe das Zurücksetzen auf den alten Collection-Stand ungespeichert)
     func collectionUpdated(_ list: [Track]) {

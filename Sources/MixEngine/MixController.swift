@@ -1456,6 +1456,21 @@ public final class MixController: @unchecked Sendable {
         }
     }
 
+    /// neue Analyse des geladenen Tracks übernehmen: BPM, Key, Lautheit, Grid-Anker; ein von Hand geändertes Grid bleibt
+    public func applyAnalysis(_ d: Int, track t: Track) {
+        locked {
+            guard var cur = state.decks[d].track, cur.key == t.key else { return }
+            cur.bpm = t.bpm; cur.musicalKey = t.musicalKey; cur.keyText = t.keyText
+            cur.perceivedDb = t.perceivedDb; cur.peakDb = t.peakDb; cur.ownAnalysis = t.ownAnalysis
+            cur.cues.removeAll { $0.kind == .grid }
+            cur.cues += t.cues.filter { $0.kind == .grid }
+            state.decks[d].track = cur
+            if !state.decks[d].gridEdited { state.decks[d].grid = BeatGrid(track: cur) }
+            applyRate(d)
+            applyMixer(d)
+        }
+    }
+
     /// ganzes Grid setzen (übernommen, z. B. aus Warp-Markern der DAW): eigene Änderung wie jede Grid-Bearbeitung
     public func setGrid(_ d: Int, _ g: BeatGrid) {
         locked {

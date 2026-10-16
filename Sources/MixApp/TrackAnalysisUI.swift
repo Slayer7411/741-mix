@@ -94,6 +94,8 @@ final class Analyses {
     /// Stand für die Statuszeile
     private(set) var progress = OverviewJobs.Progress()
     @ObservationIgnored weak var library: LibraryStore?
+    /// neue Analyse eines Tracks, sofort (vor der gesammelten Übernahme in die Listen): geladene Decks übernehmen sie
+    @ObservationIgnored var onAnalysed: ((String) -> Void)?
     /// Einstellung: Ergebnisse auch in die Collection-Datei schreiben
     @ObservationIgnored var writeBack: () -> Bool = { false }
     /// Einstellung: Untergrenze der BPM-Oktave
@@ -295,6 +297,7 @@ final class Analyses {
     /// Deck mehr spielt oder nach 30 s – jede Übernahme baut die Browser-Listen neu (Collection mit 14k Tracks:
     /// ~0,25 s Hauptthread je Bereich, die Wellenformen stehen so lange)
     private func changed(_ key: String) {
+        onAnalysed?(key)
         changed.insert(key)
         guard !flushPending else { return }
         flushPending = true
