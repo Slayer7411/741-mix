@@ -75,3 +75,28 @@ private let t0 = Date(timeIntervalSinceReferenceDate: 1_000_000)
     #expect(log.history.first?.text == "n79")
     #expect(log.history.last?.text == "n30")
 }
+
+@Test func statusJobRunsWithoutExpiryAndHandsOverToDoneMessage() {
+    var log = StatusLog()
+    let id = log.post(.info, "Analyse", key: "analysis", progress: 0.1, progressText: "1/10", job: true, now: t0)
+    log.post(.info, "Analyse", key: "analysis", progress: 0.5, progressText: "5/10", job: true, now: t0.addingTimeInterval(9))
+    #expect(log.jobCount == 1)
+    #expect(log.nextExpiry == nil)
+    log.expire(now: t0.addingTimeInterval(3600))
+    #expect(log.active.map(\.id) == [id])
+    #expect(log.active.first?.progress == 0.5)
+    // Schlussmeldung ersetzt den Job an seiner Stelle: 3 s, kein Job mehr
+    log.post(.ok, "Analysiert: 3 Tracks", key: "analysis", now: t0.addingTimeInterval(3601))
+    #expect(log.jobCount == 0)
+    #expect(log.active.map(\.id) == [id])
+    #expect(log.nextExpiry == t0.addingTimeInterval(3604))
+}
+
+@Test func statusJobsCountSeparately() {
+    var log = StatusLog()
+    log.post(.info, "Analyse", key: "analysis", job: true, now: t0)
+    log.post(.info, "Schneiden", key: "cut", job: true, now: t0)
+    log.post(.warning, "Datei fehlt", key: "load.0", now: t0)
+    #expect(log.jobCount == 2)
+    #expect(log.current?.text == "Datei fehlt")
+}

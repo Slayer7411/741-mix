@@ -139,7 +139,7 @@ final class Analyses {
         for t in picked {
             let k = AnalysisJobHandler.learnKey(t.key)
             handler.setLearn(k, code: t.musicalKey)
-            list.append(.init(key: k, path: t.path, explicit: true, refresh: true))
+            list.append(.init(key: k, path: t.path, explicit: true, refresh: true, label: StatusCenter.trackName(t)))
         }
         if batchTotal == 0 { batchFailed = progress.failed; cancelled = false; jobs.forgetFailures() }
         learnTotal = list.count
@@ -206,7 +206,7 @@ final class Analyses {
             guard let w = want(t) else { continue }
             let grid = RipChecks.shared.grid(of: t)
             handler.set(t.key, .init(fields: w.fields, replace: w.replace, octave: octave, rip: w.rip, grid: grid))
-            list.append(.init(key: t.key, path: t.path, explicit: true, refresh: refresh))
+            list.append(.init(key: t.key, path: t.path, explicit: true, refresh: refresh, label: StatusCenter.trackName(t)))
         }
         guard !list.isEmpty else {
             StatusCenter.post(.info, ripOnly ? String(localized: "Nichts zu prüfen: keine lokalen Dateien")
@@ -217,6 +217,15 @@ final class Analyses {
         batchTotal += list.count
         if ripOnly { self.ripOnly += list.count }
         jobs.enqueue(list)
+    }
+
+    /// Statusleiste: laufender Stapel mit Art, aktuellem Track, Stand und ✕ (gleicher Schlüssel: der Stand ersetzt sich)
+    private func showRunning(_ p: OverviewJobs.Progress) {
+        let kind = learnTotal > 0 ? String(localized: "Key-Profile lernen")
+            : batchTotal > 0 && ripOnly == batchTotal ? String(localized: "Rip prüfen") : String(localized: "Analyse")
+        let frac = Double(p.done) / Double(max(1, p.total))
+        StatusCenter.post(.info, kind, detail: p.current.isEmpty ? nil : p.current, key: "analysis", progress: frac,
+                          progressText: "\(p.done)/\(p.total) · \(Int(frac * 100)) %", job: true, cancel: { Analyses.shared.cancel() })
     }
 
     func cancel() {
@@ -233,6 +242,7 @@ final class Analyses {
     private func report(_ p: OverviewJobs.Progress) {
         let finished = progress.total > 0 && p.total == 0
         if progress != p { progress = p }
+        if p.total > 0 { showRunning(p) }
         guard finished else { return }
         if learnTotal > 0 { finishLearning() }
         guard batchTotal > 0 else { batchTotal = 0; return }

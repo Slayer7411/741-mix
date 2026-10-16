@@ -108,10 +108,11 @@ a profile = named set of view settings: decks shown (1 / 2 / 4), internal mixer,
 
 ### status bar
 
-* ⌘, -> DISPLAY -> status bar (also view menu): `always` / `automatic` / `off`. automatic: the bar slides up over the browser when the mouse sits at the bottom edge of the window or a warning / error arrives (6 s), gone when the mouse leaves it. off: no bar, no messages
+* ⌘, -> DISPLAY -> status bar (also view menu): `always` / `automatic` / `off`. automatic: the bar slides up over the browser when the mouse sits at the bottom edge of the window, a warning / error arrives (6 s), or a background job runs. gone when the mouse leaves it, never while a job runs; 3 s after the last job its done message, then gone. off: no bar, no messages
 * left: current message, second line = path / reason or progress (`42/120`, ✕ = cancel). idle: tracks · collection · load time
+* jobs: `Analyse` (also rip check and key profiles) / `Vorschauen berechnen` (right click batch) / cut, render, tool loop, split, join, edit list. second line = track (artist – title), `12/240 · 5 %` with a thin bar, ✕ where the job can be cancelled. background previews (no batch) stay out of the bar
 * colors: red = error, gold = warning, purple = info, bone = done
-* info 4 s, done 3 s, warning 8 s, error stays until clicked or replaced. `+n` = more active messages
+* info 4 s, done 3 s, warning 8 s, error stays until clicked or replaced, a running job until it ends. `+n` = more active messages
 * click -> last 50 messages with time
 * messages: track load failed / timed out, track loaded, phrase anchor found, plugin not loaded / blocked, collection loaded, collection file written / not written, metadata saved, export progress / done, played state reset, zoom step
 * middle: device · mode · routing · rate, ↻ reconnect, preparation count, preview progress
