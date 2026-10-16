@@ -41,6 +41,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * deck sizes: ⌘, -> DECKS -> sizes. cover width 32-200 pt (above 40 pt own column left of header and waveform, header keeps its height, at least 360 pt stay for title and readouts), overview height 12-120 pt (image rendered at the needed height, 60 px steps, cache key includes it). both scale with the zoom and are part of the view profiles (older profiles keep the defaults). self test shot `deck:` adds `-sizes-900x420.png` (cover 120, overview 90), ui test `deck-groessen`
 
 ### changed
+* analysis: a new (re-)analysis reaches a loaded deck right away (grid unless edited by hand, bpm, key, loudness for auto gain), no reload needed; the browser lists follow as before
 * waveform: ruler strip no longer darkened on its own (phrase tint runs the full height), auto loop without frame (it drew a line along the top and bottom of the whole track), tint and `AUTO` only
 * top bar: `◆ MINOS-741` in caps with version and build (Plex Mono) instead of the system title, profile chip `DEFAULT SETUP *`, status line in the middle (CLOCK · TAKT · LINK · HID · CPU · TRACKS, red only for a state: peers gone, DSP over 70 %, controller missing). right side in hairline groups: MIXER · 1 2 4 · layout icons · DECKS · ↻, 18 pt cells. phrase line under the toolbar: master phrase, red in the last bar. ui test `werkzeugleiste` uses the new marks
 * browser selection: stronger red tint (32 %, unfocused 20 %, was 24 / 15) and a 2 pt red stripe at the left of every selected row

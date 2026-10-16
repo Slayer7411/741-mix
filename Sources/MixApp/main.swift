@@ -99,6 +99,7 @@ struct ContentView: View {
             AudioEditMode.shared.attach(mix: mix, browser: browserState)
             RipChecks.shared.mix = mix
             RipChecks.shared.library = store
+            Analyses.shared.onAnalysed = { [weak mix, weak store] key in mix?.analysisUpdated(key, store: store) }
             SelfTest.run(store: store, mix: mix, browser: browserState)
             if DonateHint.dueNow { DonateHint.lastShown = Date(); donate = true }
         }
