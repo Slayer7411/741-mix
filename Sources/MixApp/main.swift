@@ -30,6 +30,7 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            PhraseLine()   // Phrasen-Fortschritt direkt unter der Werkzeugleiste
             // Decks oben, Browser unten – Trenner verschiebbar. Browser groß: Decks nur zusammengeklappt,
             // nicht neu aufgebaut (sonst dauert das Umschalten mit 14k Zeilen spürbar). Zugeklappt behalten sie
             // ihre letzte Höhe: kein neues Deck-Layout, keine neuen Wellenform-Kacheln
@@ -57,32 +58,13 @@ struct ContentView: View {
         .tint(Theme.state)
         .preferredColorScheme(.dark)
         .toolbar {
-            ToolbarItem(placement: .navigation) { LayoutProfileMenu() }
-            ToolbarItemGroup {
-                Toggle(isOn: Binding(get: { mix.prefs.ui.showMixer }, set: { mix.prefs.ui.showMixer = $0 })) {
-                    Text("MIXER").font(Theme.label(11))
-                }
-                .help("Internen Mixer ein-/ausblenden")
-                Picker("Decks", selection: Binding(get: { mix.prefs.ui.deckCount }, set: { mix.prefs.ui.deckCount = $0 })) {
-                    ForEach([1, 2, 4], id: \.self) { Text(verbatim: "\($0)").tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .help("Sichtbare Decks: 1 / 2 / 4")
-                Picker("Browser", selection: Binding(get: { mix.prefs.ui.browserLayout }, set: { mix.prefs.ui.browserLayout = $0 })) {
-                    ForEach(BrowserLayout.allCases) { Text($0.icon).help($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .help("Browser-Anordnung")
-                Toggle(isOn: Binding(get: { !browserState.maximized }, set: { browserState.maximized = !$0 })) {
-                    Text("DECKS").font(Theme.label(11))
-                }
-                    .help("Decks ein-/ausblenden (Browser groß)")
-                Button { store.load(store.sourceURL ?? LibraryStore.defaultNML) } label: {
-                    Text("↻")
-                }
-                .help("Collection neu laden")
-            }
+            // Marke + Profil links, Statuszeile in der Mitte, Schalter rechts (WindowBar.swift)
+            ToolbarItem(placement: .navigation) { WindowBrand() }.flat()
+            ToolbarItem(placement: .principal) { WindowStatus() }.flat()
+            ToolbarItem(placement: .primaryAction) { WindowSwitches() }.flat()
         }
+        .toolbar(removing: .title)   // Titel steht als ◆ MINOS-741 + Version in der Leiste (Fenstertitel bleibt)
+        .toolbarBackground(Theme.void, for: .windowToolbar)
         .windowToolbarFullScreenVisibility(.onHover)
         .background(MainWindowHook())
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification)) { n in
@@ -254,6 +236,14 @@ struct MixApp: App {
     @State private var history = HistoryStore()
     @State private var controller: ControllerManager?
     @State private var sessionTimer: Timer?
+
+    /// Version und Build für die Marke in der Leiste („0.8.1 · db052b1“), gleiche Quelle wie der Fenstertitel
+    static var versionLine: String {
+        let info = Bundle.main.infoDictionary
+        guard let v = info?["CFBundleShortVersionString"] as? String else { return "dev" }
+        let b = info?["CFBundleVersion"] as? String ?? ""
+        return b.isEmpty || b == v ? v : "\(v) · \(b)"
+    }
 
     static var appTitle: String {
         let info = Bundle.main.infoDictionary

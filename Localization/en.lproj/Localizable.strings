@@ -1544,3 +1544,17 @@
 "Gruppe %@" = "Group %@";
 "einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe" = "single capital letter = group, the following tags belong to it and take its color. word in capitals only (BASIS) = role. tags ▾ shows one column per group";
 "gruppen-marker mit leerzeichen, es zählt das erste wort der gruppe (K tief, B sub, H off). ähnlich: diese gruppen gleich wie beim master. ergänzend: „gleich“ gleich, „anders“ anders, keine gemeinsame rolle (BASIS, SYNTH …). master ohne gruppen: egal, track ohne gruppen: passt nicht" = "group markers separated by spaces, the first word of a group counts (K tief, B sub, H off). similar: these groups same as the master. complementary: “same” same, “different” different, no shared role (BASIS, SYNTH …). master without groups: ignored, track without groups: no match";
+
+/* Werkzeugleiste (WindowBar.swift) */
+"CLOCK" = "CLOCK";
+"TAKT" = "BAR";
+"LINK" = "LINK";
+"HID" = "HID";
+"CPU" = "CPU";
+"TITEL" = "TRACKS";
+"Tempo des Masters (Clock)" = "Master tempo (clock)";
+"Takt im Phrasen-Zyklus" = "Bar in the phrase cycle";
+"Link: ● Teilnehmer · rot = Teilnehmer weg" = "Link: ● peers · red = peers gone";
+"Angeschlossene Controller · rot = einer fehlt" = "Connected controllers · red = one missing";
+"Prozess-CPU (100 % = ein Kern) · rot = DSP über 70 % Budget" = "Process CPU (100 % = one core) · red = DSP over 70 % budget";
+"Phrase des Master-Decks · rot = letzter Takt vor dem Phrasenwechsel" = "Phrase of the master deck · red = last bar before the phrase change";
