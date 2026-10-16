@@ -851,6 +851,7 @@ struct SourceTree: View {
                                                     set: { pick($0) })) {
             SourceTreeFixed()
             MusicFolderTree(selection: $selection)
+            ExplorerTree(selection: $selection)
             PlaylistsSection(selection: $selection)
         }
         .listStyle(.sidebar)
