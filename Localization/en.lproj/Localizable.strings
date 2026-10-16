@@ -1563,7 +1563,7 @@
 "ROLLE" = "ROLE";
 "OHNE GRUPPE" = "NO GROUP";
 "Gruppe %@" = "Group %@";
-"einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe" = "single capital letter = group, the following tags belong to it and take its color. word in capitals only (BASIS) = role. tags ▾ shows one column per group";
+"einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe. je gruppe: name, farbe aus der wellenform oder eigene farbe" = "single capital letter = group, the following tags belong to it and take its color. word in capitals only (BASIS) = role. tags ▾ shows one column per group. per group: name, color from the waveform or an own color";
 "gruppen-marker mit leerzeichen, es zählt das erste wort der gruppe (K tief, B sub, H off). ähnlich: diese gruppen gleich wie beim master. ergänzend: „gleich“ gleich, „anders“ anders, keine gemeinsame rolle (BASIS, SYNTH …). master ohne gruppen: egal, track ohne gruppen: passt nicht" = "group markers separated by spaces, the first word of a group counts (K tief, B sub, H off). similar: these groups same as the master. complementary: “same” same, “different” different, no shared role (BASIS, SYNTH …). master without groups: ignored, track without groups: no match";
 "Tags ≈ (Tag-Gruppen zum Master)" = "Tags ≈ (tag groups to the master)";
 "Bezug: spielendes Master-Deck, sonst das Fokus-Deck" = "Reference: playing master deck, else the focused deck";
@@ -1796,3 +1796,9 @@
 "Übergang (Takte)" = "Transition (bars)";
 "Anmelden" = "Sign in";
 "Anmeldung im Browser …" = "Signing in in the browser …";
+"Tief (Kick)" = "Low (kick)";
+"Tiefen gehalten (Bass)" = "Held lows (bass)";
+"Mitten" = "Mids";
+"Höhen (Hats)" = "Highs (hats)";
+"Höhen gehalten" = "Held highs";
+"eigene Farbe" = "own color";

@@ -9,15 +9,23 @@ enum TagColors {
     /// Farben der Wellenform (aktives Preset), gesetzt vom MixModel
     @MainActor static var wave: () -> BlendPaint.Palette? = { nil }
 
-    /// Gruppen K / B / H wie die Wellenform: Kick = tiefe Schläge, Bass = gehaltene Tiefen, Hats = Höhen.
+    /// Wellenform-Farben, die eine Gruppe tragen kann (⌘, → TAGS, je Marker)
+    static let waveSources: [(id: String, name: String)] = [
+        ("low", "Tief (Kick)"), ("lowWarm", "Tiefen gehalten (Bass)"), ("mid", "Mitten"), ("high", "Höhen (Hats)"),
+        ("highOpen", "Höhen gehalten"), ("aus", "eigene Farbe"),
+    ]
+
+    /// Farbe einer Gruppe aus der Wellenform (Standard K = Tief, B = gehaltene Tiefen, H = Höhen), je Marker einstellbar.
     /// Abgedunkelt auf die Helligkeit der Palette (knochenweiße Schrift bleibt lesbar)
-    @MainActor static func waveHex(_ marker: String) -> String? {
-        guard let p = wave() else { return nil }
+    @MainActor static func waveHex(_ marker: String, _ ui: UIPrefs) -> String? {
+        guard let src = ui.tagGroupWave[marker], let p = wave() else { return nil }
         let c: BlendPaint.RGB
-        switch marker {
-        case "K": c = p.low
-        case "B": c = p.lowWarm
-        case "H": c = p.high
+        switch src {
+        case "low": c = p.low
+        case "lowWarm": c = p.lowWarm
+        case "mid": c = p.mid
+        case "high": c = p.high
+        case "highOpen": c = p.highOpen
         default: return nil
         }
         let n = NSColor(srgbRed: CGFloat(c.r), green: CGFloat(c.g), blue: CGFloat(c.b), alpha: 1)
@@ -30,7 +38,7 @@ enum TagColors {
     /// eigene Farbe des Tags, sonst die seiner Gruppe (Farbe des Markers, K / B / H aus der Wellenform), sonst aus dem Namen
     @MainActor static func hex(_ tag: String, group: String? = nil, _ ui: UIPrefs) -> String {
         if let h = ui.tagColors[tag] { return h }
-        if ui.tagGroups, let g = group, g != TagGroups.role { if g != tag { return hex(g, group: g, ui) } else if let w = waveHex(g) { return w } }
+        if ui.tagGroups, let g = group, g != TagGroups.role { if g != tag { return hex(g, group: g, ui) } else if let w = waveHex(g, ui) { return w } }
         var h: UInt32 = 5381
         for b in tag.utf8 { h = (h &* 33) ^ UInt32(b) }
         return palette[Int(h % UInt32(palette.count))]
@@ -81,13 +89,24 @@ struct TagColorSettings: View {
                     .settingsAnchor("tags.highlight")
                 Toggle("Gruppen (K / B / H …)", isOn: $mix.prefs.ui.tagGroups)
                     .settingsAnchor("tags.groups")
-                Text("einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe").settingsHint()
+                Text("einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe. je gruppe: name, farbe aus der wellenform oder eigene farbe").settingsHint()
                 if mix.prefs.ui.tagGroups {
                     ForEach(groupMarkers, id: \.self) { g in
                         LabeledContent("Gruppe \(g)") {
-                            TextField("", text: Binding(get: { mix.prefs.ui.tagGroupNames[g] ?? "" },
-                                                        set: { mix.prefs.ui.tagGroupNames[g] = $0.isEmpty ? nil : $0 }))
-                                .settingsField().frame(width: 120)
+                            HStack {
+                                TextField("", text: Binding(get: { mix.prefs.ui.tagGroupNames[g] ?? "" },
+                                                            set: { mix.prefs.ui.tagGroupNames[g] = $0.isEmpty ? nil : $0 }))
+                                    .settingsField().frame(width: 120)
+                                Picker("", selection: Binding(get: { mix.prefs.ui.tagGroupWave[g] ?? "aus" },
+                                                              set: { mix.prefs.ui.tagGroupWave[g] = $0; if $0 != "aus" { mix.prefs.ui.tagColors[g] = nil } })) {
+                                    ForEach(TagColors.waveSources, id: \.id) { Text(LocalizedStringKey($0.name)).tag($0.id) }
+                                }
+                                .labelsHidden().frame(width: 190)
+                                // eigene Farbe (Farbe des Markers), gilt bei „eigene Farbe“
+                                ColorPicker("", selection: Binding(get: { TagColors.color(g, group: g, mix.prefs.ui) },
+                                                                   set: { mix.prefs.ui.tagColors[g] = TagColors.hex(of: $0); mix.prefs.ui.tagGroupWave[g] = "aus" }),
+                                            supportsOpacity: false).labelsHidden()
+                            }
                         }
                     }
                 }

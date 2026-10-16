@@ -230,6 +230,8 @@ struct UIPrefs: Codable, Equatable {
     var tagGroups = true
     /// Anzeigename je Gruppen-Marker
     var tagGroupNames = ["K": "KICK", "B": "BASS", "H": "HATS"]
+    /// Farbe je Gruppen-Marker aus der Wellenform (TagWaveSource), "aus" = eigene Farbe / aus dem Namen
+    var tagGroupWave = ["K": "low", "B": "lowWarm", "H": "high"]
     /// Beatgrid farbig (Phrasen/Takte/Beats) oder schlicht
     var colorfulGrid = true
     /// Linienstärke des Beatgrids
