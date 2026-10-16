@@ -215,6 +215,7 @@ enum SelfTest {
             if await !parallelRestartProbe(core) { log("FEHLER Decks parallel: Ausgabe nach Neustart"); exit(1) }
             await chainProbe(mix, tracks: c)
             await insertProbe(mix)
+            await eqProbe(mix)
             await previewProbe(mix, tracks: c)
             await cutProbe(mix, tracks: c)
             await editProbe(mix)
@@ -1462,6 +1463,34 @@ extension SelfTest {
                    dry.rms, one.rms, three.rms, moved.rms, moved.peak, load0.overloads, load1.overloads,
                    inst?.outOfProcess == true ? "isoliert" : "im Prozess", withPlug.rms, failures, fails.isEmpty ? "OK" : "FAIL"))
         if !fails.isEmpty { log("FEHLER Insert-Slots: " + fails.joined(separator: " · ")); exit(1) }
+    }
+
+    /// EQ im Kanalzug (intern): Kill auf dem Tief-Regal senkt den Pegel an Deck A, 0 dB stellt ihn wieder her
+    static func eqProbe(_ mix: MixModel) async {
+        let core = mix.core, s0 = core.snapshot().decks[0]
+        if !s0.playing { core.togglePlay(0) }
+        func level() async -> Float {
+            var acc: Float = 0
+            for _ in 0..<12 { try? await Task.sleep(for: .milliseconds(50)); acc += core.engine.levels[0].rms }
+            return acc / 12
+        }
+        core.updateDeck(0) { $0.eqLow = 0; $0.eqMid = 0; $0.eqHigh = 0 }
+        try? await Task.sleep(for: .milliseconds(300))
+        let flat = await level()
+        core.updateDeck(0) { $0.eqLow = -40 }
+        try? await Task.sleep(for: .milliseconds(300))
+        let killed = await level()
+        core.updateDeck(0) { $0.eqLow = 0 }
+        try? await Task.sleep(for: .milliseconds(300))
+        let back = await level()
+        core.updateDeck(0) { $0.eqLow = s0.eqLow; $0.eqMid = s0.eqMid; $0.eqHigh = s0.eqHigh }
+        var fails: [String] = []
+        if !(flat > 0 && flat.isFinite) { fails.append("kein Pegel") }
+        if !(killed < flat * 0.9) { fails.append("Tief-Kill ohne Wirkung") }
+        if !(back > killed * 1.1) { fails.append("nach 0 dB kein Pegel") }
+        log(String(format: "EQ Deck A: flach %.3f · Tief-Kill %.3f · zurück %.3f%@", flat, killed, back,
+                   fails.isEmpty ? " · OK" : " · " + fails.joined(separator: " · ")))
+        if !fails.isEmpty { log("FEHLER EQ: " + fails.joined(separator: " · ")); exit(1) }
     }
 
     /// gespielte ausblenden (◆ UNGESPIELT): Collection ohne die gespielten Tracks (A + die der Sitzung), Anzahl im Kopf

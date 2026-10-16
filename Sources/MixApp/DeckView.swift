@@ -27,7 +27,7 @@ struct DeckView: View {
             VStack(alignment: .leading, spacing: 4.z) {
                 // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen), am Cover und an den Zusatzinfos
                 row("header", DeckHeader(d: d).modifier(DeckDropTarget(d: d)),
-                    key: [ui.showMixer ? 0 : ui.fxUnitCount, ui.deckCoverInHeader ? Int(ui.deckCoverSize) : 0, rows.info ? 1 : 0, rows.comment || rows.tags ? 1 : 0])
+                    key: [ui.showMixer ? 0 : ui.fxUnitCount, !ui.showMixer && mix.eqVisible ? 1 : 0, ui.deckCoverInHeader ? Int(ui.deckCoverSize) : 0, rows.info ? 1 : 0, rows.comment || rows.tags ? 1 : 0])
                 WaveformView(d: d)
                     .overlay { DeckIdleView(d: d) }   // leer: Lobster, nach Ladefehler 5 s Totenkopf
                     .frame(minHeight: mix.prefs.ui.waveformHeight.z, maxHeight: .infinity)
@@ -221,6 +221,7 @@ struct DeckHeader: View {
     struct Model: Equatable {
         var playing = false, title = "", subtitle = "", isError = false
         var showFX = false, fxUnits = 2, fxAssign: [Bool] = [], info = true, meta = true
+        var showEQ = false, eq: [Double] = [0, 0, 0]   // HI, MID, LO: ohne Mixer-Ansicht am Deck
         var bpm = 0.0, tempoPct = 0.0, gridEdited = false
         var time = TimeReadout.Model(), code = CodeReadout.Model(), key = KeyReadout.Model(), phaseActive = false
     }
@@ -233,6 +234,8 @@ struct DeckHeader: View {
         m.subtitle = s.error ?? s.track?.artist ?? String(localized: "Kein Track geladen")
         m.isError = s.error != nil
         m.showFX = !ui.showMixer
+        m.showEQ = !ui.showMixer && mix.eqVisible
+        m.eq = [s.eqHigh, s.eqMid, s.eqLow]
         m.fxUnits = ui.fxUnitCount
         m.fxAssign = s.fxAssign
         m.info = ui.deckRows.info
@@ -269,6 +272,14 @@ struct DeckHeader: View {
                 .layoutPriority(1)   // Titel vor den Tags
                 // Kommentar und Tags in der freien Mitte des Kopfs statt in einer eigenen Zeile
                 if m.meta { DeckMetaRow(d: d, inline: true) } else { Spacer(minLength: 4.z) }
+                if m.showEQ {
+                    // ohne Mixer-Ansicht: EQ direkt am Deck
+                    HStack(alignment: .bottom, spacing: 3.z) {
+                        eqKnob(mix, d, \.eqHigh, "HI", size: 22)
+                        eqKnob(mix, d, \.eqMid, "MID", size: 22)
+                        eqKnob(mix, d, \.eqLow, "LO", size: 22)
+                    }
+                }
                 if m.showFX {
                     // ohne Mixer-Ansicht: FX-Zuweisung direkt am Deck
                     // FX-Zuweisung am Kanal: 1 2 (3 4)

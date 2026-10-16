@@ -2,7 +2,7 @@ import SwiftUI
 import MixCore
 import MixEngine
 
-/// Interner Mixer: Kanäle in der Reihenfolge C A B D, Crossfader. Im Extern-Modus nur Gain/Filter/FX.
+/// Interner Mixer: Kanäle in der Reihenfolge C A B D, Crossfader. Im Extern-Modus Gain/Filter/FX, EQ nur mit Schalter.
 struct MixerView: View {
     @Environment(MixModel.self) private var mix
 
@@ -41,10 +41,10 @@ struct ChannelStrip: View {
             Text(deckLetters[d]).font(Theme.label(12.z, .heavy))
                 .foregroundStyle(mix.focusedDeck == d ? Theme.bone : Theme.muted)
             knob(\.gainDb, -12...12, "GAIN")
-            if mix.mixerMode == .internalMixer {
-                knob(\.eqHigh, -26...12, "HI")
-                knob(\.eqMid, -26...12, "MID")
-                knob(\.eqLow, -26...12, "LO")
+            if mix.eqVisible {
+                eqKnob(mix, d, \.eqHigh, "HI")
+                eqKnob(mix, d, \.eqMid, "MID")
+                eqKnob(mix, d, \.eqLow, "LO")
             }
             knob(\.filter, -1...1, "FILTER", color: Theme.state)
             HStack(spacing: 2.z) {
@@ -80,6 +80,12 @@ struct ChannelStrip: View {
         Knob(value: Binding(get: { mix.deck(d)[keyPath: kp] }, set: { v in mix.updateDeck(d) { $0[keyPath: kp] = v } }),
              range: r, defaultValue: 0, bipolar: true, label: label, color: color, size: 26)
     }
+}
+
+/// EQ-Regler eines Kanals (-26 … +12 dB, -26 = Kill; Doppelklick = 0 dB). Im Mixerkanal und am Deck-Kopf
+func eqKnob(_ mix: MixModel, _ d: Int, _ kp: WritableKeyPath<DeckState, Double>, _ label: String, size: CGFloat = 26) -> some View {
+    Knob(value: Binding(get: { mix.deck(d)[keyPath: kp] }, set: { v in mix.updateDeck(d) { $0[keyPath: kp] = v } }),
+         range: -26...12, defaultValue: 0, bipolar: true, label: label, size: size)
 }
 
 /// Senkrechter Kanalfader

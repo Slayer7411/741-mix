@@ -584,7 +584,7 @@ GROOVE  HATS+BASS ▾  OFF ▾  [ 16-step grid ]  ⚄  ▶ MIDI  ■  .MID
 per channel (order C · A · B · D):
 
 * gain + auto-gain (loudness from the collection)
-* eq hi / mid / lo, knob fully left = kill (setting)
+* eq hi / mid / lo: low shelf 100 Hz, bell 1 kHz, high shelf 10 kHz, −26 … +12 dB, double click = 0 dB. fully left = kill (−40 dB, setting). in the deck header when the mixer is hidden. changes are smoothed (~15 ms)
 * one-knob filter: left = low pass, right = high pass
 * fx assign, channel fader, crossfader assign + curve (smooth / sharp)
 * headroom per mode (internal default −3 dB)
@@ -593,7 +593,7 @@ per channel (order C · A · B · D):
 ### external mode
 
 * every deck on its own pair, default A 1/2 · B 3/4 · C 5/6 · D 7/8
-* gain / eq / fader happen on your desk
+* gain / fader happen on your desk. eq too, unless `EQ in external mode` (⌘, -> MIXER & FX) is on: then the same hi / mid / lo knobs work per deck before its pair (default off, the desk's eq stays in the chain)
 * own headroom and auto-gain setting, main volume off by default
 * metronome on an own pair
 * record the desk's sum through its usb input -> [16 · recording](#-16--recording)

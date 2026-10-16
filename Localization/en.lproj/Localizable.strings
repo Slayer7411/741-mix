@@ -9,6 +9,7 @@
 "Link ist aus" = "Link is off";
 "Link: Abweichung %@ ms · Drift %@ ms · Neusetzungen %lld · Clock-Trims %lld · Tempo-Setzungen %lld · Teilnehmer %lld · Versatz %@ ms" = "Link: deviation %@ ms · drift %@ ms · resets %lld · clock trims %lld · tempo sets %lld · peers %lld · offset %@ ms";
 "Abspielen" = "Playback";
+"Aus: das Pult macht den EQ. An: EQ vor jedem Kanalpaar in MINOS-741, Regler im Mixer und am Deck." = "Off: the mixer does the EQ. On: EQ in MINOS-741 before each channel pair, knobs in the mixer and on the deck.";
 "Am Mischpult die Kanal-Eingänge auf USB stellen. EQ, Fader, Crossfader und Kopfhörer-Cue macht dann das Pult; Filter, FX und Gain bleiben in MINOS-741." = "Set the channel inputs on the mixer to USB. EQ, faders, crossfader and headphone cue are done by the mixer; filter, FX and gain stay in MINOS-741.";
 "An Preparation anhängen" = "Add to preparation";
 "Anordnung" = "Layout";
@@ -46,6 +47,7 @@
 "Deck → Kanal" = "Deck → channel";
 "Decks ein-/ausblenden (Browser groß)" = "Show/hide decks (big browser)";
 "Delay-Zeit in Beats" = "Delay time in beats";
+"EQ im externen Modus" = "EQ in external mode";
 "EQ-Kill (ganz links = aus)" = "EQ kill (fully left = off)";
 "Ein Deck ist Master (automatisch oder per MASTER-Taste)" = "A deck is master (automatic or via MASTER)";
 "Einfarbig" = "Mono";
