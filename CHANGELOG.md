@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* buffer test: ⌘, -> AUDIO -> `PUFFER TESTEN` measures each buffer size the device accepts (64–1024) under a 4-deck load (keylock, sync, fx, silent main). per size: latency, peak and mean load, dropouts, watchdog timeouts. recommends the smallest safe size (`EMPFEHLUNG SETZEN`), one size up when the peak is over 45 %. status bar job, cancellable, refused while a deck plays. unit tests (decision)
 * browser column `Path`: full file path, cut in the middle, red when the file is missing, sortable (hidden by default, header right click)
 * audio-edit editor: grid snap on by default (`ui.audioEditGrid`), snap size menu next to RASTER: 1/16 · 1/8 · 1/4 · 1/2 beat, 1 beat, 1 · 2 · 4 · 8 bars (`ui.audioEditSnapBeats`)
 * tag groups: color source per marker (waveform low / held lows / mids / highs / held highs or an own color); tidal: sign in button in ⌘, -> BROWSER

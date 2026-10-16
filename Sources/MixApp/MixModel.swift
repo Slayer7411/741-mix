@@ -134,6 +134,8 @@ final class MixModel {
     /// `previewOff` = aus
     var previewPair = MixModel.previewAuto
     static let previewAuto = -1, previewOff = -2
+    /// Puffer-Test (⌘, -> AUDIO): misst die Puffergrößen des Geräts, Lauf im eigenen Objekt
+    @ObservationIgnored private(set) lazy var bufferTest: BufferTestRunner = BufferTestRunner(mix: self)
     /// Vorhör-Player im Kern (eigenes Kanalpaar, Laden über den Datei-Dienst)
     @ObservationIgnored private(set) lazy var previewer: PreviewPlayer = {
         let p = PreviewPlayer(engine: engine)
