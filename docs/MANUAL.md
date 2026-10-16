@@ -1094,6 +1094,30 @@ BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION. read o
 * `NEW` needs the music folder scan (setting, on by default)
 * ⌘, -> BROWSER -> check collection: check on start (off), scan music folders (on)
 
+#### actions and duplicates
+
+* double click on a column divider fits the column to its longest text (as in the track table)
+* FINDINGS: select rows (click, shift, cmd). toolbar under the tabs and right click:
+  * `AUS COLLECTION ENTFERNEN`: the entries leave the collection file with their playlist references. files stay
+  * `+ DATEIEN IN DEN PAPIERKORB`: same, the files go to the trash. never deleted. cloud placeholders: only the local entry goes to the trash
+  * `ANALYSIEREN`: analysis job for the tracks, as in the track menu
+  * `FEHLENDE → TIDAL`: missing-file rows only, the TIDAL search for these tracks
+* every removal asks first: counts and the first 10 entries. the default button is cancel. writing into the collection off: asks to switch it on for this action
+* back: the newest `collection_….nml` in `Backup MINOS-741` (at most one per hour, made before the write)
+
+`DUPLIKATE` tab: groups of entries that are the same track
+* same file path (case and unicode form ignored), or
+* same artist + title (bracket parts ignored), length within 1 s and the same file size. no audio fingerprint is used
+
+keeper: file present > higher bitrate > analysed > more cues > newer import (then the smaller key). the others merge into the keeper:
+* tags (comment 2): union, keeper's order first, separator from the settings
+* hotcues: a hotcue keeps its slot when it is free. a slot used at another position makes it a memory cue
+* loops and memory cues: the same position (±5 ms, loops also the same length) only once
+* rating: highest. play count: sum. color and comment: kept unless empty
+* grid: the keeper's grid, the grid of another entry only when the keeper has none
+
+the preview of the selected row shows the result of its group before anything is written. `ZUSAMMENFÜHREN …` merges all groups after the confirmation. playlist references point to the keeper. files of the merged entries stay, unless `+ DATEIEN IN DEN PAPIERKORB` is on. the keeper's file is never trashed.
+
 ### missing + tidal
 
 tree entry `MISSING n` (under ZU BEARBEITEN, only while at least one track has no file): the tracks whose file is missing. same data as the check above: cloud status `fehlt`, else the load check at start (`fehlen n` in the console). sortable like any list, export and overview work too.

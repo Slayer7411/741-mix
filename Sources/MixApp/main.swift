@@ -86,6 +86,7 @@ struct ContentView: View {
             // Collection-Datei: eigene Hotcues / Grid schreiben und beim Laden auf Konflikte prüfen
             store.edits = mix.edits
             store.uiPrefs = { [mix] in mix.prefs.ui }
+            store.updateUIPrefs = { [mix] change in change(&mix.prefs.ui) }
             store.onRefreshed = { [mix] t in mix.collectionUpdated(t) }
             if store.tracks.isEmpty { store.load() }
             // MIX741_LAYOUT=nomixer,1deck,2decks,nobrowser: Teile der Oberfläche für Layout-Messungen abschalten (nur Selbsttest)

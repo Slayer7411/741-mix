@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 import MixCore
+import LibraryCloud
 
 typealias Check = ConsistencyCheck
 
@@ -20,6 +21,13 @@ final class ConsistencyModel {
     /// gemeinsamer Musik-Ordner der Collection: in Protokoll und Tabelle als „…/“ gekürzt
     var root = ""
     var started = false
+    /// DUPLIKATE: Ansicht an, Gruppen mit Plan je Gruppe (gültig für den Stand der Collection), Papierkorb-Schalter
+    var showDups = false
+    var dups: [DupItem] = []
+    var dupsReady = false
+    var trashDups = false
+    enum Pane { case log, findings, dups }
+    var pane: Pane { showDups ? .dups : (showFindings ? .findings : .log) }
     @ObservationIgnored private var run: ConsistencyRun?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var lastLine = 0
@@ -37,6 +45,7 @@ final class ConsistencyModel {
         run?.cancel()
         self.store = store
         lines = []; findings = []; snap = ConsistencyRun.Snapshot(); filter = nil; showFindings = false; lastLine = 0
+        dupsReady = false; dups = []
         source = store.sourceURL?.path ?? LibraryStore.defaultNML.path
         root = store.folders.defaultRoot ?? ""
         var lists = Check.lists(in: store.root)
@@ -141,10 +150,237 @@ final class ConsistencyModel {
     }
 }
 
+/// Gruppe doppelter Einträge mit ihrem Plan (Vorschau, Zusammenführen)
+struct DupItem {
+    var reason: String
+    var plan: CollectionMerge.Plan
+}
+
+extension ConsistencyModel {
+    /// Schlüssel der Auswahl, die es in der Collection gibt (ohne Dubletten, Reihenfolge der Befunde)
+    func keys(_ ids: Set<Int>, store: LibraryStore) -> [String] {
+        var seen = Set<String>()
+        return findings.filter { ids.contains($0.id) }.compactMap(\.key).filter { store.byKey[$0] != nil && seen.insert($0).inserted }
+    }
+
+    /// Schlüssel der Auswahl mit Befund „Datei fehlt“ (für TIDAL)
+    func missingKeys(_ ids: Set<Int>, store: LibraryStore) -> [String] {
+        var seen = Set<String>()
+        return findings.filter { ids.contains($0.id) && $0.category == .missing }.compactMap(\.key)
+            .filter { store.byKey[$0] != nil && seen.insert($0).inserted }
+    }
+
+    /// Zeile einer Bestätigung: Artist – Titel · Pfad
+    func line(_ t: Track) -> String {
+        let name = t.artist.isEmpty && t.title.isEmpty ? t.fileName : "\(t.artist) – \(t.title)"
+        return name + " · " + short(t.path)
+    }
+
+    /// Verweise auf die Schlüssel in Playlists (Preparation und Playlist-Baum)
+    func refCount(_ keys: [String], store: LibraryStore) -> Int {
+        let set = Set(keys)
+        var n = store.preparation.filter { set.contains($0) }.count
+        for l in Check.lists(in: store.root) { n += l.keys.filter { set.contains($0) }.count }
+        return n
+    }
+
+    /// Schreiben in die Collection erlauben: ist es aus, fragen, ob es für diese Aktion eingeschaltet wird
+    func ensureWrite(_ store: LibraryStore, then: @escaping () -> Void) {
+        if store.uiPrefs().writeCollection { then(); return }
+        CheckConfirm.ask(String(localized: "Schreiben in die Collection ist aus"),
+                         info: [String(localized: "Diese Aktion schreibt in die Collection-Datei. Schreiben ist in den Einstellungen aus.")],
+                         sample: [], action: String(localized: "Einschalten und weiter"), destructive: false) {
+            store.updateUIPrefs { $0.writeCollection = true }
+            then()
+        }
+    }
+
+    /// in den Papierkorb, nie löschen; nur Dateien, die es gibt
+    static func trash(_ paths: [String]) {
+        let urls = Array(Set(paths)).filter { FileManager.default.fileExists(atPath: $0) }.map { URL(fileURLWithPath: $0) }
+        guard !urls.isEmpty else { return }
+        let n = urls.count
+        NSWorkspace.shared.recycle(urls) { _, error in
+            if let error {
+                StatusCenter.post(.error, String(localized: "Papierkorb: \(error.localizedDescription)"), key: "trash")
+            } else {
+                StatusCenter.post(.ok, String(localized: "\(n) Dateien in den Papierkorb"), key: "trash")
+            }
+        }
+    }
+
+    /// Entfernen (mit oder ohne Dateien) nach Bestätigung
+    func askRemove(_ ids: Set<Int>, store: LibraryStore, trash: Bool) {
+        let keys = keys(ids, store: store)
+        let tracks = keys.compactMap { store.byKey[$0] }
+        guard !tracks.isEmpty else {
+            StatusCenter.post(.info, String(localized: "keine Collection-Einträge in der Auswahl"), key: "writeback")
+            return
+        }
+        let refs = refCount(keys, store: store)
+        var info = [String(localized: "\(tracks.count) Einträge aus der Collection"),
+                    String(localized: "\(refs) Verweise in Playlists fallen weg")]
+        let files = tracks.filter { FileManager.default.fileExists(atPath: $0.path) }
+        if trash {
+            info.append(String(localized: "\(files.count) Dateien in den Papierkorb"))
+            let cloud = files.filter { CloudPaths.isCloudBacked($0.path) }.count
+            if cloud > 0 { info.append(String(localized: "\(cloud) davon im Cloud-Ordner: nur der lokale Platzhalter geht in den Papierkorb")) }
+        } else {
+            info.append(String(localized: "Dateien bleiben liegen"))
+        }
+        let title = trash ? String(localized: "Aus Collection entfernen + Dateien?") : String(localized: "Aus Collection entfernen?")
+        ensureWrite(store) {
+            CheckConfirm.ask(title, info: info, sample: tracks.map { self.line($0) },
+                             action: trash ? String(localized: "Entfernen + Papierkorb") : String(localized: "Entfernen")) {
+                store.writeCollection(CollectionMerge.removalJob(keys: keys)) { r in
+                    guard let r, r.changed else { return }
+                    let gone = Set(r.removed)
+                    self.findings.removeAll { f in f.key.map { gone.contains($0) } ?? false }
+                    if trash { Self.trash(tracks.filter { gone.contains($0.key) }.map(\.path)) }
+                }
+            }
+        }
+    }
+
+    /// Analyse der Auswahl (wie das Menü der Track-Tabelle)
+    func analyse(_ ids: Set<Int>, store: LibraryStore) {
+        let tracks = keys(ids, store: store).compactMap { store.byKey[$0] }
+        guard !tracks.isEmpty else { return }
+        Analyses.shared.enqueue(tracks, refresh: false)
+    }
+
+    /// Fehlende Dateien der Auswahl bei TIDAL suchen (derselbe Ablauf wie „Fehlende → TIDAL“)
+    func tidal(_ ids: Set<Int>, store: LibraryStore) {
+        let tracks = missingKeys(ids, store: store).compactMap { store.byKey[$0] }
+        guard !tracks.isEmpty else { return }
+        let ui = store.uiPrefs()
+        TidalSyncModel.shared.start(tracks: tracks, clientID: ui.tidalClientID, pattern: ui.tidalPlaylistPattern)
+    }
+
+    /// Doppelte suchen (Gruppen und Pläne) aus dem Stand der Collection
+    func computeDups(store: LibraryStore) {
+        let sep = store.uiPrefs().tagSeparators
+        var items: [DupItem] = []
+        for g in CollectionMerge.groups(store.tracks) {
+            let ranked = CollectionMerge.ranked(g.keys.compactMap { store.byKey[$0] })
+            guard ranked.count > 1 else { continue }
+            items.append(DupItem(reason: g.reason, plan: CollectionMerge.plan(keeper: ranked[0], others: Array(ranked.dropFirst()), separators: sep)))
+        }
+        dups = items
+        dupsReady = true
+    }
+
+    /// Zusammenführen aller Gruppen nach Bestätigung; Dateien nur mit „+ Dateien“, nie die des Behalters
+    func askMerge(_ store: LibraryStore, trash: Bool) {
+        let plans = dups.map(\.plan)
+        guard !plans.isEmpty else { return }
+        let removed = plans.flatMap(\.removed)
+        let keepers = Set(plans.map { MusicFolder.match($0.keeper.path) })
+        var seen = Set<String>()
+        var trashList: [(key: String, path: String)] = []
+        if trash {
+            for t in removed where !t.path.isEmpty {
+                let m = MusicFolder.match(t.path)
+                if !keepers.contains(m), seen.insert(m).inserted { trashList.append((t.key, t.path)) }
+            }
+        }
+        let refs = refCount(removed.map(\.key), store: store)
+        var info = [String(localized: "\(plans.count) Gruppen, \(removed.count) Einträge fallen aus der Collection"),
+                    String(localized: "Tags, Bewertung, Abspielungen, Farbe, Cues und Grid gehen in den Behalter"),
+                    String(localized: "\(refs) Verweise in Playlists zeigen auf den Behalter")]
+        info.append(trash ? String(localized: "\(trashList.count) Dateien in den Papierkorb (nie die des Behalters)")
+                          : String(localized: "Dateien bleiben liegen"))
+        let sample = plans.map { "\(short($0.keeper.path))  ← \($0.removed.count)" }
+        ensureWrite(store) {
+            CheckConfirm.ask(String(localized: "Duplikate zusammenführen?"), info: info, sample: sample,
+                             action: String(localized: "Zusammenführen")) {
+                let job = CollectionMerge.job(for: plans)
+                store.writeCollection(job, redirects: job.redirects) { r in
+                    guard let r, r.changed else { return }
+                    let gone = Set(r.removed)
+                    self.dups = []
+                    self.dupsReady = false
+                    self.findings.removeAll { f in f.key.map { gone.contains($0) } ?? false }
+                    if trash { Self.trash(trashList.filter { gone.contains($0.key) }.map(\.path)) }
+                }
+            }
+        }
+    }
+
+    /// Vorschau eines Plans: was der Behalter bekommt, was entfällt
+    func preview(_ p: CollectionMerge.Plan) -> String {
+        let none = "–"
+        var l = [String(localized: "behalten") + "   " + short(p.keeper.path)]
+        l += p.removed.map { String(localized: "entfällt") + "   " + short($0.path) }
+        let tags = p.keeper.comment2.isEmpty ? none : p.keeper.comment2
+        l.append("tags       " + (p.changes[.comment2].map { tags + " → " + $0 } ?? tags))
+        if let c = p.changes[.comment] { l.append(String(localized: "kommentar") + "  " + c) }
+        l.append(String(localized: "bewertung") + "  \(p.keeper.rating) → \(p.result.rating)")
+        l.append("plays      \(p.keeper.playCount) → \(p.result.playCount)")
+        if let c = p.color { l.append(String(localized: "farbe") + "       \(c)") }
+        if let g = p.grid?.gridAnchorMs { l.append("grid       " + String(localized: "übernommen") + ", " + String(localized: "anker") + " \(Theme.time(g / 1000))") }
+        let hot = p.result.hotcues
+        if !hot.isEmpty {
+            l.append("hotcues    " + hot.map { "\($0.hotcue + 1):" + Theme.time($0.startMs / 1000) + ($0.kind == .loop ? " loop" : "") }.joined(separator: "  "))
+        }
+        if !p.memoryCues.isEmpty {
+            l.append("memory     +\(p.memoryCues.count) " + p.memoryCues.map { Theme.time($0.startMs / 1000) + ($0.kind == .loop ? " loop" : "") }.joined(separator: "  "))
+        }
+        return l.joined(separator: "\n")
+    }
+}
+
+/// Bestätigung vor jeder Änderung an der Collection oder an Dateien: Anzahl, Liste (erste 10). „Abbrechen“ ist der
+/// Standard (Return und Esc). Als Blatt am Prüf-Fenster.
+@MainActor
+enum CheckConfirm {
+    static func ask(_ title: String, info: [String], sample: [String], action: String, destructive: Bool = true,
+                    then: @escaping () -> Void) {
+        let a = NSAlert()
+        a.messageText = title
+        var text = info.joined(separator: "\n")
+        if !sample.isEmpty {
+            text += "\n\n" + sample.prefix(10).joined(separator: "\n")
+            if sample.count > 10 { text += "\n" + String(localized: "… und \(sample.count - 10) weitere") }
+        }
+        a.informativeText = text
+        a.alertStyle = destructive ? .warning : .informational
+        a.addButton(withTitle: String(localized: "Abbrechen"))
+        a.addButton(withTitle: action)
+        let done: (NSApplication.ModalResponse) -> Void = { if $0 == .alertSecondButtonReturn { then() } }
+        if let w = ConsistencyWindow.window, w.isVisible { a.beginSheetModal(for: w, completionHandler: done) } else { done(a.runModal()) }
+    }
+}
+
+/// Menü aus Aktionen: jede Aktion hält ihr Ziel selbst (das Menü hält nur schwache Verweise)
+@MainActor
+enum CheckMenu {
+    final class Box: NSObject {
+        let run: () -> Void
+        init(_ run: @escaping () -> Void) { self.run = run }
+        @objc func fire() { run() }
+    }
+
+    /// nil = Trennlinie
+    static func build(_ items: [(String, Bool, () -> Void)?]) -> NSMenu {
+        let m = NSMenu()
+        for item in items {
+            guard let (title, enabled, run) = item else { m.addItem(.separator()); continue }
+            let box = Box(run)
+            let mi = NSMenuItem(title: title, action: #selector(Box.fire), keyEquivalent: "")
+            mi.target = box
+            mi.representedObject = box
+            mi.isEnabled = enabled
+            m.addItem(mi)
+        }
+        return m
+    }
+}
+
 /// Fenster „Collection prüfen“: eines je App, schließen bricht einen laufenden Prüflauf ab.
 @MainActor
 enum ConsistencyWindow {
-    private static var window: NSWindow?
+    static var window: NSWindow?
     private static let model = ConsistencyModel()
     private final class Delegate: NSObject, NSWindowDelegate {
         func windowWillClose(_ notification: Notification) {
@@ -186,6 +422,7 @@ struct ConsistencyView: View {
     let musicFolders: () -> Bool
     @Environment(LibraryStore.self) private var store
     @State private var selection: Set<Int> = []
+    @State private var dupSelection: Set<Int> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -194,9 +431,16 @@ struct ConsistencyView: View {
             counters
             Rectangle().fill(Theme.hairline).frame(height: 1)
             HStack(spacing: 4) {
-                DeckButton(title: "LOG", active: !model.showFindings) { model.showFindings = false }
-                DeckButton(title: String(localized: "BEFUNDE \(model.findings.count)"), active: model.showFindings) { model.showFindings = true }
-                if model.showFindings, let f = model.filter {
+                DeckButton(title: "LOG", active: model.pane == .log) { model.showDups = false; model.showFindings = false }
+                DeckButton(title: String(localized: "BEFUNDE \(model.findings.count)"), active: model.pane == .findings) {
+                    model.showDups = false
+                    model.showFindings = true
+                }
+                DeckButton(title: model.dupsReady ? String(localized: "DUPLIKATE \(model.dups.count)") : "DUPLIKATE", active: model.pane == .dups) {
+                    model.showDups = true
+                    if !model.dupsReady { model.computeDups(store: store) }
+                }
+                if model.pane == .findings, let f = model.filter {
                     DeckButton(title: f.tag.trimmingCharacters(in: .whitespaces) + " ✕", active: true, color: color(f)) { model.filter = nil }
                 }
                 Spacer()
@@ -204,7 +448,11 @@ struct ConsistencyView: View {
                     Text("letzte \(ConsistencyModel.viewLines) zeilen · alle befunde unter BEFUNDE").font(Theme.mono(10)).foregroundStyle(Theme.muted)
                 }
             }
-            if model.showFindings { findingsTable } else { log }
+            switch model.pane {
+            case .log: log
+            case .findings: VStack(alignment: .leading, spacing: 6) { findingsActions; findingsTable }
+            case .dups: dupsPane
+            }
             footer
         }
         .padding(16)
@@ -293,6 +541,7 @@ struct ConsistencyView: View {
         return Button {
             guard let c else { return }
             model.filter = model.filter == c && model.showFindings ? nil : c
+            model.showDups = false
             model.showFindings = true
         } label: {
             HStack(spacing: 6) {
@@ -340,25 +589,125 @@ struct ConsistencyView: View {
     // MARK: Befunde
 
     private var findingsTable: some View {
-        let rows = model.visibleFindings
-        return Table(rows, selection: $selection) {
-            TableColumn("") { (f: Check.Finding) in Text(f.category.tag).foregroundStyle(color(f.category)) }.width(38)
-            TableColumn("Pfad") { (f: Check.Finding) in Text(model.short(f.path)).lineLimit(1).truncationMode(.middle).help(f.path) }
-                .width(min: 200, ideal: 520)
-            TableColumn("Befund") { (f: Check.Finding) in Text(model.shortText(f.detail)).foregroundStyle(Theme.muted).lineLimit(1).help(f.detail) }
-                .width(min: 120, ideal: 300)
+        let rows = model.visibleFindings.map { f in
+            CheckRow(id: f.id, cells: [f.category.tag.trimmingCharacters(in: .whitespaces), model.short(f.path), model.shortText(f.detail)],
+                     tint: NSColor(color(f.category)))
         }
-        .font(Theme.mono(11))
-        .scrollContentBackground(.hidden)
-        .background(Theme.chitin)
+        return CheckTable(rows: rows,
+                          columns: [CheckColumn(title: "", width: 40, minWidth: 30), CheckColumn(title: String(localized: "Pfad"), width: 520, minWidth: 200),
+                                    CheckColumn(title: String(localized: "Befund"), width: 320, minWidth: 120, muted: true)],
+                          selected: selection, onSelect: { selection = $0 },
+                          onActivate: { ids in if model.canReveal(ids) { model.reveal(ids) } else { model.showInFinder(ids) } },
+                          menu: { ids in findingsMenu(ids) })
+            .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    /// Aktionen auf die gewählten Befunde (Knöpfe; dieselben wie im Rechtsklick-Menü)
+    private var findingsActions: some View {
+        let ids = selection
+        let keys = model.keys(ids, store: store)
+        let missing = model.missingKeys(ids, store: store)
+        return HStack(spacing: 4) {
+            DeckButton(title: "AUS COLLECTION ENTFERNEN") { model.askRemove(ids, store: store, trash: false) }.disabled(keys.isEmpty)
+            DeckButton(title: "+ DATEIEN IN DEN PAPIERKORB", color: Theme.bone) { model.askRemove(ids, store: store, trash: true) }
+                .disabled(keys.isEmpty)
+            DeckButton(title: "ANALYSIEREN") { model.analyse(ids, store: store) }.disabled(keys.isEmpty)
+            DeckButton(title: "FEHLENDE → TIDAL") { model.tidal(ids, store: store) }.disabled(missing.isEmpty)
+            Spacer()
+            Text("\(ids.count) gewählt").font(Theme.mono(10)).foregroundStyle(Theme.muted)
+        }
+    }
+
+    private func findingsMenu(_ ids: Set<Int>) -> NSMenu? {
+        guard !ids.isEmpty else { return nil }
+        let keys = model.keys(ids, store: store)
+        let missing = model.missingKeys(ids, store: store)
+        return CheckMenu.build([
+            (String(localized: "Im Browser zeigen"), model.canReveal(ids), { model.reveal(ids) }),
+            (String(localized: "Im Finder zeigen"), true, { model.showInFinder(ids) }),
+            (String(localized: "Pfad kopieren"), true, { model.copyPaths(ids) }),
+            nil,
+            (String(localized: "Aus Collection entfernen …"), !keys.isEmpty, { model.askRemove(ids, store: store, trash: false) }),
+            (String(localized: "Aus Collection entfernen + Dateien …"), !keys.isEmpty, { model.askRemove(ids, store: store, trash: true) }),
+            (String(localized: "Analysieren"), !keys.isEmpty, { model.analyse(ids, store: store) }),
+            (String(localized: "Fehlende → TIDAL"), !missing.isEmpty, { model.tidal(ids, store: store) }),
+        ])
+    }
+
+    // MARK: Duplikate
+
+    /// Zeilen je Gruppe: Behalter zuerst (grün … dann „entfällt“), Zeile -> Gruppe
+    private func dupRows() -> (rows: [CheckRow], groupOf: [Int: Int]) {
+        var rows: [CheckRow] = []
+        var groupOf: [Int: Int] = [:]
+        for (gi, item) in model.dups.enumerated() {
+            for (mi, t) in ([item.plan.keeper] + item.plan.removed).enumerated() {
+                let id = rows.count
+                let keep = mi == 0
+                rows.append(CheckRow(id: id, cells: [String(gi + 1), keep ? String(localized: "behalten") : String(localized: "entfällt"), model.short(t.path),
+                                                     "\(t.bitrate)", t.analyzed ? "ja" : "–", "\(t.cues.count)",
+                                                     t.rating > 0 ? String(repeating: "★", count: t.rating) : "", "\(t.playCount)",
+                                                     t.fileExists ? String(localized: "lokal") : String(localized: "fehlt")],
+                                     tint: keep ? NSColor(Theme.bone) : NSColor(Theme.muted)))
+                groupOf[id] = gi
+            }
+        }
+        return (rows, groupOf)
+    }
+
+    private var dupsPane: some View {
+        let built = dupRows()
+        let gi = dupSelection.sorted().first.flatMap { built.groupOf[$0] }
+        let removedCount = model.dups.reduce(0) { $0 + $1.plan.removed.count }
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                DeckButton(title: model.dupsReady ? "NEU BERECHNEN" : "DUPLIKATE SUCHEN") { model.computeDups(store: store) }
+                    .disabled(store.tracks.isEmpty)
+                DeckButton(title: "ZUSAMMENFÜHREN …", active: true, color: Theme.bone) { model.askMerge(store, trash: model.trashDups) }
+                    .disabled(model.dups.isEmpty)
+                DeckButton(title: "+ DATEIEN IN DEN PAPIERKORB", active: model.trashDups) { model.trashDups.toggle() }
+                Spacer()
+                Text(model.dupsReady ? String(localized: "\(model.dups.count) Gruppen · \(removedCount) Einträge entfallen")
+                     : String(localized: "gleiche datei oder gleicher artist + titel, länge ±1 s, gleiche größe"))
+                    .font(Theme.mono(10)).foregroundStyle(Theme.muted)
+            }
+            if model.dupsReady, !model.dups.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    CheckTable(rows: built.rows,
+                               columns: [CheckColumn(title: "#", width: 40, minWidth: 30), CheckColumn(title: "", width: 70, minWidth: 60),
+                                         CheckColumn(title: "Pfad", width: 380, minWidth: 200), CheckColumn(title: "kbps", width: 50, minWidth: 40, muted: true),
+                                         CheckColumn(title: String(localized: "Analyse"), width: 60, minWidth: 40, muted: true),
+                                         CheckColumn(title: "Cues", width: 44, minWidth: 40, muted: true),
+                                         CheckColumn(title: String(localized: "Bew."), width: 60, minWidth: 40, muted: true),
+                                         CheckColumn(title: "Plays", width: 50, minWidth: 40, muted: true),
+                                         CheckColumn(title: String(localized: "Datei"), width: 50, minWidth: 40, muted: true)],
+                               selected: dupSelection, onSelect: { dupSelection = $0 }, onActivate: { _ in }, menu: { _ in nil })
+                        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+                    dupPreview(gi)
+                        .frame(width: 330)
+                }
+            } else {
+                Spacer()
+            }
+        }
+    }
+
+    /// Vorschau der gewählten Gruppe: das Ergebnis im Behalter, bevor etwas geschrieben wird
+    private func dupPreview(_ gi: Int?) -> some View {
+        ScrollView {
+            if let gi, model.dups.indices.contains(gi) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("GRUPPE \(gi + 1) · \(model.dups[gi].reason)").font(Theme.label(11, .bold))
+                    Text(model.preview(model.dups[gi].plan)).font(Theme.mono(10)).foregroundStyle(Theme.bone).textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text("zeile wählen: vorschau des ergebnisses").font(Theme.mono(10)).foregroundStyle(Theme.muted)
+            }
+        }
+        .padding(8)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-        .contextMenu(forSelectionType: Int.self) { ids in
-            Button("Im Browser zeigen") { model.reveal(ids) }.disabled(!model.canReveal(ids))
-            Button("Im Finder zeigen") { model.showInFinder(ids) }
-            Button("Pfad kopieren") { model.copyPaths(ids) }
-        } primaryAction: { ids in
-            if model.canReveal(ids) { model.reveal(ids) } else { model.showInFinder(ids) }
-        }
     }
 
     // MARK: Knöpfe
