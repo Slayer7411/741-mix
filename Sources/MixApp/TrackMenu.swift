@@ -102,6 +102,8 @@ enum TrackMenu {
         var copy: (Int) -> Void = { _ in }
         var dawGrid: () -> Void = {}
         var eject: () -> Void = {}
+        /// EDIT-Modus des Decks aus (auch ohne sichtbare Transport-Zeile)
+        var editOff: () -> Void = {}
         var rate: (Int) -> Void = { _ in }
         // Kopieren, Suche, Auswahl (Browser und Deck)
         var copyArtistTitle: () -> Void = {}
@@ -233,11 +235,14 @@ enum TrackMenu {
         /// DAW-Clip am Deck: Name, Grid übernehmbar
         var daw: (name: String, usable: Bool)?
         var playlists: [PlaylistItem] = []
+        /// Deck im EDIT-Modus: Eintrag zum Ausschalten
+        var editing = false
     }
 
     /// Rechtsklick auf die Deckfläche: Deck-Einträge oben, dann die gemeinsamen
     static func deckItems(_ f: DeckFacts, rip: [TrackMenuItem], _ a: Actions) -> [TrackMenuItem] {
         let canEject = (f.hasTrack || f.busy) && !f.playing
+        let editOff: [TrackMenuItem] = f.editing ? [.action(String(localized: "EDIT-Modus beenden")) { a.editOff() }] : []
         let eject = TrackMenuItem.action(f.playing ? String(localized: "Auswerfen (Deck spielt)") : String(localized: "Auswerfen"),
                                          enabled: canEject) { a.eject() }
         guard f.hasTrack else {
@@ -246,7 +251,7 @@ enum TrackMenu {
                     .action(String(localized: "Track bearbeiten …"), enabled: false) {},
                     .action(String(localized: "Im Browser zeigen"), enabled: false) {},
                     .action(String(localized: "Im Finder zeigen"), enabled: false) {},
-                    eject]
+                    eject] + editOff
         }
         var m: [TrackMenuItem] = [.action(String(localized: "Track bearbeiten …")) { a.edit() },
                                   .action(String(localized: "Im Browser zeigen"), enabled: f.revealable) { a.reveal() },
@@ -261,6 +266,7 @@ enum TrackMenu {
             m.append(.action(String(localized: "Grid des DAW-Clips übernehmen (\(c.name))"), enabled: c.usable) { a.dawGrid() })
         }
         m.append(eject)
+        m += editOff
         m.append(.separator)
         m.append(.action(String(localized: "An Preparation anhängen"), enabled: f.inLibrary) { a.appendPreparation() })
         m.append(playlists(f.playlists, enabled: f.inLibrary, a))
@@ -281,6 +287,8 @@ enum TrackMenu {
         var a = Actions()
         a.loadTrack = { focusBrowser(deck: d, mix: mix, browser: browser) }
         a.eject = { mix.eject(d) }
+        f.editing = mix.editing(d)
+        a.editOff = { mix.setEditing(d, false) }
         var rip: [TrackMenuItem] = []
         if let t = s.track, !s.loading {
             let key = t.key

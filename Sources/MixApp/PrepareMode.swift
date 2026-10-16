@@ -171,6 +171,11 @@ enum PrepareRender {
 @MainActor private var prepOwnedEdit: Set<Int> = []
 
 extension MixModel {
+    /// EDIT-Modus, den nur die Vorbereiten-Zeile eingeschaltet hat (wird nicht gespeichert)
+    func editOwnedByPrepare(_ d: Int) -> Bool { prepOwnedEdit.contains(d) }
+}
+
+extension MixModel {
     /// Vorbereiten-Zustand des geladenen Tracks
     func prepState(_ d: Int) -> PrepMirror {
         let p = decks[d].prep
