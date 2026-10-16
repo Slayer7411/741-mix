@@ -26,6 +26,10 @@ enum SignalTestRun {
     static func run(mix: MixModel, decks: [Int], firstInput: Int) async {
         for _ in 0..<100 where !mix.engine.running { try? await Task.sleep(for: .milliseconds(100)) }
         guard mix.engine.running else { log("FEHLER: Ausgabe läuft nicht"); return }
+        // erst das gewählte Gerät (die Ausgabe startet auf dem Standardgerät, das Routing folgt)
+        for _ in 0..<100 where mix.currentDevice.map({ $0.id != mix.engine.outputDeviceID }) ?? false { try? await Task.sleep(for: .milliseconds(100)) }
+        try? await Task.sleep(for: .milliseconds(500))
+        log("Ausgabegerät: \(mix.currentDevice?.name ?? "?") (\(mix.engine.outputDeviceID))")
         let rate = mix.engine.outputRate
         log("Gerät: Ausgabe \(Int(rate)) Hz · Modus \(mix.mixerMode == .internalMixer ? "intern" : "extern") · Paare \(mix.deckPairs.map { "\($0 + 1)/\($0 + 2)" }) · Eingang \(firstInput + 1)/\(firstInput + 2)")
         // Testsignal als Datei in der Rate des Geräts (kein Umrechnen im Deck)
@@ -47,6 +51,8 @@ enum SignalTestRun {
             guard mix.core.trackAudio(d) != nil else { log("\(name): Track nicht geladen"); continue }
             guard let ring = RecordRing(capacityFrames: Int(rate * 4)) else { log("RAM"); return }
             let input = CoreAudioInput()
+            let dev = mix.engine.outputDeviceID
+            log("\(name): Gerät \(dev) · Eingänge \(MixEngine.inputChannels(dev))")
             let info: CoreAudioInput.Info
             do { info = try input.start(device: mix.engine.outputDeviceID, firstChannel: firstInput, ring: ring) } catch {
                 log("\(name): Eingang startet nicht: \(error.localizedDescription)"); continue
@@ -54,6 +60,7 @@ enum SignalTestRun {
             guard abs(info.rate - rate) < 0.5 else { input.stop(); log("\(name): Eingang \(Int(info.rate)) Hz ≠ Ausgang \(Int(rate)) Hz"); continue }
             mix.core.seek(d, seconds: 0)
             try? await Task.sleep(for: .milliseconds(400))
+            ring.armed = true   // der Eingang schreibt nur in einen scharfen Ring (sonst der Recorder)
             _ = ring.read(left: nil, right: nil, max: Int(rate * 4))   // Vorlauf verwerfen
             var recL: [Float] = [], recR: [Float] = []
             let chunk = 4096
@@ -65,8 +72,13 @@ enum SignalTestRun {
             let total = Double(sig.count) / rate + 1.0
             let t0 = Date()
             while Date().timeIntervalSince(t0) < total { try? await Task.sleep(for: .milliseconds(100)); drain() }
+            let posEnd = mix.position(d), wasPlaying = mix.deck(d).playing
             if mix.deck(d).playing { mix.togglePlay(d) }
             drain()
+            let pk = recL.reduce(Float(0)) { max($0, abs($1)) }, pkR = recR.reduce(Float(0)) { max($0, abs($1)) }
+            log("\(name): spielte \(wasPlaying) · Position am Ende \(String(format: "%.1f", posEnd)) s · aufgenommen \(recL.count) Frames · Spitze L \(String(format: "%.1f", 20 * log10(max(pk, 1e-9)))) dBFS R \(String(format: "%.1f", 20 * log10(max(pkR, 1e-9)))) dBFS")
+            let st = input.takeStats()
+            log("\(name): Eingang Blöcke \(st.blocks) · Fehler \(st.errors) · im Mittel \(String(format: "%.3f", st.averageMs)) ms")
             input.stop()
             let rl = SignalTest.analyze(rec: recL, rate: rate), rr = SignalTest.analyze(rec: recR, rate: rate)
             let head = "\(name) (Ausgang \(mix.deckPairs[d] + 1)/\(mix.deckPairs[d] + 2) → Eingang \(firstInput + 1)/\(firstInput + 2))"
