@@ -3,22 +3,28 @@ import MixCore
 
 /// Track-Tabelle: Tracks ziehen, in eigene Playlists ablegen / dort umsortieren, ⌫ entfernt, Menü „Zur Playlist“
 extension TrackTableController {
+    /// Eine Zeile = ein Eintrag: Text für Decks, Baum und Tabelle (mehrere Zeilen = mehrere Einträge), dazu die Datei für
+    /// den Finder (nur wenn sie auf der Platte liegt). Ohne Dateityp zieht AppKit nur Text, Finder nimmt nichts
     func tableView(_ tv: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
         let r = shownRows
         guard row >= 0, row < r.count else { return nil }
-        return (TrackDrag.prefix + r[row].key) as NSString
+        let t = r[row]
+        let item = NSPasteboardItem()
+        item.setString(TrackDrag.prefix + t.key, forType: .string)
+        if t.fileExists, !t.path.isEmpty { item.setString(URL(fileURLWithPath: t.path).absoluteString, forType: .fileURL) }
+        return item
     }
 
     func tableView(_ tv: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
                    proposedDropOperation op: NSTableView.DropOperation) -> NSDragOperation {
-        guard model?.ownPlaylistID != nil, !Self.dragKeys(info.draggingPasteboard).isEmpty else { return [] }
+        guard model?.ownPlaylistID != nil, !dropKeys(info.draggingPasteboard).isEmpty else { return [] }
         tv.setDropRow(row, dropOperation: .above)
         return (info.draggingSource as? NSTableView) === tv ? .move : .copy
     }
 
     func tableView(_ tv: NSTableView, acceptDrop info: NSDraggingInfo, row: Int, dropOperation: NSTableView.DropOperation) -> Bool {
         guard let model, let store, let id = model.ownPlaylistID else { return false }
-        let keys = Self.dragKeys(info.draggingPasteboard)
+        let keys = dropKeys(info.draggingPasteboard)
         guard !keys.isEmpty else { return false }
         drop(keys, at: row, into: id, reorder: (info.draggingSource as? NSTableView) === tv, store: store, model: model)
         return true
@@ -40,6 +46,19 @@ extension TrackTableController {
 
     static func dragKeys(_ pb: NSPasteboard) -> [String] {
         (pb.pasteboardItems ?? []).compactMap { $0.string(forType: .string) }.compactMap(TreeDrag.track)
+    }
+
+    /// Dateien aus dem Finder (Pfade)
+    static func filePaths(_ pb: NSPasteboard) -> [String] {
+        (pb.pasteboardItems ?? []).compactMap { $0.string(forType: .fileURL).flatMap { URL(string: $0)?.path } }
+    }
+
+    /// Tracks zum Ablegen: eigene Einträge, dazu Finder-Dateien, die in der Collection stehen (andere werden ignoriert)
+    func dropKeys(_ pb: NSPasteboard) -> [String] {
+        let text = Self.dragKeys(pb)
+        let files = Set(Self.filePaths(pb))
+        guard !files.isEmpty, let store else { return text }
+        return text + store.tracks.filter { files.contains($0.path) }.map(\.key)
     }
 
     /// ⌫: Auswahl aus der eigenen Playlist bzw. der Preparation

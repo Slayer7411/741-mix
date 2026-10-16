@@ -175,7 +175,7 @@ enum TrackDrag {
         NSItemProvider(object: (key.map { prefix + $0 } ?? "") as NSString)
     }
 
-    /// Schlüssel aus den Providern (nur eigene Tracks), auf dem Hauptthread
+    /// Schlüssel aus den Providern (nur eigene Tracks), auf dem Hauptthread; `done` auch leer (keine eigenen Texte)
     @discardableResult
     static func keys(_ providers: [NSItemProvider], _ done: @escaping @MainActor ([String]) -> Void) -> Bool {
         let own = providers.filter { $0.canLoadObject(ofClass: NSString.self) }
@@ -189,8 +189,37 @@ enum TrackDrag {
                 group.leave()
             }
         }
-        group.notify(queue: .main) { MainActor.assumeIsolated { if !keys.isEmpty { done(keys) } } }
+        group.notify(queue: .main) { MainActor.assumeIsolated { done(keys) } }
         return true
+    }
+
+    /// Dateien aus den Providern (Finder), auf dem Hauptthread
+    static func hasFiles(_ providers: [NSItemProvider]) -> Bool {
+        providers.contains { $0.hasItemConformingToTypeIdentifier("public.file-url") }
+    }
+
+    @discardableResult
+    static func files(_ providers: [NSItemProvider], _ done: @escaping @MainActor ([URL]) -> Void) -> Bool {
+        let own = providers.filter { $0.hasItemConformingToTypeIdentifier("public.file-url") }
+        guard !own.isEmpty else { return false }
+        let box = URLBox()
+        let group = DispatchGroup()
+        for p in own {
+            group.enter()
+            _ = p.loadObject(ofClass: URL.self) { u, _ in
+                if let u { box.add(u) }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { MainActor.assumeIsolated { done(box.all) } }
+        return true
+    }
+
+    private final class URLBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var list: [URL] = []
+        func add(_ u: URL) { lock.lock(); list.append(u); lock.unlock() }
+        var all: [URL] { lock.lock(); defer { lock.unlock() }; return list }
     }
 }
 
@@ -203,11 +232,18 @@ struct DeckDropTarget: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onDrop(of: [.text], isTargeted: $targeted) { providers in
-                TrackDrag.keys(providers) { keys in
+            .onDrop(of: [.text, .fileURL], isTargeted: $targeted) { providers in
+                // Track aus dem Browser, Baum, anderem Deck; sonst Datei aus dem Finder, wenn sie in der Collection steht
+                let load: @MainActor ([String]) -> Void = { keys in
                     guard let k = keys.first, let t = store.track(k) ?? mix.decks.compactMap({ $0.state.track }).first(where: { $0.key == k }) else { return }
                     if !mix.load(t, deck: d) { StatusCenter.post(.warning, String(localized: "Deck \(deckLetters[d]) spielt · Laden gesperrt (⌥ erzwingt)"), key: "load.\(d)") }
                 }
+                let files: @MainActor () -> Void = {
+                    TrackDrag.files(providers) { urls in load(urls.compactMap { u in store.tracks.first { $0.path == u.path }?.key }) }
+                }
+                let text = TrackDrag.keys(providers) { keys in if keys.isEmpty { files() } else { load(keys) } }
+                if !text { files() }
+                return text || TrackDrag.hasFiles(providers)
             }
             .overlay { if targeted { Rectangle().stroke(Theme.state, lineWidth: 2) } }
     }

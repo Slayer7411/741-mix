@@ -307,7 +307,12 @@ final class WaveLayerNSView: NSView {
     // MARK: Aufbau (nur bei Änderungen)
 
     /// Grid und Cues neu; die Kacheln nur, wenn sich Wellenform, Zoom oder Größe geändert haben
+    /// Messung (MIX741_BENCH=browser, Abschnitt split): Aufbauten seit Start (rebuild = Grid + Cues, grid = Gitter, tiles = Kacheln leeren)
+    static var builds = (rebuild: 0, grid: 0, tiles: 0)
+
     private func rebuild(tiles rebuildTiles: Bool) {
+        Self.builds.rebuild += 1
+        if rebuildTiles { Self.builds.tiles += 1 }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -592,6 +597,7 @@ final class WaveLayerNSView: NSView {
     private(set) var gridPixels: (beat: CGFloat, bar: CGFloat) = (0, 0)
 
     private func buildGrid(_ g: BeatGrid, h: CGFloat) {
+        Self.builds.grid += 1
         let r = px(Double(ruler)), z = scene.zoom
         let lw = scene.boldLines ? GridLines.bold : GridLines.fine
         let bone = NSColor(Theme.bone), lila = NSColor(Theme.secondary)
