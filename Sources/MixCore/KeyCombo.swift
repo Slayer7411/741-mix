@@ -100,7 +100,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case keySync = "deck.keysync", instantDouble = "deck.double"
     case masterFX = "mix.masterfx", record = "mix.record"
     case resetPlayed = "browser.resetplayed", loadSelected = "browser.load", loadSelectedForce = "browser.load.force"
-    case previewSelected = "browser.preview"
+    case previewSelected = "browser.preview", reanalyzeSelected = "browser.reanalyze"
     case reloadCollection = "browser.reload", matching = "browser.matching", hidePlayed = "browser.hideplayed"
     case favorite1 = "browser.favorite.1", favorite2 = "browser.favorite.2", favorite3 = "browser.favorite.3"
     case favorite4 = "browser.favorite.4", favorite5 = "browser.favorite.5", favorite6 = "browser.favorite.6"
@@ -125,7 +125,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
 
     public var group: ShortcutGroup {
         switch self {
-        case .resetPlayed, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .matching, .hidePlayed,
+        case .resetPlayed, .loadSelected, .loadSelectedForce, .previewSelected, .reanalyzeSelected, .reloadCollection, .matching, .hidePlayed,
              .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6: .browser
         case .toggleMixer, .toggleFourDecks, .bigBrowser, .bigBrowserKey, .compactDecks, .zoomIn, .zoomOut, .zoomReset,
              .profile1, .profile2, .profile3, .profile4, .profileNext, .audioEdit, .audioEditPrev, .audioEditNext, .audioEditDone: .view
@@ -194,6 +194,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .toggleFourDecks: KeyCombo("4", [.option, .command])
         case .bigBrowser: KeyCombo("b", [.option, .command])
         case .matching: KeyCombo("j", [.option, .command])
+        case .reanalyzeSelected: KeyCombo("a", [.control])
         case .bigBrowserKey: KeyCombo("space", [])
         case .compactDecks: KeyCombo("k", [.option, .command])
         case .profile1, .profile2, .profile3, .profile4: KeyCombo("\((index ?? 0) + 1)", [.control, .option, .command])
