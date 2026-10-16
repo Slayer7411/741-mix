@@ -445,7 +445,7 @@ struct WaveformView: View {
             waveID: wf.map { ObjectIdentifier($0) }, duration: deck.duration, grid: deck.grid, span: ui.waveformSeconds,
             showGrid: ui.showBeatgrid, colorful: ui.colorfulGrid, phraseBeats: ui.phraseBeats, barNumbers: ui.showBarNumbers, barMarkers: ui.barMarkers,
             boldLines: ui.gridLineWeight == .bold,
-            dimPlayed: ui.dimPlayed,
+            dimPlayed: ui.dimPlayed, peerMarks: ui.peerMarks,
             cues: deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }.map {
                 WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)),
                                activeEnd: deck.activeLoops.contains($0.hotcue) ? ($0.startMs + $0.lengthMs) / 1000 : nil)
@@ -476,7 +476,8 @@ struct WaveformView: View {
 
         var body: some View {
             WaveLayerView(scene: scene, wave: wave, position: { [mix, d] in mix.position(d) }, speed: { [mix, d] in mix.playSpeed(d) },
-                          loop: { [mix, d] in mix.engine.loop(d) }, autoLoop: { [mix, d] in mix.deck(d).autoLoop })
+                          loop: { [mix, d] in mix.engine.loop(d) }, autoLoop: { [mix, d] in mix.deck(d).autoLoop },
+                          peer: { [mix, d] e in e == d ? nil : mix.peerDeck(e) })
                 .overlay {
                     if waiting {
                         Text("Wellenform wird berechnet …").font(Theme.mono(10.z)).foregroundStyle(.secondary).allowsHitTesting(false)

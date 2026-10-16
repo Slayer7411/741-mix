@@ -30,8 +30,11 @@ public struct PhraseCode: Equatable, Sendable {
     public var aligned: Bool { offsetBeats == 0 }
 
     /// Abweichung als Text: ganze Takte (`+2 BARS`, `−1 BAR`), sonst Beats (`+3 BEATS`); nil = im Code / kein Zähler
-    public var offsetLabel: String? {
-        guard let o = offsetBeats, o != 0 else { return nil }
+    public var offsetLabel: String? { offsetBeats.flatMap(Self.label) }
+
+    /// Abstand in ganzen Beats als Text (siehe `offsetLabel`); nil bei 0
+    public static func label(beats o: Int) -> String? {
+        guard o != 0 else { return nil }
         let perBar = Int(BeatGrid.beatsPerBar)
         let sign = o > 0 ? "+" : "\u{2212}"
         let (n, unit) = o % perBar == 0 ? (abs(o) / perBar, "BAR") : (abs(o), "BEAT")

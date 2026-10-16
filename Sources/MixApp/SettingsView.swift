@@ -773,6 +773,8 @@ struct DisplaySettings: View {
                     .settingsAnchor("display.wave.height")
                 Toggle("Gespielten Teil abdunkeln", isOn: $mix.prefs.ui.dimPlayed)
                     .settingsAnchor("display.wave.dim")
+                Toggle("Andere Decks in der Wellenform", isOn: $mix.prefs.ui.peerMarks)
+                    .settingsAnchor("display.wave.peers")
             }
             Section("Beatgrid") {
                 Toggle("Beatgrid anzeigen", isOn: $mix.prefs.ui.showBeatgrid)

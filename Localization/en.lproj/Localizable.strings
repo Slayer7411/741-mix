@@ -17,6 +17,8 @@
 "Ausgabegerät" = "Output device";
 "Ausgang (Master)" = "Output (master)";
 "Auto-Gain (Lautheit aus der Collection)" = "Auto gain (loudness from the collection)";
+"Andere Decks in der Wellenform" = "Other decks in the waveform";
+"dreieck mit buchstabe oben am roten strich: wo das andere deck (mit grid) gegenüber diesem track läuft. lila = in phase, grau = steht. am rand: pfeil mit abstand." = "triangle with letter at the top of the red line: where the other deck (with grid) runs against this track. purple = in phase, grey = stopped. at the edge: arrow with offset.";
 "Baum ein/aus" = "Tree on/off";
 "Bearbeiten …" = "Edit …";
 "Beat 1 an die aktuelle Position" = "Beat 1 to the current position";

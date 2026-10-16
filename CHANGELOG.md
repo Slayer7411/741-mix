@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* waveform: other decks as markers. each deck with a grid shows a triangle + letter (A-D) at the top of the red line, at its offset to this track in beats (phrase wrap as the code readout). purple = in phase, bone = out, dimmed = stopped; outside the view an arrow at the edge with the offset (`D +3 BARS`). own layer over the tiles, follows the playhead per frame, no deck redraw. ⌘, -> DISPLAY -> `Andere Decks in der Wellenform` (default on). unit tests (offset, wrap, pixel mapping, clamp, labels), deck shot with three peers
 * status bar `automatic`: slides up while a background job runs (analysis, rip check, key profiles, preview batch, cut / render / tool loop / split / join). shows the job, the track (artist – title), `n/total · percent`, a thin bar and ✕ where cancellable. stays up until the job ends, then the done message 3 s. several jobs: `+n`. unit tests (job flag, count, done message), ui test `statusleiste job`
 * ◆ PASST reference tiles `AUTO · A · B · C · D`: fixed reference deck or several decks (track must fit all), `ui.matchDecks`
 * browser column `Tags ≈`: tag groups of each track against the master (`≈` similar, `⇄` complementary, group letters in color when the first word matches). tag groups K / B / H in the waveform colors (low / held lows / highs), marker chips hidden in the lists

@@ -278,6 +278,7 @@ anywhere on the deck (header, cover, tags, readouts, overview, empty space) -> t
   * `Vinyl`: the position follows the hand by the dragged distance (zoom aware), audible like a scratch, also while stopped. release: a playing deck continues at its speed, a stopped one stays at the new spot
   * `Jog`: playing -> pitch bend by the hand's speed (drag left = faster, right = slower, back to the speed when the hand stops or lets go), no jump. stopped -> scrub, stays where released. a synced deck keeps its phase while the hand is on the waveform
 * played part can be dimmed
+* other decks (⌘, -> DISPLAY -> `Andere Decks in der Wellenform`, on): one marker per other loaded deck with a grid, at the top of the waveform at the red line. triangle + letter (`B`) at the offset in beats (same phrase wrap as the code readout), purple = in phase (±1/16 beat), bone = out of phase, dimmed = that deck is stopped. off the visible range: arrow at the edge with the offset (`D +3 BARS`). own deck gets none
 
 spectrum (6 bands), colors:
 
