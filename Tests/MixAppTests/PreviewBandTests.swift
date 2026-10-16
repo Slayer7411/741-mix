@@ -34,3 +34,9 @@ import MixCore
     #expect(AppPrefs.decode(Data(#"{"ui": {"zoom": 1.25}}"#.utf8)).ui.previewBandSpan == .visible)
     #expect(AppPrefs.decode(Data(#"{"ui": {"previewBandSpan": "Ganze Zeile"}}"#.utf8)).ui.previewBandSpan == .row)
 }
+
+@Test @MainActor func waveZoomSteps() {
+    #expect(WaveZoomButtons.next(4, zoomIn: true) == 3 && WaveZoomButtons.next(4, zoomIn: false) == 6)
+    #expect(WaveZoomButtons.next(5, zoomIn: true) == 4 && WaveZoomButtons.next(5, zoomIn: false) == 6)
+    #expect(WaveZoomButtons.next(1, zoomIn: true) == 1 && WaveZoomButtons.next(16, zoomIn: false) == 16)
+}

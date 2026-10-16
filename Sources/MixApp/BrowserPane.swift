@@ -534,6 +534,7 @@ struct PaneHeader: View {
                 .help("Baum ein/aus")
             Text(model.source.title.uppercased()).font(Theme.label(13.z, .bold)).lineLimit(1)
             RowCount(model: model)
+            if model.source == .missing { TidalMissingButton() }
             OwnSmartlistEditButton(model: model)
             if !model.source.isHistory { RowsButtons(model: model) }
         }
@@ -562,7 +563,7 @@ struct PaneHeader: View {
     }
 
     private var tagsButton: some View {
-        DeckButton(title: "TAGS ▾", active: showTags) { showTags.toggle() }
+        DeckButton(title: "TAGS ▾", active: showTags) { showTags.toggle() }.helpInfo("browser.tags")
             .popover(isPresented: $showTags, arrowEdge: .bottom) {
                 TagPicker(model: model, separators: decks.prefs.ui.tagSeparators)
             }
@@ -615,7 +616,7 @@ struct UnplayedChip: View {
     @Environment(MixModel.self) private var mix
 
     var body: some View {
-        DeckButton(title: "UNGESPIELT", active: mix.prefs.ui.hidePlayedTracks) { mix.prefs.ui.hidePlayedTracks.toggle() }
+        DeckButton(title: "UNGESPIELT", active: mix.prefs.ui.hidePlayedTracks) { mix.prefs.ui.hidePlayedTracks.toggle() }.helpInfo("browser.played")
             .help("Gespielte Tracks ausblenden: Collection, Playlists, Smartlists, Ordner, Suche – History, Running Tracks und Preparation zeigen sie weiter. Auch ⌘, → Browser, Menü Browser")
             .background(UITestMark(name: "unplayed"))
     }
@@ -635,7 +636,7 @@ struct MatchChip: View {
         let deckText = on && !chosen.isEmpty ? " \(chosen):" : ""
         VStack(alignment: .leading, spacing: 1.z) {
             MatchDeckTiles()
-            DeckButton(title: String(localized: "◆ PASST") + (on ? " ·\(deckText) \(ref)\(bpm)\(groove)" : ""), active: on, verbatim: true) { model.matching.toggle() }
+            DeckButton(title: String(localized: "◆ PASST") + (on ? " ·\(deckText) \(ref)\(bpm)\(groove)" : ""), active: on, verbatim: true) { model.matching.toggle() }.helpInfo("browser.matching")
             .help("Nur Tracks, die zum Master passen: Key (gleich, ±1, Relativ), Tempo im Fenster, optional Tag-Gruppen (≈ ähnlich, ⇄ ergänzend) – einstellbar unter ⌘, → Browser")
         }
     }
@@ -888,12 +889,13 @@ struct SourceTreeFixed: View, SourceMenus {
     @Environment(PlaylistTreeUI.self) private var ui
 
     var body: some View {
-        row("≣", "TRACK COLLECTION").tag(BrowserSource.collection)
+        row("≣", "TRACK COLLECTION").tag(BrowserSource.collection).helpInfo("tree.collection")
             .favoriteDrag { BrowserFavorite.source(.collection, store: store) }
             .contextMenu {
                 exportMenu(.collection)
                 Button("Collection prüfen …") { ConsistencyWindow.show(store: store) }
                 Button("Reset Played State") { history.resetPlayed() }
+                Button("Collection neu laden") { store.load(store.sourceURL ?? LibraryStore.defaultNML) }
                 Toggle("Gespielte Tracks ausblenden", isOn: Binding(get: { decks.prefs.ui.hidePlayedTracks }, set: { decks.prefs.ui.hidePlayedTracks = $0 }))
                 OverviewMenuButton { store.tracks }
                 AnalysisMenuButtons { store.tracks }
@@ -922,7 +924,12 @@ struct SourceTreeFixed: View, SourceMenus {
                 .help("Tracks mit offenem Befund der Rip-Prüfung (Stille, fremder Anfang oder fremdes Ende, Grid prüfen)")
                 .contextMenu { AnalysisMenuButtons { store.tracks(for: .ripTodo) } }
         }
-        row("▤", "PREPARATION").tag(BrowserSource.preparation)
+        if store.missingTracks.count > 0 {
+            row("✕", "MISSING \(store.missingTracks.count)").tag(BrowserSource.missing)
+                .help("Tracks ohne Datei: Cloud „fehlt“ oder nicht auf der Platte. → TIDAL im Kopf: Playlist bei TIDAL")
+                .contextMenu { exportMenu(.missing); OverviewMenuButton { store.tracks(for: .missing) } }
+        }
+        row("▤", "PREPARATION").tag(BrowserSource.preparation).helpInfo("tree.preparation")
             .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
             .treeDrop(targeted: .constant(false)) { strings in
                 let keys = strings.compactMap(TreeDrag.track).filter { store.track($0) != nil }
@@ -943,7 +950,7 @@ struct SourceTreeFixed: View, SourceMenus {
                     .contextMenu { exportMenu(.prepArchive(s)) }
             }
         } label: { row("▸", String(localized: "PREPARATION ARCHIV")) }
-        row("◷", "HISTORY").tag(BrowserSource.historyLive)
+        row("◷", "HISTORY").tag(BrowserSource.historyLive).helpInfo("tree.history")
             .favoriteDrag { BrowserFavorite.source(.historyLive, store: store) }
             .contextMenu { exportMenu(.historyLive) }
         DisclosureGroup {

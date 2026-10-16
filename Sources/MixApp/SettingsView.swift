@@ -603,6 +603,10 @@ struct MixerFXSettings: View {
                     .settingsAnchor("mixer.ext.autogain")
                 Toggle("Main-Volume wirkt auch extern", isOn: $mix.prefs.engine.masterVolumeExternal)
                     .settingsAnchor("mixer.ext.mainvol")
+                Toggle("EQ im externen Modus", isOn: $mix.prefs.engine.eqExternal)
+                    .settingsAnchor("mixer.ext.eq")
+                Text("Aus: das Pult macht den EQ. An: EQ vor jedem Kanalpaar in MINOS-741, Regler im Mixer und am Deck.")
+                    .settingsHint()
             }
             Section("FX-Units (Insert-Slots)") {
                 Toggle("FX-Units anzeigen", isOn: $mix.prefs.ui.showFXUnits)
@@ -1179,6 +1183,7 @@ struct BrowserSettings: View {
                 Text("browser-menü -> collection prüfen … oder rechtsklick auf TRACK COLLECTION. nur lesen: dateien, audio-kopf, dauer, schreibweise, namen, doppelte, analyse, grid, playlist-einträge. abbrechen jederzeit.")
                     .settingsHint()
             }
+            TidalSettingsSection()
             Section("Analyse") {
                 // genau eine Oktave: jede Grenze stellt die andere mit
                 Stepper(value: Binding(get: { mix.prefs.ui.analysisBpmLow }, set: { mix.prefs.ui.analysisBpmLow = max(40, min(150, $0)) }),

@@ -235,6 +235,7 @@ private struct MusicFolderRow: View, SourceMenus {
                 AnalysisMenuButtons { store.folders.tracks(in: path, recursive: true, library: store) }
                 ImportMenuButton(source: (path as NSString).lastPathComponent) { store.folders.tracks(in: path, recursive: true, library: store) }
                 Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                Button("Pfad kopieren") { TrackMenu.copy(path) }
             }
     }
 

@@ -33,7 +33,7 @@ typedef enum {
     MD_REVERSE,         // 0/1
     MD_FLUX,            // 0/1
     MD_GAIN_DB,         // Kanal-Gain inkl. Auto-Gain
-    MD_EQ_LOW, MD_EQ_MID, MD_EQ_HIGH,   // dB (≤ -96 = Kill)
+    MD_EQ_LOW, MD_EQ_MID, MD_EQ_HIGH,   // dB, -40 … +12 (Kill = -40; Werte darunter klemmt der Kern)
     MD_FILTER,          // -1 … 1 (LP … HP)
     MD_FILTER_RES,      // Resonanz 0.2 … 1.5
     MD_VOLUME,          // Fader × Crossfader, 0 … 1

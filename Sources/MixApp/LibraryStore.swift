@@ -44,6 +44,7 @@ final class LibraryStore {
     /// Roh-Einträge der collection.nml (für NML-Exporte: History, Preparation)
     @ObservationIgnored private(set) var entryIndex = NMLEntryIndex()
     private var smartCache: [UUID: [Track]] = [:]
+    @ObservationIgnored private var missingCache: (rev: Int, cloud: Int, list: [Track])?
     /// Playlist-Knoten nach ID (aktueller Baum)
     @ObservationIgnored private var nodes: [UUID: PlaylistNode] = [:]
     /// Treffer eigener Smartlists: Regeln + Stand (gespielt / Cloud, wenn die Regeln sie brauchen)
@@ -149,9 +150,19 @@ final class LibraryStore {
         }
     }
 
+    /// Tracks ohne Datei (Quelle MISSING): Cloud-Scan „fehlt“, sonst die Ladeprüfung (fileExists). Zwischenspeicher je Stand
+    var missingTracks: [Track] {
+        let cloud = CloudLibrary.shared
+        if let c = missingCache, c.rev == revision, c.cloud == cloud.revision { return c.list }
+        let list = tracks.filter { t in cloud.peek(t.path).map { $0 == .missing } ?? !t.fileExists }
+        missingCache = (revision, cloud.revision, list)
+        return list
+    }
+
     /// Änderungszähler einer Quelle zusätzlich zu `revision` (Browser-Zwischenspeicher)
     func sourceRevision(_ s: BrowserSource, subfolders: Bool = false) -> Int {
         switch s {
+        case .missing: CloudLibrary.shared.revision
         case .running: runningRevision
         case .preparation: preparationRevision
         case let .own(r): ownRevision(r)
@@ -794,6 +805,7 @@ final class LibraryStore {
         case .cuts: return cuts
         case .toolLoops: return toolLoops
         case .ripTodo: return RipChecks.shared.openKeys.compactMap { track($0) }
+        case .missing: return missingTracks
         case .daw: return dawTracks
         case .history, .historyLive: return []
         case .prepArchive: return []   // löst BrowserPaneModel über den HistoryStore auf
@@ -825,6 +837,8 @@ enum BrowserSource: Hashable {
     case toolLoops
     /// Tracks mit offenem Befund der Rip-Prüfung
     case ripTodo
+    /// Tracks ohne Datei (Cloud „fehlt“ bzw. Ladeprüfung); Eintrag unter den Sammlungen, nur mit Anzahl > 0
+    case missing
     /// Clips der laufenden DAW (Live-Brücke)
     case daw
     case node(PlaylistNode)
@@ -844,6 +858,7 @@ enum BrowserSource: Hashable {
         case .cuts: "Cuts"
         case .toolLoops: "Tool-Loops"
         case .ripTodo: "Zu bearbeiten"
+        case .missing: "MISSING"
         case .daw: "DAW"
         case let .node(n): n.name
         case .historyLive: "History"

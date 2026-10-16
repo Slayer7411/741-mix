@@ -103,6 +103,28 @@ enum TrackMenu {
         var dawGrid: () -> Void = {}
         var eject: () -> Void = {}
         var rate: (Int) -> Void = { _ in }
+        // Kopieren, Suche, Auswahl (Browser und Deck)
+        var copyArtistTitle: () -> Void = {}
+        var copyPath: () -> Void = {}
+        var search: (String) -> Void = { _ in }
+        var selectAll: () -> Void = {}
+    }
+
+    /// „Artist – Titel“ ohne fehlende Teile
+    static func artistTitle(_ t: Track) -> String { [t.artist, t.title].filter { !$0.isEmpty }.joined(separator: " – ") }
+
+    /// Text in die Zwischenablage
+    static func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// Untermenü „Bewertung“: aktuelle Stufe abgehakt (nil bei mehreren Tracks)
+    static func rating(_ current: Int?, enabled: Bool = true, _ a: Actions) -> TrackMenuItem {
+        let stars = (0...5).map { n in
+            TrackMenuItem.action(n == 0 ? String(localized: "Keine") : String(repeating: "★", count: n), checked: current == n) { a.rate(n) }
+        }
+        return .submenu(String(localized: "Bewertung"), enabled: enabled, stars)
     }
 
     // MARK: Gemeinsame Teile
@@ -147,6 +169,11 @@ enum TrackMenu {
         var ownPlaylist = false
         var cloud = false
         var playlists: [PlaylistItem] = []
+        /// Artist und Label des ersten Tracks der Auswahl (Suche)
+        var artist = ""
+        var label = ""
+        /// Bewertung des einzelnen Tracks; nil bei mehreren
+        var rating: Int?
     }
 
     /// Rechtsklick in der Tabelle (Auswahl oder Zeile)
@@ -157,6 +184,8 @@ enum TrackMenu {
         edit.key = "e"
         m.append(edit)
         if f.hasEdits { m.append(.action(String(localized: "Eigene Änderungen verwerfen")) { a.revertEdits() }) }
+        m.append(.separator)
+        m.append(rating(f.rating, a))
         m.append(.separator)
         m += analysis(discard: f.hasAnalysis, rip: rip, a)
         m.append(.separator)
@@ -173,6 +202,11 @@ enum TrackMenu {
         if f.cloud { m.append(.action(String(localized: "Bereitmachen (herunterladen)")) { a.makeReady() }) }
         m.append(.action(String(localized: "Vorhören")) { a.preview() })
         m.append(.action(String(localized: "Im Finder zeigen")) { a.finder() })
+        m.append(.action(String(localized: "Artist – Titel kopieren")) { a.copyArtistTitle() })
+        m.append(.action(String(localized: "Pfad kopieren")) { a.copyPath() })
+        m.append(.action(String(localized: "Nach Artist suchen"), enabled: !f.artist.isEmpty) { a.search(f.artist) })
+        m.append(.action(String(localized: "Nach Label suchen"), enabled: !f.label.isEmpty) { a.search(f.label) })
+        m.append(.action(String(localized: "Alle auswählen")) { a.selectAll() })
         m.append(.separator)
         m.append(.action(String(localized: "Reset Played State")) { a.resetPlayed() })
         return m
@@ -216,7 +250,10 @@ enum TrackMenu {
         }
         var m: [TrackMenuItem] = [.action(String(localized: "Track bearbeiten …")) { a.edit() },
                                   .action(String(localized: "Im Browser zeigen"), enabled: f.revealable) { a.reveal() },
-                                  .action(String(localized: "Im Finder zeigen")) { a.finder() }]
+                                  .action(String(localized: "Im Finder zeigen")) { a.finder() },
+                                  .action(String(localized: "Pfad kopieren")) { a.copyPath() },
+                                  .action(String(localized: "Artist – Titel kopieren")) { a.copyArtistTitle() },
+                                  .action(String(localized: "Vorhören")) { a.preview() }]
         for t in 0..<max(f.decks, f.deck + 1) where t != f.deck {
             m.append(.action(String(localized: "Auf Deck \(deckLetters[t]) kopieren")) { a.copy(t) })
         }
@@ -232,10 +269,7 @@ enum TrackMenu {
         m.append(.action(String(localized: "Vorschau berechnen")) { a.overview() })
         m += rip
         m.append(.separator)
-        let stars = (0...5).map { n in
-            TrackMenuItem.action(n == 0 ? String(localized: "Keine") : String(repeating: "★", count: n), checked: f.rating == n) { a.rate(n) }
-        }
-        m.append(.submenu(String(localized: "Bewertung"), enabled: f.rateable, stars))
+        m.append(rating(f.rating, enabled: f.rateable, a))
         return m
     }
 
@@ -279,6 +313,9 @@ enum TrackMenu {
             a.discardAnalysis = { store.discardAnalysis([key]) }
             a.overview = { Overviews.shared.enqueue(tracks()) }
             a.rate = { store.applyEdits([key: [.rating: String($0)]], writeBack: mix.prefs.ui.writeCollection) }
+            a.preview = { mix.preview(t) }
+            a.copyArtistTitle = { TrackMenu.copy(TrackMenu.artistTitle(t)) }
+            a.copyPath = { TrackMenu.copy(t.path) }
         }
         return deckItems(f, rip: rip, a).menu()
     }
@@ -332,9 +369,11 @@ extension TrackTableController {
         guard let store, let model else { return TrackMenu.BrowserFacts() }
         var preparation = false
         if case .preparation = model.source { preparation = true }
+        let first = ids.lazy.compactMap { store.track($0) }.first
         return TrackMenu.BrowserFacts(hasEdits: store.hasEdits(ids), hasAnalysis: store.hasAnalysis(ids), preparation: preparation,
                                       ownPlaylist: model.ownPlaylistID != nil, cloud: CloudLibrary.shared.hasCloudTracks,
-                                      playlists: store.playlists.items)
+                                      playlists: store.playlists.items, artist: first?.artist ?? "", label: first?.label ?? "",
+                                      rating: ids.count == 1 ? first?.rating : nil)
     }
 
     /// Kontextmenü (TrackMenu): Aktionen für die Auswahl
@@ -360,6 +399,14 @@ extension TrackTableController {
         a.preview = { [weak mix] in if let id = ids.first, let t = store.track(id) { mix?.preview(t) } }
         a.finder = { NSWorkspace.shared.activateFileViewerSelecting(tracks().map { URL(fileURLWithPath: $0.path) }) }
         a.resetPlayed = { [weak history] in history?.resetPlayed(keys: Set(keys)) }   // nur die gewählten Tracks
+        a.copyArtistTitle = { TrackMenu.copy(tracks().map(TrackMenu.artistTitle).joined(separator: "\n")) }
+        a.copyPath = { TrackMenu.copy(tracks().map(\.path).joined(separator: "\n")) }
+        a.search = { [weak model] text in model?.search = text }
+        a.selectAll = { [weak model] in model?.selection = Set(rows.map(\.id)) }
+        a.rate = { [weak mix] n in
+            guard let mix else { return }
+            store.applyEdits(Dictionary(uniqueKeysWithValues: keys.map { ($0, [TrackField.rating: String(n)]) }), writeBack: mix.prefs.ui.writeCollection)
+        }
         return a
     }
 }

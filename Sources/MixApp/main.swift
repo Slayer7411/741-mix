@@ -327,6 +327,8 @@ struct MixApp: App {
                     .shortcut(keys.combo(.redo)).disabled(u.redoLabel == nil)
             }
             CommandGroup(before: .toolbar) {
+                Toggle(String(localized: "Hilfe-Modus"), isOn: Binding(get: { HelpMode.shared.enabled }, set: { HelpMode.shared.enabled = $0 }))
+                Divider()
                 Toggle("Mixer", isOn: Binding(get: { mix.prefs.ui.showMixer }, set: { mix.prefs.ui.showMixer = $0 }))
                     .shortcut(keys.combo(.toggleMixer))
                 Picker("Decks", selection: Binding(get: { mix.prefs.ui.deckCount }, set: { mix.prefs.ui.deckCount = $0 })) {

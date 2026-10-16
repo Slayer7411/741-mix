@@ -140,6 +140,12 @@ click on the meters -> details (keylock lookahead, own vs device overloads).
 * every key action of KEYBOARD and the controller blocks are in the index too (`loop` also finds the loop key)
 * click or enter -> opens the section, scrolls to the row and marks it purple for 1.5 s. ↑ / ↓ selects a result. the search stays until cleared or a section is clicked; `◆ n TREFFER` under the field returns to the list. a hidden row (e.g. preset fields while the waveform style is not 3-band) -> the row that shows it
 
+### help mode
+
+* `?` in the top bar (or menu View -> `Hilfe-Modus`) switches it on. rest the mouse 2 s over a control: a small card with name, function and key (if assigned). off: nothing changes, the normal tooltips stay
+* the card is in the app language (german / english). texts in one table (`HelpTable`); covered: top bar clock (LINK, AUTO, MASTER, TAP), deck transport and sync, loop, hotcues, beatjump, FX assign, mixer fader, browser chips (TAGS, UNGESPIELT, ◆ PASST), tree rows, FX slots, RIP
+* one timer at a time while the mode is on; no work per frame
+
 ## ◆ 04 · DECKS
 
 ### header
@@ -178,7 +184,7 @@ anywhere on the deck (header, cover, tags, readouts, overview, empty space) -> t
 
 * `Track bearbeiten …`: edit window, PREV / NEXT through the list of the active pane
 * `Im Browser zeigen`: selects the track in the active pane and scrolls to it. not in the list -> TRACK COLLECTION, search and filters cleared (UNPLAYED off if the track is played)
-* `Im Finder zeigen`
+* `Im Finder zeigen`, `Pfad kopieren`, `Artist – Titel kopieren`, `Vorhören`
 * `Auf Deck … kopieren`: instant double onto that deck (load lock applies)
 * `Grid des DAW-Clips übernehmen` (only with a DAW clip of the same file)
 * `Auswerfen`: empties the deck (also a running load or a load error). greyed out while the deck plays
@@ -264,6 +270,7 @@ anywhere on the deck (header, cover, tags, readouts, overview, empty space) -> t
 
 ## ◆ 05 · WAVEFORM + GRID
 
+* `−` / `+` bottom right in every deck waveform: zoom out / in, steps 1 · 1.5 · 2 · 3 · 4 · 6 · 8 · 12 · 16 s per side, all decks together (same as ⌘, -> DISPLAY -> visible seconds)
 * rendered as bitmap tiles in screen resolution (background thread) -> sharp at any zoom, no load on the render server
 * smooth edges: zoomed in (a block wider than a device pixel) the height runs linearly between block centres, zoomed out a column takes the highest block, edge blocks count by their share of the column. the top pixel row gets alpha by the share the peak reaches. 3-band blend: single-block notches in the peaks are filled (no comb of bright / dark columns at 1 block per pixel). spectrum / mono: outline through the block centres
 * height = real file level, full height = 0 dBFS, no normalizing -> loud masters look loud
@@ -601,7 +608,7 @@ GROOVE  HATS+BASS ▾  OFF ▾  [ 16-step grid ]  ⚄  ▶ MIDI  ■  .MID
 per channel (order C · A · B · D):
 
 * gain + auto-gain (loudness from the collection)
-* eq hi / mid / lo, knob fully left = kill (setting)
+* eq hi / mid / lo: low shelf 100 Hz, bell 1 kHz, high shelf 10 kHz, −26 … +12 dB, double click = 0 dB. fully left = kill (−40 dB, setting). in the deck header when the mixer is hidden. changes are smoothed (~15 ms)
 * one-knob filter: left = low pass, right = high pass
 * fx assign, channel fader, crossfader assign + curve (smooth / sharp)
 * headroom per mode (internal default −3 dB)
@@ -610,7 +617,7 @@ per channel (order C · A · B · D):
 ### external mode
 
 * every deck on its own pair, default A 1/2 · B 3/4 · C 5/6 · D 7/8
-* gain / eq / fader happen on your desk
+* gain / fader happen on your desk. eq too, unless `EQ in external mode` (⌘, -> MIXER & FX) is on: then the same hi / mid / lo knobs work per deck before its pair (default off, the desk's eq stays in the chain)
 * own headroom and auto-gain setting, main volume off by default
 * metronome on an own pair
 * record the desk's sum through its usb input -> [16 · recording](#-16--recording)
@@ -816,7 +823,7 @@ insert slots on the sum of the decks, after the faders and the crossfader, befor
 * sort by up to three columns: click a header -> that column sorts first, the previous ones stay behind it (`▼`, `▼2`, `▲3`); click the first again = reverse. right click the header -> take a column out, `Sortierung zurücksetzen`. saved with the session
 * stacked: the pane header is a column left of the list (more rows per pane)
 * favorites bar on top of each pane: 6 slots, source or filter. click = switch, right click = assign / rename / clear, drag a tree entry onto a slot, ⌃⌥1-6. details: [library · favorites](library.md#-favorites)
-* tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), TOOL-LOOPS (cut files with the tag `tool-loop`, see [full edit](#full-edit--tool-loops)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, MUSIC FOLDERS, PLAYLISTS (see [playlists](#playlists))
+* tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), TOOL-LOOPS (cut files with the tag `tool-loop`, see [full edit](#full-edit--tool-loops)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, MUSIC FOLDERS, PLAYLISTS (see [playlists](#playlists)), MISSING (tracks without a file, see [missing + tidal](#missing--tidal), only shown while there are some)
 * MUSIC FOLDERS = the music library on disk, folder by folder. click a folder -> its audio files (mp3, m4a, aac, aiff, wav, flac, ogg, opus)
   * files in the collection show bpm, key, tags, comments like everywhere else
   * files not in the collection are grey, no grid, load and preview anyway
@@ -865,6 +872,11 @@ one tree PLAYLISTS: own folders, playlists and smartlists first, below them the 
 * detail bar below the list (default: on with two lines): cover, artist – title (mix), album, label, cat no, genre, bpm, key (harmony colors), length, comment, tags (click = filter), rating, plays, last played, file (click = show in finder). selected track, with several selected the last clicked one. one line from 1500 pt pane width, else two. follows arrows and controller browse without a list rebuild (~0.5 ms per step)
 * short values (⌘, -> BROWSER, on): version at the title end as a small tag (`Original Mix` -> `OM`, `Extended Mix` -> `EXT`, `Foo Remix` -> `Foo RMX`, radio edit, dub, vip, instrumental …, case ignored), title and artist cut in the middle when too long (the end stays visible), bpm without decimals when within 0.05 of a whole number (else one), import / last played `14.10.` (younger than ~11 months) or `Okt 24`. sort and search use the full values
 * selection: red tint (32 %, without focus 20 %) and a 2 pt red stripe at the left of every selected row
+
+### right click
+
+* track rows (selection or the row under the mouse): `In Deck A … D laden`, `Bearbeiten …`, `Eigene Änderungen verwerfen`, `Bewertung ▸` (0-5 stars, the current one checked; several tracks: no check), `Analysieren`, `Neu analysieren`, `Analyse verwerfen`, `Rip prüfen`, `An Preparation anhängen`, `Aus Preparation entfernen`, `Zur Playlist hinzufügen ▸`, `Aus Playlist entfernen` (⌫), `Bereitmachen (herunterladen)` (cloud), `Vorhören`, `Im Finder zeigen`, `Artist – Titel kopieren`, `Pfad kopieren` (one line per track), `Nach Artist suchen`, `Nach Label suchen` (first track of the selection), `Alle auswählen`, `Reset Played State`
+* collection: `Exportieren`, `Collection prüfen …`, `Collection neu laden`, `Reset Played State`, `Gespielte Tracks ausblenden`, `Vorschauen berechnen`, analysis, `Bereitmachen`. music folder: `Neu einlesen`, `Pfad kopieren`, `Im Finder zeigen`
 
 ### harmony + matching
 
@@ -1054,6 +1066,22 @@ BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION. read o
 * 6 files at a time. 14,160 tracks on a local drive: ~5 s
 * `NEW` needs the music folder scan (setting, on by default)
 * ⌘, -> BROWSER -> check collection: check on start (off), scan music folders (on)
+
+### missing + tidal
+
+tree entry `MISSING n` (under ZU BEARBEITEN, only while at least one track has no file): the tracks whose file is missing. same data as the check above: cloud status `fehlt`, else the load check at start (`fehlen n` in the console). sortable like any list, export and overview work too.
+
+* header `→ TIDAL` (gray without client id): creates a playlist on TIDAL from the missing tracks. each track is searched by artist and title (no `(Original Mix)`-style suffixes), a hit counts when the title and artist match and the duration is within 5 s when both are known
+* name of the playlist: ⌘, -> BROWSER -> TIDAL, pattern `missing-%y%m%d` (`%Y` year, `%y` two digits, `%m`, `%d`). the playlist is created UNLISTED; each run creates a new one
+* progress and ✕ in the status bar. result e.g. `TIDAL: 231 von 254 gefunden · Playlist missing-261016`. `NICHT GEFUNDEN n` opens the tracks without a hit (artist – title) with COPY
+* login: the first run opens TIDAL in the browser. the answer comes back to `http://localhost:7412/tidal/callback` on this mac only. tokens go to the keychain (service `MINOS-741 TIDAL`) and are refreshed on their own; ⌘, -> BROWSER -> TIDAL -> sign out deletes them
+
+setup, once, on developer.tidal.com:
+
+1. create an app, public client (no client secret)
+2. redirect URI: `http://localhost:7412/tidal/callback`
+3. scopes: `user.read`, `playlists.read`, `playlists.write`, `search.read`
+4. ⌘, -> BROWSER -> TIDAL -> client ID: the id of the app (it is not a secret, it stays in the settings)
 
 ## ◆ 10 · TAGS + SMARTLISTS
 
