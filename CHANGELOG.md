@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* data folder `MINOS-741/` next to the collection file: settings (`settings.plist`), analyses, edits, cuts, own playlists, played, history, preparation and the session. moves with the collection, the same collection plus folder gives the same session on any mac. filled once from application support on first start (copy, the old folder stays). caches, previews, load tests and the plugin list stay local, as do audio device, channel pairs, controller serials and the two-mac role
 * EXPLORER search: field at the top of the tree finds folders and audio files by name on all drives (spotlight, plus a direct walk of unindexed drives such as usb sticks, google drive included). hits are folders that open like the rest of the tree, a click lists their files
 * two macs as one session (⌘, -> DECKS -> Zwei Macs): mac 1 plays decks A/C, mac 2 decks B/D, each through its own interface. pairing over bonjour (`_minos741._tcp`) on ethernet, usb-c/thunderbolt bridge or the same network, no setup. played marks shared both ways (merged on connect), link turns on when connected, only mac 1 writes to the collection. unit tests (protocol)
 * browser preview: text over the band up to 15 · 16 · 18 pt
@@ -67,6 +68,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * browser big / decks toggle: 0.1 s ease-out on the heights, the decks stay in place (bench `toggle`, median 60 -> 11 ms to big, 68 -> 13 ms back)
 
 ### fixed
+* collection backup before every write (was at most hourly), the newest 30 kept in `Backup MINOS-741`
 * analysis grid: anchor on the kick (bass × rest onset with ±10 ms tolerance plus the measured window lead) instead of a ±40 ms fine search that often caught a hat or bass note one 8th / 16th next to the kick. against set collection grids (155 tracks): 16th errors 14 -> 3
 * browser preview: loose files (MUSIC FOLDERS, EXPLORER) get waveform, grid and cues in visible rows (were skipped, analysed tracks stayed empty)
 * decks: edit mode switched on by the prepare row or AUDIO-EDIT was saved and stuck after a restart (cut row instead of loop sizes, grid row, no edit button in a view without the transport row). borrowed edit mode is no longer saved; deck right click `EDIT-Modus beenden`

@@ -501,6 +501,7 @@ struct AppPrefs: Codable, Equatable {
     func save() {
         guard !Session.isSelfTest else { return }   // Selbsttest darf Christians Einstellungen nicht überschreiben
         if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.key) }
+        SettingsFile.scheduleExport()
     }
 }
 

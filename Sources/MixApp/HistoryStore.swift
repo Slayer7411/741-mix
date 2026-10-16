@@ -6,8 +6,8 @@ import MixEngine
 /// History und Preparation-Archiv – gespeichert als NML, direkt in die Collection importierbar.
 @MainActor @Observable
 final class HistoryStore {
-    static let baseDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("MINOS-741")
+    /// Datenordner neben der Collection (DataDir)
+    nonisolated static var baseDir: URL { DataDir.shared }
     static let historyDir = baseDir.appendingPathComponent("History")
     static let prepDir = baseDir.appendingPathComponent("Preparation")
     static let externalHistoryDir = LibraryStore.defaultNML.deletingLastPathComponent().appendingPathComponent("History")

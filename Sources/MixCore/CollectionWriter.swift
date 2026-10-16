@@ -317,7 +317,11 @@ public enum CollectionWriter {
         }
     }
 
-    /// Sicherung `collection_JJJJ-MM-TT_HHMMSS.nml` in `dir`; nil, wenn die letzte jünger als `minInterval` ist
+    /// so viele Sicherungen bleiben, ältere fallen weg
+    public static let keepBackups = 30
+
+    /// Sicherung `collection_JJJJ-MM-TT_HHMMSS.nml` in `dir`; nil, wenn die letzte jünger als `minInterval` ist.
+    /// Danach nur die neuesten `keepBackups`
     public static func backup(_ url: URL, into dir: URL, now: Date, minInterval: TimeInterval = 3600) throws -> URL? {
         let fm = FileManager.default
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -330,6 +334,10 @@ public enum CollectionWriter {
         let target = dir.appendingPathComponent("collection_\(f.string(from: now)).nml")
         guard !fm.fileExists(atPath: target.path) else { return nil }
         try fm.copyItem(at: url, to: target)
+        let all = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? [])
+            .filter { $0.hasPrefix("collection_") && $0.hasSuffix(".nml") && f.date(from: String($0.dropFirst("collection_".count).dropLast(4))) != nil }
+            .sorted()
+        for old in all.dropLast(keepBackups) { try? fm.removeItem(at: dir.appendingPathComponent(old)) }
         return target
     }
 

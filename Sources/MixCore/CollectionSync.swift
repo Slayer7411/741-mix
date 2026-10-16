@@ -536,7 +536,7 @@ extension CollectionWriter {
         guard bytes != [UInt8](data) else { return res }
         let out = Data(bytes)
         try validate(before: data, after: out, job: job, result: res)
-        if let backupDir { res.backup = try backup(url, into: backupDir, now: now) }
+        if let backupDir { res.backup = try backup(url, into: backupDir, now: now, minInterval: 0) }
         try replaceAtomically(url, with: out)
         res.changed = true
         res.stamp = FileStamp(url: url)
