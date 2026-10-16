@@ -449,6 +449,8 @@ struct ExplorerTree: View {
     @State private var open = false
     @State private var expanded: Set<String> = []
     @State private var volumes: [URL] = ExplorerTree.mountedVolumes()
+    @State private var text = ""
+    @State private var search = ExplorerSearch()
 
     static func mountedVolumes() -> [URL] {
         let keys: [URLResourceKey] = [.volumeIsRootFileSystemKey, .volumeNameKey]
@@ -465,14 +467,26 @@ struct ExplorerTree: View {
 
     var body: some View {
         DisclosureGroup(isExpanded: $open) {
-            ForEach(volumes, id: \.self) { v in
-                MusicFolderRow(path: v.path, expanded: $expanded)
-                    .contextMenu {
-                        Button("Auswerfen") { try? NSWorkspace.shared.unmountAndEjectDevice(at: v) }
-                        Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([v]) }
-                    }
+            TextField("Suchen (Ordner, Dateien)", text: $text)
+                .textFieldStyle(.plain)
+                .font(Theme.mono(11.z))
+                .onChange(of: text) { search.run(text) }
+            if !text.isEmpty {
+                // Treffer: Ordner wie oben aufklappbar, Klick zeigt die Dateien in der Liste
+                ForEach(search.folders, id: \.self) { MusicFolderRow(path: $0, expanded: $expanded) }
+                if search.folders.isEmpty {
+                    Text(search.running ? "sucht …" : "nichts gefunden").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
+                }
+            } else {
+                ForEach(volumes, id: \.self) { v in
+                    MusicFolderRow(path: v.path, expanded: $expanded)
+                        .contextMenu {
+                            Button("Auswerfen") { try? NSWorkspace.shared.unmountAndEjectDevice(at: v) }
+                            Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([v]) }
+                        }
+                }
+                ForEach(Self.places, id: \.self) { MusicFolderRow(path: $0, expanded: $expanded) }
             }
-            ForEach(Self.places, id: \.self) { MusicFolderRow(path: $0, expanded: $expanded) }
         } label: {
             MusicFolderRow.label("⌂", "EXPLORER")
         }
