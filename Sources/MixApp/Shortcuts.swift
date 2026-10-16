@@ -71,6 +71,10 @@ extension ShortcutID: Identifiable {
         case .compactDecks: String(localized: "Kompakte Decks (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge)")
         case .profile1, .profile2, .profile3, .profile4: String(localized: "Profil \((index ?? 0) + 1)")
         case .profileNext: String(localized: "Nächstes Profil")
+        case .audioEdit: String(localized: "AUDIO-EDIT-Modus ein/aus")
+        case .audioEditPrev: String(localized: "AUDIO-EDIT: zurück")
+        case .audioEditNext: String(localized: "AUDIO-EDIT: weiter")
+        case .audioEditDone: String(localized: "AUDIO-EDIT: erledigt und weiter")
         case .zoomIn: String(localized: "Vergrößern")
         case .zoomOut: String(localized: "Verkleinern")
         case .zoomReset: String(localized: "Originalgröße")
@@ -232,6 +236,10 @@ struct AppActions {
         case .profile1, .profile2, .profile3, .profile4: LayoutProfiles.apply(at: a.index ?? 0, mix: mix, browser: browser)
         case .profileNext: LayoutProfiles.next(mix: mix, browser: browser)
         case .zoomIn, .zoomOut, .zoomReset: ZoomControl.step(a, mix: mix)
+        case .audioEdit: AudioEditMode.shared.toggle()
+        case .audioEditPrev: AudioEditMode.shared.previous()
+        case .audioEditNext: AudioEditMode.shared.next()
+        case .audioEditDone: AudioEditMode.shared.done()
         case .openCollection:
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [.init(filenameExtension: "nml")!]

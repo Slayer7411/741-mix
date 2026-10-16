@@ -22,6 +22,9 @@ final class AnalysisJobHandler: OverviewJobHandler, @unchecked Sendable {
     private var samples: [(key: String, chroma: [Double], code: Int)] = []
     private var profiles: TrackAnalyzer.KeyProfiles?
 
+    /// Beginn (true) und Ende (false) der Arbeit an einem Track: Stand für die Arbeitsliste des Audio-Edit-Modus
+    var onRun: (@Sendable (String, Bool) -> Void)?
+
     init(store: AnalysisStore, rips: RipCheckStore) { self.store = store; self.rips = rips }
 
     static func learnKey(_ track: String) -> String { "learn:" + track }
@@ -41,6 +44,9 @@ final class AnalysisJobHandler: OverviewJobHandler, @unchecked Sendable {
 
     func isDone(_ job: OverviewJobs.Job) -> Bool { take(job.key) == nil && learnCode(job.key) == nil }
 
+    /// in der Warteschlange (noch nicht fertig)
+    func waiting(_ key: String) -> Bool { take(key) != nil }
+
     func run(_ job: OverviewJobs.Job, checkpoint: () throws -> Void) throws {
         if let code = learnCode(job.key) {
             // nur lokale Dateien: nichts herunterladen
@@ -51,6 +57,8 @@ final class AnalysisJobHandler: OverviewJobHandler, @unchecked Sendable {
             return
         }
         guard let w = take(job.key) else { return }
+        onRun?(job.key, true)
+        defer { onRun?(job.key, false) }
         lock.lock(); let p = profiles; lock.unlock()
         let t0 = Date()
         // Grid der Prüfung: neu gerechnetes Tempo, sonst das des Tracks
@@ -107,9 +115,18 @@ final class Analyses {
     /// Einstellung: Rip-Prüfung mit jeder Analyse
     @ObservationIgnored var ripWithAnalysis: () -> Bool = { true }
     @ObservationIgnored private var ripOnly = 0
+    /// Tracks, an denen gerade gerechnet wird (Arbeitsliste des Audio-Edit-Modus)
+    private(set) var running: Set<String> = []
 
     private init() {
         handler = AnalysisJobHandler(store: store, rips: RipChecks.shared.store)
+        handler.onRun = { key, started in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if started { Analyses.shared.running.insert(key) } else { Analyses.shared.running.remove(key) }
+                }
+            }
+        }
         jobs.handler = handler
         jobs.setMode(.off)   // nur der Rechtsklick-Stapel
         store.onChange = { key in
@@ -190,6 +207,20 @@ final class Analyses {
             return fields.isEmpty && !r ? nil : (fields, full, r)
         }
     }
+
+    /// Import-Lauf (Audio-Edit): fehlende Werte und die Rip-Prüfung, sofern sie noch nicht in der aktuellen Fassung vorliegt.
+    /// Unabhängig von der Einstellung „Rip-Prüfung bei der Analyse“
+    func enqueueImport(_ tracks: [Track]) {
+        let checked = RipChecks.shared.store.all
+        enqueue(tracks, refresh: false) { t in
+            let fields = TrackAnalysis.missing(in: t)
+            let r = checked[t.key].map { $0.version < RipCheck.version } ?? true
+            return fields.isEmpty && !r ? nil : (fields, false, r)
+        }
+    }
+
+    /// in der Warteschlange oder gerade in Arbeit
+    func isQueued(_ key: String) -> Bool { handler.waiting(key) }
 
     /// Rechtsklick -> Rip prüfen: nur die Prüfung (Grid des Tracks, ohne Grid wird das Tempo dafür gerechnet)
     func enqueueRip(_ tracks: [Track]) {

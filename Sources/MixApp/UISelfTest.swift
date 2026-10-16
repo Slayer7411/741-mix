@@ -134,6 +134,7 @@ enum UISelfTest {
             ("deck-groessen", deckSizes),
             ("insert-slots", insertSlots),
             ("zweizeilig", twoLineRows),
+            ("audio-edit", audioEdit),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1239,6 +1240,37 @@ extension UISelfTest {
     /// Profil „Vorbereiten“ an Deck A mit einer eigenen WAV (16 Bit, Spitze 0.5, 120 BPM, im Temp-Ordner): Werkzeugzeile
     /// da, Deck im EDIT-Modus, Klick auf +3 -> Gain +3 dB, Klick auf RENDER -> `[amp +3].wav` im Test-Ordner mit
     /// Spitze × 1,41. MIX741_UITEST_PREPSHOT=<png>: Bild des Fensters. Danach Ansicht und Deck A wie vorher
+    /// AUDIO-EDIT: Import-Lauf über drei Tracks, ein Deck, WEITER lädt den nächsten, ERLEDIGT markiert, Verlassen stellt die Ansicht her
+    static func audioEdit(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, m = AudioEditMode.shared, d = AudioEditMode.deck
+        if mix.deck(d).playing { mix.togglePlay(d) }
+        let before = LayoutProfile(name: "", ui: mix.prefs.ui, maximized: u.browser.maximized)
+        let tracks = Array(t.prefix(3))
+        check(tracks.count >= 2, "audio-edit: weniger als zwei Tracks")
+        m.importRun(tracks, title: "UITest")
+        u.spin(20) { m.active && mix.deck(d).track != nil && !mix.deck(d).loading }
+        check(m.active, "audio-edit: Modus nicht an")
+        check(!m.list.isEmpty, "audio-edit: Arbeitsliste leer")
+        check(mix.prefs.ui.deckCount == 1, "audio-edit: nicht ein Deck (\(mix.prefs.ui.deckCount))")
+        check(mix.deck(d).track?.key == m.list[0].key, "audio-edit: Deck A lädt nicht den ersten Track")
+        if m.list.count >= 2 {
+            let second = m.list[1].key
+            m.next()
+            u.spin(20) { mix.deck(d).track?.key == second && !mix.deck(d).loading }
+            check(mix.deck(d).track?.key == second, "audio-edit: WEITER lädt nicht den nächsten Track")
+            let first = m.list[1].key
+            m.done()
+            check(m.store.isReviewed(first), "audio-edit: ERLEDIGT markiert nicht")
+        }
+        let n = m.list.count
+        m.leave()
+        check(!m.active, "audio-edit: nicht verlassen")
+        let after = LayoutProfile(name: "", ui: mix.prefs.ui, maximized: u.browser.maximized)
+        check(after.sameView(as: before), "audio-edit: Ansicht nach dem Verlassen anders")
+        m.store.reset()
+        log("audio-edit: \(n) Tracks · WEITER lädt · ERLEDIGT · Verlassen stellt die Ansicht her")
+    }
+
     static func prepareMode(_ u: UIDriver, _ t: [Track]) {
         let mix = u.mix, d = 0
         if mix.deck(d).playing { mix.togglePlay(d) }
