@@ -258,8 +258,8 @@ final class ControllerManager: @unchecked Sendable {
                 u.info.fxUnit = s.fxUnit
                 u.resetLEDs()
                 if ControllerSides.isStable(k) { self.storeSide(k, s) }
-                // Decks der neuen Seite zeigen (ohne Sturm)
-                if self.prefs.startShow { u.startShow(at: LEDShow.stormEnd) }
+                // Decks der neuen Seite zeigen (ohne Sturm, mitten im Einpendeln)
+                if self.prefs.startShow { u.startShow(at: LEDShow.sideAt) }
                 changed.append(u.info)
                 self.announce(u.info)
             }
@@ -584,7 +584,7 @@ final class ControllerUnit {
     private(set) var showStart: TimeInterval?
     private var showSeed: UInt32 = 0
 
-    /// Sequenz starten, at = Einstieg in Sekunden (LEDShow.stormEnd = gleich die Decks)
+    /// Sequenz starten, at = Einstieg in Sekunden (LEDShow.sideAt = Decks der Seite)
     func startShow(at offset: Double = 0) {
         showStart = ProcessInfo.processInfo.systemUptime - offset
         showSeed = UInt32.random(in: 0 ... .max)
@@ -598,7 +598,7 @@ final class ControllerUnit {
     /// nächster LED-Takt schickt alles neu
     func resetLEDs() { lastLED = []; lastDisplay = [] }
 
-    /// LED-Takt: Bild der laufenden Sequenz (beim Ausdimmen in den normalen Zustand gemischt) oder normaler Zustand
+    /// LED-Takt: Bild der laufenden Sequenz (LEDs im normalen Zustand übernehmen den normalen Report) oder normaler Zustand
     func sendLEDs(state: MixState, prefs: ControllerPrefs) {
         let on = UInt8(max(0, min(127, prefs.ledOn))), dim = UInt8(max(0, min(127, prefs.ledOff)))
         var show: LEDShow.Frame?
@@ -608,11 +608,10 @@ final class ControllerUnit {
         }
         var led: [UInt8], disp: [UInt8]
         if let f = show {
-            (led, disp) = LEDShow.reports(f, peak: on)
-            if f.mix > 0 {
-                LEDShow.blend(&led, toward: ledReport(state: state, prefs: prefs, on: on, dim: dim), f.mix)
-                LEDShow.blend(&disp, toward: displayReport(state: state), f.mix)
-            }
+            // normaler Zustand, im Atempuls kurz gedimmt
+            let normal = (led: ledReport(state: state, prefs: prefs, on: LEDShow.breathPeak(on, f.breath), dim: dim),
+                          display: displayReport(state: state))
+            (led, disp) = LEDShow.reports(f, peak: on, normal: normal)
         } else {
             led = ledReport(state: state, prefs: prefs, on: on, dim: dim)
             disp = displayReport(state: state)

@@ -15,14 +15,14 @@ supported: the 2-deck hid controller with vid `0x17cc`, pid `0x1220` (usage page
 ## ◆ STARTUP SHOW
 
 on every connect (app start, replug, wake) ~8.9 s on all leds of the unit, then the normal state:
-* 0-5 s storm: 0-1.2 s dark red embers with denser sparks, 1.2-3.5 s purple chase over the pads and the touch strip with red trails and white sparks in two rounds (second one reversed, faster, more sparks), 3.5-5 s strobe getting denser and whiter
-* 5-6.2 s decks of the side: 7 segment displays `-A-` / `-C-` (right unit `-b-` / `-d-`), left pads + left half of the strip purple, right side red, deck buttons lit
-* 50 ms black, 6.25-7.35 s white flash (holds)
-* 7.35-8.85 s fade from white into the normal state of every led (cosine curve, both reports mixed byte by byte with the normal ones), ready
+* 0-1.2 s dark red embers with denser sparks, 1.2-3.5 s purple chase over the pads and the touch strip with red trails and white sparks in two rounds (second one reversed, faster, more sparks)
+* 3.5-5 s chaos: dense random red / purple / white flicker on pads, buttons, strip and displays
+* 5-8.4 s settle: the flicker gets rarer and steadier, leds drop one by one into their normal state, group after group: pads (5-6.2 s), buttons (6-7.2 s), 7 segment displays (7-8 s), touch strip (7.2-8.4 s). until a display settles it shows the decks of the side: `-A-` / `-C-` (right unit `-b-` / `-d-`)
+* 8.4-8.9 s normal state with one short breath pulse (brightness dips 25 % and back), ready
 * colors: 741 red, bone white, purple. brightness max = `led brightness on`
 * any input stops it, the input works as usual
-* runs on the control queue in the 30 ms led tick, pure generator time -> frame (`LEDShow`)
-* ⌘, -> CONTROLLER -> LEDS -> `Startsequenz beim Verbinden` (default on), button `Startsequenz` per device plays it again. a side change shows the decks part
+* runs on the control queue in the 30 ms led tick, pure generator time -> frame (`LEDShow`); a led that is already in its normal state takes its bytes from the normal report
+* ⌘, -> CONTROLLER -> LEDS -> `Startsequenz beim Verbinden` (default on), button `Startsequenz` per device plays it again. a side change starts at 7 s: decks of the side, then the settle
 * `MIX741_LEDSHOW=1`: plays it once more 6 s after the start, only with connected units
 
 ## ◆ MAPPING

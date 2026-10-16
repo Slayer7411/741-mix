@@ -76,6 +76,24 @@ import MixCore
 
 // MARK: - Startsequenz
 
+/// alle Gruppen im normalen Zustand (nil)
+private func allNormal(_ f: LEDShow.Frame) -> Bool {
+    f.pads.allSatisfy { $0 == nil } && f.buttons.allSatisfy { $0 == nil }
+        && f.digits.allSatisfy { $0 == nil } && f.strip.allSatisfy { $0 == nil }
+}
+
+/// leuchtende LEDs, die noch nicht im normalen Zustand sind
+private func shownLEDs(_ f: LEDShow.Frame) -> Int {
+    f.pads.reduce(0) { $0 + (($1?.level ?? 0) > 0 ? 1 : 0) } + f.buttons.reduce(0) { $0 + (($1 ?? 0) > 0 ? 1 : 0) }
+        + f.digits.reduce(0) { $0 + (($1 ?? 0) != 0 ? 1 : 0) } + f.strip.reduce(0) { $0 + (($1?.level ?? 0) > 0 ? 1 : 0) }
+}
+
+/// LEDs, deren Wert sich zwischen zwei Takten ändert
+private func changedLEDs(_ a: LEDShow.Frame, _ b: LEDShow.Frame) -> Int {
+    zip(a.pads, b.pads).filter { $0.0 != $0.1 }.count + zip(a.buttons, b.buttons).filter { $0.0 != $0.1 }.count
+        + zip(a.digits, b.digits).filter { $0.0 != $0.1 }.count + zip(a.strip, b.strip).filter { $0.0 != $0.1 }.count
+}
+
 @Test func ledShowPhasesInOrderAndEndsReady() {
     #expect(LEDShow.duration >= 8.5 && LEDShow.duration <= 9.2)
     var last = LEDShow.Phase.storm
@@ -91,97 +109,134 @@ import MixCore
         if let f { #expect(f.phase == ph) }
         t += LEDShow.step
     }
-    #expect(seen == [.storm, .decks, .blackout, .flash, .fade, .ready])
+    #expect(seen == [.storm, .settle, .breath, .ready])
     #expect(LEDShow.frame(at: LEDShow.duration, decks: (0, 2), seed: 7) == nil)
-    // Sturm 5 s, Decks 1,2 s, Blitz gut 1 s, Ausdimmen 1,5 s
-    #expect(LEDShow.stormEnd == 5 && abs(LEDShow.decksEnd - LEDShow.stormEnd - 1.2) < 0.01)
-    #expect(abs(LEDShow.flashEnd - LEDShow.blackoutEnd - 1.1) < 0.06)
-    #expect(abs(LEDShow.fadeEnd - LEDShow.flashEnd - 1.5) < 0.01)
+    // Sturm 5 s, Einpendeln 2–4 s, Atempuls 0,5 s am Ende
+    #expect(LEDShow.stormEnd == 5 && LEDShow.settleEnd - LEDShow.stormEnd >= 2 && LEDShow.settleEnd - LEDShow.stormEnd <= 4)
+    #expect(abs(LEDShow.duration - LEDShow.settleEnd - 0.5) < 1e-9)
 }
 
 @Test func ledShowTimeline() {
-    func f(_ t: Double) -> LEDShow.Frame? { LEDShow.frame(at: t, decks: (0, 2), seed: 3) }
-    // Sturm: Glut, Lauflicht (zwei Runden), Stroboskop bis zuletzt
-    #expect(LEDShow.phase(at: 1.0) == .storm && f(1.0)!.pads.allSatisfy { $0.color == .red })
-    #expect(f(2.0)!.pads.contains { $0 == .init(color: .purple, level: 1) })
-    #expect(f(3.0)!.pads.contains { $0 == .init(color: .purple, level: 1) })
-    var strobe = 0
-    for k in 0..<4 {
-        let s = f(4.8 + Double(k) * LEDShow.step)!
-        #expect(s.phase == .storm && s.mix == 0)
-        if s.pads.contains(where: { $0.color == .white && $0.level > 0 }) || s.digits.contains(where: { $0 != 0 }) { strobe += 1 }
+    func f(_ t: Double) -> LEDShow.Frame { LEDShow.frame(at: t, decks: (0, 2), seed: 3)! }
+    // Glut und Lauflicht wie gehabt
+    #expect(f(1.0).pads.allSatisfy { $0?.color == .red })
+    #expect(f(2.0).pads.contains { $0 == LEDShow.Light(color: .purple, level: 1) })
+    // Wirrwarr: alle LEDs noch in der Sequenz, dicht flackernd, kein Blitz
+    for t in [3.6, 4.4, 4.9] {
+        let w = f(t)
+        #expect(w.phase == .storm && w.pads.allSatisfy { $0 != nil } && w.breath == 0)
+        #expect(shownLEDs(w) > 20)
     }
-    #expect(strobe >= 1 && strobe <= 3)   // jeder zweite Takt dunkel
-    #expect(f(4.9)!.phase == .storm)
-    // Deck-Teil
-    let d = f(5.6)!
-    #expect(d.phase == .decks && d.digits[1] == LEDShow.mask("A"))
-    // Blitz weiß, hält
-    for t in [6.3, 7.2] {
-        let w = f(t)!
-        #expect(w.phase == .flash && w.mix == 0)
-        #expect(w.pads.allSatisfy { $0 == .init(color: .white, level: 1) } && w.buttons.allSatisfy { $0 == 1 })
+    // Seite auf der Anzeige (A links, C rechts), solange die Ziffern nicht eingependelt sind
+    let side = f(5.5)
+    #expect(side.phase == .settle && side.digits[1] == LEDShow.mask("A") && side.digits[4] == LEDShow.mask("C"))
+    // Einpendeln der Reihe nach: Pads, dann Tasten, dann Ziffern und Strip
+    #expect(f(6.3).pads.allSatisfy { $0 == nil } && f(6.3).buttons.contains { $0 != nil })
+    #expect(f(7.3).buttons.allSatisfy { $0 == nil } && f(7.3).strip.contains { $0 != nil })
+    // Ende des Einpendelns: alles normal, Atempuls ab 8,4 s, danach bereit
+    #expect(allNormal(f(LEDShow.settleEnd - 0.001)))
+    for t in stride(from: LEDShow.settleEnd + LEDShow.step, to: LEDShow.duration, by: LEDShow.step) {
+        let b = f(t)
+        #expect(b.phase == .breath && allNormal(b) && b.breath > 0)
     }
-    // Ausdimmen: gemischt, weich (Kosinus), am Ende normal
-    let m = f(7.4)!
-    #expect(m.phase == .fade && m.mix > 0 && m.mix < 0.1)
-    #expect(abs(LEDShow.mix(at: (LEDShow.flashEnd + LEDShow.fadeEnd) / 2) - 0.5) < 1e-9)
-    var prev = 0.0
-    for k in 0...50 {
-        let w = LEDShow.mix(at: LEDShow.flashEnd + Double(k) / 50 * (LEDShow.fadeEnd - LEDShow.flashEnd))
-        #expect(w >= prev)
-        prev = w
-    }
-    #expect(prev == 1)
-    #expect(f(8.9) == nil)
+    #expect(f(8.65).breath > 0.99)
 }
 
-@Test func ledShowFadeBlendsIntoNormal() {
-    let peak: UInt8 = 100
-    var normal = [UInt8](repeating: 0, count: 0x34)
-    normal[0] = 0x80
-    normal[0x31] = 100; normal[0x01] = 20; normal[0x14] = 80   // Play an, FX gedimmt, Pad rot
-    func led(_ t: Double) -> [UInt8] {
-        let f = LEDShow.frame(at: t, decks: (0, 2), seed: 3)!
-        var (r, _) = LEDShow.reports(f, peak: peak)
-        LEDShow.blend(&r, toward: normal, f.mix)
-        return r
+@Test func ledShowFlickerCalmsDownOverLastThreeSeconds() {
+    // Dichte (reine Funktion) in den letzten 3 s nie steigend, im Einpendeln auf 0
+    var prev = Double.infinity
+    for k in 0...300 {
+        let d = LEDShow.density(at: LEDShow.duration - 3 + Double(k) * 0.01)
+        #expect(d <= prev)
+        prev = d
     }
-    let white = led(7.2)
-    #expect(white[0x31] == 100 && white[0x01] == 100)
-    let mid = led((LEDShow.flashEnd + LEDShow.fadeEnd) / 2)
-    #expect(mid[0] == 0x80 && mid[0x01] == 60 && mid[0x15] < white[0x15] && mid[0x15] > 0)
-    let late = led(LEDShow.fadeEnd - 0.001)
-    #expect(zip(late, normal).allSatisfy { abs(Int($0) - Int($1)) <= 1 })
-    // Anteil 0 lässt das Bild unverändert
-    var same = white
-    LEDShow.blend(&same, toward: normal, 0)
-    #expect(same == white)
+    #expect(LEDShow.density(at: LEDShow.settleEnd) == 0)
+    // Frames: leuchtende und wechselnde LEDs je 0,25-s-Block, gemittelt über 40 Seeds (nicht steigend bis auf Rauschen)
+    var shown = [Double](repeating: 0, count: 12), changes = [Double](repeating: 0, count: 12), frames = [Double](repeating: 0, count: 12)
+    for seed: UInt32 in 1...40 {
+        var before: LEDShow.Frame?
+        var t = LEDShow.duration - 3
+        while t < LEDShow.duration {
+            let block = min(11, Int((t - (LEDShow.duration - 3)) / 0.25))
+            let cur = LEDShow.frame(at: t, decks: (0, 2), seed: seed)!
+            shown[block] += Double(shownLEDs(cur))
+            frames[block] += 1
+            if let before { changes[block] += Double(changedLEDs(before, cur)) }
+            before = cur
+            t += LEDShow.step
+        }
+    }
+    let lit = zip(shown, frames).map { $0 / $1 }, churn = zip(changes, frames).map { $0 / $1 }
+    for k in 1..<12 {
+        #expect(lit[k] <= lit[k - 1] + 0.5, "Block \(k): \(lit[k]) > \(lit[k - 1])")
+        #expect(churn[k] <= churn[k - 1] + 0.5, "Block \(k): \(churn[k]) > \(churn[k - 1])")
+    }
+    #expect(lit[0] > lit[10] + 5)
+}
+
+@Test func ledShowSettledLEDsTakeNormalState() {
+    var normal = [UInt8](repeating: 0, count: 0x34), normalDisp = [UInt8](repeating: 0, count: LEDShow.displayLength)
+    normal[0x14] = 11; normal[0x15] = 22; normal[0x16] = 33      // Pad L1 normal
+    normal[0x31] = 44                                           // Play links
+    normalDisp[0x01] = 66; normalDisp[LEDShow.stripStart] = 77   // Ziffer 1 Segment a, Strip 1
+    var f = LEDShow.Frame(phase: .settle, pads: Array(repeating: nil, count: 8),
+                          buttons: Array(repeating: nil, count: LEDShow.buttons.count),
+                          digits: Array(repeating: nil, count: 6), strip: Array(repeating: nil, count: LEDShow.stripCount))
+    f.pads[1] = LEDShow.Light(color: .white, level: 1)           // Pad L2 zeigt das Bild
+    f.buttons[0] = 1                                             // FX 1 voll
+    f.digits[0] = 0xFF
+    let (led, disp) = LEDShow.reports(f, peak: 100, normal: (normal, normalDisp))
+    #expect(led[0x14...0x16] == normal[0x14...0x16])
+    #expect(led[0x17] == 100)
+    #expect(led[0x01] == 100 && led[0x02] == 0 && led[0x31] == 44)
+    #expect(disp[0x01] == 100 && disp[0x08] == 100 && disp[0x09] == 0)
+    #expect(disp[LEDShow.stripStart] == 77)
+}
+
+@Test func ledShowEndsOnNormalState() {
+    var normal = [UInt8](repeating: 0, count: 0x34), normalDisp = [UInt8](repeating: 0, count: LEDShow.displayLength)
+    normal[0] = 0x80; normalDisp[0] = 0x81
+    for p in LEDShow.padBytes { normal[p] = UInt8(p); normal[p + 1] = 3; normal[p + 2] = 5 }
+    for b in LEDShow.buttons { normal[b.byte] = UInt8(b.byte) }
+    for i in 1..<LEDShow.displayLength { normalDisp[i] = UInt8(i % 100) }
+    for seed: UInt32 in [1, 99] {
+        // Ab settleEnd alles im normalen Zustand, bis zum Ende ohne Flackern
+        for t in stride(from: LEDShow.settleEnd, to: LEDShow.duration, by: LEDShow.step) {
+            #expect(allNormal(LEDShow.frame(at: t, decks: (0, 2), seed: seed)!))
+        }
+        #expect(LEDShow.frame(at: LEDShow.duration - 0.001, decks: (0, 2), seed: seed)!.breath < 0.02)
+        #expect(LEDShow.frame(at: LEDShow.duration, decks: (0, 2), seed: seed) == nil)
+        // Frame ohne Bild = normaler Report, Byte für Byte
+        let blank = LEDShow.Frame(phase: .breath, pads: Array(repeating: nil, count: 8),
+                                  buttons: Array(repeating: nil, count: LEDShow.buttons.count),
+                                  digits: Array(repeating: nil, count: 6), strip: Array(repeating: nil, count: LEDShow.stripCount))
+        let (led, disp) = LEDShow.reports(blank, peak: 127, normal: (normal, normalDisp))
+        #expect(led == normal && disp == normalDisp)
+    }
+    // Atempuls dimmt nur kurz, 0 = unverändert
+    #expect(LEDShow.breathPeak(127, 0) == 127 && LEDShow.breathPeak(100, 1) == 75)
 }
 
 @Test func ledShowIsPureAndShowsDeckLetters() {
-    let a = LEDShow.frame(at: 1.0, decks: (0, 2), seed: 42), b = LEDShow.frame(at: 1.0, decks: (0, 2), seed: 42)
+    let a = LEDShow.frame(at: 6.5, decks: (0, 2), seed: 42), b = LEDShow.frame(at: 6.5, decks: (0, 2), seed: 42)
     #expect(a == b)
     let left = LEDShow.frame(at: 5.5, decks: (0, 2), seed: 1)!
-    #expect(left.phase == .decks)
     #expect(left.digits[1] == LEDShow.mask("A") && left.digits[4] == LEDShow.mask("C"))
     let right = LEDShow.frame(at: 5.5, decks: (1, 3), seed: 1)!
     #expect(right.digits[1] == LEDShow.mask("b") && right.digits[4] == LEDShow.mask("d"))
-    let flash = LEDShow.frame(at: LEDShow.blackoutEnd + 0.05, decks: (0, 2), seed: 1)!
-    #expect(flash.pads.allSatisfy { $0 == .init(color: .white, level: 1) } && flash.buttons.allSatisfy { $0 == 1 })
-    let (led, disp) = LEDShow.reports(flash, peak: 127)
-    #expect(led.count == 0x34 && led[0] == 0x80 && disp.count == 0x5B && disp[0] == 0x81)
-    #expect(LEDShow.buttons.allSatisfy { led[$0.byte] == 127 })
-    #expect(disp[LEDShow.stripStart...].allSatisfy { $0 == 127 })
+    // Seitenwechsel startet mit den Decks auf der Anzeige
+    let side = LEDShow.frame(at: LEDShow.sideAt, decks: (1, 3), seed: 1)!
+    #expect(side.digits[1] == LEDShow.mask("b") && side.digits[4] == LEDShow.mask("d"))
 }
 
 @Test func ledShowPadColorsOnlyFromPalette() {
     let palette = LEDShow.Color.allCases.map(LEDShow.rgb)
+    let zeroLed = [UInt8](repeating: 0, count: 0x34), zeroDisp = [UInt8](repeating: 0, count: LEDShow.displayLength)
     var lit = 0, colors = Set<Int>()
     for seed: UInt32 in [1, 99, 12345] {
         var t = 0.0
         while let f = LEDShow.frame(at: t, decks: (1, 3), seed: seed) {
-            let (led, _) = LEDShow.reports(f, peak: 110)
+            let (led, _) = LEDShow.reports(f, peak: 110, normal: (zeroLed, zeroDisp))
             for base in LEDShow.padBytes {
                 let c = (Int(led[base]), Int(led[base + 1]), Int(led[base + 2]))
                 if c == (0, 0, 0) { continue }
@@ -194,8 +249,8 @@ import MixCore
                 #expect(match != nil, "Pad-Farbe \(c) nicht aus der Palette")
                 if let match { colors.insert(match) }
             }
-            for l in f.strip + f.pads { #expect(l.level >= 0 && l.level <= 1) }
-            for l in f.buttons { #expect(l >= 0 && l <= 1) }
+            for case let l? in f.strip + f.pads { #expect(l.level >= 0 && l.level <= 1) }
+            for case let l? in f.buttons { #expect(l >= 0 && l <= 1) }
             t += LEDShow.step
         }
     }
