@@ -850,7 +850,7 @@ enum SelfTest {
         log("AUTO-LOOP OK (\(reloops) Decks mit Auto-Loop)")
     }
 
-    /// Controller-Startsequenz ohne Gerät: Generator über die volle Dauer im LED-Takt, Reports, Ausdimmen gemischt
+    /// Controller-Startsequenz ohne Gerät: Generator über die volle Dauer im LED-Takt, Reports mit normalem Zustand
     static func ledShowProbe() {
         var normal = [UInt8](repeating: 0, count: 0x34), normalDisp = [UInt8](repeating: 0, count: LEDShow.displayLength)
         normal[0] = 0x80; normalDisp[0] = 0x81
@@ -858,16 +858,14 @@ enum SelfTest {
         let t0 = CACurrentMediaTime()
         var t = 0.0
         while let f = LEDShow.frame(at: t, decks: (0, 2), seed: 741) {
-            var (led, disp) = LEDShow.reports(f, peak: 127)
-            LEDShow.blend(&led, toward: normal, f.mix)
-            LEDShow.blend(&disp, toward: normalDisp, f.mix)
+            _ = LEDShow.reports(f, peak: 127, normal: (normal, normalDisp))
             frames += 1
             phases.insert(f.phase.rawValue)
             t += LEDShow.step
         }
         let ms = (CACurrentMediaTime() - t0) * 1000 / Double(max(1, frames))
-        let ok = abs(frames - Int((LEDShow.duration / LEDShow.step).rounded(.up))) <= 1 && phases.count == 5 && ms < 0.1
-        log(String(format: "Startsequenz: %d Frames über %.2f s, %.3f ms je Frame (Generator + Reports + Mischen) · %@",
+        let ok = abs(frames - Int((LEDShow.duration / LEDShow.step).rounded(.up))) <= 1 && phases.count == 3 && ms < 0.1
+        log(String(format: "Startsequenz: %d Frames über %.2f s, %.3f ms je Frame (Generator + Reports) · %@",
                    frames, LEDShow.duration, ms, ok ? "OK" : "FAIL"))
         if !ok { log("STARTSEQUENZ FALSCH"); exit(1) }
     }
