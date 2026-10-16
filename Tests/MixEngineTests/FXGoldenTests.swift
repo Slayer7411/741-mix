@@ -75,10 +75,11 @@ let fxGoldenScenarios: [(String, [(String, Int)], Bool)] = [
 ]
 
 /// Prüfsummen, aufgenommen mit a3b680b (vor den Insert-Slots)
+/// neu 2026-10-16: Gleitregler springen aufs Ziel (Deck-Ausgang bit-genau), alle Pfade gleich verschoben
 private let fxGoldenHashes: [String: UInt64] = [
-    "group": 0x8a79f74c9f2bf4ce, "group-dw": 0x18439bbe1a70d70, "group-gater": 0x495618087c1ceaec, "filter": 0xbd6b3dee1b284f43,
-    "delay": 0x4bda1c52a5fb5f22, "reverb": 0xd8393837d2ff4248, "reverb-fdn": 0xadb7fc9a02247c5a, "gater": 0x1909720bc581a5fa,
-    "roll": 0x18caf793c48bb667, "flanger": 0x2cde7f2d53c71497, "phaser": 0x36cd7ceb8818cee3, "plugin": 0xb633b06914920918,
+    "group": 0x8c8046fe2ee78064, "group-dw": 0x6b9eddc55d9c346c, "group-gater": 0x7324c2d53c6c5ee2, "filter": 0x5464d7a0b342b2a3,
+    "delay": 0xf544da8cca638ec, "reverb": 0x4206d0271bf767a6, "reverb-fdn": 0x1879204139f57e9a, "gater": 0xeafe3883598d2efe,
+    "roll": 0x4ea489239746dcd0, "flanger": 0xfe3e34006749f04e, "phaser": 0x9ac9d6f42748d5e4, "plugin": 0xb633b06914920918,
 ]
 
 /// Vorlage „Gruppe“ (aus GRP) und Einzel-Slot (aus SNGL) rechnen bitgleich wie vorher, über alle Blöcke

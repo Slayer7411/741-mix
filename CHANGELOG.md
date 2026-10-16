@@ -57,6 +57,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * beatgrid: fine lines by default (beat 1 device pixel at 35 %, bar 1 pt at 70 %, phrase 1.5 pt, markers 2 / 2.5 / 3 pt), caps and triangles centred on the line and on device pixels, ruler labels on device pixels. ⌘, -> DISPLAY -> beatgrid -> lines fine / bold (`ui.gridLineWeight`, bold = previous widths). self test logs tile times, ui test `linien`
 
 ### fixed
+* audio: deck output is bit-exact to the source at neutral settings (tempo 1, eq 0 dB, no filter, gain 0, main 1). the volume / gain / main glides stopped ~3e-5 below their target in float (−0.0003 dB); they now snap to it. null test `deckOutputEqualsSource`, fx golden hashes updated
 * browser: crash while drawing the column header (appkit copies header cells bitwise; the sort mark and font now live in cell properties that copy correctly)
 * previews: a finished right click batch stayed at `n/n` while background previews ran (the counter reset only with the whole queue empty). resets when the batch is done
 * browser, full-row preview: bands of rows scrolled under the column header were drawn over it (macOS 26 runs the content under the header); band layer now ends at the header
