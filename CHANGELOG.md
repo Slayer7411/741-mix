@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* browser column `Path`: full file path, cut in the middle, red when the file is missing, sortable (hidden by default, header right click)
 * audio-edit editor: grid snap on by default (`ui.audioEditGrid`), snap size menu next to RASTER: 1/16 · 1/8 · 1/4 · 1/2 beat, 1 beat, 1 · 2 · 4 · 8 bars (`ui.audioEditSnapBeats`)
 * tag groups: color source per marker (waveform low / held lows / mids / highs / held highs or an own color); tidal: sign in button in ⌘, -> BROWSER
 * export: format (wie Quelle / WAV / AIFF / Apple Lossless / AAC 128–320), bit depth (16 / 24 / 32 float WAV), sample rate (44.1 / 48 / 88.2 / 96 kHz, streaming converter), TPDF dither on 16 bit, file name pattern. settings in ⌘, -> EDIT-Modus & Tool-Loops, window `EXPORT` before RENDER in AUDIO-EDIT with `remember as default`. applies to RENDER, cut, join, split and tool-loop. no mp3 (no encoder on the system)
