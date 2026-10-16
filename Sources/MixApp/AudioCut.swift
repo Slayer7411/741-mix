@@ -117,16 +117,15 @@ enum CutJob {
     /// `done`: nach erfolgreichem Schreiben (Hauptthread)
     static func start(_ input: Input, mix: MixModel, store: LibraryStore, done: (@MainActor () -> Void)? = nil) {
         guard !running else {
-            StatusCenter.post(.warning, String(localized: "Schneiden läuft schon"), key: "cut")
+            StatusCenter.post(.warning, String(localized: "Schneiden läuft schon"), key: "cut", job: true)
             return
         }
         running = true
         let cancel = CutCancel()
         let stop: @MainActor @Sendable () -> Void = { cancel.cancel() }
-        let t = input.track
-        let name = t.title.isEmpty ? t.fileName : (t.artist.isEmpty ? t.title : "\(t.artist) – \(t.title)")
-        let text = String(localized: "Schneiden: \(name)")
-        StatusCenter.post(.info, text, key: "cut", progress: 0, cancel: stop)
+        let name = StatusCenter.trackName(input.track)
+        let text = input.kind.title
+        StatusCenter.post(.info, text, detail: name, key: "cut", progress: 0, job: true, cancel: stop)
         queue.async {
             let t0 = CACurrentMediaTime()
             var last = 0.0
@@ -135,7 +134,7 @@ enum CutJob {
                 let now = CACurrentMediaTime()
                 if now - last > 0.1 {
                     last = now
-                    StatusCenter.post(.info, text, key: "cut", progress: p, progressText: "\(Int(p * 100)) %", cancel: stop)
+                    StatusCenter.post(.info, text, detail: name, key: "cut", progress: p, progressText: "\(Int(p * 100)) %", job: true, cancel: stop)
                 }
                 return true
             }
@@ -287,6 +286,18 @@ extension MixModel {
 }
 
 extension CutJob.Kind {
+    /// Art des Jobs in der Statusleiste
+    var title: String {
+        switch self {
+        case .cut: String(localized: "Schneiden")
+        case .edit: String(localized: "Schnittliste rendern")
+        case .toolLoop: String(localized: "Tool-Loop")
+        case .prepare: String(localized: "Rendern")
+        case .split: String(localized: "Teilen")
+        case .join: String(localized: "Zusammenfügen")
+        }
+    }
+
     var name: String {
         switch self {
         case let .cut(m, _): m.rawValue

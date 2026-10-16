@@ -356,7 +356,8 @@ struct MeterDetails: View {
 }
 
 /// Statusleiste „Automatisch“: liegt über dem Browser und fährt hoch, wenn die Maus am unteren Fensterrand steht
-/// (6 pt Zone, Klicks gehen durch) oder eine Warnung / ein Fehler kommt (6 s). Weg, sobald die Maus sie verlässt.
+/// (6 pt Zone, Klicks gehen durch), eine Warnung / ein Fehler kommt (6 s) oder ein Hintergrundjob läuft. Solange einer
+/// läuft, bleibt sie oben; danach zeigt sie die Schlussmeldung 3 s. Weg, sobald die Maus sie verlässt (nie bei laufendem Job).
 struct AutoStatusBar: View {
     @State private var shown = false
     @State private var inside = false
@@ -379,6 +380,11 @@ struct AutoStatusBar: View {
         .onChange(of: center.current?.id) { _, _ in
             if let m = center.current, m.level == .warning || m.level == .error { show(); hide(after: 6) }
         }
+        .onChange(of: center.jobCount, initial: true) { _, n in
+            if n > 0 { show(); return }
+            // letzter Job fertig: Schlussmeldung 3 s (Warnung / Fehler haben ihre eigene Zeit)
+            if !(center.current.map { $0.level >= .warning } ?? false) { hide(after: 3) }
+        }
     }
 
     private func show() { hideTask?.cancel(); shown = true }
@@ -387,7 +393,7 @@ struct AutoStatusBar: View {
         hideTask?.cancel()
         hideTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(s))
-            if !Task.isCancelled, !inside { shown = false }
+            if !Task.isCancelled, !inside, center.jobCount == 0 { shown = false }
         }
     }
 

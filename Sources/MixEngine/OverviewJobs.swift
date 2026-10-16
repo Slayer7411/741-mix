@@ -32,14 +32,18 @@ public final class OverviewJobs: @unchecked Sendable {
         public let explicit: Bool
         /// auch rechnen, wenn ein Ergebnis vorliegt (Neu analysieren)
         public let refresh: Bool
-        public init(key: String, path: String, explicit: Bool, refresh: Bool = false) {
-            self.key = key; self.path = path; self.explicit = explicit; self.refresh = refresh
+        /// Anzeigename (Artist – Title) für den Stapel, leer = nur Schlüssel
+        public let label: String
+        public init(key: String, path: String, explicit: Bool, refresh: Bool = false, label: String = "") {
+            self.key = key; self.path = path; self.explicit = explicit; self.refresh = refresh; self.label = label
         }
     }
 
     public struct Progress: Equatable, Sendable {
         /// Rechtsklick-Stapel
         public var done = 0, total = 0
+        /// Stapel: Anzeigename des Jobs, der gerade rechnet (leer = keiner)
+        public var current = ""
         /// Hintergrund: Tracks mit Übersicht / Tracks mit Datei
         public var covered = 0, collection = 0
         /// Hintergrund: noch in der Warteschlange
@@ -109,7 +113,7 @@ public final class OverviewJobs: @unchecked Sendable {
     public func enqueue(_ jobs: [Job]) {
         lock.lock()
         for j in jobs where !queued.contains(j.key) {
-            explicit.append(Job(key: j.key, path: j.path, explicit: true, refresh: j.refresh))
+            explicit.append(Job(key: j.key, path: j.path, explicit: true, refresh: j.refresh, label: j.label))
             queued.insert(j.key)
             progress.total += 1
         }
@@ -158,7 +162,7 @@ public final class OverviewJobs: @unchecked Sendable {
         lock.lock()
         cancelGen += 1
         explicit.removeAll(); queued.removeAll()
-        progress.done = 0; progress.total = 0
+        progress.done = 0; progress.total = 0; progress.current = ""
         lock.unlock()
         report()
     }
@@ -257,9 +261,11 @@ public final class OverviewJobs: @unchecked Sendable {
     private func work() {
         while true {
             lock.lock()
+            // Stapel fertig: Zähler zurück, auch wenn der Hintergrund noch läuft (sonst bliebe „n/n“ stehen)
+            let ended = explicit.isEmpty && progress.total > 0 && progress.done >= progress.total
+            if ended { progress.done = 0; progress.total = 0; progress.current = "" }
             if workers > wantedLocked() || (explicit.isEmpty && visible.isEmpty && idle.isEmpty) {
                 workers -= 1
-                if explicit.isEmpty, progress.done >= progress.total { progress.done = 0; progress.total = 0 }
                 lock.unlock()
                 report()
                 return
@@ -270,7 +276,10 @@ public final class OverviewJobs: @unchecked Sendable {
             else { job = idle.removeLast(); progress.left = idle.count }
             let gen = generation(job)
             let skip = failed.contains(job.key)
+            let named = job.explicit && progress.current != job.label
+            if named { progress.current = job.label }
             lock.unlock()
+            if named || ended { report() }
             var g = OverviewPolicy.Gate.full
             if !skip { g = process(job, gen: gen) }
             lock.lock()

@@ -55,6 +55,9 @@ final class Overviews {
     /// ✕ in der Statuszeile: Hintergrund bis zum nächsten Start (oder bis die Einstellung wechselt) angehalten
     private(set) var stopped = false
     @ObservationIgnored private var tickPending = false
+    /// Stapel (Rechtsklick): abgebrochen, nicht lesbare Dateien am Anfang
+    @ObservationIgnored private var batchCancelled = false
+    @ObservationIgnored private var batchFailed = 0
 
     private init() {
         let store = store, jobs = jobs
@@ -64,12 +67,7 @@ final class Overviews {
         }
         jobs.store = store
         jobs.onProgress = { p in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    let o = Overviews.shared
-                    if o.progress != p { o.progress = p }
-                }
-            }
+            DispatchQueue.main.async { MainActor.assumeIsolated { Overviews.shared.report(p) } }
         }
         DispatchQueue.global(qos: .utility).async {
             store.load()
@@ -80,6 +78,28 @@ final class Overviews {
                     o.jobs.start()
                     o.bump()
                 }
+            }
+        }
+    }
+
+    /// Stapel: Stand in der Statusleiste (mit Track und ✕), am Ende eine Meldung
+    private func report(_ p: OverviewJobs.Progress) {
+        let old = progress
+        if old.total == 0, p.total > 0 { batchCancelled = false; batchFailed = p.failed }
+        if old != p { progress = p }
+        if p.total > 0 {
+            let frac = Double(p.done) / Double(max(1, p.total))
+            StatusCenter.post(.info, String(localized: "Vorschauen berechnen"), detail: p.current.isEmpty ? nil : p.current, key: "overview",
+                              progress: frac, progressText: "\(p.done)/\(p.total) · \(Int(frac * 100)) %", job: true,
+                              cancel: { Overviews.shared.cancel() })
+        } else if old.total > 0 {
+            let failed = p.failed - batchFailed
+            if batchCancelled {
+                StatusCenter.post(.info, String(localized: "Vorschauen abgebrochen"), key: "overview")
+            } else {
+                var msg = String(localized: "Vorschauen fertig: \(old.done) Tracks")
+                if failed > 0 { msg += " · " + String(localized: "\(failed) nicht lesbar") }
+                StatusCenter.post(failed > 0 ? .warning : .ok, msg, key: "overview")
             }
         }
     }
@@ -107,7 +127,7 @@ final class Overviews {
 
     /// Rechtsklick → Vorschauen berechnen
     func enqueue(_ tracks: [Track]) {
-        jobs.enqueue(tracks.filter { !$0.path.isEmpty }.map { .init(key: $0.key, path: $0.path, explicit: true) })
+        jobs.enqueue(tracks.filter { !$0.path.isEmpty }.map { .init(key: $0.key, path: $0.path, explicit: true, label: StatusCenter.trackName($0)) })
     }
 
     /// sichtbare Zeile ohne Übersicht -> vor den Hintergrund
@@ -116,7 +136,10 @@ final class Overviews {
         jobs.want(key: t.key, path: t.path)
     }
 
-    func cancel() { jobs.cancel() }
+    func cancel() {
+        batchCancelled = true
+        jobs.cancel()
+    }
 
     /// ✕ ohne Stapel: Hintergrund anhalten
     func stop() {

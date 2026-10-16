@@ -111,7 +111,7 @@ enum UISelfTest {
         let u = UIDriver(mix: mix, store: store, browser: browser, history: history)
         let cases: [(String, (UIDriver, [Track]) -> Void)] = [
             ("deck-menü", deckMenu), ("deck-menü-fläche", deckMenuArea), ("drop aufs deck", dropOnDeck), ("bereich in der wellenform", waveRange),
-            ("spaltenbreite per doppelklick", fitColumn), ("statusleiste automatisch", autoStatusBar),
+            ("spaltenbreite per doppelklick", fitColumn), ("statusleiste automatisch", autoStatusBar), ("statusleiste job", statusBarJob),
             ("tastenkürzel", shortcuts), ("werkzeugleiste", toolbar), ("zoom", zoom),
             ("edit-modus", editMode),
             ("groove", groove),
@@ -354,14 +354,7 @@ enum UISelfTest {
         u.spin(0.3)
         u.mix.prefs.ui.statusBar = .auto
         u.spin(0.5)
-        func visible() -> Bool? {
-            // Pegelanzeige der Leiste (eigene NSView): sichtbar = im Fenster, nicht durchsichtig
-            guard let v = u.views.compactMap({ $0 as? LiveCanvasView }).filter({ u.frame($0).minY < 60 }).min(by: { u.frame($0).minY < u.frame($1).minY }) else { return nil }
-            let f = u.frame(v)
-            var alpha: CGFloat = 1, a: NSView? = v
-            while let x = a { alpha *= x.alphaValue * CGFloat(x.layer?.opacity ?? 1); a = x.superview }
-            return f.minY >= 0 && alpha > 0.5
-        }
+        func visible() -> Bool? { barVisible(u) }
         guard let start = visible() else { fail("Pegelanzeige der Statusleiste nicht gefunden") }
         check(!start, "Statusleiste ohne Maus schon sichtbar")
         let mid = NSPoint(x: u.window.frame.width / 2, y: u.window.frame.height / 2)
@@ -374,6 +367,44 @@ enum UISelfTest {
         check(visible() == true, "Statusleiste verschwindet sofort (soll 0,4 s warten)")
         u.spin(0.6) { visible() == false }
         check(visible() == false, "Maus weg: Statusleiste nach 0,8 s noch sichtbar")
+    }
+
+    /// Pegelanzeige der Leiste (eigene NSView): sichtbar = im Fenster, nicht durchsichtig; nil = nicht gefunden
+    static func barVisible(_ u: UIDriver) -> Bool? {
+        guard let v = u.views.compactMap({ $0 as? LiveCanvasView }).filter({ u.frame($0).minY < 60 }).min(by: { u.frame($0).minY < u.frame($1).minY }) else { return nil }
+        let f = u.frame(v)
+        var alpha: CGFloat = 1, a: NSView? = v
+        while let x = a { alpha *= x.alphaValue * CGFloat(x.layer?.opacity ?? 1); a = x.superview }
+        return f.minY >= 0 && alpha > 0.5
+    }
+
+    /// Statusleiste „Automatisch“ bei einem Hintergrundjob: Analyse von drei Tracks -> Leiste fährt hoch und bleibt oben,
+    /// die laufende Meldung trägt Track und Fortschritt; nach dem Ende 3 s die Schlussmeldung, dann weg
+    static func statusBarJob(_ u: UIDriver, _ t: [Track]) {
+        for _ in 0..<50 { guard let m = StatusCenter.shared.current else { break }; StatusCenter.shared.dismiss(m) }
+        u.mix.prefs.ui.statusBar = .always
+        u.spin(0.3)
+        u.mix.prefs.ui.statusBar = .auto
+        u.spin(0.5)
+        guard barVisible(u) != nil else { fail("Pegelanzeige der Statusleiste nicht gefunden (Job)") }
+        check(barVisible(u) == false, "Statusleiste ohne Job schon sichtbar")
+        Analyses.shared.enqueue(Array(t.prefix(3)), refresh: true)
+        u.spin(5) { StatusCenter.shared.jobCount > 0 && barVisible(u) == true }
+        guard StatusCenter.shared.jobCount > 0 else { fail("Analyse startet keinen Hintergrundjob: \(StatusCenter.shared.current.map(\.text) ?? "-")") }
+        check(barVisible(u) == true, "Analyse läuft, Statusleiste bleibt verborgen")
+        // Laufende Meldung: Art, Fortschritt, Track (wenn schon einer rechnet)
+        u.spin(10) { StatusCenter.shared.log.active.contains { $0.job && $0.detail != nil } || StatusCenter.shared.jobCount == 0 }
+        if let m = StatusCenter.shared.log.active.first(where: { $0.job }) {
+            check(m.progress != nil && m.progressText?.contains("/") == true, "Analyse-Meldung ohne Stand: \(m.text) · \(m.progressText ?? "-")")
+            check(m.cancellable, "Analyse-Meldung ohne ✕")
+        }
+        // Ende: Schlussmeldung 3 s oben, dann weg
+        u.spin(120) { StatusCenter.shared.jobCount == 0 }
+        check(StatusCenter.shared.jobCount == 0, "Analyse nach 120 s nicht fertig")
+        u.spin(1) { barVisible(u) == false }
+        check(barVisible(u) == true, "nach dem Ende fehlt die Schlussmeldung")
+        u.spin(5) { barVisible(u) == false }
+        check(barVisible(u) == false, "Analyse fertig: Statusleiste nach 3 s noch sichtbar")
     }
 
     /// Play/Pause auf Deck A per Kürzel aus den Einstellungen; Taste ohne ⌘/⌥/⌃ im Suchfeld: Deck reagiert nicht

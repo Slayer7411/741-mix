@@ -27,16 +27,19 @@ public struct StatusMessage: Identifiable, Equatable, Sendable {
     public var progress: Double?
     public var progressText: String?
     public var cancellable = false
+    /// Hintergrundjob läuft (Analyse, Schnitt, Vorschauen): kein Ablauf, bis der Job eine Meldung ersetzt
+    public var job = false
     public var posted: Date
     public var updated: Date
     public var expires: Date?
 
     public init(id: Int, key: String? = nil, level: Level, text: String, detail: String? = nil,
-                progress: Double? = nil, progressText: String? = nil, cancellable: Bool = false, now: Date = Date()) {
+                progress: Double? = nil, progressText: String? = nil, cancellable: Bool = false, job: Bool = false,
+                now: Date = Date()) {
         self.id = id; self.key = key; self.level = level; self.text = text; self.detail = detail
-        self.progress = progress; self.progressText = progressText; self.cancellable = cancellable
+        self.progress = progress; self.progressText = progressText; self.cancellable = cancellable; self.job = job
         posted = now; updated = now
-        expires = level.lifetime.map { now.addingTimeInterval($0) }
+        expires = job ? nil : level.lifetime.map { now.addingTimeInterval($0) }
     }
 }
 
@@ -56,20 +59,21 @@ public struct StatusLog: Equatable, Sendable {
     @discardableResult
     public mutating func post(_ level: StatusMessage.Level, _ text: String, detail: String? = nil, key: String? = nil,
                               progress: Double? = nil, progressText: String? = nil, cancellable: Bool = false,
-                              now: Date = Date()) -> Int {
+                              job: Bool = false, now: Date = Date()) -> Int {
         if let key, let i = active.firstIndex(where: { $0.key == key }) {
             var m = active[i]
             m.level = level; m.text = text; m.detail = detail
             m.progress = progress.map { min(1, max(0, $0)) }; m.progressText = progressText; m.cancellable = cancellable
+            m.job = job
             m.updated = now
-            m.expires = level.lifetime.map { now.addingTimeInterval($0) }
+            m.expires = job ? nil : level.lifetime.map { now.addingTimeInterval($0) }
             active[i] = m
             if let h = history.firstIndex(where: { $0.id == m.id }) { history[h] = m } else { remember(m) }
             return m.id
         }
         let m = StatusMessage(id: nextID, key: key, level: level, text: text, detail: detail,
                               progress: progress.map { min(1, max(0, $0)) }, progressText: progressText,
-                              cancellable: cancellable, now: now)
+                              cancellable: cancellable, job: job, now: now)
         nextID += 1
         active.append(m)
         remember(m)
@@ -101,6 +105,9 @@ public struct StatusLog: Equatable, Sendable {
             rank(a.level) != rank(b.level) ? rank(a.level) < rank(b.level) : (a.updated, a.id) < (b.updated, b.id)
         }
     }
+
+    /// laufende Hintergrundjobs
+    public var jobCount: Int { active.reduce(0) { $0 + ($1.job ? 1 : 0) } }
 
     /// nächster Ablaufzeitpunkt (für den Takt der Anzeige)
     public var nextExpiry: Date? { active.compactMap(\.expires).min() }

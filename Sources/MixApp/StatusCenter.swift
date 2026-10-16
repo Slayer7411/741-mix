@@ -5,7 +5,8 @@ import MixEngine
 
 /// Meldungen für die Statusleiste unten. `post` geht von jedem Thread (landet auf dem Hauptthread),
 /// gleicher Schlüssel ersetzt eine aktive Meldung an ihrer Stelle (Fortschritt).
-/// Ablauf: info 4 s, ok 3 s, warnung 8 s, fehler bleibt bis Klick oder Ersatz.
+/// Ablauf: info 4 s, ok 3 s, warnung 8 s, fehler bleibt bis Klick oder Ersatz. `job`: Hintergrundjob läuft, kein
+/// Ablauf, die Statusleiste „Automatisch“ bleibt oben, bis alle Jobs fertig sind.
 @MainActor @Observable
 final class StatusCenter {
     static let shared = StatusCenter()
@@ -21,14 +22,21 @@ final class StatusCenter {
     var current: StatusMessage? { log.current }
     var history: [StatusMessage] { log.history }
     var activeCount: Int { log.active.count }
+    var jobCount: Int { log.jobCount }
+
+    /// Titel für Meldungen: „Artist – Title“, sonst der Dateiname
+    static func trackName(_ t: Track) -> String {
+        t.title.isEmpty ? t.fileName : (t.artist.isEmpty ? t.title : "\(t.artist) – \(t.title)")
+    }
 
     /// von jedem Thread; auf dem Hauptthread sofort, sonst der Reihe nach über die Haupt-Queue
     nonisolated static func post(_ level: StatusMessage.Level, _ text: String, detail: String? = nil, key: String? = nil,
-                                 progress: Double? = nil, progressText: String? = nil,
+                                 progress: Double? = nil, progressText: String? = nil, job: Bool = false,
                                  cancel: (@MainActor @Sendable () -> Void)? = nil) {
         let now = Date()
         let run: @MainActor @Sendable () -> Void = {
-            shared.post(level, text, detail: detail, key: key, progress: progress, progressText: progressText, cancel: cancel, now: now)
+            shared.post(level, text, detail: detail, key: key, progress: progress, progressText: progressText, job: job,
+                        cancel: cancel, now: now)
         }
         if Thread.isMainThread { MainActor.assumeIsolated { run() } } else { DispatchQueue.main.async { run() } }
     }
@@ -39,9 +47,10 @@ final class StatusCenter {
     }
 
     func post(_ level: StatusMessage.Level, _ text: String, detail: String? = nil, key: String? = nil,
-              progress: Double? = nil, progressText: String? = nil, cancel: (@MainActor () -> Void)? = nil, now: Date = Date()) {
+              progress: Double? = nil, progressText: String? = nil, job: Bool = false, cancel: (@MainActor () -> Void)? = nil,
+              now: Date = Date()) {
         let id = log.post(level, text, detail: detail, key: key, progress: progress, progressText: progressText,
-                          cancellable: cancel != nil, now: now)
+                          cancellable: cancel != nil, job: job, now: now)
         cancels[id] = cancel
         if Session.isSelfTest || MixController.debug { print("[status] \(level) \(text)" + (detail.map { " · \($0)" } ?? "")); fflush(stdout) }
         schedule()
