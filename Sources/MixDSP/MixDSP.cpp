@@ -38,6 +38,10 @@ constexpr float kReverbRef = 0.42f;       // Hall-Eingangsgewicht bei Pegel 1 (A
 constexpr double kTrimFadeS = 0.003;      // Rampe an geschnittenen Rändern: kein Knacken, kein Gleichanteil am Rand
 constexpr double kScratchTauS = 0.02;    // Wellenform greifen: Zeitkonstante, mit der der Lesekopf dem Ziel der Hand folgt
 
+/// Gleitregler (Faktor 0,002 je Sample) springen ab diesem Abstand aufs Ziel: in float bliebe der Wert bei 1 sonst
+/// ~3e-5 darunter stehen (Schritt kleiner als ein halbes ULP) -> Ausgang nie bit-genau. 5e-5 = −86 dB, unhörbar
+constexpr float kSnap = 5e-5f;
+
 inline float dbToLin(float db) { return db <= -95.f ? 0.f : std::pow(10.f, db / 20.f); }
 
 /// Denormals im Render-Block auf 0 (ausklingende Filter/Hall: auf Intel sonst bis ×100 Rechenzeit je Sample).
@@ -1472,6 +1476,7 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n) {
     const float eqT[3] = {d.p[MD_EQ_LOW].load(), d.p[MD_EQ_MID].load(), d.p[MD_EQ_HIGH].load()};
     for (int i = 0; i < n; i++) {
         d.gainSm += (g - d.gainSm) * 0.002f;
+        if (std::fabs(g - d.gainSm) < kSnap) d.gainSm = g;   // float bleibt sonst 3e-5 vor dem Ziel stehen
         L[i] *= d.gainSm; R[i] *= d.gainSm;
     }
     d.eq.run(eqT, L, R, n, e->fs);
@@ -1489,6 +1494,7 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n) {
     float sum = 0, pk = 0;
     for (int i = 0; i < n; i++) {
         d.volSm += (vol - d.volSm) * 0.002f;
+        if (std::fabs(vol - d.volSm) < kSnap) d.volSm = vol;
         float l = L[i] * d.volSm, r = R[i] * d.volSm;
         L[i] = l; R[i] = r;
         sum += (l * l + r * r) * 0.5f; pk = std::max(pk, std::max(std::fabs(l), std::fabs(r)));
@@ -2025,6 +2031,7 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
     int mc = std::clamp(k.metroCh.load(), 0, std::max(0, channels - 2));
     for (int i = 0; i < frames; i++) {
         e->masterSm += (m - e->masterSm) * 0.002f;
+        if (std::fabs(m - e->masterSm) < kSnap) e->masterSm = m;
         for (int c = 0; c < channels; c++) {
             float x = out[c][i] * e->masterSm;
             out[c][i] = x > 1.f ? 1.f : (x < -1.f ? -1.f : (x == x ? x : 0.f));   // harte Begrenzung als letzte Sicherung, NaN → 0
