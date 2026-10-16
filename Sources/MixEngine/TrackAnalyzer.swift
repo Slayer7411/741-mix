@@ -705,39 +705,31 @@ public enum TrackAnalyzer {
         return (phase, mean > 0 ? maxV / mean : 0)
     }
 
-    /// Lage des Beats in zwei Stufen: grob über den Spektralfluss (welches Sechzehntel im Beat trägt den Anschlag),
-    /// fein ±40 ms darum auf der 1-ms-Anschlagsstärke. Fenster [from, to) in Sekunden; Ergebnis in Samples von `fine`
+    /// Spektralfluss-Bild (512er-Fenster ab Bildanfang) bis zum Anschlag des Kicks: der Fluss steigt, sobald der Kick ins
+    /// Fenster läuft – gemessen gegen gesetzte Grids der Collection (m4a, 197 Tracks)
+    static let kickLead = 0.024
+
+    /// Lage des Kicks im Beat: Spektralfluss Bass × Rest auf den Beat gefaltet (der Kick trägt beides, Bass-Läufe und
+    /// Hats nur eins), der Rest ±1 Bild versetzt zugelassen (der Bass steigt im Fenster später an), plus `kickLead`.
+    /// Früher: ±40 ms Feinsuche um den Bildanfang auf der 1-ms-Anschlagsstärke – griff oft eine Hat oder Bassnote eine
+    /// Achtel/Sechzehntel neben dem Kick. Fenster [from, to) in Sekunden; Ergebnis in Samples von `fine`
     static func beatPhase(fine: Onsets, coarse nov: Novelty, bpm: Double, from: Double, to: Double) -> (phase: Double, strength: Double)? {
         let pc = nov.fps * 60 / bpm, pf = fine.fs * 60 / bpm
         let c0 = Int(from * nov.fps), c1 = Int(to * nov.fps)
         guard let pl = foldProfile(Onsets(v: nov.low, fs: nov.fps), period: pc, from: c0, to: c1),
-              let ph = foldProfile(Onsets(v: nov.high, fs: nov.fps), period: pc, from: c0, to: c1),
-              let prof = foldProfile(fine, period: pf, from: Int(from * fine.fs), to: Int(to * fine.fs)) else { return nil }
-        // Kick = Bass und Rest schlagen zusammen an: Produkt der beiden Profile (je auf ihr Maximum bezogen)
+              let ph = foldProfile(Onsets(v: nov.high, fs: nov.fps), period: pc, from: c0, to: c1) else { return nil }
         let ml = max(pl.max() ?? 0, 1e-9), mh = max(ph.max() ?? 0, 1e-9)
-        let prod = (0..<pl.count).map { (pl[$0] / ml) * (ph[$0] / mh) }
+        let nb = pl.count
+        let prod = (0..<nb).map { j in (pl[j] / ml) * (max(ph[(j + nb - 1) % nb], ph[j], ph[(j + 1) % nb]) / mh) }
         guard let cm = prod.max(), cm > 0, let cj = prod.firstIndex(of: cm) else { return nil }
-        let cmean = prod.reduce(0, +) / Double(prod.count)
-        let cl = prod[(cj + prod.count - 1) % prod.count], cr = prod[(cj + 1) % prod.count]
-        let cden = cl - 2 * cm + cr
-        let cdelta = cden < 0 ? 0.5 * (cl - cr) / cden : 0
-        let cphase = (Double(cj) + cdelta) * pc / Double(pl.count)   // Samples des groben Rasters
-        let c = (phase: cphase, strength: cmean > 0 ? cm / cmean : 0)
-        let bins = prof.count, scale = Double(bins) / pf
-        let center = (c.phase / nov.fps * fine.fs).truncatingRemainder(dividingBy: pf) * scale
-        let span = Int(0.04 * fine.fs * scale)
-        var best = -1, bestV = -1.0
-        for d in -span...span {
-            let j = ((Int(center.rounded()) + d) % bins + bins) % bins
-            if prof[j] > bestV { bestV = prof[j]; best = j }
-        }
-        guard best >= 0, bestV > 0 else { return nil }
-        let l = prof[(best + bins - 1) % bins], r = prof[(best + 1) % bins]
-        let den = l - 2 * bestV + r
+        let mean = prod.reduce(0, +) / Double(nb)
+        let l = prod[(cj + nb - 1) % nb], r = prod[(cj + 1) % nb]
+        let den = l - 2 * cm + r
         let delta = den < 0 ? 0.5 * (l - r) / den : 0
-        var phase = ((Double(best) + delta) / scale).truncatingRemainder(dividingBy: pf)
+        let t = (Double(cj) + delta) * pc / Double(nb) / nov.fps + kickLead
+        var phase = (t * fine.fs).truncatingRemainder(dividingBy: pf)
         if phase < 0 { phase += pf }
-        return (phase, c.strength)
+        return (phase, mean > 0 ? cm / mean : 0)
     }
 
     /// Tempo aus der ganzen Zahl Beats zwischen einem Anschlag am Anfang und einem am Ende (30-s-Fenster);
