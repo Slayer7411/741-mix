@@ -236,6 +236,7 @@ struct MusicFolderRow: View, SourceMenus {
                 OverviewMenuButton { store.folders.tracks(in: path, recursive: true, library: store) }
                 AnalysisMenuButtons { store.folders.tracks(in: path, recursive: true, library: store) }
                 ImportMenuButton(source: (path as NSString).lastPathComponent) { store.folders.tracks(in: path, recursive: true, library: store) }
+                FolderToPlaylistMenu(path: path)
                 Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
                 Button("Pfad kopieren") { TrackMenu.copy(path) }
             }
@@ -477,5 +478,47 @@ struct ExplorerTree: View {
         }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in volumes = Self.mountedVolumes() }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { _ in volumes = Self.mountedVolumes() }
+    }
+}
+
+/// Rechtsklick auf einen Ordner: alle Audiodateien samt Unterordnern in eine eigene Playlist (neu oder vorhandene)
+struct FolderToPlaylistMenu: View {
+    @Environment(LibraryStore.self) private var store
+    let path: String
+
+    var body: some View {
+        Menu("Alle Tracks mit Unterordnern in Playlist") {
+            Button("Neue Playlist „\((path as NSString).lastPathComponent)“") {
+                guard let keys = keys() else { return }
+                let it = store.addOwn(.playlist, into: nil, name: (path as NSString).lastPathComponent, tracks: keys)
+                StatusCenter.post(.ok, String(localized: "\(it.tracks.count) Tracks in „\(it.name)“"), key: "playlist")
+            }
+            let lists = Self.playlists(store.playlists.items)
+            if !lists.isEmpty { Divider() }
+            ForEach(lists, id: \.id) { it in
+                Button(it.name) { if let keys = keys() { store.addToPlaylist(keys, it.id) } }
+            }
+        }
+    }
+
+    /// Tracks des Ordners samt Unterordnern; noch nicht gelesen -> Hinweis, Lesen läuft
+    private func keys() -> [String]? {
+        let t = store.folders.tracks(in: path, recursive: true, library: store)
+        guard !t.isEmpty else {
+            StatusCenter.post(.info, String(localized: "Ordner wird gelesen – gleich noch einmal versuchen"), key: "playlist")
+            return nil
+        }
+        return t.map(\.key)
+    }
+
+    /// eigene Playlists (ohne Ordner und Smartlists), mit Ordnerpfad im Namen
+    static func playlists(_ items: [PlaylistItem], prefix: String = "") -> [(id: UUID, name: String)] {
+        items.flatMap { it -> [(id: UUID, name: String)] in
+            switch it.kind {
+            case .folder: return playlists(it.children, prefix: prefix + it.name + " / ")
+            case .playlist: return [(it.id, prefix + it.name)]
+            case .smartlist: return []
+            }
+        }
     }
 }

@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* folder right click (MUSIC FOLDERS, EXPLORER): `Alle Tracks mit Unterordnern in Playlist ▸` -> new playlist named after the folder or any own playlist, all audio files incl. subfolders, no duplicates
 * browser tree `EXPLORER`: mounted drives (usb sticks, external disks, network; follows plug in / out, right click eject) and home, music, desktop, downloads. folders open like MUSIC FOLDERS, audio files in the list
 * browser preview: loops as tinted bands over their length with a solid top edge (hotcue loops in the pad color, memory loops green), hotcues with their number when the preview is tall enough
 * key ⌃A: re-analyse the selected tracks of the active browser pane (assignable, ⌘, -> KEYBOARD; inside text fields ⌃A stays line start)
