@@ -120,7 +120,13 @@ final class MixModel {
     /// Einstellungen speichern; der EDIT-Modus kommt aus den Deck-Spiegeln (in `prefs` steht er nur beim Start)
     private func savePrefs() {
         var p = prefs
-        p.ui.editDecks = decks.map(\.editing)
+        // geliehener EDIT-Modus (Vorbereiten-Zeile, AUDIO-EDIT) bleibt ungespeichert: nach einem Neustart hinge er
+        // sonst fest, ohne Zeile, die ihn wieder ausschaltet (Schnitt- statt Loop-Zeile in jeder Ansicht)
+        let audioEdit = AudioEditMode.shared
+        p.ui.editDecks = decks.indices.map { d in
+            if audioEdit.active, d == AudioEditMode.deck { return audioEdit.wasEditing }
+            return decks[d].editing && !editOwnedByPrepare(d)
+        }
         p.save()
     }
 

@@ -60,6 +60,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * browser big / decks toggle: 0.1 s ease-out on the heights, the decks stay in place (bench `toggle`, median 60 -> 11 ms to big, 68 -> 13 ms back)
 
 ### fixed
+* decks: edit mode switched on by the prepare row or AUDIO-EDIT was saved and stuck after a restart (cut row instead of loop sizes, grid row, no edit button in a view without the transport row). borrowed edit mode is no longer saved; deck right click `EDIT-Modus beenden`
 * audio: a usb interface plugged into another usb port was not found (its uid carries the port position) -> minos fell back to the default output on start or kept waiting. same device (all uid parts but the position, exactly one match) is taken, its new uid stored, status line note
 * audio: deck output is bit-exact to the source at neutral settings (tempo 1, eq 0 dB, no filter, gain 0, main 1). the volume / gain / main glides stopped ~3e-5 below their target in float (−0.0003 dB); they now snap to it. null test `deckOutputEqualsSource`, fx golden hashes updated
 * browser: crash while drawing the column header (appkit copies header cells bitwise; the sort mark and font now live in cell properties that copy correctly)

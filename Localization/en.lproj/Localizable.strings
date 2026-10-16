@@ -1874,3 +1874,4 @@
 "Empfehlung %lld Frames · %.1f ms Puffer" = "Recommended %lld frames · %.1f ms buffer";
 "mit Reserve: die kleinere Stufe lag über %.0f %%" = "with margin: the smaller step was over %.0f %%";
 "%@ an einem anderen USB-Port erkannt" = "%@ found on another USB port";
+"EDIT-Modus beenden" = "Leave EDIT mode";
