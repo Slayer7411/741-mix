@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* deck waveform: `−` / `+` bottom right zoom the visible seconds in steps 1 · 1.5 · 2 · 3 · 4 · 6 · 8 · 12 · 16 s per side (all decks, `ui.waveformSeconds`)
 * waveform: other decks as markers. each deck with a grid shows a triangle + letter (A-D) at the top of the red line, at its offset to this track in beats (phrase wrap as the code readout). purple = in phase, bone = out, dimmed = stopped; outside the view an arrow at the edge with the offset (`D +3 BARS`). own layer over the tiles, follows the playhead per frame, no deck redraw. ⌘, -> DISPLAY -> `Andere Decks in der Wellenform` (default on). unit tests (offset, wrap, pixel mapping, clamp, labels), deck shot with three peers
 * help mode: `?` in the top bar or menu View -> `Hilfe-Modus`. rest the mouse 2 s over a control for a small card (name, function, key). german / english from the app language, one text table (`HelpTable`), unit tests (both languages, mode off = nothing). covers top bar clock, deck transport, loop, hotcues, beatjump, FX assign, mixer fader, browser chips, tree rows, FX slots, RIP
 * context menus: track rows and deck gain `Bewertung ▸` (also for a selection), `Pfad kopieren`, `Artist – Titel kopieren`, `Vorhören` (deck), `Nach Artist suchen` / `Nach Label suchen`, `Alle auswählen`; music folders `Pfad kopieren`; collection `Collection neu laden`. unit tests (entry lists)

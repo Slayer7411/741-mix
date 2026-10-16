@@ -454,6 +454,7 @@ struct WaveformView: View {
             trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d) && !(mix.decks[d].edit?.previewing ?? false)),
             range: mix.rangeMarked(d, grid: deck.grid), edit: mix.editing(d) ? mix.decks[d].edit : nil)
         Content(d: d, scene: scene, wave: wf, waiting: deck.track != nil && wf == nil).equatable()
+            .overlay(alignment: .bottomTrailing) { WaveZoomButtons().padding(3.z) }
     }
 
     /// Griff des Schnitts unter x (0 = Anfang, 1 = Ende), nur im EDIT-Modus; Abstand höchstens 8 pt
@@ -1021,5 +1022,39 @@ struct OverviewView: View {
                     .onEnded { _ in handle = nil })
             }
         }
+    }
+}
+
+/// − / + unten rechts in der Wellenform: sichtbare Sekunden je Seite in festen Stufen (alle Decks gleich,
+/// Beat-Abstände bleiben zwischen den Decks vergleichbar)
+struct WaveZoomButtons: View {
+    @Environment(MixModel.self) private var mix
+    static let steps: [Double] = [1, 1.5, 2, 3, 4, 6, 8, 12, 16]
+
+    /// nächste Stufe: rein = weniger Sekunden, raus = mehr
+    static func next(_ cur: Double, zoomIn: Bool) -> Double {
+        zoomIn ? steps.last { $0 < cur - 1e-9 } ?? steps[0] : steps.first { $0 > cur + 1e-9 } ?? steps[steps.count - 1]
+    }
+
+    var body: some View {
+        let cur = mix.prefs.ui.waveformSeconds
+        HStack(spacing: 1.z) {
+            cell("−", enabled: cur < Self.steps.last! - 1e-9) { mix.prefs.ui.waveformSeconds = Self.next(cur, zoomIn: false) }
+                .help("Wellenform verkleinern (mehr Sekunden)")
+            cell("+", enabled: cur > Self.steps[0] + 1e-9) { mix.prefs.ui.waveformSeconds = Self.next(cur, zoomIn: true) }
+                .help("Wellenform vergrößern (weniger Sekunden)")
+        }
+    }
+
+    private func cell(_ t: String, enabled: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(verbatim: t).font(Theme.mono(11.z, .semibold))
+                .frame(width: 14.z, height: 13.z)
+                .foregroundStyle(enabled ? Theme.bone : Theme.muted)
+                .background(Theme.void.opacity(0.75))
+                .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
     }
 }

@@ -270,6 +270,7 @@ anywhere on the deck (header, cover, tags, readouts, overview, empty space) -> t
 
 ## ◆ 05 · WAVEFORM + GRID
 
+* `−` / `+` bottom right in every deck waveform: zoom out / in, steps 1 · 1.5 · 2 · 3 · 4 · 6 · 8 · 12 · 16 s per side, all decks together (same as ⌘, -> DISPLAY -> visible seconds)
 * rendered as bitmap tiles in screen resolution (background thread) -> sharp at any zoom, no load on the render server
 * smooth edges: zoomed in (a block wider than a device pixel) the height runs linearly between block centres, zoomed out a column takes the highest block, edge blocks count by their share of the column. the top pixel row gets alpha by the share the peak reaches. 3-band blend: single-block notches in the peaks are filled (no comb of bright / dark columns at 1 block per pixel). spectrum / mono: outline through the block centres
 * height = real file level, full height = 0 dBFS, no normalizing -> loud masters look loud

@@ -1652,3 +1652,5 @@
 "Fehlende Tracks als Playlist %@ bei TIDAL anlegen (Suche nach Artist und Titel), nicht gefundene in einer Liste" = "create the missing tracks as playlist %@ on TIDAL (search by artist and title), unmatched ones in a list";
 "Tracks ohne Treffer bei TIDAL: Artist – Titel, zum Kopieren" = "tracks without a match on TIDAL: artist – title, to copy";
 "Tracks ohne Datei: Cloud „fehlt“ oder nicht auf der Platte. → TIDAL im Kopf: Playlist bei TIDAL" = "tracks without a file: cloud “missing” or not on disk. → TIDAL in the header: playlist on TIDAL";
+"Wellenform verkleinern (mehr Sekunden)" = "Zoom the waveform out (more seconds)";
+"Wellenform vergrößern (weniger Sekunden)" = "Zoom the waveform in (fewer seconds)";
