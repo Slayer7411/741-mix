@@ -1099,8 +1099,11 @@ extension SelfTest {
         await settle()
         let dup = mix.deck(d).duration
         let want2 = want1 + Double(Int(((a + len + 8 * g.beat) * rate).rounded()) - Int(((a + len) * rate).rounded())) / rate
-        // Tool-Loop aus der Vorschau
+        // Tool-Loop aus der Vorschau: an der Naht, ohne Schleife aus früheren Schritten (Lage hing sonst am Lauf davor)
         CutJob.lastResult = nil
+        mix.core.exitLoop(d)
+        mix.core.seek(d, seconds: a)
+        mix.pull()
         mix.exportToolLoop(d, beats: 8)
         let tl0 = Date()
         while CutJob.running, Date().timeIntervalSince(tl0) < 30 { try? await Task.sleep(for: .milliseconds(20)) }
