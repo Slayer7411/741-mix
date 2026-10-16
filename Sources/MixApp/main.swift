@@ -96,6 +96,7 @@ struct ContentView: View {
                 if l.contains("nobrowser") { mix.prefs.ui.browserLayout = .single; mix.prefs.ui.browserHeight = 120 }
             }
             mix.library = store   // Schneiden trägt neue Dateien in CUTS ein
+            AudioEditMode.shared.attach(mix: mix, browser: browserState)
             RipChecks.shared.mix = mix
             RipChecks.shared.library = store
             SelfTest.run(store: store, mix: mix, browser: browserState)
@@ -194,19 +195,24 @@ struct ContentView: View {
         .padding(.bottom, gap)
     }
 
+    /// Audio-Edit: Arbeitsliste und Vorschläge statt der Browser-Bereiche
     @ViewBuilder private var browsers: some View {
-        switch layout {
-        case .single:
-            BrowserPane(model: paneA)
-        case .sideBySide:
-            HSplitView {
+        if AudioEditMode.shared.active {
+            AudioEditArea()
+        } else {
+            switch layout {
+            case .single:
                 BrowserPane(model: paneA)
-                BrowserPane(model: paneB)
-            }
-        case .stacked:
-            VSplitView {
-                BrowserPane(model: paneA)
-                BrowserPane(model: paneB)
+            case .sideBySide:
+                HSplitView {
+                    BrowserPane(model: paneA)
+                    BrowserPane(model: paneB)
+                }
+            case .stacked:
+                VSplitView {
+                    BrowserPane(model: paneA)
+                    BrowserPane(model: paneB)
+                }
             }
         }
     }
@@ -358,6 +364,8 @@ struct MixApp: App {
                     Button("Profil löschen …") { LayoutProfiles.deleteAsking(mix: mix) }
                         .disabled(ui.activeProfile == nil)
                 }
+                Button(ShortcutID.audioEdit.title) { run(.audioEdit) }
+                    .shortcut(keys.combo(.audioEdit))
                 Divider()
                 ForEach([ShortcutID.zoomIn, .zoomOut, .zoomReset]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))

@@ -100,6 +100,7 @@ struct PlaylistsSection: View, SourceMenus {
                         if node.kind != .folder { exportMenu(.node(node)) }
                         OverviewMenuButton { nodeTracks(node) }
                         AnalysisMenuButtons { nodeTracks(node) }
+                        ImportMenuButton(source: node.name) { nodeTracks(node) }
                         CloudMenuButton(label: node.name) { nodeTracks(node) }
                     }
             }
@@ -279,6 +280,7 @@ struct OwnItemRow: View, SourceMenus {
         if item.kind != .folder { exportMenu(src) }
         OverviewMenuButton { store.ownTracksDeep(item.id) }
         AnalysisMenuButtons { store.ownTracksDeep(item.id) }
+        ImportMenuButton(source: item.name) { store.ownTracksDeep(item.id) }
         CloudMenuButton(label: item.name) { store.ownTracksDeep(item.id) }
     }
 }

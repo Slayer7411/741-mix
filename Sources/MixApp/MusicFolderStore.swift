@@ -233,6 +233,7 @@ private struct MusicFolderRow: View, SourceMenus {
                 resetPlayedButton(.folder(path), marked: ui.marked)
                 OverviewMenuButton { store.folders.tracks(in: path, recursive: true, library: store) }
                 AnalysisMenuButtons { store.folders.tracks(in: path, recursive: true, library: store) }
+                ImportMenuButton(source: (path as NSString).lastPathComponent) { store.folders.tracks(in: path, recursive: true, library: store) }
                 Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
             }
     }

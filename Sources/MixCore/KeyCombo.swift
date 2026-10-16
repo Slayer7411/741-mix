@@ -108,6 +108,8 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case compactDecks = "view.compactdecks"
     case profile1 = "view.profile1", profile2 = "view.profile2", profile3 = "view.profile3", profile4 = "view.profile4"
     case profileNext = "view.profileNext"
+    case audioEdit = "view.audioedit", audioEditPrev = "view.audioedit.prev", audioEditNext = "view.audioedit.next"
+    case audioEditDone = "view.audioedit.done"
     case zoomIn = "view.zoom.in", zoomOut = "view.zoom.out", zoomReset = "view.zoom.reset"
     case openCollection = "app.open", settings = "app.settings", closeWindow = "app.close", reconnectAudio = "app.reconnect"
     case undo = "edit.undo", redo = "edit.redo"
@@ -117,7 +119,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .resetPlayed, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .matching, .hidePlayed,
              .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6: .browser
         case .toggleMixer, .toggleFourDecks, .bigBrowser, .bigBrowserKey, .compactDecks, .zoomIn, .zoomOut, .zoomReset,
-             .profile1, .profile2, .profile3, .profile4, .profileNext: .view
+             .profile1, .profile2, .profile3, .profile4, .profileNext, .audioEdit, .audioEditPrev, .audioEditNext, .audioEditDone: .view
         case .openCollection, .settings, .closeWindow, .reconnectAudio: .general
         case .undo, .redo: .general
         default: .decks
@@ -198,7 +200,7 @@ public enum ShortcutID: String, CaseIterable, Sendable {
              .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop, .masterFX, .record,
              .editRemove, .editKeep, .editDuplicate, .editMute, .editLeft, .editRight, .editMark, .editSnap, .editRender,
              .toolLoop2, .toolLoop4, .toolLoop8, .toolLoop16, .prepBIn, .prepBOut, .prepABA, .prepAnalyse, .prepAmpUp, .prepNorm,
-             .prepAmpReset, .prepJoin, .prepSplit, .prepRender: nil
+             .prepAmpReset, .prepJoin, .prepSplit, .prepRender, .audioEdit, .audioEditPrev, .audioEditNext, .audioEditDone: nil
         }
     }
 }

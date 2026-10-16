@@ -95,6 +95,29 @@ struct LayoutProfile: Codable, Equatable, Identifiable {
     static let defaultSetupID = UUID(uuidString: "741D0000-0000-4000-8000-000000000001")!
     static let searchID = UUID(uuidString: "741D0000-0000-4000-8000-000000000002")!
     static let prepareID = UUID(uuidString: "741D0000-0000-4000-8000-000000000003")!
+    static let audioEditID = UUID(uuidString: "741D0000-0000-4000-8000-000000000004")!
+
+    /// „Audio-Edit“ (nur während des Modus, nicht in der Profilliste): ein Deck, Browser klein mit der Arbeitsliste,
+    /// Deck = Kopf, Übersicht (größer), Vorbereiten-Zeile, Hotcues
+    static func audioEdit(from ui: UIPrefs) -> LayoutProfile {
+        var p = LayoutProfile(name: String(localized: "Audio-Edit"), ui: ui)
+        p.id = audioEditID
+        p.deckCount = 1
+        p.showMixer = false
+        p.showFXUnits = false
+        var r = DeckRows()
+        r.comment = false; r.tags = false; r.phaseBar = false; r.transport = false
+        r.loop = false; r.jump = false; r.tempo = false; r.groove = false
+        r.hotcues = true; r.prepare = true
+        p.deckRows = r
+        p.showGridTools = false
+        p.browserHeight = 300
+        p.browserMaximized = false
+        p.hideTreeWithDecks = false
+        p.overviewHeight = max(ui.overviewHeight, 48)
+        p.statusBar = .always
+        return p
+    }
 
     /// „Vorbereiten“: ein Deck über die volle Breite, Browser groß, Deck = Kopf, Wellenform, Übersicht und eine
     /// Werkzeugzeile (Play, Grid, Schnitt, Amp, Join, Split, Render); das Deck geht dabei in den EDIT-Modus

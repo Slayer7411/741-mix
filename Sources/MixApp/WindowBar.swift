@@ -160,26 +160,26 @@ private struct StatusHID: View {
     }
 }
 
-/// CPU: Prozess-CPU; rot, wenn die Audio-Last über dem Budget (70 %) liegt
+/// DSP: Anteil des Audio-Budgets je Block (wie die Lastanzeige); rot über 70 %
 private struct StatusCPU: View {
     @Environment(MixModel.self) private var mix
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.1)) { _ in
             let s = MeterSampler.shared.sample
-            StatusPair(name: "CPU", value: String(format: "%.0f %%", s.cpu * 100), state: s.load.average > 0.7)
+            StatusPair(name: "DSP", value: String(format: "%.0f %%", s.load.average * 100), state: s.load.average > 0.7)
         }
         .onAppear { MeterSampler.shared.attach(mix.engine) }
-        .help("Prozess-CPU (100 % = ein Kern) · rot = DSP über 70 % Budget")
+        .help("Audio-Last: Anteil der Zeit je Block · rot = über 70 %")
     }
 }
 
-/// TITEL: Anzahl der Titel in der Collection
+/// TRACKS: Anzahl der Tracks in der Collection
 private struct StatusTracks: View {
     @Environment(LibraryStore.self) private var store
     var body: some View {
         HStack(spacing: 4) {
             Text(verbatim: store.tracks.count.formatted()).foregroundStyle(Theme.bone)
-            Text("TITEL").foregroundStyle(Theme.muted)
+            Text(verbatim: "TRACKS").foregroundStyle(Theme.muted)
         }
         .fixedSize()
     }
@@ -216,6 +216,9 @@ struct WindowSwitches: View {
                 }
             }
             BarDivider()
+            BarCell(title: "AUDIO-EDIT", active: AudioEditMode.shared.active, help: "Audio-Edit: ein Deck, Arbeitsliste der Import-Analyse (⌘, → KEYBOARD)") {
+                AudioEditMode.shared.toggle()
+            }
             BarCell(title: "DECKS", active: !browser.maximized, help: "Decks ein-/ausblenden (Browser groß)") {
                 browser.maximized.toggle()
             }

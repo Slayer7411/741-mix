@@ -294,6 +294,8 @@ struct UIPrefs: Codable, Equatable {
     var ripWithAnalysis = true
     /// Rip-Befund beim Laden als markierten Bereich setzen (nichts wird geschnitten)
     var ripMarkOnLoad = true
+    /// Audio-Edit: NORM / AMP vorschlagen, wenn die Spitze mehr als so viele dB unter 0 dBFS liegt
+    var audioEditHeadroom = 3.0
     /// DAW-Brücke: Pakete des Remote Scripts auf 127.0.0.1 empfangen (UDP)
     var dawBridge = true
     var dawBridgePort = 7411

@@ -1177,6 +1177,18 @@ struct BrowserSettings: View {
                     .settingsAnchor("browser.ripmark")
                 Text("lädt ein deck einen track mit offenem befund, wird der vorgeschlagene teil als bereich markiert (RIP · …). geschnitten wird nichts: rechtsklick -> markierten bereich entfernen.")
                     .settingsHint()
+                Stepper(value: Binding(get: { mix.prefs.ui.audioEditHeadroom }, set: { mix.prefs.ui.audioEditHeadroom = max(1, min(12, $0)) }),
+                        in: 1...12, step: 0.5) {
+                    Text("Audio-Edit: Lautheit vorschlagen ab \(String(format: "%.1f", mix.prefs.ui.audioEditHeadroom)) dB Reserve")
+                }
+                .settingsAnchor("browser.auditheadroom")
+                Text("audio-edit (AUDIO-EDIT, ⌘, -> KEYBOARD): ab dieser reserve unter 0 dBFS schlägt er NORM / AMP vor.")
+                    .settingsHint()
+                Button("Import-Lauf und erledigt zurücksetzen") { AudioEditMode.shared.resetRun() }
+                    .settingsControlColumn()
+                    .settingsAnchor("browser.auditreset")
+                Text("der nächste import analysieren nimmt wieder alle tracks ohne analyse und alle seit dem letzten lauf importierten. erledigt-markierungen fallen weg. die collection bleibt unberührt.")
+                    .settingsHint()
                 KeyProfileSettings()
             }
             DAWBridgeSettings()

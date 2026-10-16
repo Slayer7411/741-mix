@@ -927,6 +927,21 @@ right click tracks, TRACK COLLECTION, PREPARATION, a playlist, smartlist, playli
 * against the collection (`MIX741_RIP_NML=<collection.nml> MIX741_RIP_N=100 swift test --filter ripAgainstCollection`, read only), 96 local tracks: 3 with a foreign start / end, 17 with more than 6 s silence at the end, 1 grid suspect, not checked by ear
 * runtime (release, 20 local tracks): rip check alone (decode + check) ~0.75 s per track, the check itself ~0.04 s, with the analysis +0.04 s
 
+### audio-edit mode
+
+work list for the import analysis: one deck, the tracks that still need work, suggestions for the loaded one.
+
+* enter: `AUDIO-EDIT` in the toolbar, view menu (⌘, -> KEYBOARD, no default key) or tree right click `Import analysieren …` on TRACK COLLECTION, music folders, playlists and folders
+* `AUDIO-EDIT` / `✕ AUDIO-EDIT` leaves it and restores the view and the active profile as they were. the profile `Audio-Edit` is not in the list
+* `Import analysieren …`: tracks not analysed yet (no own analysis or missing tempo / grid, key, loudness) or without a rip check in the current version, plus tracks imported since the last run (`importDate`). queued like `Analysieren` + rip check (same throttling). the run time is kept in `audioedit.json`
+* the view button without import (keyboard or toolbar) takes the active browser pane's list as it is
+* list rows: `wartet`, `analysiert …`, `Vorschläge n`, `ok`, `erledigt`. click = load into deck A
+* deck A: a track is loaded only when deck A is not playing; otherwise the status line asks and nothing loads. an open rip finding is marked as range (as on load)
+* suggestions: rip finding with the same actions as the track menu (cut IN / OUT, remove as new file, discard), grid suspect (grid tools), loudness with NORM / AMP when the peak headroom is over `Audio-Edit: Lautheit vorschlagen ab` (default 3 dB, ⌘, -> BROWSER -> analyse), missing key / tempo / grid
+* `◀ ZURÜCK`, `WEITER ▶`, `✓ ERLEDIGT` (marks done, goes to the next). keys without default: `AUDIO-EDIT: zurück / weiter / erledigt und weiter` (⌘, -> KEYBOARD). right click a done row -> `Erledigt zurücknehmen`
+* `erledigt` is kept in `audioedit.json` (MINOS-741 folder), never in the collection. ⌘, -> BROWSER -> analyse -> `Import-Lauf und erledigt zurücksetzen` clears the run time and all done marks
+* writes only through the existing paths (`edits.json`, new files). nothing is cut automatically
+
 ### edit tracks
 
 editable: title, artist, release, mix, remixer, producer, label, catalog no, genre, comment, comment 2, key text, track #, release date, bpm (not for tracks locked in the collection), rating. not editable: file, time, bitrate, import, plays, played, key (analysis).

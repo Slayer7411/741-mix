@@ -897,6 +897,7 @@ struct SourceTreeFixed: View, SourceMenus {
                 Toggle("Gespielte Tracks ausblenden", isOn: Binding(get: { decks.prefs.ui.hidePlayedTracks }, set: { decks.prefs.ui.hidePlayedTracks = $0 }))
                 OverviewMenuButton { store.tracks }
                 AnalysisMenuButtons { store.tracks }
+                ImportMenuButton(source: "Track Collection") { store.tracks }
                 KeyProfileMenuButtons { store.tracks }
                 CloudMenuButton(label: "Track Collection") { store.tracks }
             }
