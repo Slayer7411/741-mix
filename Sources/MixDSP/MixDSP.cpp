@@ -36,6 +36,7 @@ constexpr int kMaxIn = kMaxFrames * 5;   // Eingang je Block bei Tempo bis 4× (
 constexpr double kPi = 3.14159265358979323846;
 constexpr float kReverbRef = 0.42f;       // Hall-Eingangsgewicht bei Pegel 1 (Abgleich: siehe Reverb::run)
 constexpr double kTrimFadeS = 0.003;      // Rampe an geschnittenen Rändern: kein Knacken, kein Gleichanteil am Rand
+constexpr double kScratchTauS = 0.02;    // Wellenform greifen: Zeitkonstante, mit der der Lesekopf dem Ziel der Hand folgt
 
 inline float dbToLin(float db) { return db <= -95.f ? 0.f : std::pow(10.f, db / 20.f); }
 
@@ -960,6 +961,9 @@ struct Deck {
     // Schnitt (Sekunden, Ende 0 = Track-Ende), als Paar per Sequenzzähler (ungerade = wird geschrieben)
     std::atomic<uint32_t> trimSeq{0};
     std::atomic<double> trimStartReq{0}, trimEndReq{0};
+    // Wellenform greifen (Sekunden): 0 = aus, 1 = Hand auf der Platte, 2 = losgelassen (läuft aufs Ziel aus)
+    std::atomic<int> scratchMode{0};
+    std::atomic<double> scratchTarget{0};
     // Track-Übergabe: Steuer-Thread füllt Slot (gen & 1) und veröffentlicht gen, Audio-Thread übernimmt und bestätigt
     TrackSlot slots[2];
     std::atomic<uint32_t> pendingGen{0};    // 0 = nichts ausstehend
@@ -1353,9 +1357,12 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n) {
         }
     }
 
-    bool playing = d.p[MD_PLAYING].load() > 0.5f && d.cur.frames > 0;
+    // Wellenform greifen: die Hand auf der Platte rechnet auch im Stopp (ein Teller unter der Hand klingt)
+    int sm = d.scratchMode.load();
+    bool scratch = sm != 0 && d.cur.frames > 0;
+    bool playing = (d.p[MD_PLAYING].load() > 0.5f || scratch) && d.cur.frames > 0;
     // Keylock aus oder Stopp: Lesekopf (läuft der Stretch-Latenz voraus) auf die hörbare Position zurück
-    bool stretchNow = playing && (d.p[MD_KEYLOCK].load() > 0.5f || d.p[MD_KEYSHIFT].load() != 0);
+    bool stretchNow = playing && !scratch && (d.p[MD_KEYLOCK].load() > 0.5f || d.p[MD_KEYSHIFT].load() != 0);
     if (d.wasStretching && !stretchNow) {
         if (!jumped) { d.pos = std::max(0.0, d.pos - d.latSm * d.latDir); d.flux = std::max(0.0, d.flux - d.latSm * d.latDir); }
         d.latSm = 0; d.wasStretching = false;
@@ -1382,7 +1389,7 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n) {
     double srcRatio = d.cur.rate / e->fs;
     int dir = d.p[MD_REVERSE].load() > 0.5f ? -1 : 1;
     float keyShift = d.p[MD_KEYSHIFT].load();
-    bool stretching = playing && (d.p[MD_KEYLOCK].load() > 0.5f || keyShift != 0);
+    bool stretching = playing && !scratch && (d.p[MD_KEYLOCK].load() > 0.5f || keyShift != 0);
     bool fluxOn = d.p[MD_FLUX].load() > 0.5f;
     double latencySrc = 0;
 
@@ -1411,13 +1418,22 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n) {
         float *ins[2] = {d.inL.data(), d.inR.data()}, *outs[2] = {L, R};
         d.stretch.process(ins, nIn, outs, n);
         latencySrc = d.stretch.inputLatency() + d.stretch.outputLatency() * rate * srcRatio;
+    } else if (scratch) {
+        // Ziel der Hand (Quell-Frames, im hörbaren Bereich): je Block der Anteil des Abstands, der in kScratchTauS verschwindet
+        double tgt = std::clamp(d.scratchTarget.load() * d.cur.rate, d.lo, d.hi);
+        double h = std::min(1.0, n / (kScratchTauS * e->fs));
+        double step = std::clamp((tgt - d.pos) * h / n, -4.0 * srcRatio, 4.0 * srcRatio);
+        bool loopWas = d.loopWrap; d.loopWrap = false;   // ein Loop wirkt nicht gegen die Hand
+        readResampled(d, L, R, n, step);
+        d.loopWrap = loopWas;
+        if (sm == 2 && std::fabs(tgt - d.pos) < 1.0) { int two = 2; d.scratchMode.compare_exchange_strong(two, 0); }   // angekommen
     } else {
         readResampled(d, L, R, n, rate * srcRatio * dir);
     }
     d.wasStretching = stretching;
 
     // Flux: Schattenposition läuft normal weiter, solange Loop/Reverse aktiv
-    if (fluxOn && (dir < 0 || d.loopActive)) d.flux += n * rate * srcRatio; else d.flux = d.pos;
+    if (fluxOn && !scratch && (dir < 0 || d.loopActive)) d.flux += n * rate * srcRatio; else d.flux = d.pos;
 
     // Ende (Track oder Schnitt): stoppt, sobald die hörbare Position es erreicht (Keylock: der Lesekopf läuft voraus,
     // dahinter liest er Stille – das Ende bleibt hörbar, nichts dahinter)
@@ -1872,6 +1888,13 @@ void mdsp_set_loop(MDEngine *e, int deck, bool active, double s, double en) {
     d.loopVersion.fetch_add(1);
     // sofort nach außen sichtbar (Kern fragt direkt danach ab)
     d.loopActiveOut.store(active); d.loopStartOut.store(s); d.loopEndOut.store(en);
+}
+
+void mdsp_scratch(MDEngine *e, int deck, double s, bool held) {
+    if (deck < 0 || deck >= MDSP_DECKS || !std::isfinite(s)) return;
+    Deck &d = e->decks[deck];
+    d.scratchTarget.store(std::max(0.0, s));
+    d.scratchMode.store(held ? 1 : 2);
 }
 
 void mdsp_follow(MDEngine *e, int deck, int source) {

@@ -269,6 +269,9 @@ anywhere on the deck (header, cover, tags, readouts, overview, empty space) -> t
 * display fields redraw the decks at once. analysis fields: loaded tracks are analysed again in the background from the samples in memory (~0.1 s cpu per 6-minute track, release), the old picture stays until the new one is ready. the track cache (`.mtrk`) always holds the default analysis; a preset with other analysis values re-analyses each track after loading
 * browser preview `like the waveform` takes the three preset colors (rgb direct: the spectrum palette)
 * drag the waveform = scrub, click the overview = jump
+* grab the waveform like a record (⌘, -> DECKS -> `Wellenform greifen`, default `Jog`; `aus` = scrub only). no modifier key and not in edit mode: open hand over the waveform, closed while dragging. ⌃ / ⌥ keep their meaning (range, free)
+  * `Vinyl`: the position follows the hand by the dragged distance (zoom aware), audible like a scratch, also while stopped. release: a playing deck continues at its speed, a stopped one stays at the new spot
+  * `Jog`: playing -> pitch bend by the hand's speed (drag left = faster, right = slower, back to the speed when the hand stops or lets go), no jump. stopped -> scrub, stays where released. a synced deck keeps its phase while the hand is on the waveform
 * played part can be dimmed
 
 spectrum (6 bands), colors:

@@ -429,6 +429,10 @@ struct DeckSettings: View {
                 .settingsAnchor("decks.syncmode")
                 sliderRow("Pitch-Bend-Stärke", $mix.prefs.engine.bendAmount, 0.01...0.12, format: "%.2f")
                     .settingsAnchor("decks.bend")
+                Picker("Wellenform greifen", selection: $mix.prefs.ui.waveGrab) {
+                    ForEach(WaveGrab.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                .settingsAnchor("decks.wavegrab")
                 sliderRow("Link-Versatz (ms)", $mix.prefs.engine.linkOffsetMs, -50...50, step: 1, format: "%+.0f", unit: "ms")
                     .settingsAnchor("decks.linkoffset")
             }

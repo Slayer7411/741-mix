@@ -110,7 +110,7 @@ enum UISelfTest {
 
         let u = UIDriver(mix: mix, store: store, browser: browser, history: history)
         let cases: [(String, (UIDriver, [Track]) -> Void)] = [
-            ("deck-menü", deckMenu), ("deck-menü-fläche", deckMenuArea), ("drop aufs deck", dropOnDeck), ("bereich in der wellenform", waveRange),
+            ("deck-menü", deckMenu), ("deck-menü-fläche", deckMenuArea), ("drop aufs deck", dropOnDeck), ("bereich in der wellenform", waveRange), ("wellenform greifen", waveGrab),
             ("spaltenbreite per doppelklick", fitColumn), ("statusleiste automatisch", autoStatusBar),
             ("tastenkürzel", shortcuts), ("werkzeugleiste", toolbar), ("zoom", zoom),
             ("edit-modus", editMode),
@@ -323,6 +323,51 @@ enum UISelfTest {
         guard let esc = u.mix.prefs.keys.combo(.rangeClear) else { fail("Esc nicht belegt") }
         u.key(esc)
         check(u.mix.range(0) == nil, "Esc hebt den Bereich nicht auf")
+    }
+
+    /// Wellenform greifen (⌘, -> DECKS) an Deck A: Vinyl folgt dem Zug (Position um die gezogene Strecke, auch im Stopp);
+    /// Jog im Stopp sucht wie bisher; Jog spielend bleibt das Deck nach dem Loslassen am Laufen. ⌃ + Ziehen bleibt Bereich
+    static func waveGrab(_ u: UIDriver, _ t: [Track]) {
+        guard let w = u.views.compactMap({ $0 as? WaveMouseView }).first(where: { $0.d == 0 }) else { fail("Wellenform A nicht gefunden") }
+        let mix = u.mix
+        guard mix.deck(0).track != nil else { fail("Deck A ohne Track") }
+        let saved = mix.prefs.ui.waveGrab
+        defer { mix.prefs.ui.waveGrab = saved }
+        if mix.deck(0).playing { mix.togglePlay(0); u.spin(1) { !mix.deck(0).playing } }
+        mix.setRange(0, nil)
+        let r = u.frame(w), spp = mix.prefs.ui.waveformSeconds * 2 / Double(r.width)
+        // 40 pt nach links = vorwärts um 40 Punkte Zeit
+        let want = 10 + 40 * spp
+        func zug(_ grab: WaveGrab, playing: Bool) -> Double {
+            mix.prefs.ui.waveGrab = grab
+            mix.core.seek(0, seconds: 10)
+            u.spin(0.3)
+            if playing { mix.togglePlay(0); u.spin(0.3) }
+            let p0 = mix.position(0)
+            u.drag(from: NSPoint(x: r.midX + 60, y: r.midY), to: NSPoint(x: r.midX + 20, y: r.midY), steps: 8)
+            let p1 = mix.position(0)
+            log(String(format: "wellenform greifen %@ %@: %.3f → %.3f s", grab.rawValue, playing ? "spielend" : "steht", p0, p1))
+            return p1 - p0
+        }
+        let v = zug(.vinyl, playing: false)
+        check(abs(10 + v - want) < 0.03, "Vinyl: Zug um 40 pt hat die Position um \(v) s bewegt, erwartet \(want - 10)")
+        check(!mix.deck(0).playing, "Vinyl: das stehende Deck ist nach dem Loslassen angelaufen")
+        _ = zug(.jog, playing: false)
+        check(abs(mix.position(0) - (10 + 40 * spp)) < 0.03, "Jog im Stopp: Suchen landet nicht dort, wo losgelassen wurde (\(mix.position(0)))")
+        check(!mix.deck(0).playing, "Jog im Stopp: das Deck ist angelaufen")
+        // spielend: kein Sprung, sondern Nudge; das Deck läuft nach dem Loslassen weiter
+        _ = zug(.jog, playing: true)
+        u.spin(0.3)
+        check(mix.deck(0).playing, "Jog spielend: das Deck ist nach dem Loslassen stehen geblieben")
+        check(mix.position(0) > 10 && mix.position(0) < 10 + 40 * spp + 1.5, "Jog spielend: Position \(mix.position(0)) springt")
+        mix.togglePlay(0)
+        u.spin(0.5) { !mix.deck(0).playing }
+        // ⌃ + Ziehen: Bereich, keine Bewegung der Position
+        mix.core.seek(0, seconds: 10)
+        u.spin(0.3)
+        u.drag(from: NSPoint(x: r.midX + 60, y: r.midY), to: NSPoint(x: r.midX + 20, y: r.midY), modifiers: .control, steps: 8)
+        check(mix.range(0) != nil && abs(mix.position(0) - 10) < 0.03, "⌃ + Ziehen: Bereich fehlt oder die Position ist mitgewandert")
+        mix.setRange(0, nil)
     }
 
     /// Doppelklick auf den Trenner rechts der Titel-Spalte im Kopf von Bereich A: Spalte auf den längsten Titel
