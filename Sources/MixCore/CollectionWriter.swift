@@ -25,6 +25,10 @@ public enum CollectionWriter {
         public var moved: [String: String] = [:]
         /// neu angelegte Einträge
         public var added: [String] = []
+        /// entfernte Einträge (Schlüssel)
+        public var removed: [String] = []
+        /// Verweise in den Playlists, die entfernt oder auf den Behalter umgebogen wurden
+        public var removedRefs = 0
         /// eigene Playlists, wie sie jetzt in der Datei stehen (nil = nicht geschrieben)
         public var playlists: [NMLOwnNode]?
         /// eigener Playlist-Ordner hat sich geändert

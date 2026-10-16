@@ -188,6 +188,8 @@ final class LibraryStore {
     @ObservationIgnored var edits: TrackEditStore?
     /// Einstellungen (Schreiben in die Collection-Datei, Playlists, Cuts)
     @ObservationIgnored var uiPrefs: () -> UIPrefs = { AppPrefs.load().ui }
+    /// Einstellungen ändern (z. B. Schreiben in die Collection für eine Aktion einschalten)
+    @ObservationIgnored var updateUIPrefs: (_ change: (inout UIPrefs) -> Void) -> Void = { _ in }
     /// eigene History-Sitzungen (Playlists in der Collection-Datei)
     @ObservationIgnored weak var history: HistoryStore?
     /// Tracks nach dem Schreiben neu aus der Datei (Decks: Vergleichsstand für eigene Hotcues)
@@ -722,6 +724,118 @@ final class LibraryStore {
             status = String(localized: "Collection-Datei nicht geschrieben: \(String(describing: e))")
             StatusCenter.post(.error, status, detail: url.path, key: "writeback")
         }
+    }
+
+    /// Schreibvorgang mit eigenem Auftrag (Entfernen, Zusammenführen): gleiche Sicherungen wie `flushWriteBack`
+    /// (Sicherung, Prüfung, atomar, Datei seit dem Lesen geändert -> erst neu laden). Danach eigene Listen auf den
+    /// Behalter umbiegen und die Liste neu aus der Datei laden. `done` auf dem Hauptthread: Ergebnis, nil = nicht
+    /// geschrieben (Grund steht in der Statuszeile)
+    func writeCollection(_ job: CollectionWriter.Job, redirects: [String: String] = [:],
+                         done: @escaping @MainActor (CollectionWriter.Result?) -> Void) {
+        guard !Session.isSelfTest, let url = sourceURL else { done(nil); return }
+        guard !writing else {
+            status = String(localized: "Collection-Datei: noch ein Schreibvorgang läuft")
+            StatusCenter.post(.info, status, key: "writeback")
+            done(nil)
+            return
+        }
+        guard uiPrefs().writeCollection else {
+            status = String(localized: "Collection-Datei nicht geschrieben: Schreiben in die Collection ist aus")
+            done(nil)
+            return
+        }
+        if Self.collectionSoftwareRunning() {
+            status = String(localized: "Collection-Datei nicht geschrieben: die Collection-Software läuft. Änderungen bleiben in MINOS-741.")
+            StatusCenter.post(.warning, status, key: "writeback")
+            done(nil)
+            return
+        }
+        if let s = loadedStamp, FileStamp(url: url) != s {
+            load(url)
+            status = String(localized: "Collection-Datei inzwischen geändert: erst neu laden, dann schreiben")
+            StatusCenter.post(.info, status, detail: url.path, key: "writeback")
+            done(nil)
+            return
+        }
+        var sent = job
+        sent.expected = loadedStamp
+        writing = true
+        let index = entryIndex
+        let backupDir = url.deletingLastPathComponent().appendingPathComponent("Backup MINOS-741")
+        Task.detached(priority: .utility) {
+            let result = Result { try CollectionWriter.write(url: url, job: sent, index: index, backupDir: backupDir) }
+            await MainActor.run { self.finishJob(result, url: url, redirects: redirects, done: done) }
+        }
+    }
+
+    private func finishJob(_ result: Result<CollectionWriter.Result, Error>, url: URL, redirects: [String: String],
+                           done: @escaping @MainActor (CollectionWriter.Result?) -> Void) {
+        writing = false
+        switch result {
+        case let .success(r):
+            entryIndex.remove(r.removed)
+            entryIndex.update(r.blocks)
+            if r.changed {
+                if let s = r.stamp { loadedStamp = s }
+                meta.clear(written: r.written)
+                analysis.markWritten(r.writtenAnalyses)
+                let ownGrid = Set(r.writtenCues.keys.filter { k in analysis.entry(for: k).map { $0.bpm != nil || $0.gridAnchorMs != nil } ?? false })
+                edits?.clearWritten(r.writtenCues, keepGrid: ownGrid)
+                redirectOwnLists(removed: Set(r.removed), redirects: redirects)
+                var msg = String(localized: "Collection-Datei geschrieben")
+                if !r.removed.isEmpty { msg += " · " + String(localized: "\(r.removed.count) entfernt") }
+                if r.removedRefs > 0 { msg += " · " + String(localized: "\(r.removedRefs) Playlist-Verweise") }
+                if !r.written.isEmpty || !r.writtenCues.isEmpty { msg += " · " + String(localized: "\(Set(r.written.keys).union(r.writtenCues.keys).count) Tracks") }
+                if let b = r.backup { msg += " · " + String(localized: "Sicherung \(b.lastPathComponent)") }
+                if !r.missing.isEmpty { msg += " · " + String(localized: "\(r.missing.count) nicht gefunden (Datei inzwischen geändert -> ↻ neu laden)") }
+                status = msg
+                StatusCenter.post(r.missing.isEmpty ? .ok : .warning, msg, detail: url.path, key: "writeback")
+                load(url)
+            } else {
+                status = r.missing.isEmpty ? String(localized: "Collection-Datei: schon aktuell")
+                    : String(localized: "\(r.missing.count) Einträge nicht gefunden (Datei inzwischen geändert -> ↻ neu laden)")
+                StatusCenter.post(r.missing.isEmpty ? .info : .warning, status, detail: url.path, key: "writeback")
+            }
+            done(r)
+        case let .failure(e) where e as? CollectionWriter.Refusal == .changedOnDisk:
+            writeAfterLoad = true
+            load(url)
+            done(nil)
+        case let .failure(e):
+            status = String(localized: "Collection-Datei nicht geschrieben: \(String(describing: e))")
+            StatusCenter.post(.error, status, detail: url.path, key: "writeback")
+            done(nil)
+        }
+    }
+
+    /// eigene Listen nach Entfernen / Zusammenführen: Verweise auf den Behalter (ohne Dublette), entfallene Einträge weg.
+    /// Preparation und der eigene Playlist-Baum; History-Sitzungen kommen beim nächsten Schreiben aus dem Speicher
+    private func redirectOwnLists(removed: Set<String>, redirects: [String: String]) {
+        guard !removed.isEmpty || !redirects.isEmpty else { return }
+        if preparation.contains(where: { removed.contains($0) || redirects[$0] != nil }) {
+            var out: [String] = []
+            for k in preparation {
+                if let n = redirects[k] {
+                    if !out.contains(n) { out.append(n) }
+                } else if !removed.contains(k) {
+                    out.append(k)
+                }
+            }
+            preparation = out
+        }
+        var tree = playlists
+        var touched = false
+        for (old, new) in redirects where tree.all.contains(where: { $0.tracks.contains(old) }) {
+            tree.renameTrack(old, to: new)
+            touched = true
+        }
+        if !removed.isEmpty {
+            for item in tree.all where item.kind == .playlist && item.tracks.contains(where: { removed.contains($0) }) {
+                tree.removeTracks(removed, from: item.id)
+                touched = true
+            }
+        }
+        if touched { playlists = tree }
     }
 
     /// Tracks nach dem Schreiben aus ihrem neuen ENTRY-Block (Cues, Grid), darüber die eigenen Werte wie beim Laden

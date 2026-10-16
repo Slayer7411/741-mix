@@ -80,6 +80,14 @@ extension CollectionWriter {
         public var newEntries: [Track] = []
         /// eigene Playlists unter `$ROOT/MINOS-741` (nil = Playlists nicht anfassen)
         public var playlists: [NMLOwnNode]?
+        /// Einträge entfernen (ENTRY-Block weg); Verweise in allen Playlists fallen weg
+        public var remove: Set<String> = []
+        /// entfernte Einträge -> Behalter: Verweise in den Playlists zeigen auf den Behalter (ohne Dublette)
+        public var redirects: [String: String] = [:]
+        /// Attribute des INFO-Elements je Schlüssel (COLOR, PLAYCOUNT)
+        public var info: [String: [String: String]] = [:]
+        /// zusätzliche Memory-Cues (Hotcue -1) je Schlüssel
+        public var cueAdds: [String: [Cue]] = [:]
         /// Datei muss noch so sein wie beim letzten Lesen (nil = nicht prüfen)
         public var expected: FileStamp?
 
@@ -89,6 +97,7 @@ extension CollectionWriter {
 
         public var isEmpty: Bool {
             changes.isEmpty && analyses.isEmpty && cues.isEmpty && moves.isEmpty && newEntries.isEmpty && playlists == nil
+                && remove.isEmpty && info.isEmpty && cueAdds.isEmpty
         }
     }
 
@@ -156,7 +165,6 @@ extension CollectionWriter {
     /// Grid-Markers wie beim Schreiben der Analyse, nicht bei gesperrten Einträgen (LOCK="1")
     public static func patch(entry block: String, edit e: TrackEdit) -> String {
         var s = block
-        let nl = block.unicodeScalars.contains("\r") ? "\r\n" : "\n"
         if e.hasGrid, !isLocked(block) {
             s = patch(entry: s, analysis: TrackAnalysis(bpm: e.bpm, gridAnchorMs: e.gridAnchorMs))
         }
@@ -167,8 +175,15 @@ extension CollectionWriter {
             if let i = missing.firstIndex(where: { sameCue($0, t.cue) }) { missing.remove(at: i) } else { drop.append(t.range) }
         }
         for r in drop.reversed() { s.removeSubrange(r) }
-        guard !missing.isEmpty else { return s }
-        let text = missing.map { cueTag($0) + nl }.joined()
+        return insertCues(missing, into: s)
+    }
+
+    /// Cues hinter das letzte CUE_V2 setzen (sonst vor `</ENTRY>`), je eine Zeile
+    static func insertCues(_ list: [Cue], into block: String) -> String {
+        guard !list.isEmpty else { return block }
+        var s = block
+        let nl = block.unicodeScalars.contains("\r") ? "\r\n" : "\n"
+        let text = list.map { cueTag($0) + nl }.joined()
         if let last = cueTags(in: s).last {
             let at = last.range.upperBound
             let lineStart = at == s.startIndex || s[s.index(before: at)] == "\n"
@@ -178,6 +193,18 @@ extension CollectionWriter {
             s.insert(contentsOf: onLine ? text : nl + text, at: end.lowerBound)
         }
         return s
+    }
+
+    /// ENTRY-Block mit zusätzlichen Cues (Memory-Cues aus einer Zusammenführung)
+    public static func patch(entry block: String, addCues list: [Cue]) -> String {
+        insertCues(list, into: block)
+    }
+
+    /// ENTRY-Block mit INFO-Attributen (COLOR, PLAYCOUNT); fehlt INFO, kommt es an die übliche Stelle
+    public static func patch(entry block: String, info attrs: [String: String]) -> String {
+        let nl = block.unicodeScalars.contains("\r") ? "\r\n" : "\n"
+        return setElement("INFO", attrs.sorted { $0.key < $1.key }.map { ($0.key, $0.value) },
+                          after: ["</MODIFICATION_INFO>", "</ALBUM>", "</LOCATION>"], in: block, nl: nl)
     }
 
     /// Eintrag gesperrt (LOCK="1" im ENTRY-Tag)
@@ -323,6 +350,72 @@ extension CollectionWriter {
         return out
     }
 
+    // MARK: - Verweise in Playlists
+
+    /// Einträge einer Playlist (`<ENTRY><PRIMARYKEY TYPE="TRACK" KEY="…">`): Bereich inkl. Zeilenende, Bereich des
+    /// Schlüssels, Schlüssel (unescaped)
+    static func playlistEntries(_ body: String) -> [(range: Range<String.Index>, keyRange: Range<String.Index>, key: String)] {
+        var out: [(range: Range<String.Index>, keyRange: Range<String.Index>, key: String)] = []
+        let open = "<ENTRY><PRIMARYKEY TYPE=\"TRACK\" KEY=\""
+        var pos = body.startIndex
+        while let at = body.range(of: open, options: .literal, range: pos..<body.endIndex),
+              let q = body[at.upperBound...].firstIndex(of: "\""),
+              let close = body.range(of: "</ENTRY>", options: .literal, range: q..<body.endIndex) {
+            var stop = close.upperBound
+            if body[stop...].hasPrefix("\r\n") { stop = body.index(stop, offsetBy: 2) } else if body[stop...].hasPrefix("\n") { stop = body.index(after: stop) }
+            out.append((at.lowerBound..<stop, at.upperBound..<q, unescape(String(body[at.upperBound..<q]))))
+            pos = stop
+        }
+        return out
+    }
+
+    /// Eine Playlist: Einträge entfernter Tracks weg; umgebogene zeigen auf den Behalter, außer der steht schon drin
+    /// (dann fällt der Eintrag weg). Ergebnis, Zahl der weggefallenen Einträge, Zahl der geänderten
+    static func patchEntries(_ body: String, remove: Set<String>, redirects: [String: String]) -> (text: String, dropped: Int, changed: Int) {
+        let list = playlistEntries(body)
+        var here = Set(list.filter { !remove.contains($0.key) && redirects[$0.key] == nil }.map(\.key))
+        var edits: [(Range<String.Index>, String)] = []
+        var dropped = 0, changed = 0
+        for e in list {
+            if let t = redirects[e.key], t != e.key {
+                if here.contains(t) {
+                    edits.append((e.range, "")); dropped += 1
+                } else {
+                    here.insert(t)
+                    edits.append((e.keyRange, escape(t)))
+                }
+                changed += 1
+            } else if remove.contains(e.key) {
+                edits.append((e.range, "")); dropped += 1; changed += 1
+            }
+        }
+        var text = body
+        for (r, t) in edits.sorted(by: { $0.0.lowerBound > $1.0.lowerBound }) { text.replaceSubrange(r, with: t) }
+        return (text, dropped, changed)
+    }
+
+    /// PLAYLISTS-Teil: alle Playlists durchgehen (ENTRIES der Playlist wird um die weggefallenen Einträge kleiner).
+    /// Ergebnis, Zahl der Änderungen
+    static func patchRefs(_ s: String, remove: Set<String>, redirects: [String: String]) -> (String, Int) {
+        var out = ""
+        var pos = s.startIndex
+        var total = 0
+        while let open = s.range(of: "<PLAYLIST ", options: .literal, range: pos..<s.endIndex),
+              let head = tagEnd(s, from: open.lowerBound),
+              let close = s.range(of: "</PLAYLIST>", options: .literal, range: head..<s.endIndex) {
+            var tag = String(s[open.lowerBound..<head])
+            let (body, dropped, changed) = patchEntries(String(s[head..<close.lowerBound]), remove: remove, redirects: redirects)
+            total += changed
+            if dropped > 0, let n = Int(attributes(tag[...])["ENTRIES"] ?? "") {
+                tag = setRawAttr("ENTRIES", String(max(0, n - dropped)), in: tag)
+            }
+            out += s[pos..<open.lowerBound] + tag + body + "</PLAYLIST>"
+            pos = close.upperBound
+        }
+        out += s[pos...]
+        return (out, total)
+    }
+
     // MARK: - Schreiben
 
     public enum Refusal: Error, Equatable, CustomStringConvertible {
@@ -357,15 +450,26 @@ extension CollectionWriter {
         var res = Result()
         var replacements: [(range: Range<Int>, new: [UInt8])] = []
         let keys = Set(job.changes.keys).union(job.analyses.keys).union(job.cues.keys).union(job.moves.keys)
+            .union(job.remove).union(job.info.keys).union(job.cueAdds.keys)
         let positions = locate(keys.compactMap { k in index.raw[k].map { (k, $0) } }, in: bytes)
         for key in keys.sorted() {
             guard let old = index.raw[key] else { res.missing.append(key); continue }
             let ob = Array(old.utf8)
             guard let pos = positions[key] else { res.missing.append(key); continue }
+            if job.remove.contains(key) {
+                // Block samt Zeilenende weg
+                var end = pos + ob.count
+                if end < bytes.count, bytes[end] == 10 { end += 1 } else if end + 1 < bytes.count, bytes[end] == 13, bytes[end + 1] == 10 { end += 2 }
+                replacements.append((pos..<end, []))
+                res.removed.append(key)
+                continue
+            }
             var new = old
             if let fields = job.changes[key] { new = patch(entry: new, changes: fields); res.written[key] = fields }
             if let a = job.analyses[key] { new = patch(entry: new, analysis: a); res.writtenAnalyses.append(key) }
             if let e = job.cues[key] { new = patch(entry: new, edit: e); res.writtenCues[key] = e }
+            if let i = job.info[key], !i.isEmpty { new = patch(entry: new, info: i) }
+            if let c = job.cueAdds[key], !c.isEmpty { new = patch(entry: new, addCues: c) }
             var newKey = key
             if let l = job.moves[key] { new = patch(entry: new, location: l); newKey = l.key; res.moved[key] = newKey }
             res.blocks[newKey] = new
@@ -375,7 +479,7 @@ extension CollectionWriter {
             bytes.replaceSubrange(r.range, with: r.new)
         }
         // neue Einträge (nur Schlüssel, die noch nicht in der Datei stehen)
-        let known = Set(index.raw.keys).subtracting(res.moved.keys).union(res.moved.values)
+        let known = Set(index.raw.keys).subtracting(res.moved.keys).subtracting(res.removed).union(res.moved.values)
         var added: [String] = []
         var seen = Set<String>()
         var newBlocks: [String] = []
@@ -392,12 +496,24 @@ extension CollectionWriter {
             let lineStart = close > 0 && bytes[close - 1] == UInt8(ascii: "\n")
             let text = (lineStart ? "" : "\n") + newBlocks.map { $0 + "\n" }.joined()
             bytes.insert(contentsOf: Array(text.utf8), at: close)
+            res.added = added
+        }
+        if !added.isEmpty || !res.removed.isEmpty {
+            // Zähler des COLLECTION-Elements (ENTRIES) nachführen, nach dem Einfügen/Entfernen
             let head = Array("<COLLECTION ENTRIES=\"".utf8)
             if let h = find(head, in: bytes), let q = bytes[(h + head.count)...].firstIndex(of: UInt8(ascii: "\"")),
                let n = Int(String(decoding: bytes[(h + head.count)..<q], as: UTF8.self)) {
-                bytes.replaceSubrange((h + head.count)..<q, with: Array(String(n + added.count).utf8))
+                bytes.replaceSubrange((h + head.count)..<q, with: Array(String(n + added.count - res.removed.count).utf8))
             }
-            res.added = added
+        }
+        // Verweise auf entfernte Einträge in allen Playlists: weg, oder auf den Behalter umgebogen
+        if !job.remove.isEmpty || !job.redirects.isEmpty, let p = find(Array("<PLAYLISTS>".utf8), in: bytes) {
+            let tail = String(decoding: bytes[p...], as: UTF8.self)
+            let (patched, changed) = patchRefs(tail, remove: job.remove, redirects: job.redirects)
+            if changed > 0 {
+                bytes.replaceSubrange(p..., with: Array(patched.utf8))
+                res.removedRefs = changed
+            }
         }
         // eigene Playlists (nur Tracks, die nach dem Schreiben in der Collection stehen)
         if let own = job.playlists {
@@ -405,7 +521,7 @@ extension CollectionWriter {
             func filtered(_ n: NMLOwnNode) -> NMLOwnNode {
                 switch n {
                 case let .folder(name, c): .folder(name, c.map(filtered))
-                case let .playlist(name, keys): .playlist(name, keys.map { res.moved[$0] ?? $0 }.filter { inFile.contains($0) })
+                case let .playlist(name, keys): .playlist(name, keys.map { res.moved[$0] ?? job.redirects[$0] ?? $0 }.filter { inFile.contains($0) })
                 }
             }
             let nodes = own.map(filtered)
@@ -474,11 +590,12 @@ extension CollectionWriter {
         let old = try NMLParser.parse(data: before)
         let new: Collection
         do { new = try NMLParser.parse(data: after) } catch { throw Failure.invalidResult("\(error)") }
-        guard new.tracks.count == old.tracks.count + r.added.count else {
-            throw Failure.invalidResult("\(old.tracks.count) -> \(new.tracks.count) tracks (+\(r.added.count) neu)")
+        guard new.tracks.count == old.tracks.count + r.added.count - r.removed.count else {
+            throw Failure.invalidResult("\(old.tracks.count) -> \(new.tracks.count) tracks (+\(r.added.count) neu, -\(r.removed.count) entfernt)")
         }
         let byKey = Dictionary(new.tracks.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         for k in r.added where byKey[k] == nil { throw Failure.invalidResult("neuer Eintrag fehlt: \(k)") }
+        for k in r.removed where byKey[k] != nil { throw Failure.invalidResult("entfernter Eintrag noch da: \(k)") }
         for (o, n) in r.moved where byKey[n] == nil || byKey[o] != nil { throw Failure.invalidResult("umbenannt, nicht gefunden: \(n)") }
         for (k, e) in r.writtenCues {
             guard let t = byKey[r.moved[k] ?? k] else { throw Failure.invalidResult("Track fehlt: \(k)") }
