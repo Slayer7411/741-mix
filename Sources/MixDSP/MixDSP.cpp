@@ -99,6 +99,33 @@ struct Biquad {
     }
 };
 
+/// EQ je Deck: Tief-Regal 100 Hz, Mitte-Glocke 1 kHz, Höhen-Regal 10 kHz. Ziel je Band (dB, -40 … +12; Kill = -40)
+/// wird je 32 Samples gegen einen Glättungswert (~15 ms) gefahren, die Koeffizienten folgen ihm; 0 dB = Identität
+struct EQBands {
+    Biquad bq[3];
+    float sm[3] = {0, 0, 0}, db[3] = {0, 0, 0};   // Glättungswert, dB der aktuellen Koeffizienten
+    static void setBand(Biquad &b, int band, double gain, double fs) {
+        if (band == 0) b.shelf(true, 100, gain, fs);
+        else if (band == 1) b.peaking(1000, 0.7, gain, fs);
+        else b.shelf(false, 10000, gain, fs);
+    }
+    void clearState() { for (auto &b : bq) b.clearState(); }
+    void run(const float (&tgt)[3], float *L, float *R, int n, double fs) {
+        constexpr int kSub = 32;
+        const float alpha = 1 - std::exp(-float(kSub) / float(0.015 * fs));
+        for (int i0 = 0; i0 < n; i0 += kSub) {
+            int m = std::min(kSub, n - i0);
+            for (int b = 0; b < 3; b++) {
+                float t = std::min(12.f, std::max(-40.f, tgt[b]));   // NaN -> Kill
+                sm[b] += (t - sm[b]) * alpha;
+                if (std::fabs(t - sm[b]) < 0.01f) sm[b] = t;
+                if (sm[b] != db[b]) { setBand(bq[b], b, sm[b], fs); db[b] = sm[b]; }
+                bq[b].run(L + i0, R + i0, m);
+            }
+        }
+    }
+};
+
 /// Ein-Knopf-Filter: v < 0 Lowpass, v > 0 Highpass, |v| klein = aus
 struct SweepFilter {
     Biquad bq;
@@ -985,7 +1012,7 @@ struct Deck {
     double latSm = 0;   // geglättete Keylock-Latenz (sonst springt die Position bei Tempowechseln)
     int latDir = 1;     // Richtung, in die der Lesekopf der Latenz vorausläuft
     float gainSm = 1, volSm = 0;
-    Biquad eqL, eqM, eqH; float lastEq[3] = {999, 999, 999};
+    EQBands eq;
     SweepFilter chanFilter;
     FXChain fx[MDSP_FX_UNITS];
     signalsmith::stretch::SignalsmithStretch<float> stretch;
@@ -1198,7 +1225,8 @@ static void readResampled(Deck &d, float *L, float *R, int n, double step) {
 /// NaN/Inf im Deck (kaputte Samples, instabiler Zustand): alle rekursiven Zustände zurück, sonst bleibt das Deck
 /// dauerhaft stumm. Läuft im Audio-Thread – nur Füllen vorhandener Puffer.
 static void healDeck(Deck &d) {
-    for (Biquad *b : {&d.eqL, &d.eqM, &d.eqH, &d.chanFilter.bq}) b->clearState();
+    d.eq.clearState();
+    d.chanFilter.bq.clearState();
     for (auto &c : d.fx) {
         c.filter.bq.clearState(); c.delayFilter.bq.clearState(); c.rollFilter.bq.clearState();
         c.delay.clear(); c.reverb.clear(); c.classic.clear();
@@ -1425,18 +1453,12 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n) {
 
     // Kanalzug: Gain, EQ, Filter
     float g = dbToLin(d.p[MD_GAIN_DB].load());
-    float eq[3] = {d.p[MD_EQ_LOW].load(), d.p[MD_EQ_MID].load(), d.p[MD_EQ_HIGH].load()};
-    if (eq[0] != d.lastEq[0]) { d.eqL.shelf(true, 100, std::max(-40.f, eq[0]), e->fs); d.lastEq[0] = eq[0]; }
-    if (eq[1] != d.lastEq[1]) { d.eqM.peaking(1000, 0.7, std::max(-40.f, eq[1]), e->fs); d.lastEq[1] = eq[1]; }
-    if (eq[2] != d.lastEq[2]) { d.eqH.shelf(false, 10000, std::max(-40.f, eq[2]), e->fs); d.lastEq[2] = eq[2]; }
+    const float eqT[3] = {d.p[MD_EQ_LOW].load(), d.p[MD_EQ_MID].load(), d.p[MD_EQ_HIGH].load()};
     for (int i = 0; i < n; i++) {
         d.gainSm += (g - d.gainSm) * 0.002f;
         L[i] *= d.gainSm; R[i] *= d.gainSm;
     }
-    if (eq[0] != 0) d.eqL.run(L, R, n);
-    if (eq[1] != 0) d.eqM.run(L, R, n);
-    if (eq[2] != 0) d.eqH.run(L, R, n);
-    // Kill: unter -95 dB das Band zusätzlich ganz herausnehmen ist mit Shelf/Peak bei -40 dB praktisch erreicht
+    d.eq.run(eqT, L, R, n, e->fs);
     d.chanFilter.update(d.p[MD_FILTER].load(), d.p[MD_FILTER_RES].load(), e->fs);
     d.chanFilter.run(L, R, n);
 

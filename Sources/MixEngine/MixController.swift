@@ -57,6 +57,8 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var trackEndWarning = 30.0
     public var crossfaderCurve = CrossfaderCurve.smooth
     public var eqKill = true
+    /// EQ auch im externen Modus (vor dem Kanalpaar). Aus: das Pult macht den EQ, Standard wegen Doppel-EQ
+    public var eqExternal = false
     public var channelFilterResonance = 0.6
     public var defaultLoopSize = 4.0
     public var defaultJumpSize = 4.0
@@ -1700,12 +1702,13 @@ public final class MixController: @unchecked Sendable {
         let auto = (ext ? p.autoGainExternal : p.autoGain) ? (s.track?.perceivedDb ?? 0) : 0
         engine.setGain(d, db: s.gainDb + auto + (ext ? p.headroomExternal : p.headroomInternal))
         engine.setChannelFilter(d, s.filter, resonance: p.channelFilterResonance)
-        if state.externalMixer {
-            engine.setEQ(d, low: 0, mid: 0, high: 0, kill: p.eqKill)
+        // Extern: EQ nur mit eigener Einstellung, sonst macht das Pult den EQ
+        let eqOn = !ext || p.eqExternal
+        engine.setEQ(d, low: eqOn ? s.eqLow : 0, mid: eqOn ? s.eqMid : 0, high: eqOn ? s.eqHigh : 0, kill: p.eqKill)
+        if ext {
             engine.setChannelVolume(d, 1)
             return
         }
-        engine.setEQ(d, low: s.eqLow, mid: s.eqMid, high: s.eqHigh, kill: p.eqKill)
         let x = state.crossfader
         let side: Double = switch s.xf {
             case .a: x <= 0 ? 1 : 1 - x

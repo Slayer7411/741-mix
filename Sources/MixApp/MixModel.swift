@@ -748,6 +748,8 @@ final class MixModel {
     }
     /// MAIN wirkt nur im internen Modus oder mit „Main-Volume wirkt auch extern“ (sonst setzt der Kern 1)
     var masterVolumeActive: Bool { mixerMode == .internalMixer || prefs.engine.masterVolumeExternal }
+    /// EQ-Regler wirken und sind sichtbar: intern immer, extern nur mit „EQ im externen Modus“
+    var eqVisible: Bool { mixerMode == .internalMixer || prefs.engine.eqExternal }
     func toggleQuantize() { prefs.engine.quantize.toggle() }
     func toggleSnap() { prefs.engine.snap.toggle() }
     func setClockMaster(_ on: Bool) { run { core.setClockMaster(on) } }

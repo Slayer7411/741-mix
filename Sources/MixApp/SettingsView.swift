@@ -577,6 +577,10 @@ struct MixerFXSettings: View {
                     .settingsAnchor("mixer.ext.autogain")
                 Toggle("Main-Volume wirkt auch extern", isOn: $mix.prefs.engine.masterVolumeExternal)
                     .settingsAnchor("mixer.ext.mainvol")
+                Toggle("EQ im externen Modus", isOn: $mix.prefs.engine.eqExternal)
+                    .settingsAnchor("mixer.ext.eq")
+                Text("Aus: das Pult macht den EQ. An: EQ vor jedem Kanalpaar in MINOS-741, Regler im Mixer und am Deck.")
+                    .settingsHint()
             }
             Section("FX-Units (Insert-Slots)") {
                 Toggle("FX-Units anzeigen", isOn: $mix.prefs.ui.showFXUnits)
