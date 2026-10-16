@@ -62,6 +62,7 @@ extension ShortcutID: Identifiable {
         case .reloadCollection: String(localized: "Collection neu laden")
         case .matching: String(localized: "Browser: Matching an/aus (passt zum Master)")
         case .hidePlayed: String(localized: "Browser: Gespielte Tracks ausblenden an/aus")
+        case .reanalyzeSelected: String(localized: "Browser: Auswahl neu analysieren")
         case .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6:
             String(localized: "Favorit \((index ?? 0) + 1) (Fokus-Bereich)")
         case .toggleMixer: String(localized: "Mixer ein/aus")
@@ -243,6 +244,10 @@ struct AppActions {
         case .reloadCollection: store.load(store.sourceURL ?? LibraryStore.defaultNML)
         case .matching: (mix.prefs.ui.browserLayout == .single ? browser.paneA : browser.activePane).matching.toggle()
         case .hidePlayed: mix.prefs.ui.hidePlayedTracks.toggle()
+        case .reanalyzeSelected:
+            let p = mix.prefs.ui.browserLayout == .single ? browser.paneA : browser.activePane
+            let tracks = p.shown.filter { p.selection.contains($0.id) }
+            if !tracks.isEmpty { Analyses.shared.enqueue(tracks, refresh: true) }
         case .favorite1, .favorite2, .favorite3, .favorite4, .favorite5, .favorite6:
             (mix.prefs.ui.browserLayout == .single ? browser.paneA : browser.activePane).applyFavorite(a.index ?? 0, store: store)
         case .toggleMixer: mix.prefs.ui.showMixer.toggle()
@@ -307,6 +312,8 @@ enum KeyMonitor {
         if a == nil, c.isPlain, c.mods == .shift { a = keys.action(for: KeyCombo(c.key, [])) }
         guard let a, a != .settings else { return false }
         if c.isPlain, NSApp.keyWindow?.firstResponder is NSText { return false }
+        // ⌃A neu analysieren: im Textfeld bleibt ⌃A „Zeilenanfang“
+        if a == .reanalyzeSelected, NSApp.keyWindow?.firstResponder is NSText { return false }
         // Editor-Kürzel: nur im AUDIO-EDIT-Modus und nie in Textfeldern (⌘C, ⌘V, ⌘A bleiben beim Text)
         if a.audioEditOnly, !AudioEditMode.shared.active || NSApp.keyWindow?.firstResponder is NSText { return false }
         // Rückgängig im Textfeld: Text-Undo des Felds (das Menü Bearbeiten führt sonst die App-Schritte aus)
