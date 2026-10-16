@@ -2235,6 +2235,19 @@ extension UISelfTest {
         check(mix.slots(b).map(\.id) == ["DELAY", plug], "nach + AULowpass: \(mix.slots(b).map(\.id))")
         check(mix.core.pluginInstance(b, slot: 1) != nil, "AULowpass lädt nicht: \(mix.pluginError(b) ?? "-")")
         check(row(1, plug) != nil, "Zeile 2 AULowpass fehlt in der Leiste")
+        // EDIT: an dem Plugin-Slot, nicht am eingebauten; öffnet das Plugin-Fenster (kommt der Klick nicht an: Direktaktion)
+        check(mark("fx edit \(b) 0", in: u.window) == nil, "EDIT an eingebautem Effekt DELAY")
+        if let edit = mark("fx edit \(b) 1", in: u.window) {
+            func pluginWindows() -> [NSWindow] { NSApp.windows.filter { $0.isVisible && $0.title.hasPrefix("◆ PLUGIN") } }
+            u.click(at: u.center(edit))
+            u.spin(2) { !pluginWindows().isEmpty }
+            if pluginWindows().isEmpty { log("insert-slots: EDIT kommt nicht an (synthetisch) – öffne direkt"); PluginWindow.show(unit: b, slot: 1, core: mix.core) }
+            check(!pluginWindows().isEmpty, "EDIT öffnet kein Plugin-Fenster")
+            pluginWindows().forEach { $0.close() }
+            u.spin(0.5)
+        } else {
+            fail("EDIT an Plugin-Slot 2 fehlt in der Leiste")
+        }
         // ✕ über das Kontextmenü der Zeile
         let item = String(localized: "Slot entfernen")
         if let r = row(1, plug), let menu = u.rightClick(at: u.center(r)), let i = menu.items.firstIndex(where: { $0.title == item }) {

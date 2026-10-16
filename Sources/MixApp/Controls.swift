@@ -112,6 +112,8 @@ struct DeckButton: View {
     var fill = false
     /// Titel nicht übersetzen (Namen aus Plugins)
     var verbatim = false
+    /// flach (11 pt statt 18, kleine Schrift) für Zeilen mit wenig Höhe, z. B. Insert-Slots in der Leiste
+    var compact = false
     let action: () -> Void
     @Environment(\.zoomExempt) private var exempt
 
@@ -119,11 +121,11 @@ struct DeckButton: View {
         let zoom = exempt ? 1 : 1.z
         Button(action: action) {
             (verbatim ? Text(verbatim: title) : Text(LocalizedStringKey(title)))
-                .font(Theme.label(10 * zoom, .bold))
+                .font(Theme.label((compact ? 8 : 10) * zoom, .bold))
                 .lineLimit(1)
                 .frame(minWidth: (width ?? 0) * zoom, maxWidth: fill ? .infinity : nil)
-                .frame(height: 18 * zoom)
-                .padding(.horizontal, 4 * zoom)
+                .frame(height: (compact ? 11 : 18) * zoom)
+                .padding(.horizontal, (compact ? 3 : 4) * zoom)
                 .foregroundStyle(active ? (Self.bright(color) ? Theme.void : Theme.bone) : Theme.bone.opacity(0.75))
                 .background(Rectangle().fill(active ? color.opacity(0.85) : Theme.void))
                 .overlay(Rectangle().stroke(active ? color : Theme.hairline, lineWidth: 1))
