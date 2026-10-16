@@ -596,6 +596,25 @@ struct MixerFXSettings: View {
                 sliderRow("Kanalfilter-Resonanz", $mix.prefs.engine.channelFilterResonance, 0.2...1.5)
                     .settingsAnchor("mixer.filterres")
             }
+            Section("Auto-Mix") {
+                Picker("Übergang", selection: $mix.prefs.autoMix.transitionBars) {
+                    Text(verbatim: "8 Takte").tag(8)
+                    Text(verbatim: "16 Takte").tag(16)
+                    Text(verbatim: "32 Takte").tag(32)
+                }
+                .pickerStyle(.segmented)
+                .settingsAnchor("automix.length")
+                Toggle("Bass-Tausch in der Mitte", isOn: $mix.prefs.autoMix.bassSwap)
+                    .settingsAnchor("automix.bassswap")
+                Toggle("Filter-Sweep", isOn: $mix.prefs.autoMix.filterSweep)
+                    .settingsAnchor("automix.sweep")
+                Toggle("Tonart-Konflikt erlauben", isOn: $mix.prefs.autoMix.allowKeyClash)
+                    .settingsAnchor("automix.keyclash")
+                Toggle("Key Sync beim Übergang", isOn: $mix.prefs.autoMix.keySync)
+                    .settingsAnchor("automix.keysync")
+                Text("auto-mix (interner mixer): wählt nach match den nächsten track aus den quellen der beiden bereiche, fährt den übergang über a und b und dreht sich an phrasengrenzen. match-regel wie ◆ passt (⌘, → browser).")
+                    .settingsHint()
+            }
             Section("Externer Mixer") {
                 headroomPicker("Headroom", $mix.prefs.engine.headroomExternal)
                     .settingsAnchor("mixer.ext.headroom")

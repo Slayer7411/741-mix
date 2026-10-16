@@ -65,6 +65,12 @@ struct ClockMirror: Equatable {
 final class MixModel {
     @ObservationIgnored let core = MixController()
     var engine: MixEngine { core.engine }
+    /// Auto-Mix (interner Mixer): Übergänge zwischen den Decks A und B, Anzeige im Mixer
+    @ObservationIgnored lazy var autoMix: AutoMixModel = {
+        let m = AutoMixModel()
+        m.mix = self
+        return m
+    }()
 
     /// Gespiegelter Zustand (ohne Sync-Nudge) – nicht beobachtet: Ansichten lesen nur die Teile, die sie zeigen
     /// (DeckMirror, FXMirror, clock, crossfader), sonst rendert jede Änderung alles neu, was `state` liest

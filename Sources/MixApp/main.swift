@@ -331,6 +331,10 @@ struct MixApp: App {
                 Divider()
                 Toggle("Mixer", isOn: Binding(get: { mix.prefs.ui.showMixer }, set: { mix.prefs.ui.showMixer = $0 }))
                     .shortcut(keys.combo(.toggleMixer))
+                Toggle("AUTO-MIX", isOn: Binding(get: { mix.autoMix.isOn }, set: { on in
+                    if on { mix.autoMix.startFromPanes() } else { mix.autoMix.stop(String(localized: "Auto-Mix aus")) }
+                }))
+                .disabled(mix.mixerMode != .internalMixer)
                 Picker("Decks", selection: Binding(get: { mix.prefs.ui.deckCount }, set: { mix.prefs.ui.deckCount = $0 })) {
                     Text("1 Deck").tag(1)
                     Text("2 Decks").tag(2)
@@ -449,6 +453,9 @@ extension MixApp {
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
         history.start(store: store, mix: mix)
         store.history = history
+        mix.autoMix.store = store
+        mix.autoMix.history = history
+        mix.autoMix.browser = browser
         appDelegate.onQuit = { [mix, browser, history] in
             mix.recorder.stopNow()   // laufende Aufnahme sauber schließen (Tracklist dabei)
             Session.saveNow(mix: mix, browser: browser)
