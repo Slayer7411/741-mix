@@ -102,6 +102,7 @@ struct ContentView: View {
             RipChecks.shared.library = store
             Analyses.shared.onAnalysed = { [weak mix, weak store] key in mix?.analysisUpdated(key, store: store) }
             SelfTest.run(store: store, mix: mix, browser: browserState)
+            SignalTestRun.runIfRequested(mix: mix)
             if DonateHint.dueNow { DonateHint.lastShown = Date(); donate = true }
         }
         .sheet(isPresented: $donate) { DonateView(shown: $donate) }
