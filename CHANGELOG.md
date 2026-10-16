@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* tag groups: color source per marker (waveform low / held lows / mids / highs / held highs or an own color); tidal: sign in button in ⌘, -> BROWSER
 * export: format (wie Quelle / WAV / AIFF / Apple Lossless / AAC 128–320), bit depth (16 / 24 / 32 float WAV), sample rate (44.1 / 48 / 88.2 / 96 kHz, streaming converter), TPDF dither on 16 bit, file name pattern. settings in ⌘, -> EDIT-Modus & Tool-Loops, window `EXPORT` before RENDER in AUDIO-EDIT with `remember as default`. applies to RENDER, cut, join, split and tool-loop. no mp3 (no encoder on the system)
 * export metadata: title, artist, album, remixer, label, genre, year, comment, key, bpm, cover (keep source / none / image) written into the file: m4a keys, ID3v2.4 chunk and LIST INFO for WAV and AIFF. prefilled from the source, the collection entry takes the edited values
 * auto-mix (internal mixer): `AUTO-MIX` in the mixer, view menu, or tree `Auto-Mix starten` on two or more selected entries. picks the next track by match (key, tempo window, tag groups, source alternation, no artist twice), transitions on phrase boundaries with bass swap and filter sweep, 8 / 16 / 32 bars. chip with next track and bars, SKIP, STOP, next three. settings ⌘, -> MIXER & FX -> Auto-Mix

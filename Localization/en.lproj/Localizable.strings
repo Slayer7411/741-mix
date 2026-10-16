@@ -1563,7 +1563,7 @@
 "ROLLE" = "ROLE";
 "OHNE GRUPPE" = "NO GROUP";
 "Gruppe %@" = "Group %@";
-"einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe" = "single capital letter = group, the following tags belong to it and take its color. word in capitals only (BASIS) = role. tags ▾ shows one column per group";
+"einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe. je gruppe: name, farbe aus der wellenform oder eigene farbe" = "single capital letter = group, the following tags belong to it and take its color. word in capitals only (BASIS) = role. tags ▾ shows one column per group. per group: name, color from the waveform or an own color";
 "gruppen-marker mit leerzeichen, es zählt das erste wort der gruppe (K tief, B sub, H off). ähnlich: diese gruppen gleich wie beim master. ergänzend: „gleich“ gleich, „anders“ anders, keine gemeinsame rolle (BASIS, SYNTH …). master ohne gruppen: egal, track ohne gruppen: passt nicht" = "group markers separated by spaces, the first word of a group counts (K tief, B sub, H off). similar: these groups same as the master. complementary: “same” same, “different” different, no shared role (BASIS, SYNTH …). master without groups: ignored, track without groups: no match";
 "Tags ≈ (Tag-Gruppen zum Master)" = "Tags ≈ (tag groups to the master)";
 "Bezug: spielendes Master-Deck, sonst das Fokus-Deck" = "Reference: playing master deck, else the focused deck";
@@ -1679,7 +1679,7 @@
 "nicht angemeldet" = "not signed in";
 "Client-ID" = "Client ID";
 "Playlist-Name" = "Playlist name";
-"developer.tidal.com: app anlegen, redirect-uri http://localhost:7412/tidal/callback, scopes user.read playlists.read playlists.write search.read. client-id hier eintragen, ohne client-secret. → TIDAL im kopf von MISSING, Anmeldung im browser." = "developer.tidal.com: create an app, redirect URI http://localhost:7412/tidal/callback, scopes user.read playlists.read playlists.write search.read. enter the client ID here, no client secret. → TIDAL in the header of MISSING, sign-in in the browser.";
+"developer.tidal.com: app anlegen, redirect-uri http://localhost:7412/tidal/callback, scopes user.read playlists.read playlists.write search.read. client-id hier eintragen, ohne client-secret. ANMELDEN öffnet den browser (oder beim ersten → TIDAL im kopf von MISSING)." = "developer.tidal.com: create an app, redirect URI http://localhost:7412/tidal/callback, scopes user.read playlists.read playlists.write search.read. enter the client ID here, no client secret. SIGN IN opens the browser (or the first → TIDAL in the header of MISSING).";
 "Muster der Playlist für MISSING: %Y Jahr, %y zwei Stellen, %m Monat, %d Tag. Standard missing-%y%m%d" = "pattern of the playlist for MISSING: %Y year, %y two digits, %m month, %d day. default missing-%y%m%d";
 "TIDAL: ohne Treffer (%lld)" = "TIDAL: no match (%lld)";
 "Schließen" = "Close";
@@ -1794,3 +1794,11 @@
 "Länge des Übergangs: 8, 16 oder 32 Takte. Start an der Phrasengrenze, die vor dem Outro liegt." = "length of the transition: 8, 16 or 32 bars. starts on the phrase boundary before the outro.";
 "auto-mix (interner mixer): wählt nach match den nächsten track aus den quellen der beiden bereiche, fährt den übergang über a und b und dreht sich an phrasengrenzen. match-regel wie ◆ passt (⌘, → browser)." = "auto-mix (internal mixer): picks the next track by match from the sources of both browser panes, runs the transition over A and B and aligns to phrase boundaries. match rule as in ◆ fits (⌘, → browser).";
 "Übergang (Takte)" = "Transition (bars)";
+"Anmelden" = "Sign in";
+"Anmeldung im Browser …" = "Signing in in the browser …";
+"Tief (Kick)" = "Low (kick)";
+"Tiefen gehalten (Bass)" = "Held lows (bass)";
+"Mitten" = "Mids";
+"Höhen (Hats)" = "Highs (hats)";
+"Höhen gehalten" = "Held highs";
+"eigene Farbe" = "own color";

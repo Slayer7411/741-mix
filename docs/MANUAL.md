@@ -1137,7 +1137,7 @@ K tief lang B sub schwer galopp H off DRUMS
 * values take the color of their marker (own tag color wins), roles keep their own colors. K / B / H take the waveform colors of the active preset: K = low (kick), B = held lows (bass), H = highs, darkened for the chip
 * marker chips are hidden in the comment 2 column, deck and detail bar (the color shows the group), TAGS ▾ keeps them as column heads
 * TAGS ▾: one column per group (order as in the text), then ROLE, then tags without group. click on the group head = tracks with that group
-* group names per marker in ⌘, -> TAGS (default K = KICK, B = BASS, H = HATS)
+* per marker in ⌘, -> TAGS: name (default K = KICK, B = BASS, H = HATS), color from the waveform (low / held lows / mids / highs / held highs, default K low, B held lows, H highs) or an own color (`ui.tagGroupWave`). any single capital letter works as a marker
 * role buttons BASIS / SYNTH / DRUMS / VOLL / ATMO match `» BASIS` in the text or `BASIS` as a whole tag
 
 smartlists:

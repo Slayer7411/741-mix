@@ -69,9 +69,11 @@ struct TidalUnmatchedSheet: View {
 
 /// ⌘, → BROWSER → TIDAL: Client-ID der eigenen App, Playlist-Muster, Abmelden
 struct TidalSettingsSection: View {
-    static let hint = "developer.tidal.com: app anlegen, redirect-uri http://localhost:7412/tidal/callback, scopes user.read playlists.read playlists.write search.read. client-id hier eintragen, ohne client-secret. → TIDAL im kopf von MISSING, Anmeldung im browser."
+    static let hint = "developer.tidal.com: app anlegen, redirect-uri http://localhost:7412/tidal/callback, scopes user.read playlists.read playlists.write search.read. client-id hier eintragen, ohne client-secret. ANMELDEN öffnet den browser (oder beim ersten → TIDAL im kopf von MISSING)."
     @Environment(MixModel.self) private var mix
     @State private var signedIn = TidalAuth.signedIn
+    @State private var signing: Task<Void, Never>?
+    @State private var error: String?
 
     var body: some View {
         @Bindable var mix = mix
@@ -81,8 +83,25 @@ struct TidalSettingsSection: View {
             TextField("Playlist-Name", text: $mix.prefs.ui.tidalPlaylistPattern)
                 .settingsAnchor("browser.tidal.pattern")
             HStack {
-                Text(signedIn ? "angemeldet" : "nicht angemeldet").font(Theme.mono(11)).foregroundStyle(Theme.muted)
+                Text(signing != nil ? "Anmeldung im Browser …" : signedIn ? "angemeldet" : "nicht angemeldet")
+                    .font(Theme.mono(11)).foregroundStyle(signedIn ? Theme.bone : Theme.muted)
                 Spacer()
+                if signing != nil {
+                    Button("Abbrechen") { signing?.cancel(); signing = nil }
+                } else {
+                    // Anmeldung ohne Playlist-Lauf: Browser öffnen, Rücksprung abwarten, Tokens in den Schlüsselbund
+                    Button("Anmelden") {
+                        error = nil
+                        let id = mix.prefs.ui.tidalClientID
+                        signing = Task { @MainActor in
+                            do { _ = try await TidalAuth.signIn(clientID: id) } catch { if !(error is CancellationError) { self.error = "\(error)" } }
+                            signedIn = TidalAuth.signedIn
+                            signing = nil
+                        }
+                    }
+                    .disabled(mix.prefs.ui.tidalClientID.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .settingsAnchor("browser.tidal.signin")
+                }
                 Button("Abmelden") {
                     TidalAuth.signOut()
                     signedIn = TidalAuth.signedIn
@@ -90,6 +109,7 @@ struct TidalSettingsSection: View {
                 .disabled(!signedIn)
                 .settingsAnchor("browser.tidal.signout")
             }
+            if let error { Text(error).font(Theme.mono(10)).foregroundStyle(Theme.state) }
             Text(TidalSettingsSection.hint).settingsHint()
         }
     }
