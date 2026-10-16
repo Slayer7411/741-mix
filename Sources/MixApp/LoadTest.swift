@@ -113,7 +113,7 @@ enum LoadTest {
     private static func openLog() {
         // MIX741_LOADTEST_DIR: anderer Ordner (Probeläufe, ohne latest.log der echten Läufe anzufassen)
         let dir = ProcessInfo.processInfo.environment["MIX741_LOADTEST_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
-            ?? HistoryStore.baseDir.appendingPathComponent("loadtest", isDirectory: true)
+            ?? DataDir.local.appendingPathComponent("loadtest", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd_HH-mm-ss"

@@ -47,8 +47,7 @@ final class Overviews {
             if let d = ProcessInfo.processInfo.environment["MIX741_OVERVIEW_DIR"] { return URL(fileURLWithPath: d, isDirectory: true) }
             return FileManager.default.temporaryDirectory.appendingPathComponent("minos-overviews-\(getpid())")
         }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MINOS-741/overviews")   // = HistoryStore.baseDir
+        return DataDir.local.appendingPathComponent("overviews")
     }()
 
     @ObservationIgnored let store = OverviewStore(directory: Overviews.directory)

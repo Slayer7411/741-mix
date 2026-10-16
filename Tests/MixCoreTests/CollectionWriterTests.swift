@@ -119,7 +119,7 @@ private func outside(_ text: String, block: String) -> (String, String) {
     #expect(c.tracks.first { $0.key == keyC }?.locked == true)
     #expect(c.root.children.first?.name == "Prep & Co")
 
-    // zweiter Lauf mit altem Index: Block nicht mehr da -> gemeldet, Datei unverändert; innerhalb einer Stunde keine neue Sicherung
+    // zweiter Lauf mit altem Index: Block nicht mehr da -> gemeldet, Datei unverändert; jede Änderung bekommt eine Sicherung
     let res2 = try CollectionWriter.write(url: url, changes: [keyA: [.title: "Nochmal"]], index: index, backupDir: backups,
                                           now: now.addingTimeInterval(600))
     #expect(res2.missing == [keyA] && !res2.changed)
@@ -128,12 +128,12 @@ private func outside(_ text: String, block: String) -> (String, String) {
     idx.update(res.blocks)
     let res3 = try CollectionWriter.write(url: url, changes: [keyA: [.title: "Nochmal"]], index: idx, backupDir: backups,
                                           now: now.addingTimeInterval(1200))
-    #expect(res3.changed && res3.backup == nil)
+    #expect(res3.changed && res3.backup != nil)
     #expect(try NMLParser.parse(url: url).tracks.first { $0.key == keyA }?.title == "Nochmal")
     let res4 = try CollectionWriter.write(url: url, changes: [keyB: [.title: "Später"]], index: idx, backupDir: backups,
                                           now: now.addingTimeInterval(3700))
     #expect(res4.backup != nil)
-    #expect(try FileManager.default.contentsOfDirectory(atPath: backups.path).count == 2)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: backups.path).count == 3)
     // keine Temp-Dateien liegen geblieben
     #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted() == ["Backup MINOS-741", "collection.nml"])
 }
