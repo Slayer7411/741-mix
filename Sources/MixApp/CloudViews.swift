@@ -37,7 +37,7 @@ struct CloudHook: View {
         var tracks = store.tracks(for: .preparation) + store.running
         for s in sig.sources {
             switch s {
-            case .collection, .history, .historyLive, .running, .preparation: continue
+            case .collection, .history, .historyLive, .running, .preparation, .missing: continue
             default:
                 let list = store.tracks(for: s)
                 if list.count <= Self.keepSourceLimit { tracks += list }

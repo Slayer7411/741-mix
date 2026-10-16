@@ -781,7 +781,7 @@ insert slots on the sum of the decks, after the faders and the crossfader, befor
 * sort by up to three columns: click a header -> that column sorts first, the previous ones stay behind it (`▼`, `▼2`, `▲3`); click the first again = reverse. right click the header -> take a column out, `Sortierung zurücksetzen`. saved with the session
 * stacked: the pane header is a column left of the list (more rows per pane)
 * favorites bar on top of each pane: 6 slots, source or filter. click = switch, right click = assign / rename / clear, drag a tree entry onto a slot, ⌃⌥1-6. details: [library · favorites](library.md#-favorites)
-* tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), TOOL-LOOPS (cut files with the tag `tool-loop`, see [full edit](#full-edit--tool-loops)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, MUSIC FOLDERS, PLAYLISTS (see [playlists](#playlists))
+* tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), TOOL-LOOPS (cut files with the tag `tool-loop`, see [full edit](#full-edit--tool-loops)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, MUSIC FOLDERS, PLAYLISTS (see [playlists](#playlists)), MISSING (tracks without a file, see [missing + tidal](#missing--tidal), only shown while there are some)
 * MUSIC FOLDERS = the music library on disk, folder by folder. click a folder -> its audio files (mp3, m4a, aac, aiff, wav, flac, ogg, opus)
   * files in the collection show bpm, key, tags, comments like everywhere else
   * files not in the collection are grey, no grid, load and preview anyway
@@ -1000,6 +1000,22 @@ BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION. read o
 * 6 files at a time. 14,160 tracks on a local drive: ~5 s
 * `NEW` needs the music folder scan (setting, on by default)
 * ⌘, -> BROWSER -> check collection: check on start (off), scan music folders (on)
+
+### missing + tidal
+
+tree entry `MISSING n` (under ZU BEARBEITEN, only while at least one track has no file): the tracks whose file is missing. same data as the check above: cloud status `fehlt`, else the load check at start (`fehlen n` in the console). sortable like any list, export and overview work too.
+
+* header `→ TIDAL` (gray without client id): creates a playlist on TIDAL from the missing tracks. each track is searched by artist and title (no `(Original Mix)`-style suffixes), a hit counts when the title and artist match and the duration is within 5 s when both are known
+* name of the playlist: ⌘, -> BROWSER -> TIDAL, pattern `missing-%y%m%d` (`%Y` year, `%y` two digits, `%m`, `%d`). the playlist is created UNLISTED; each run creates a new one
+* progress and ✕ in the status bar. result e.g. `TIDAL: 231 von 254 gefunden · Playlist missing-261016`. `NICHT GEFUNDEN n` opens the tracks without a hit (artist – title) with COPY
+* login: the first run opens TIDAL in the browser. the answer comes back to `http://localhost:7412/tidal/callback` on this mac only. tokens go to the keychain (service `MINOS-741 TIDAL`) and are refreshed on their own; ⌘, -> BROWSER -> TIDAL -> sign out deletes them
+
+setup, once, on developer.tidal.com:
+
+1. create an app, public client (no client secret)
+2. redirect URI: `http://localhost:7412/tidal/callback`
+3. scopes: `user.read`, `playlists.read`, `playlists.write`, `search.read`
+4. ⌘, -> BROWSER -> TIDAL -> client ID: the id of the app (it is not a secret, it stays in the settings)
 
 ## ◆ 10 · TAGS + SMARTLISTS
 

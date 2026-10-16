@@ -524,6 +524,7 @@ struct PaneHeader: View {
                 .help("Baum ein/aus")
             Text(model.source.title.uppercased()).font(Theme.label(13.z, .bold)).lineLimit(1)
             RowCount(model: model)
+            if model.source == .missing { TidalMissingButton() }
             OwnSmartlistEditButton(model: model)
             if !model.source.isHistory { RowsButtons(model: model) }
         }
@@ -846,6 +847,11 @@ struct SourceTreeFixed: View, SourceMenus {
             row("◆", "ZU BEARBEITEN").tag(BrowserSource.ripTodo)
                 .help("Tracks mit offenem Befund der Rip-Prüfung (Stille, fremder Anfang oder fremdes Ende, Grid prüfen)")
                 .contextMenu { AnalysisMenuButtons { store.tracks(for: .ripTodo) } }
+        }
+        if store.missingTracks.count > 0 {
+            row("✕", "MISSING \(store.missingTracks.count)").tag(BrowserSource.missing)
+                .help("Tracks ohne Datei: Cloud „fehlt“ oder nicht auf der Platte. → TIDAL im Kopf: Playlist bei TIDAL")
+                .contextMenu { exportMenu(.missing); OverviewMenuButton { store.tracks(for: .missing) } }
         }
         row("▤", "PREPARATION").tag(BrowserSource.preparation)
             .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
