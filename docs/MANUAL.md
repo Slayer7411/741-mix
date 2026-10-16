@@ -456,6 +456,30 @@ real cut = a new audio file. the original is never changed.
 * metadata: all fields of the original, title + ` [cut]`, bpm, key, comments, tags (comment 2), cover of the original. grid: anchor before the removed range stays, else it moves back by the removed length. keep: anchor from the new start, by whole bars behind it when it would lie before. hotcues, memory cues and loops outside the removed part move along, inside are dropped (loops over a cut edge too). a grid marker on a hotcue slot stays there on the new anchor
 * browser: tree entry CUTS (once a cut exists) with all cuts and their metadata, the file in MUSIC FOLDERS shows the same. saved in `cuts.json`, never in the collection file. `Collection prüfen` lists a cut in a music folder like any file without an entry
 
+### export
+
+settings for every new file of RENDER, cut, join, split and tool-loop: ⌘, -> DECKS -> EDIT-Modus & Tool-Loops (`Ausgabe: …`). defaults keep the old files. in AUDIO-EDIT the `EXPORT` button before `RENDER` opens a window for one file; `remember as default` stores its format part.
+
+| setting | choices |
+|---|---|
+| format | `wie Quelle` (default), WAV, AIFF, Apple Lossless (.m4a), AAC (.m4a, 128 / 192 / 256 / 320 kbit/s) |
+| bit depth | `wie Quelle` (default), 16, 24, 32 bit float (WAV only) |
+| sample rate | `wie Quelle` (default), 44.1 / 48 / 88.2 / 96 kHz |
+| dither | TPDF, default on. applied on the step to 16 bit (source with more bits, or rate changed) |
+| file name | `wie bisher` (default), or pattern: `{name}` = source name, `{tag}` = the job's tag (`cut`, `tool-loop 8`, `part 1`, `join`, `amp +3`) |
+
+* `wie Quelle`: wav / aiff stay wav / aiff in their depth (prepare row, as before). cut, EDIT RENDER and tool-loop write apple lossless as before; WAV or AIFF is picked explicitly
+* no mp3: on this system there is no mp3 encoder (AVFoundation and Core Audio), so mp3 is not offered
+* bit depth: apple lossless and AIFF take 16 or 24 bit, float only in WAV. AAC ignores the bit depth
+* sample rate: streaming converter (AVAudioConverter, best quality, mastering algorithm). length = frames × new rate / old rate, rounded
+* dither: TPDF (two uniform values, ±1 LSB, fixed seed: same input, same file). off = plain rounding
+* pattern: `/` and `:` become `-`. a taken name gets ` #2`, ` #3` …
+* metadata in every new file: title, artist, album, remixer, label, genre, year, comment, key (open key), bpm, cover. the EXPORT window fills them from the source; fields not changed keep what the job derived (title keeps ` [cut]`, comment the tool-loop text)
+* m4a (apple lossless, AAC): `©nam`, `©ART`, `©alb`, `©cmt`, `©gen`, `©pub`, `©day`, `tmpo` (bpm), freeform `REMIXER` and `initialkey`. passthrough, no second encode
+* wav: `id3 ` chunk (ID3v2.4, UTF-8) and LIST INFO. aiff: `ID3 ` chunk
+* cover: `Quelle übernehmen` (default) = embedded image of the source, `keins`, `Bild …` (JPEG or PNG). the image goes into the file (m4a `covr`, ID3 `APIC`)
+* the collection entry (when on, see browser) and CUTS take the same metadata
+
 ### prepare mode
 
 one deck, one row to get tracks ready: grid, cut, gain, join, split, all on the grid. profile `Vorbereiten` (PROFILE ▾, view menu -> profile) or DECKS -> ROWS -> `Vorbereiten`. while the row is shown the deck is in edit mode (drag = mark on the snap, click = cut mark); when the row goes, edit mode goes off again if the row switched it on. every result is a new file next to the original, the original is never written.
@@ -498,7 +522,7 @@ amp (gain only):
 RENDER:
 
 * edit list + gain in one pass. file `<name> [amp +3].m4a`, with edits `[cut amp +3]`, edits only `[cut]` (taken -> `#2` …). nothing changed -> `Nichts zu rendern`
-* format: wav / aiff sources stay wav / aiff in their bit depth (float wav stays float), everything else apple lossless (16 bit from 16-bit sources, else 24; mp3 / aac decoded, no second lossy generation)
+* format: wav / aiff sources stay wav / aiff in their bit depth (float wav stays float), everything else apple lossless (16 bit from 16-bit sources, else 24; mp3 / aac decoded, no second lossy generation). the settings in [export](#export) change it
 * metadata, grid and cues of the original through the edit list (as RENDER in edit mode). a grid set while the edit list plays counts (mapped back to the original). `load result into the deck` loads it (load lock applies)
 
 JOIN:

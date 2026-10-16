@@ -341,14 +341,14 @@ public enum ToolLoop {
     }
 
     /// „<Name> [tool-loop 8].m4a“, belegt -> „[tool-loop 8 #2]“ usw.
-    public static func fileName(_ original: String, beats: Int, taken: (String) -> Bool) -> String {
+    public static func fileName(_ original: String, beats: Int, ext: String = "m4a", taken: (String) -> Bool) -> String {
         var base = (original as NSString).deletingPathExtension
         if let r = base.range(of: #" \[(cut|tool-loop)( \d+)?( #\d+)?\]$"#, options: .regularExpression) { base.removeSubrange(r) }
         for n in 1...9999 {
-            let name = base + (n == 1 ? " [tool-loop \(beats)]" : " [tool-loop \(beats) #\(n)]") + ".m4a"
+            let name = base + (n == 1 ? " [tool-loop \(beats)]" : " [tool-loop \(beats) #\(n)]") + "." + ext
             if !taken(name) { return name }
         }
-        return base + " [tool-loop \(beats) \(UUID().uuidString.prefix(8))].m4a"
+        return base + " [tool-loop \(beats) \(UUID().uuidString.prefix(8))]." + ext
     }
 
     /// „tool-loop 8 beats · 128 BPM · from <Titel>“

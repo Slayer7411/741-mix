@@ -47,7 +47,7 @@ enum PrepareRender {
         let fm = FileManager.default
         let taken: (String) -> Bool = { fm.fileExists(atPath: dir.appendingPathComponent($0).path) }
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        var format = AudioCutWriter.format(matching: src)
+        var format = AudioCutWriter.format(matching: src, options: i.options, wavRule: true)
         let base = source.fromDeck ? 0 : 0.4
         func splice(_ e: EditList) -> AudioSplice {
             let f = e.frames(rate: rate, sourceFrames: source.frames)
@@ -55,6 +55,12 @@ enum PrepareRender {
         }
         func render(_ s: AudioSplice) -> AudioCutWriter.Render {
             { c, out, from, n in s.render(source.channels[c], into: out, from: from, count: n) }
+        }
+        /// Dateiname: Muster der Einstellungen, sonst die Regel wie bisher
+        func name(_ tag: String) -> String {
+            i.options.fileName(original: src.lastPathComponent, tag: tag, ext: format.ext, taken: taken) {
+                PrepareName.fileName(src.lastPathComponent, tag: tag, ext: format.ext, taken: taken)
+            }
         }
         func newTrack(_ url: URL, _ edl: EditList, duration: Double) -> Track {
             let vol = MusicFolder.volumeInfo(url.path)
@@ -75,13 +81,13 @@ enum PrepareRender {
             guard let tag = PrepareName.renderTag(cut: !edl.isPlain, gain: db) else {
                 throw Failure(text: String(localized: "Nichts zu rendern: Schnittliste ohne Änderung, AMP 0 dB"))
             }
-            let url = dir.appendingPathComponent(PrepareName.fileName(src.lastPathComponent, tag: tag, ext: format.ext, taken: taken))
-            try AudioCutWriter.write(frames: s.frames, channels: chans, sampleRate: rate, format: format, to: url, gain: factor,
-                                     clamp: allow, render: render(s)) { report(base + (1 - base) * $0) }
+            let url = dir.appendingPathComponent(name(tag))
             var t = newTrack(url, edl, duration: Double(s.frames) / rate)
             t.title = PrepareName.title(i.track.title, tag: tag)
             Amplify.loudness(&t, gain: db, peak: min(1, peak * factor))
             t.buildSearchText()
+            try AudioCutWriter.write(frames: s.frames, channels: chans, sampleRate: rate, format: format, to: url, gain: factor,
+                                     clamp: allow, tags: ExportTags(track: t), coverFrom: src, render: render(s)) { report(base + (1 - base) * $0) }
             CutJob.fileInfo(&t)
             var note: String?
             if lim.limited {
@@ -99,18 +105,18 @@ enum PrepareRender {
                 let s = splice(part)
                 guard Double(s.frames) >= rate * TrackTrim.minLength else { throw AudioCutWriter.CutError.empty }
                 let tag = SplitPlan.tag(k + 1)
-                let url = dir.appendingPathComponent(PrepareName.fileName(src.lastPathComponent, tag: tag, ext: format.ext, taken: taken))
+                let url = dir.appendingPathComponent(name(tag))
                 let share = (1 - base) / 2, from = base + share * Double(k)
+                var t = newTrack(url, part, duration: Double(s.frames) / rate)
+                t.title = PrepareName.title(i.track.title, tag: tag)
+                t.buildSearchText()
                 do {
                     try AudioCutWriter.write(frames: s.frames, channels: chans, sampleRate: rate, format: format, to: url,
-                                             render: render(s)) { report(from + share * $0) }
+                                             tags: ExportTags(track: t), coverFrom: src, render: render(s)) { report(from + share * $0) }
                 } catch {
                     for t in out { try? fm.removeItem(atPath: t.path) }   // abgebrochen: kein halbes Paar
                     throw error
                 }
-                var t = newTrack(url, part, duration: Double(s.frames) / rate)
-                t.title = PrepareName.title(i.track.title, tag: tag)
-                t.buildSearchText()
                 CutJob.fileInfo(&t)
                 out.append(t)
             }
@@ -129,18 +135,22 @@ enum PrepareRender {
             let join = AudioJoin(aFrames: a.frames, joint: Int((plan.joint * rate).rounded()),
                                  bStart: Int((plan.startB / plan.speed * rate).rounded()), bFrames: b.frames, fade: fade)
             guard join.frames > 0 else { throw AudioCutWriter.CutError.empty }
-            if !format.float { format.bitDepth = max(format.bitDepth, b0.bitDepth) }
-            if format.container == .alac { format = .alac(format.bitDepth) }
-            let url = dir.appendingPathComponent(PrepareName.joinName(src.lastPathComponent, (second.path as NSString).lastPathComponent,
-                                                                      ext: format.ext, taken: taken))
-            try AudioCutWriter.write(frames: join.frames, channels: chans, sampleRate: rate, format: format, to: url, render: { c, out, from, n in
-                join.render(a: { o, f, k in a.render(source.channels[c], into: o, from: f, count: k) }, b: b.channels[c],
-                            into: out, from: from, count: n)
-            }) { report(0.6 + 0.4 * $0) }
+            // Bit-Tiefe der zweiten Quelle, wenn nichts Bestimmtes eingestellt ist
+            if i.options.bits == .source, !format.float { format.bitDepth = max(format.bitDepth, b0.bitDepth) }
+            if format.container == .alac { format.bitDepth = format.bitDepth == 16 ? 16 : 24 }
+            format.dither = format.dither && format.bitDepth == 16
+            let joined = PrepareName.joinName(src.lastPathComponent, (second.path as NSString).lastPathComponent, ext: format.ext, taken: taken)
+            let url = dir.appendingPathComponent(i.options.fileName(original: src.lastPathComponent, tag: "join", ext: format.ext,
+                                                                    taken: taken) { joined })
             let vol = MusicFolder.volumeInfo(url.path)
             let key = MusicFolder.nmlKey(url.path, volume: vol.name, mount: vol.mount)
             var t = plan.track(a: aTrack, b: second, key: key, path: url.path, cuesA: aTrack.cues, cuesB: second.cues,
                                duration: Double(join.frames) / rate)
+            try AudioCutWriter.write(frames: join.frames, channels: chans, sampleRate: rate, format: format, to: url,
+                                     tags: ExportTags(track: t), coverFrom: src, render: { c, out, from, n in
+                join.render(a: { o, f, k in a.render(source.channels[c], into: o, from: f, count: k) }, b: b.channels[c],
+                            into: out, from: from, count: n)
+            }) { report(0.6 + 0.4 * $0) }
             CutJob.fileInfo(&t)
             var note: String?
             if plan.tempoMismatch, let ga = BeatGrid(track: aTrack), let gb = gridB {

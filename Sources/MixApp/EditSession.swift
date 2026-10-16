@@ -353,7 +353,8 @@ extension MixModel {
     // MARK: Datei
 
     /// Liste als neue Datei rendern (`[cut]` neben dem Original, Metadaten, Grid, Cues), danach ggf. ins Deck laden
-    func editRenderFile(_ d: Int, load: Bool? = nil) {
+    /// `sheet`: Eingaben des EXPORT-Fensters (Format, Metadaten), nil = Einstellungen
+    func editRenderFile(_ d: Int, load: Bool? = nil, sheet: ExportEdit? = nil) {
         guard let store = library, let s = readySession(d) else { return }
         guard !s.shown.isPlain else {
             StatusCenter.post(.warning, String(localized: "Schnittliste ohne Änderung"), key: "edit.\(d)")
@@ -361,7 +362,7 @@ extension MixModel {
         }
         let dir: URL? = Session.isSelfTest ? CutJob.selfTestDirectory : nil
         CutJob.start(.init(deck: d, kind: .edit(s.shown), track: s.base, grid: s.baseGrid, hotcues: s.base.hotcues, audio: s.source,
-                           load: load ?? prefs.ui.cutLoadsResult, directory: dir), mix: self, store: store)
+                           load: load ?? prefs.ui.cutLoadsResult, directory: dir, sheet: sheet), mix: self, store: store)
     }
 
     /// Tool-Loop: n Beats ab dem aktiven Loop, sonst ab der Position (nächster Taktanfang), als eigene Datei

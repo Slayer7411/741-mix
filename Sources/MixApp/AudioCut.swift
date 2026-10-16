@@ -112,14 +112,20 @@ enum CutJob {
         var load: Bool
         /// Zielordner (nil = neben dem Original)
         var directory: URL?
+        /// Ausgabe-Einstellungen (in `start` aus den Einstellungen, außer ein EXPORT-Fenster hat sie gesetzt)
+        var options = ExportOptions.standard
+        /// Eingaben des EXPORT-Fensters (Format und Metadaten), nil = Einstellungen und abgeleitete Metadaten
+        var sheet: ExportEdit?
     }
 
     /// `done`: nach erfolgreichem Schreiben (Hauptthread)
-    static func start(_ input: Input, mix: MixModel, store: LibraryStore, done: (@MainActor () -> Void)? = nil) {
+    static func start(_ job: Input, mix: MixModel, store: LibraryStore, done: (@MainActor () -> Void)? = nil) {
         guard !running else {
             StatusCenter.post(.warning, String(localized: "Schneiden läuft schon"), key: "cut", job: true)
             return
         }
+        var input = job
+        input.options = job.sheet?.options ?? mix.prefs.ui.export
         running = true
         let cancel = CutCancel()
         let stop: @MainActor @Sendable () -> Void = { cancel.cancel() }
@@ -172,6 +178,8 @@ enum CutJob {
         let fm = FileManager.default
         let taken: (String) -> Bool = { fm.fileExists(atPath: dir.appendingPathComponent($0).path) }
         let splice: AudioSplice, name: String
+        // Schnitt, Edit-RENDER und Tool-Loop: Apple Lossless wie bisher, die Einstellungen (Format, Bit, Rate) gelten
+        let fmt = AudioCutWriter.format(matching: src, options: i.options, wavRule: false)
         switch i.kind {
         case .prepare, .split, .join:
             return try PrepareRender.run(i, source: source, report: report)
@@ -180,22 +188,27 @@ enum CutJob {
             splice = mode == .remove ? AudioSplice.removing(a..<max(a, b), frames: source.frames, fade: fade)
                                      : AudioSplice.keeping(a..<max(a, b), frames: source.frames, fade: fade)
             guard Double(splice.frames) >= rate * TrackTrim.minLength else { throw AudioCutWriter.CutError.empty }
-            name = TrackCut.fileName(src.lastPathComponent, taken: taken)
+            name = i.options.fileName(original: src.lastPathComponent, tag: "cut", ext: fmt.ext, taken: taken) {
+                TrackCut.fileName(src.lastPathComponent, ext: fmt.ext, taken: taken)
+            }
         case let .edit(edl):
             let f = edl.frames(rate: rate, sourceFrames: source.frames)
             splice = AudioSplice(pieces: f.pieces, sourceFrames: source.frames, fade: fade, muted: f.muted)
             guard Double(splice.frames) >= rate * TrackTrim.minLength else { throw AudioCutWriter.CutError.empty }
-            name = TrackCut.fileName(src.lastPathComponent, taken: taken)
+            name = i.options.fileName(original: src.lastPathComponent, tag: "cut", ext: fmt.ext, taken: taken) {
+                TrackCut.fileName(src.lastPathComponent, ext: fmt.ext, taken: taken)
+            }
         case let .toolLoop(beats, r, bpm, _):
             let a = Int((r.start * rate).rounded()), n = ToolLoop.frames(beats: beats, bpm: bpm, rate: rate)
             guard n > 0, a >= 0, a + n <= source.frames else { throw AudioCutWriter.CutError.empty }
             splice = AudioSplice.toolLoop(a..<(a + n), frames: source.frames, fade: fade)
-            name = ToolLoop.fileName(src.lastPathComponent, beats: beats, taken: taken)
+            name = i.options.fileName(original: src.lastPathComponent, tag: "tool-loop \(beats)", ext: fmt.ext, taken: taken) {
+                ToolLoop.fileName(src.lastPathComponent, beats: beats, ext: fmt.ext, taken: taken)
+            }
         }
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(name)
         let base = source.fromDeck ? 0 : 0.4
-        try AudioCutWriter.write(splice, source: source, to: url) { report(base + (1 - base) * $0) }
         let duration = Double(splice.frames) / rate
         let vol = MusicFolder.volumeInfo(url.path)
         let key = MusicFolder.nmlKey(url.path, volume: vol.name, mount: vol.mount)
@@ -210,6 +223,9 @@ enum CutJob {
         case .prepare, .split, .join:
             throw AudioCutWriter.CutError.format
         }
+        // Metadaten: abgeleitet (Track); Eingaben des EXPORT-Fensters überschreiben die geänderten Felder
+        let tags = i.sheet?.apply(to: &t) ?? ExportTags(track: t)
+        try AudioCutWriter.write(splice, source: source, to: url, format: fmt, tags: tags, coverFrom: src) { report(base + (1 - base) * $0) }
         fileInfo(&t)
         return Output(tracks: [t], fromDeck: source.fromDeck)
     }

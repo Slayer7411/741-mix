@@ -328,6 +328,8 @@ struct UIPrefs: Codable, Equatable {
     var prepAllowClipping = false
     /// Vorbereiten JOIN: Tempo der zweiten Datei angleichen, wenn es bis ±0,5 % gleich ist
     var prepJoinMatchTempo = true
+    /// Ausgabe der gerenderten Dateien (RENDER, Schnitt, JOIN, SPLIT, Tool-Loop): Format, Bit, Abtastrate, Dither, Name
+    var export = ExportOptions()
 
     /// Ansichts-Profile (Menü Darstellung -> Profil, ⌘, -> Anzeige); fehlt das Feld, legt AppPrefs.decode drei an
     var layoutProfiles: [LayoutProfile] = []

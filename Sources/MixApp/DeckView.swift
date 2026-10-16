@@ -540,6 +540,7 @@ struct CutRow: View {
         @Environment(MixModel.self) private var mix
         let d: Int
         let m: Model
+        @State private var exporting = false
         static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.m == b.m }
 
         var body: some View {
@@ -575,6 +576,13 @@ struct CutRow: View {
                 }
                 if w != .tiny {
                     Divider().frame(height: 14.z)
+                    if AudioEditMode.shared.active {
+                        DeckButton(title: "EXPORT") { exporting = true }.stable()
+                            .help("Format, Bit, Abtastrate und Metadaten der neuen Datei, dann RENDER")
+                            .sheet(isPresented: $exporting) {
+                                if let b = mix.editSession(d)?.base { ExportSheet(d: d, base: b, options: mix.prefs.ui.export) }
+                            }
+                    }
                     DeckButton(title: "RENDER", active: m.previewing, color: Theme.state) { mix.editRenderFile(d) }.stable()
                         .help("Schnittliste als neue Datei rendern (<Name> [cut].m4a, Original bleibt)")
                 }
