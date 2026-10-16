@@ -1382,7 +1382,7 @@ extension UISelfTest {
         u.spin(20) { mix.editSession(d)?.rendering == false }
         check(abs(m.duration - (dur - 1)) < 1e-6, "audio-editor: Löschen ändert die Länge nicht")
         m.setSelection(TrackRange(0, 0.5))
-        check(m.copy(), "audio-editor: Kopieren ohne Ergebnis")
+        check(m.copy(), "audio-editor: Kopieren ohne Ergebnis (Auswahl \(String(describing: m.selection)), Track \(m.editTrack?.key ?? "-"), Stücke \(m.shown?.segments.count ?? -1), Dauer \(m.duration))")
         m.setCursor(3)
         m.paste()
         u.spin(20) { mix.editSession(d)?.rendering == false }

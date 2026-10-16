@@ -15,6 +15,8 @@ extension AudioEditMode {
     var playing: Bool { mix?.deck(Self.deck).playing ?? false }
     /// Schnittliste, wie Deck A sie spielt (nil ohne EDIT-Sitzung)
     var shown: EditList? { mix?.editSession(Self.deck)?.shown }
+    /// Track im Editor = der auf Deck A geladene (auch von Hand geladen, nicht nur aus der Arbeitsliste)
+    var editTrack: Track? { mix?.deck(Self.deck).track }
 
     /// Editor bereit: EDIT-Sitzung da und nicht mitten im Rendern (sonst Hinweis in der Statuszeile)
     private func session() -> EditSession? { mix?.readySession(Self.deck) }
@@ -237,7 +239,7 @@ extension AudioEditMode {
     /// Auswahl in die Zwischenablage (nur Stücke dieses Tracks)
     @discardableResult
     func copy() -> Bool {
-        guard let r = needSelection(), let key = current?.key, let segs = shown?.copy(r) else { return false }
+        guard let r = needSelection(), let key = editTrack?.key, let segs = shown?.copy(r) else { return false }
         clip = AudioEditClip(key: key, segments: segs)
         StatusCenter.post(.info, String(localized: "Kopiert: \(AudioEditView.clock(r.length))"), key: "audioedit.edit")
         return true
@@ -252,7 +254,7 @@ extension AudioEditMode {
 
     /// Zwischenablage am Cursor einfügen (Rest rückt nach hinten)
     func paste() {
-        guard let c = clip, c.key == current?.key, var n = shown else {
+        guard let c = clip, c.key == editTrack?.key, var n = shown else {
             return warn(String(localized: "Zwischenablage leer oder aus einem anderen Track"))
         }
         guard let out = n.paste(c.segments, at: cursor) else { return }
@@ -290,17 +292,17 @@ extension AudioEditMode {
 
     /// Marken des Tracks neu lesen (Trackwechsel, Eintritt)
     func reloadMarks() {
-        marks = (current.map { markStore.markers($0.key) } ?? []).sorted { $0.start < $1.start }
+        marks = (editTrack.map { markStore.markers($0.key) } ?? []).sorted { $0.start < $1.start }
     }
 
     private func saveMarks() {
-        guard let key = current?.key else { return }
+        guard let key = editTrack?.key else { return }
         markStore.set(marks, for: key)
     }
 
     /// Marke am Cursor (Quellzeit) oder Bereich aus der Auswahl; Name Standard „Marke n“ / „Bereich n“, per Doppelklick ändern
     func addMarker(range: Bool) {
-        guard let n = shown, current != nil else { return }
+        guard let n = shown, editTrack != nil else { return }
         if range {
             guard let r = selection, let a = n.sourceTime(r.start), let b = n.sourceTime(r.end) else {
                 return warn(String(localized: "Erst einen Bereich markieren"))
