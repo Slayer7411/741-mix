@@ -181,7 +181,9 @@ final class Overviews {
 
 /// Alles, was eine Vorschau bestimmt – Hash = Schlüssel im Bild-Cache
 struct PreviewSpec: Hashable, Sendable {
-    struct Mark: Hashable, Sendable { var t: Double; var r: UInt8, g: UInt8, b: UInt8 }
+    struct Mark: Hashable, Sendable { var t: Double; var r: UInt8, g: UInt8, b: UInt8; var number = 0 }
+    /// Loop (Hotcue-Loop oder gespeicherter Loop): Band über die Länge
+    struct LoopMark: Hashable, Sendable { var t: Double; var len: Double; var r: UInt8, g: UInt8, b: UInt8 }
     var key: String
     var path: String
     /// Generation der gespeicherten Übersicht (0 = keine)
@@ -191,6 +193,7 @@ struct PreviewSpec: Hashable, Sendable {
     var anchor: Double
     var phraseBeats: Int
     var cues: [Mark]
+    var loops: [LoopMark] = []
     var start: Mark?
     /// Schnitt (s): davor / dahinter gedimmt, Ränder markiert
     var cutStart: Double?
@@ -247,7 +250,12 @@ struct PreviewSpec: Hashable, Sendable {
         colors = ui.previewColors
         let startMs = Theme.startCueMs(t)
         let mark = { (ms: Double, p: PadColor) in Mark(t: ms / 1000, r: p.rgb.r, g: p.rgb.g, b: p.rgb.b) }
-        cues = t.hotcues.map { mark($0.startMs, c.color(for: $0, startMs: startMs, bpm: tempo)) }
+        cues = t.hotcues.map { h in var m = mark(h.startMs, c.color(for: h, startMs: startMs, bpm: tempo)); m.number = h.hotcue + 1; return m }
+        // Loops: Hotcue-Loops in ihrer Farbe, gespeicherte (Memory) grün
+        loops = t.cues.filter { $0.kind == .loop && $0.lengthMs > 0 }.map { l in
+            let p = l.hotcue >= 0 ? c.color(for: l, startMs: startMs, bpm: tempo).rgb : (r: UInt8(30), g: UInt8(120), b: UInt8(50))
+            return LoopMark(t: l.startMs / 1000, len: l.lengthMs / 1000, r: p.r, g: p.g, b: p.b)
+        }
         start = startMs.map { mark($0, c.colorStartCue) }
     }
 }
@@ -390,13 +398,33 @@ enum PreviewRenderer {
             ctx.setFillColor(bone.copy(alpha: 0.12)!)
             ctx.fill(CGRect(x: 0, y: mid - 0.5, width: W, height: 1))
         }
-        // Hotcues: kurze farbige Striche oben; Start-Cue: Dreieck oben
-        // dunkler Rand, damit weiße Cues auf heller Wellenform sichtbar bleiben
+        // Loops: getöntes Band über die Länge, kräftiger Rand oben
+        for l in s.loops {
+            let x0 = l.t * pps, w = max(2, l.len * pps)
+            let r = CGFloat(l.r) / 127, g = CGFloat(l.g) / 127, b = CGFloat(l.b) / 127
+            ctx.setFillColor(rgb(r, g, b, 0.28))
+            ctx.fill(CGRect(x: x0, y: 0, width: w, height: H))
+            ctx.setFillColor(rgb(r, g, b, 1))
+            ctx.fill(CGRect(x: x0, y: H - 3, width: w, height: 3))
+        }
+        // Hotcues: farbige Striche, dunkler Rand (weiße Cues auf heller Wellenform), Nummer bei genug Höhe
         ctx.setFillColor(void)
         ctx.fill(s.cues.map { CGRect(x: $0.t * pps - 2.5, y: H * 0.4, width: 5, height: H * 0.6) })
         for c in s.cues {
             ctx.setFillColor(rgb(CGFloat(c.r) / 127, CGFloat(c.g) / 127, CGFloat(c.b) / 127, 1))
             ctx.fill(CGRect(x: c.t * pps - 1.5, y: H * 0.4, width: 3, height: H * 0.6))
+        }
+        if H >= 30 {
+            for c in s.cues where c.number > 0 {
+                let box = CGRect(x: c.t * pps + 1.5, y: H - 13, width: 9, height: 12)
+                ctx.setFillColor(rgb(CGFloat(c.r) / 127, CGFloat(c.g) / 127, CGFloat(c.b) / 127, 1))
+                ctx.fill(box)
+                let str = NSAttributedString(string: "\(c.number)", attributes: [.font: NSFont.monospacedSystemFont(ofSize: 9, weight: .bold),
+                                                                                 .foregroundColor: NSColor.black])
+                let line = CTLineCreateWithAttributedString(str)
+                ctx.textPosition = CGPoint(x: box.minX + 1.5, y: box.minY + 2.5)
+                CTLineDraw(line, ctx)
+            }
         }
         if let st = s.start {
             let x = st.t * pps

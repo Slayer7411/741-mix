@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* browser preview: loops as tinted bands over their length with a solid top edge (hotcue loops in the pad color, memory loops green), hotcues with their number when the preview is tall enough
 * key ⌃A: re-analyse the selected tracks of the active browser pane (assignable, ⌘, -> KEYBOARD; inside text fields ⌃A stays line start)
 * buffer test: ⌘, -> AUDIO -> `PUFFER TESTEN` measures each buffer size the device accepts (64–1024) under a 4-deck load (keylock, sync, fx, silent main). per size: latency, peak and mean load, dropouts, watchdog timeouts. recommends the smallest safe size (`EMPFEHLUNG SETZEN`), one size up when the peak is over 45 %. status bar job, cancellable, refused while a deck plays. unit tests (decision)
 * browser column `Path`: full file path, cut in the middle, red when the file is missing, sortable (hidden by default, header right click)
