@@ -305,7 +305,10 @@ struct UIPrefs: Codable, Equatable {
     /// Audio-Edit: NORM / AMP vorschlagen, wenn die Spitze mehr als so viele dB unter 0 dBFS liegt
     var audioEditHeadroom = 3.0
     /// Audio-Edit: Raster beim Markieren beim Eintritt an (in der Werkzeugzeile per RASTER umschalten); Standard aus
-    var audioEditSnap = false
+    /// Raster beim Öffnen (neuer Schlüssel: Standard an, der alte stand bei allen auf aus)
+    var audioEditGrid = true
+    /// Rasterweite in Beats (AudioEditView.snapSteps)
+    var audioEditSnapBeats = 1.0
     /// DAW-Brücke: Pakete des Remote Scripts auf 127.0.0.1 empfangen (UDP)
     var dawBridge = true
     var dawBridgePort = 7411

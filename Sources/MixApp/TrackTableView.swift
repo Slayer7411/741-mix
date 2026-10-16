@@ -11,7 +11,7 @@ import MixEngine
 
 /// Spalte der Track-Tabelle. `id` = Schlüssel in der gespeicherten Anordnung (`columns.<bereich>`), Breiten bei 100 %
 struct TrackColumn {
-    enum Kind { case played, cloud, analyzed, info, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, groove, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file, rip, track }
+    enum Kind { case played, cloud, analyzed, info, color, cover, artist, title, preview, field(TrackField), bpm, key, harmony, groove, time, gain, rating, comment2, plays, lastPlayed, importDate, bitrate, file, path, rip, track }
     let id: String
     let title: String
     let kind: Kind
@@ -65,6 +65,7 @@ struct TrackColumn {
         .fixed("releasedate", "Release Date", .field(.releaseDate), 74, hidden: true, sort: KeyPathComparator(\Track.releaseSort)),
         .fixed("bitrate", "Bitrate", .bitrate, 44, hidden: true, sort: KeyPathComparator(\Track.bitrate)),
         .flex("file", "File Name", .file, min: 80, ideal: 220, hidden: true, sort: KeyPathComparator(\Track.fileName)),
+        .flex("path", "Path", .path, min: 120, ideal: 360, hidden: true, sort: KeyPathComparator(\Track.path)),
         .flex("mix", "Mix", .field(.mix), min: 60, ideal: 110, hidden: true, sort: KeyPathComparator(\Track.mix)),
         .fixed("rip", "Rip", .rip, 92, hidden: true, menu: String(localized: "Rip (Befund der Rip-Prüfung)")),
         // Sammelspalte, nur zweizeilig sichtbar (ersetzt die Spalten ihrer Teile)
@@ -696,6 +697,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         case .importDate: t.importText
         case .bitrate: t.bitrate > 0 ? "\(t.bitrate)" : ""
         case .file: t.fileName
+        case .path: t.path
         case .rip: RipChecks.shared.columnText(t.key)
         case .played, .cloud, .analyzed, .info, .color, .cover, .preview, .track: nil
         }
@@ -1226,6 +1228,9 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             draw(t.bitrate > 0 ? "\(t.bitrate)" : "", TableStyle.bone, l, ctx)
         case .file:
             draw(t.fileName, TableStyle.bone, l, ctx)
+        case .path:
+            // ganzer Pfad, Mitte gekürzt (Anfang und Dateiname bleiben lesbar)
+            drawText(t.path, t.fileExists ? TableStyle.muted : TableStyle.state, l, ctx, font: font, middle: true)
         case .rip:
             draw(RipChecks.shared.columnText(t.key), TableStyle.state, l, ctx)
         case .track:
@@ -1596,6 +1601,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         case let .field(f): return f.value(of: rows[row])
         case .comment2: return rows[row].comment2
         case .file: return rows[row].fileName
+        case .path: return rows[row].path
         default: return nil
         }
     }

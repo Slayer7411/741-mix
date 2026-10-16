@@ -443,6 +443,15 @@ struct AudioEditToolbar: View {
                 DeckButton(title: String(localized: "AUF AUSWAHL"), compact: true) { m.zoomToSelection() }
                 sep
                 DeckButton(title: String(localized: "RASTER"), active: m.snap, compact: true) { m.snapToggle() }
+                // Rasterweite: Bruchteile eines Beats bis 8 Takte (Grid des Tracks)
+                Menu {
+                    ForEach(AudioEditView.snapSteps, id: \.beats) { s in
+                        Button(s.label) { mix.prefs.ui.audioEditSnapBeats = s.beats; if !m.snap { m.snapToggle() } }
+                    }
+                } label: {
+                    Text(verbatim: AudioEditView.snapLabel(mix.prefs.ui.audioEditSnapBeats) + " ▾").font(Theme.label(9.z, .bold))
+                }
+                .menuStyle(.borderlessButton).fixedSize()
                 sep
                 DeckButton(title: String(localized: "LÖSCHEN ⌫"), compact: true) { m.delete() }
                 DeckButton(title: String(localized: "NUR AUSWAHL ⌥⌫"), compact: true) { m.crop() }
@@ -630,4 +639,12 @@ struct AudioEditHistory: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
+}
+
+extension AudioEditView {
+    /// Rasterweiten des Editors in Beats
+    static let snapSteps: [(beats: Double, label: String)] = [
+        (0.0625, "1/16"), (0.125, "1/8"), (0.25, "1/4"), (0.5, "1/2"), (1, "1 BEAT"), (4, "1 BAR"), (8, "2 BARS"), (16, "4 BARS"), (32, "8 BARS"),
+    ]
+    static func snapLabel(_ beats: Double) -> String { snapSteps.first { abs($0.beats - beats) < 1e-9 }?.label ?? "1 BEAT" }
 }

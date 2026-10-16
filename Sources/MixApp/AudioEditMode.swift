@@ -85,7 +85,7 @@ final class AudioEditMode {
             // Editor: Deck A im EDIT-Modus (Schnittliste), Raster standardmäßig aus (Einstellung „Raster beim Markieren“)
             wasEditing = mix.editing(Self.deck)
             mix.setEditing(Self.deck, true)
-            snap = mix.prefs.ui.audioEditSnap
+            snap = mix.prefs.ui.audioEditGrid
             cursor = 0
             selection = nil
             secPerPoint = 0
