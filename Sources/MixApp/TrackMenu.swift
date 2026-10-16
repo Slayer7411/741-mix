@@ -359,7 +359,7 @@ extension TrackTableController {
         a.makeReady = { CloudLibrary.shared.makeReady(tracks(), label: String(localized: "Auswahl")) }
         a.preview = { [weak mix] in if let id = ids.first, let t = store.track(id) { mix?.preview(t) } }
         a.finder = { NSWorkspace.shared.activateFileViewerSelecting(tracks().map { URL(fileURLWithPath: $0.path) }) }
-        a.resetPlayed = { [weak history] in history?.resetPlayed() }
+        a.resetPlayed = { [weak history] in history?.resetPlayed(keys: Set(keys)) }   // nur die gewählten Tracks
         return a
     }
 }

@@ -71,6 +71,8 @@ final class PlaylistTreeUI {
     var dropTarget: UUID?
     /// PLAYLISTS selbst als Ziel
     var rootTargeted = false
+    /// Mehrfachauswahl im Baum (⌘ / ⇧ Klick); die Quelle des Browsers ist der zuletzt angeklickte Eintrag
+    var marked: Set<BrowserSource> = []
 
     func rename(_ i: PlaylistItem) { renameText = i.name; renaming = i }
 }
@@ -94,6 +96,7 @@ struct PlaylistsSection: View, SourceMenus {
                     .help("aus der Collection-Datei (nur lesen)")
                     .favoriteDrag { BrowserFavorite.source(.node(node), store: store) }
                     .contextMenu {
+                        resetPlayedButton(.node(node), marked: ui.marked)
                         if node.kind != .folder { exportMenu(.node(node)) }
                         OverviewMenuButton { nodeTracks(node) }
                         AnalysisMenuButtons { nodeTracks(node) }
@@ -272,6 +275,7 @@ struct OwnItemRow: View, SourceMenus {
         MoveMenu(item: item)
         Button("Löschen …") { ui.deleting = item }
         Divider()
+        resetPlayedButton(src, marked: ui.marked)
         if item.kind != .folder { exportMenu(src) }
         OverviewMenuButton { store.ownTracksDeep(item.id) }
         AnalysisMenuButtons { store.ownTracksDeep(item.id) }
