@@ -41,6 +41,8 @@ public final class MixEngine: @unchecked Sendable {
     public var bufferFrames: UInt32?
     /// Gerät beim Start auf diese Rate stellen (nil = so lassen)
     public var deviceRate: Double?
+    /// Geräte-ID der laufenden Ausgabe (0 = keine)
+    public var outputDeviceID: AudioDeviceID { output.info.device }
     /// aktuelle Rate des Geräts
     public var outputRate: Double { output.deviceRate }
     /// Decks parallel rechnen: A im Audio-Thread, B–D auf eigenen Echtzeit-Threads in der Workgroup des Geräts, Summe danach.

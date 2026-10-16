@@ -904,6 +904,7 @@ struct AudioSettings: View {
                 Text("Eine neue Samplerate gilt am Gerät sofort, MINOS-741 rechnet ab dem nächsten Start damit.")
                     .settingsHint()
             }
+            BufferTestSettings()
             Section("Mixer") {
                 Picker("Modus", selection: Binding(get: { mix.mixerMode }, set: { mix.mixerMode = $0; mix.applyRouting() })) {
                     Text("Intern – Mixer in MINOS-741").tag(MixerMode.internalMixer)

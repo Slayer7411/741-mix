@@ -53,6 +53,17 @@ extension MixEngine {
         return [44100.0, 48000, 88200, 96000, 176400, 192000].filter { r in ranges.contains { $0.mMinimum <= r && r <= $0.mMaximum } }
     }
 
+    /// Puffergrößen, die das Gerät annimmt (Frames); nil wenn nicht lesbar
+    public static func bufferFrameRange(_ id: AudioDeviceID) -> ClosedRange<Int>? {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyBufferFrameSizeRange,
+                                              mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var r = AudioValueRange()
+        var size = UInt32(MemoryLayout<AudioValueRange>.size)
+        guard id != 0, AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &r) == noErr,
+              r.mMinimum >= 1, r.mMaximum >= r.mMinimum else { return nil }
+        return Int(r.mMinimum)...Int(min(r.mMaximum, Double(1 << 20)))
+    }
+
     /// aktuelles Standard-Ausgabegerät des Systems
     public static func defaultOutputDevice() -> AudioDeviceID? {
         var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,

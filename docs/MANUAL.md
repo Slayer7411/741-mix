@@ -666,6 +666,18 @@ the status bar shows device, mode and routing, preview pair as `PRE→9/10` (`PR
 * mac goes to sleep -> output stopped before, reopened after wake, playing decks play on. controllers are reconnected after wake
 * counters: click the meters -> `Gerät neu verbunden`, `Raten-/Pufferwechsel am Gerät`
 
+### buffer test
+
+⌘, -> AUDIO -> `PUFFER TESTEN` finds the buffer size for the current device and rate. sizes: 64 · 128 · 256 · 512 · 1024 frames, only those the device accepts.
+
+* per size: 2 s settle, then 12 s measured. 4 decks: A and B keylock, C and D sync to A, FX 1 and 2 with delay and reverb, main output at 0 (silent, external too), metronome off. loads 4 tracks from the collection (replaces the loaded ones), stops the decks at the end
+* refused while a deck or the preview plays. asks first. runs as a status bar job, ✕ cancels (the previous buffer size comes back)
+* not in the test: plugins, link, waveform drawing (only with decks visible in the main window)
+* per size: buffer ms, output latency ms (device + safety + stream), peak and mean load in % of the block, dropouts (blocks over budget + device overload messages), watchdog timeouts of parallel decks
+* recommendation: smallest size with 0 dropouts, 0 watchdog timeouts and a peak under 60 %. peak over 45 % -> one size up. no size passes -> no recommendation: check the device, run `scripts/loadtest.sh`
+* `EMPFEHLUNG SETZEN` sets the buffer size (same as the buffer picker)
+* the dropout counter is not reset. fx, keylock, sync, master and metronome go back to their values; decks stop, loaded tracks stay
+
 ## ◆ 08 · FX
 
 2 or 4 units (⌘, -> MIXER & FX). each unit is a rack of insert slots:

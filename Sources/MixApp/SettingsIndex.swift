@@ -46,6 +46,8 @@ enum SettingsIndex {
             e(t, "Ausgabegerät", "audio.samplerate", "Samplerate",
               hint: "Eine neue Samplerate gilt am Gerät sofort, MINOS-741 rechnet ab dem nächsten Start damit.", kw: "khz hz"),
             e(t, "Ausgabegerät", "audio.buffer", "Puffer (Latenz)", kw: "frames ms"),
+            e(t, "Puffer-Test", "audio.buffertest", "PUFFER TESTEN", hint: BufferTestSettings.hint,
+              kw: "buffer test latency latenz frames empfehlung recommendation xrun aussetzer"),
             e(t, "Ausgabegerät", "audio.reconnect", "Neu verbinden",
               hint: "startet die Ausgabe neu, z. B. wenn das Interface nach einem USB-Aussetzer stumm bleibt", kw: "reconnect usb"),
             e(t, "Mixer", "audio.mixermode", "Modus", kw: "mixer intern extern mischpult internal external"),
