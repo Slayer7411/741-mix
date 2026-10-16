@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* EXPLORER search: field at the top of the tree finds folders and audio files by name on all drives (spotlight, plus a direct walk of unindexed drives such as usb sticks, google drive included). hits are folders that open like the rest of the tree, a click lists their files
 * two macs as one session (⌘, -> DECKS -> Zwei Macs): mac 1 plays decks A/C, mac 2 decks B/D, each through its own interface. pairing over bonjour (`_minos741._tcp`) on ethernet, usb-c/thunderbolt bridge or the same network, no setup. played marks shared both ways (merged on connect), link turns on when connected, only mac 1 writes to the collection. unit tests (protocol)
 * browser preview: text over the band up to 15 · 16 · 18 pt
 * folder right click (MUSIC FOLDERS, EXPLORER): `Alle Tracks mit Unterordnern in Playlist ▸` -> new playlist named after the folder or any own playlist, all audio files incl. subfolders, no duplicates

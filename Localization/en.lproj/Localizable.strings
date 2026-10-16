@@ -1893,3 +1893,7 @@
 "Zwei-Mac: beide Macs haben dieselbe Rolle (⌘, -> DECKS)" = "Two Macs: both Macs have the same role (⌘, -> DECKS)";
 "Zwei-Mac: verbunden mit %@" = "Two Macs: connected to %@";
 "andere Version" = "other version";
+
+/* EXPLORER-Suche */
+"Suchen (Ordner, Dateien)" = "Search (folders, files)";
+"sucht …" = "searching …";
