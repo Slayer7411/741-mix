@@ -165,6 +165,7 @@ enum SettingsIndex {
             e(t, "Abspielen", "decks.loadprotect", "Lade-Schutz bei laufendem Deck",
               hint: "spielt das deck, wird nicht geladen (doppelklick, taste, controller-load) -> hinweis in der statusleiste. trotzdem laden: ⌥-doppelklick, shift + load, taste „auswahl ins fokus-deck laden (auch wenn es spielt)“.",
               kw: "load lock"),
+            e(t, "Zwei Macs", "decks.pair", "Dieser Mac", kw: "zwei-mac pair zweiter mac bildschirm ethernet usb thunderbolt a/c b/d"),
             e(t, "Tempo & Sync", "decks.keylock", "Keylock beim ersten Laden an", kw: "master tempo"),
             e(t, "Tempo & Sync", "decks.temporange", "Tempo-Bereich (Standard)", kw: "pitch range"),
             e(t, "Tempo & Sync", "decks.phaselock", "Phase laufend nachführen (Beat-Sync)"),

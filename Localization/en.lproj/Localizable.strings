@@ -269,7 +269,6 @@
 "Änderungen in die Collection-Datei schreiben (Backup davor)" = "Write changes into the collection file (backup first)";
 "aus: änderungen (inline, ⌘E) liegen nur in MINOS-741 (metadata.json). an: nach ÜBERNEHMEN in die collection.nml, sicherung höchstens stündlich in „Backup MINOS-741“ neben der datei. nicht, solange die collection-software läuft." = "off: changes (inline, ⌘E) stay in MINOS-741 only (metadata.json). on: after APPLY into collection.nml, a backup at most once per hour in “Backup MINOS-741” next to the file. never while the library software is running.";
 /* Phrasen-Anker */
-"Aus" = "Off";
 "Automatisch" = "Automatic";
 "beim laden prüft minos, ob die strukturwechsel des tracks auf 8-takt-grenzen ab dem grid-anker liegen. vorschlagen -> roter phrase-knopf in der grid-zeile, automatisch -> anker wird um ganze beats verschoben. bpm und raster bleiben, gespeichert in den eigenen änderungen, nie in der collection." = "on load minos checks whether the track's structural changes sit on 8-bar boundaries from the grid anchor. suggest -> red phrase button in the grid row, automatic -> the anchor moves by whole beats. bpm and grid stay, stored in minos's own edits, never in the collection.";
 "Grid-Anker 1 Beat früher (Raster bleibt)" = "Grid anchor 1 beat earlier (grid stays)";
@@ -1879,3 +1878,18 @@
 "Alle Tracks mit Unterordnern in Playlist" = "All tracks incl. subfolders to playlist";
 "Neue Playlist „%@“" = "New playlist “%@”";
 "Ordner wird gelesen – gleich noch einmal versuchen" = "Reading the folder – try again in a moment";
+
+/* Zwei-Mac-Modus */
+"Zwei Macs" = "Two Macs";
+"Dieser Mac" = "This Mac";
+"Aus" = "Off";
+"Mac 1 · Decks A/C · schreibt" = "Mac 1 · decks A/C · writes";
+"Mac 2 · Decks B/D" = "Mac 2 · decks B/D";
+"zwei macs als eine session: jeder spielt seine zwei decks über sein eigenes interface ins pult, takt über link (schaltet sich beim verbinden ein). verbindung per ethernet, usb-c/thunderbolt-kabel oder gleiches netz, ohne einrichten. gespielt-markierungen gelten auf beiden. collection auf beiden unter demselben pfad (google drive); in die collection schreibt nur mac 1. wirkt nach neustart." = "two macs as one session: each plays its two decks through its own interface into the mixer, tempo via link (turns on when connected). connection via ethernet, usb-c/thunderbolt cable or the same network, no setup. played marks apply on both. collection on both under the same path (google drive); only mac 1 writes to the collection. takes effect after restart.";
+"Zwei-Mac: Mac 1 wartet auf Mac 2" = "Two Macs: Mac 1 waiting for Mac 2";
+"Zwei-Mac: Mac 2 sucht Mac 1" = "Two Macs: Mac 2 looking for Mac 1";
+"Zwei-Mac: kein Netz-Dienst (%@)" = "Two Macs: no network service (%@)";
+"Zwei-Mac: Verbindung getrennt" = "Two Macs: connection lost";
+"Zwei-Mac: beide Macs haben dieselbe Rolle (⌘, -> DECKS)" = "Two Macs: both Macs have the same role (⌘, -> DECKS)";
+"Zwei-Mac: verbunden mit %@" = "Two Macs: connected to %@";
+"andere Version" = "other version";

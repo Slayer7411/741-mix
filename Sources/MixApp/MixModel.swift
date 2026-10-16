@@ -11,7 +11,7 @@ enum MixerMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-let deckLetters = ["A", "B", "C", "D"]
+var deckLetters: [String] { DeckLabels.letters }
 
 /// Zustand eines Decks für die Oberfläche – eigenes Observable, damit eine Änderung an Deck A
 /// nicht die Ansichten von B, C, D neu rendert (SwiftUI-Layout je Deck kostet messbar Zeit)

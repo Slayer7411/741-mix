@@ -576,7 +576,7 @@ public final class MixController: @unchecked Sendable {
 
     static let notLocalReason = String(localized: "Datei nicht lokal verfügbar (Cloud)")
 
-    static func deckLetter(_ d: Int) -> String { ["A", "B", "C", "D"][max(0, min(3, d))] }
+    static func deckLetter(_ d: Int) -> String { DeckLabels.letters[max(0, min(3, d))] }
 
     /// MIX741_DEBUG=1: Lade-, Hänger- und Controller-Protokoll
     public static let debug = ProcessInfo.processInfo.environment["MIX741_DEBUG"] == "1"

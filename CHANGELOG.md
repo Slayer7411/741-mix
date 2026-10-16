@@ -6,6 +6,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ## ◆ [UNRELEASED]
 
 ### added
+* two macs as one session (⌘, -> DECKS -> Zwei Macs): mac 1 plays decks A/C, mac 2 decks B/D, each through its own interface. pairing over bonjour (`_minos741._tcp`) on ethernet, usb-c/thunderbolt bridge or the same network, no setup. played marks shared both ways (merged on connect), link turns on when connected, only mac 1 writes to the collection. unit tests (protocol)
 * browser preview: text over the band up to 15 · 16 · 18 pt
 * folder right click (MUSIC FOLDERS, EXPLORER): `Alle Tracks mit Unterordnern in Playlist ▸` -> new playlist named after the folder or any own playlist, all audio files incl. subfolders, no duplicates
 * browser tree `EXPLORER`: mounted drives (usb sticks, external disks, network; follows plug in / out, right click eject) and home, music, desktop, downloads. folders open like MUSIC FOLDERS, audio files in the list

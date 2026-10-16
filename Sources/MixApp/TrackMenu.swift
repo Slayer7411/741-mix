@@ -180,7 +180,7 @@ enum TrackMenu {
 
     /// Rechtsklick in der Tabelle (Auswahl oder Zeile)
     static func browserItems(_ f: BrowserFacts, rip: [TrackMenuItem], _ a: Actions) -> [TrackMenuItem] {
-        var m: [TrackMenuItem] = (0..<4).map { n in .action(String(localized: "In Deck \(["A", "B", "C", "D"][n]) laden")) { a.load(n) } }
+        var m: [TrackMenuItem] = (0..<4).map { n in .action(String(localized: "In Deck \(deckLetters[n]) laden")) { a.load(n) } }
         m.append(.separator)
         var edit = TrackMenuItem.action(String(localized: "Bearbeiten …")) { a.edit() }
         edit.key = "e"

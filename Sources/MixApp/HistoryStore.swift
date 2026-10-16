@@ -19,6 +19,8 @@ final class HistoryStore {
     /// zählt bei jeder Änderung der Gespielt-Markierungen hoch (Listen-Schlüssel beim Ausblenden)
     @ObservationIgnored private(set) var playedRevision = 0
     static let playedURL = baseDir.appendingPathComponent("played.json")
+    /// eigene Änderung der Gespielt-Markierungen (hinzu, weg) – Zwei-Mac-Modus schickt sie zum anderen Mac
+    @ObservationIgnored var onPlayedChange: ((_ add: Set<String>, _ remove: Set<String>) -> Void)?
     let sessionStart = Date()
     private(set) var archive: [HistorySession] = []
     private(set) var prepArchive: [HistorySession] = []
@@ -99,6 +101,14 @@ final class HistoryStore {
 
     /// Gespielt-Markierungen setzen (Reset, Rückgängig, Selbsttest)
     func setPlayed(_ s: Set<String>) {
+        let add = s.subtracting(played), remove = played.subtracting(s)
+        applyPlayed(s)
+        if !add.isEmpty || !remove.isEmpty { onPlayedChange?(add, remove) }
+    }
+
+    /// Stand vom anderen Mac (Zwei-Mac-Modus): ohne Rückmeldung dorthin
+    func applyPlayed(_ s: Set<String>) {
+        guard s != played else { return }
         played = s
         playedRevision += 1
         savePlayed()
@@ -110,7 +120,7 @@ final class HistoryStore {
     }
 
     func record(deck: Int, track t: Track, start: Date) {
-        if played.insert(t.key).inserted { playedRevision += 1; savePlayed() }
+        if played.insert(t.key).inserted { playedRevision += 1; savePlayed(); onPlayedChange?([t.key], []) }
         live.append(HistoryEntry(key: t.key, title: t.title, artist: t.artist, bpm: t.bpm, keyText: t.openKey,
                                  deck: deck, start: start, duration: mix?.core.playedSeconds(deck) ?? 0))
         save()
@@ -133,7 +143,7 @@ final class HistoryStore {
     private func save(sync: Bool = false) {
         guard !live.isEmpty else { return }
         let entries = live, index = store?.entryIndex ?? NMLEntryIndex(), uuid = uuid, url = liveURL
-        let external = mix?.prefs.ui.historyToExternal == true ? Self.externalHistoryDir.appendingPathComponent(externalName) : nil
+        let external = mix?.prefs.ui.historyToExternal == true && mix?.prefs.ui.pairRole != .follower ? Self.externalHistoryDir.appendingPathComponent(externalName) : nil
         if ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" { SelfTest.historyURL = url }
         let write = {
             let text = HistoryNMLWriter.nml(entries: entries, index: index, uuid: uuid)

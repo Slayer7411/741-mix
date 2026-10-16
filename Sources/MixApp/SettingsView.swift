@@ -414,6 +414,15 @@ struct DeckSettings: View {
                 Text("spielt das deck, wird nicht geladen (doppelklick, taste, controller-load) -> hinweis in der statusleiste. trotzdem laden: ⌥-doppelklick, shift + load, taste „auswahl ins fokus-deck laden (auch wenn es spielt)“.")
                     .settingsHint()
             }
+            Section("Zwei Macs") {
+                Picker("Dieser Mac", selection: $mix.prefs.ui.pairRole) {
+                    ForEach(PairRole.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                .settingsAnchor("decks.pair")
+                .onChange(of: mix.prefs.ui.pairRole) { _, r in if r != .off { mix.prefs.ui.deckCount = 2 } }
+                Text("zwei macs als eine session: jeder spielt seine zwei decks über sein eigenes interface ins pult, takt über link (schaltet sich beim verbinden ein). verbindung per ethernet, usb-c/thunderbolt-kabel oder gleiches netz, ohne einrichten. gespielt-markierungen gelten auf beiden. collection auf beiden unter demselben pfad (google drive); in die collection schreibt nur mac 1. wirkt nach neustart.")
+                    .settingsHint()
+            }
             Section("Tempo & Sync") {
                 Toggle("Keylock beim ersten Laden an", isOn: $mix.prefs.engine.keylockDefault)
                     .settingsAnchor("decks.keylock")
