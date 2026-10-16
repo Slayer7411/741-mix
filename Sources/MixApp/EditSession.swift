@@ -304,9 +304,7 @@ extension MixModel {
         let src = s.source
         let t0 = CACurrentMediaTime()
         EditRender.queue.async {
-            let f = edl.frames(rate: src.sampleRate, sourceFrames: src.frames)
-            let splice = AudioSplice(pieces: f.pieces, sourceFrames: src.frames, fade: AudioSplice.fadeFrames(sampleRate: src.sampleRate),
-                                     muted: f.muted)
+            let splice = AudioSplice(edl, rate: src.sampleRate, sourceFrames: src.frames, fade: AudioSplice.fadeFrames(sampleRate: src.sampleRate))
             let a = TrackAudio.rendered(splice, from: src)
             let secs = CACurrentMediaTime() - t0
             DispatchQueue.main.async {

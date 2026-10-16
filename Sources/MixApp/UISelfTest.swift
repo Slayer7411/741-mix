@@ -136,6 +136,7 @@ enum UISelfTest {
             ("zweizeilig", twoLineRows),
             ("browser-höhe", splitDrag),
             ("audio-edit", audioEdit),
+            ("audio-editor", audioEditor),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -1340,6 +1341,85 @@ extension UISelfTest {
         check(after.sameView(as: before), "audio-edit: Ansicht nach dem Verlassen anders")
         m.store.reset()
         log("audio-edit: \(n) Tracks · WEITER lädt · ERLEDIGT · Verlassen stellt die Ansicht her")
+    }
+
+    /// Editor im AUDIO-EDIT-Modus: Zoom bis auf die Samples, Auswahl, Rückwärts / Löschen / Kopieren und Einfügen (je mit
+    /// Rückgängig), Marken, Schritte, Verlassen. MIX741_UITEST_EDITSHOT=<png>: Bild des Fensters (Auswahl im Sample-Zoom)
+    static func audioEditor(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, m = AudioEditMode.shared, d = AudioEditMode.deck
+        if mix.deck(d).playing { mix.togglePlay(d) }
+        let wasEditing = mix.editing(d)
+        let tracks = Array(t.prefix(2))
+        check(tracks.count >= 1, "audio-editor: keine Tracks")
+        UndoStack.shared.clearAll()
+        m.importRun(tracks, title: "UITest")
+        u.spin(20) { m.active && mix.deck(d).track != nil && !mix.deck(d).loading && mix.editSession(d) != nil }
+        check(m.active && mix.editSession(d) != nil, "audio-editor: Editor nicht bereit")
+        u.spin(5) { m.secPerPoint > 0 }
+        check(m.secPerPoint > 0 && m.viewWidth > 0, "audio-editor: keine Ansicht")
+        let dur = m.duration
+        check(abs(dur - mix.deck(d).duration) < 1e-6, "audio-editor: Dauer des Editors weicht ab")
+        check(!m.snap, "audio-editor: Raster nicht aus")
+        // Zoom bis auf die Samples und zurück auf die ganze Datei
+        for _ in 0..<60 where m.secPerPoint * m.rate > 1 { m.zoomKey(AudioEditView.zoomStep) }
+        check(m.secPerPoint * m.rate <= 1, "audio-editor: Zoom erreicht die Sample-Ebene nicht")
+        m.fitView()
+        check(abs(m.secPerPoint - dur / m.viewWidth) < 1e-9, "audio-editor: ALLES passt nicht")
+        // Auswahl (Sekunden auf Samples gerastet), rückwärts, Rückgängig
+        let a = 1.0, b = 2.0
+        m.setSelection(TrackRange(a, b))
+        check(m.selection == TrackRange(a, b), "audio-editor: Auswahl weicht ab")
+        m.reverse()
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(m.shown?.segments.contains { $0.isReversed } == true, "audio-editor: rückwärts fehlt")
+        check(abs(m.duration - dur) < 1e-6, "audio-editor: Länge ändert sich beim Rückwärts")
+        UndoStack.shared.perform(redo: false)
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(m.shown?.isPlain == true, "audio-editor: Rückgängig stellt das Original nicht her")
+        // Löschen, Kopieren, Einfügen
+        m.setSelection(TrackRange(a, b))
+        m.delete()
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(abs(m.duration - (dur - 1)) < 1e-6, "audio-editor: Löschen ändert die Länge nicht")
+        m.setSelection(TrackRange(0, 0.5))
+        check(m.copy(), "audio-editor: Kopieren ohne Ergebnis")
+        m.setCursor(3)
+        m.paste()
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(abs(m.duration - (dur - 0.5)) < 1e-6, "audio-editor: Einfügen ändert die Länge nicht")
+        // dritter Schritt (Rückgängig oben hat den ersten zurückgenommen, Neues löscht Wiederherstellen)
+        m.setSelection(TrackRange(0, 1))
+        m.reverse()
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        // Marken am Cursor und am Bereich, Name über den Dialog nicht (der hält den Test an)
+        m.setCursor(2)
+        m.addMarker(range: false)
+        m.setSelection(TrackRange(0, 1))
+        m.addMarker(range: true)
+        check(m.marks.count == 2, "audio-editor: Marken \(m.marks.count) statt 2")
+        check(m.marks.contains { $0.end != nil }, "audio-editor: Bereichsmarke fehlt")
+        // Schritte: Rückgängig springt zum ersten Schritt zurück
+        let steps = UndoStack.shared.timeline.count
+        check(steps >= 3, "audio-editor: Schritte \(steps) statt mindestens 3")
+        UndoStack.shared.jump(to: 0)
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(UndoStack.shared.timeline.filter { !$0.undone }.count == 1, "audio-editor: Sprung zum Schritt")
+        UndoStack.shared.jump(to: steps - 1)
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(UndoStack.shared.timeline.filter { !$0.undone }.count == steps, "audio-editor: Vorwärts-Sprung")
+        // Bild: Auswahl von 10 ms, im Sample-Zoom
+        m.setSelection(TrackRange(1, 1.01))
+        m.zoomToSelection()
+        u.spin(2)
+        if let out = ProcessInfo.processInfo.environment["MIX741_UITEST_EDITSHOT"] { shot(u, out, "audio-editor") }
+        // Verlassen: Ansicht und EDIT von Deck A wie vorher
+        m.marks.forEach { m.deleteMarker($0.id) }
+        UndoStack.shared.clearAll()
+        m.leave()
+        check(!m.active, "audio-editor: nicht verlassen")
+        check(mix.editing(d) == wasEditing, "audio-editor: EDIT von Deck A nicht wiederhergestellt")
+        m.store.reset()
+        log("audio-editor: Zoom bis Sample · Auswahl · rückwärts · Löschen · Kopieren/Einfügen · Marken · Schritte · Verlassen")
     }
 
     static func prepareMode(_ u: UIDriver, _ t: [Track]) {

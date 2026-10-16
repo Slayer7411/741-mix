@@ -19,7 +19,7 @@ import Testing
     #expect(on.deckCount == 1 && !on.showMixer && !on.showFXUnits)
     #expect(on.deckRows.prepare && on.deckRows.hotcues && on.deckRows.overview && on.deckRows.info)
     #expect(!on.deckRows.transport && !on.deckRows.comment && !on.deckRows.loop && !on.deckRows.phaseBar)
-    #expect(on.overviewHeight >= 48 && on.browserHeight == 300 && !on.showGridTools)
+    #expect(on.overviewHeight >= 48 && on.browserHeight == 540 && !on.showGridTools)
     #expect(on.activeLayoutProfile == ui.activeLayoutProfile)
 
     // Verlassen: die gemerkte Ansicht kommt zurück, genau

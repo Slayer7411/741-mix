@@ -1,6 +1,14 @@
 import Foundation
 import MixCore
 
+extension AudioSplice {
+    /// Schnittliste als Stücke bei `rate` (Stumm, Rückwärts und Stille inklusive): der eine Weg von der Liste zur Ausgabe
+    public init(_ e: EditList, rate: Double, sourceFrames n: Int, fade: Int) {
+        let f = e.frames(rate: rate, sourceFrames: n)
+        self.init(pieces: f.pieces, sourceFrames: n, fade: fade, muted: f.muted, reversed: f.reversed, silent: f.silent)
+    }
+}
+
 extension TrackAudio {
     /// Schnittliste hörbar machen: Stücke von `source` (Rate und Kanäle des Decks) in einen neuen Puffer. Wellenform-Blöcke
     /// aus denen der Quelle zusammengesetzt (auf einen Block = 3,3 ms genau, stumm = leer), nicht neu analysiert.
@@ -27,7 +35,9 @@ extension TrackAudio {
             let f = b * block
             while k < splice.pieces.count - 1, f >= start + splice.pieces[k].count { start += splice.pieces[k].count; k += 1 }
             guard k < splice.pieces.count, !splice.muted[k] else { continue }
-            let sb = min(srcBlocks - 1, max(0, (splice.pieces[k].lowerBound + f - start) / block))
+            let within = f - start, r = splice.pieces[k]
+            let srcFrame = splice.reversed[k] ? r.upperBound - 1 - within : r.lowerBound + within
+            let sb = min(srcBlocks - 1, max(0, srcFrame / block))
             guard sb >= 0, srcBlocks > 0 else { continue }
             peak[b] = a.peak[sb]; low[b] = a.low[sb]; mid[b] = a.mid[sb]; high[b] = a.high[sb]
             if hasSpec { for i in 0..<ss { spec[b * ss + i] = a.spectrum.data[sb * ss + i] } }

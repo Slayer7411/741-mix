@@ -1213,6 +1213,10 @@ struct BrowserSettings: View {
                 .settingsAnchor("browser.auditheadroom")
                 Text("audio-edit (AUDIO-EDIT, ⌘, -> KEYBOARD): ab dieser reserve unter 0 dBFS schlägt er NORM / AMP vor.")
                     .settingsHint()
+                Toggle("Audio-Edit: Raster beim Markieren an", isOn: $mix.prefs.ui.audioEditSnap)
+                    .settingsAnchor("browser.auditsnap")
+                Text("beim eintritt in AUDIO-EDIT rastet die auswahl auf beats des grids ein. RASTER in der werkzeugzeile schaltet um; ohne diese einstellung ist es aus, freies markieren bis auf das sample.")
+                    .settingsHint()
                 Button("Import-Lauf und erledigt zurücksetzen") { AudioEditMode.shared.resetRun() }
                     .settingsControlColumn()
                     .settingsAnchor("browser.auditreset")

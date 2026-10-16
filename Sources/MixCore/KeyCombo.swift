@@ -77,7 +77,7 @@ public struct KeyCombo: Hashable, Sendable, Codable, CustomStringConvertible {
 
 /// Gruppe in den Einstellungen
 public enum ShortcutGroup: String, CaseIterable, Sendable {
-    case decks, browser, view, general
+    case decks, browser, view, general, editor
 }
 
 /// Alle Aktionen mit Tastenkürzel. Die IDs werden gespeichert (`prefs.v1` -> `shortcuts`) und dürfen sich nicht ändern.
@@ -113,6 +113,15 @@ public enum ShortcutID: String, CaseIterable, Sendable {
     case zoomIn = "view.zoom.in", zoomOut = "view.zoom.out", zoomReset = "view.zoom.reset"
     case openCollection = "app.open", settings = "app.settings", closeWindow = "app.close", reconnectAudio = "app.reconnect"
     case undo = "edit.undo", redo = "edit.redo"
+    /// AUDIO-EDIT-Editor (nur im Modus). Zoom, Start/Stopp (Leertaste, L) und J/K/L nutzen die Aktionen oben
+    case audioEditSelectAll = "audioedit.selectall", audioEditDelete = "audioedit.delete", audioEditCrop = "audioedit.crop"
+    case audioEditSilence = "audioedit.silence", audioEditReverse = "audioedit.reverse", audioEditCut = "audioedit.cut"
+    case audioEditCopy = "audioedit.copy", audioEditPaste = "audioedit.paste", audioEditMarker = "audioedit.marker"
+    case audioEditSnap = "audioedit.snap", audioEditZoomSelection = "audioedit.zoomsel"
+    case audioEditBack = "audioedit.back", audioEditStop = "audioedit.stop"
+
+    /// im AUDIO-EDIT-Editor zu Hause (nur dort wirksam, sonst frei für die übrigen Aktionen)
+    public var audioEditOnly: Bool { group == .editor }
 
     public var group: ShortcutGroup {
         switch self {
@@ -122,6 +131,9 @@ public enum ShortcutID: String, CaseIterable, Sendable {
              .profile1, .profile2, .profile3, .profile4, .profileNext, .audioEdit, .audioEditPrev, .audioEditNext, .audioEditDone: .view
         case .openCollection, .settings, .closeWindow, .reconnectAudio: .general
         case .undo, .redo: .general
+        case .audioEditSelectAll, .audioEditDelete, .audioEditCrop, .audioEditSilence, .audioEditReverse, .audioEditCut,
+             .audioEditCopy, .audioEditPaste, .audioEditMarker, .audioEditSnap, .audioEditZoomSelection, .audioEditBack,
+             .audioEditStop: .editor
         default: .decks
         }
     }
@@ -196,6 +208,19 @@ public enum ShortcutID: String, CaseIterable, Sendable {
         case .closeWindow: KeyCombo("w")
         case .undo: KeyCombo("z")
         case .redo: KeyCombo("z", [.shift, .command])
+        case .audioEditSelectAll: KeyCombo("a")
+        case .audioEditDelete: KeyCombo("delete", [])
+        case .audioEditCrop: KeyCombo("delete", [.option])
+        case .audioEditSilence: KeyCombo("i", [])
+        case .audioEditReverse: KeyCombo("r", [])
+        case .audioEditCut: KeyCombo("x")
+        case .audioEditCopy: KeyCombo("c")
+        case .audioEditPaste: KeyCombo("v")
+        case .audioEditMarker: KeyCombo("m", [])
+        case .audioEditSnap: KeyCombo("g", [])
+        case .audioEditZoomSelection: KeyCombo("z", [])
+        case .audioEditBack: KeyCombo("j", [])
+        case .audioEditStop: KeyCombo("k", [])
         case .master, .keylock, .reloop, .loadSelected, .loadSelectedForce, .previewSelected, .reloadCollection, .reconnectAudio, .hidePlayed,
              .cutIn, .cutOut, .gridSet, .keySync, .instantDouble, .rangeRemove, .rangeKeep, .rangeTrim, .rangeLoop, .masterFX, .record,
              .editRemove, .editKeep, .editDuplicate, .editMute, .editLeft, .editRight, .editMark, .editSnap, .editRender,

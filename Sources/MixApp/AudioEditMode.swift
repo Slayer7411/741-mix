@@ -23,11 +23,27 @@ final class AudioEditMode {
     /// Erledigt-Markierungen und Lauf geändert
     private(set) var revision = 0
 
+    /// Editor (Wellenform von Deck A): Cursor und Auswahl in Ausgabe-Zeit, Raster (SNAP), Ansicht (Sekunden je Punkt,
+    /// Anfang), Marken des Tracks (Quellzeiten). `secPerPoint` 0 = noch nicht eingepasst
+    var cursor = 0.0
+    var selection: TrackRange?
+    var snap = false
+    var secPerPoint = 0.0
+    var viewStart = 0.0
+    var marks: [AudioMarker] = []
+
     @ObservationIgnored let store = AudioEditStore(url: Session.isSelfTest ? nil : HistoryStore.baseDir.appendingPathComponent("audioedit.json"))
+    /// Marken je Track, eigene Datei neben edits.json
+    @ObservationIgnored let markStore = AudioMarkStore(url: Session.isSelfTest ? nil : HistoryStore.baseDir.appendingPathComponent("audioedit-marks.json"))
+    /// Zwischenablage des Editors (nur im selben Track einfügbar) und Breite der Wellenform (Punkte, vom Editor gemeldet)
+    @ObservationIgnored var clip: AudioEditClip?
+    @ObservationIgnored var viewWidth = 0.0
     @ObservationIgnored weak var mix: MixModel?
     @ObservationIgnored weak var browser: BrowserState?
     /// Ansicht vor dem Eintritt: Profil-Felder und das aktive Profil
     @ObservationIgnored private var saved: (view: LayoutProfile, active: String)?
+    /// EDIT-Modus von Deck A vor dem Eintritt (der Editor braucht ihn an)
+    @ObservationIgnored var wasEditing = false
 
     private init() {}
 
@@ -66,12 +82,21 @@ final class AudioEditMode {
             LayoutProfile.audioEdit(from: ui).apply(to: &ui)
             mix.prefs.ui = ui
             browser.maximized = false
+            // Editor: Deck A im EDIT-Modus (Schnittliste), Raster standardmäßig aus (Einstellung „Raster beim Markieren“)
+            wasEditing = mix.editing(Self.deck)
+            mix.setEditing(Self.deck, true)
+            snap = mix.prefs.ui.audioEditSnap
+            cursor = 0
+            selection = nil
+            secPerPoint = 0
+            viewStart = 0
         }
         self.title = title
         self.list = list
         index = 0
         active = true
         revision += 1
+        reloadMarks()
         if list.isEmpty {
             StatusCenter.post(.info, importRun ? String(localized: "Keine neuen Tracks seit dem letzten Import-Lauf")
                                                : String(localized: "Keine Tracks in dieser Ansicht"), key: "audioedit")
@@ -88,6 +113,9 @@ final class AudioEditMode {
         list = []
         index = 0
         revision += 1
+        marks = []
+        selection = nil
+        if let mix { mix.setEditing(Self.deck, wasEditing) }
         guard let mix, let browser, let s = saved else { return }
         saved = nil
         var ui = mix.prefs.ui
@@ -107,8 +135,13 @@ final class AudioEditMode {
         }
         if mix.deck(d).track?.key != t.key {
             guard mix.load(t, deck: d, force: false) else { return false }
+            cursor = 0
+            selection = nil
+            secPerPoint = 0
+            viewStart = 0
         }
         index = i
+        reloadMarks()
         markRipOnDeck()
         return true
     }
@@ -199,18 +232,46 @@ struct ImportMenuButton: View {
     }
 }
 
-/// Browser-Bereich im Audio-Edit-Modus: Arbeitsliste links, Vorschläge zum geladenen Track rechts
+/// Browser-Bereich im Audio-Edit-Modus: oben der Editor (Werkzeugzeile, Wellenform von Deck A), darunter Arbeitsliste,
+/// Marken und Schritte (Rückgängig) und die Vorschläge zum geladenen Track
 struct AudioEditArea: View {
     var body: some View {
-        HStack(spacing: 0) {
-            AudioEditWorkList()
-                .frame(width: 400.z)
-            Rectangle().fill(Theme.hairline).frame(width: 1)
-            AudioEditSuggestions()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            AudioEditToolbar()
+            AudioEditWaveHost()
+            Rectangle().fill(Theme.hairline).frame(height: 1)
+            HStack(spacing: 0) {
+                AudioEditWorkList()
+                    .frame(width: 340.z)
+                Rectangle().fill(Theme.hairline).frame(width: 1)
+                VStack(spacing: 0) {
+                    AudioEditMarkers()
+                    Rectangle().fill(Theme.hairline).frame(height: 1)
+                    AudioEditHistory()
+                }
+                .frame(width: 320.z)
+                Rectangle().fill(Theme.hairline).frame(width: 1)
+                AudioEditSuggestions()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxHeight: .infinity)
         }
         .background(Theme.chitin)
         .onChange(of: RipChecks.shared.revision) { _, _ in AudioEditMode.shared.markRipOnDeck() }
+    }
+}
+
+/// Wellenform des Editors mit dem Stand des Modus (neu gezeichnet nur bei Änderung)
+struct AudioEditWaveHost: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        let m = AudioEditMode.shared
+        let d = AudioEditMode.deck
+        AudioEditWave(state: AudioEditWaveState(selection: m.selection, cursor: m.cursor, secPerPoint: m.secPerPoint,
+                                                viewStart: m.viewStart, marks: m.marks, edit: mix.decks[d].edit,
+                                                duration: mix.deck(d).duration, revision: m.revision))
+            .frame(height: 240.z)
     }
 }
 
