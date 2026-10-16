@@ -100,7 +100,8 @@ extension AudioEditMode {
     /// Zeit, wie der Editor sie setzt: Raster (SNAP an, Beat des Grids) oder Sample-genau
     func snapped(_ t: Double) -> Double {
         guard duration > 0 else { return 0 }
-        let v = snap ? TrackRange.snap(t, grid: mix?.deck(Self.deck).grid, step: 1, free: false, duration: duration) : t
+        let step = mix?.prefs.ui.audioEditSnapBeats ?? 1
+        let v = snap ? TrackRange.snap(t, grid: mix?.deck(Self.deck).grid, step: step, free: false, duration: duration) : t
         return AudioEditView.aligned(min(max(0, v), duration), rate: rate)
     }
 

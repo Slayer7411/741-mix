@@ -1359,7 +1359,8 @@ extension UISelfTest {
         check(m.secPerPoint > 0 && m.viewWidth > 0, "audio-editor: keine Ansicht")
         let dur = m.duration
         check(abs(dur - mix.deck(d).duration) < 1e-6, "audio-editor: Dauer des Editors weicht ab")
-        check(!m.snap, "audio-editor: Raster nicht aus")
+        check(m.snap == mix.prefs.ui.audioEditGrid, "audio-editor: Raster nicht wie eingestellt")
+        if m.snap { m.snapToggle() }   // Sample-genaue Auswahl für die folgenden Schritte
         // Zoom bis auf die Samples und zurück auf die ganze Datei
         for _ in 0..<60 where m.secPerPoint * m.rate > 1 { m.zoomKey(AudioEditView.zoomStep) }
         check(m.secPerPoint * m.rate <= 1, "audio-editor: Zoom erreicht die Sample-Ebene nicht")
