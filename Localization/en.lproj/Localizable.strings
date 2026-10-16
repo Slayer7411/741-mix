@@ -1873,3 +1873,4 @@
 "keine Stufe ohne Aussetzer und unter %.0f %% – Gerät und Lasttest prüfen (scripts/loadtest.sh)" = "no step without dropouts and under %.0f %% – check the device and the load test (scripts/loadtest.sh)";
 "Empfehlung %lld Frames · %.1f ms Puffer" = "Recommended %lld frames · %.1f ms buffer";
 "mit Reserve: die kleinere Stufe lag über %.0f %%" = "with margin: the smaller step was over %.0f %%";
+"%@ an einem anderen USB-Port erkannt" = "%@ found on another USB port";

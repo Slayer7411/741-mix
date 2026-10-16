@@ -4,6 +4,22 @@ import CoreAudio
 extension MixEngine {
     // MARK: - Ausgabegerät
 
+    /// USB-Interface an einem anderen Port: die UID trägt die Port-Position
+    /// (`AppleUSBAudioEngine:Hersteller:Name:Position:Schnittstellen`). Gleiches Gerät = alle Teile bis auf die Position
+    /// gleich; genau ein Treffer, sonst nil. Andere Geräte (ohne Position) werden nie zugeordnet
+    public static func relocatedUID(_ uid: String, among uids: [String]) -> String? {
+        func parts(_ u: String) -> [Substring]? {
+            let p = u.split(separator: ":", omittingEmptySubsequences: false)
+            return p.count >= 5 && p[0] == "AppleUSBAudioEngine" ? p : nil
+        }
+        guard let want = parts(uid) else { return nil }
+        let hits = uids.filter { u in
+            guard u != uid, let p = parts(u), p.count == want.count else { return false }
+            return p.indices.allSatisfy { $0 == 3 || p[$0] == want[$0] }
+        }
+        return hits.count == 1 ? hits[0] : nil
+    }
+
     public struct OutputDevice: Identifiable, Hashable, Sendable {
         public let id: AudioDeviceID
         /// bleibt über Neustarts gleich (IDs nicht)
