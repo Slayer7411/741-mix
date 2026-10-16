@@ -1536,10 +1536,16 @@ extension SelfTest {
         let back = await level()
         core.updateDeck(0) { $0.eqLow = s0.eqLow; $0.eqMid = s0.eqMid; $0.eqHigh = s0.eqHigh }
         var fails: [String] = []
+        // extern ohne „EQ im externen Modus“: der EQ ist aus (das Pult macht ihn), der Kill darf nichts ändern
+        let bypass = mix.mixerMode != .internalMixer && !mix.prefs.engine.eqExternal
         if !(flat > 0 && flat.isFinite) { fails.append("kein Pegel") }
-        if !(killed < flat * 0.9) { fails.append("Tief-Kill ohne Wirkung") }
-        if !(back > killed * 1.1) { fails.append("nach 0 dB kein Pegel") }
-        log(String(format: "EQ Deck A: flach %.3f · Tief-Kill %.3f · zurück %.3f%@", flat, killed, back,
+        if bypass {
+            if abs(killed - flat) > flat * 0.05 { fails.append("EQ wirkt extern, obwohl aus") }
+        } else {
+            if !(killed < flat * 0.9) { fails.append("Tief-Kill ohne Wirkung") }
+            if !(back > killed * 1.1) { fails.append("nach 0 dB kein Pegel") }
+        }
+        log(String(format: "EQ Deck A%@: flach %.3f · Tief-Kill %.3f · zurück %.3f%@", bypass ? " (extern, EQ aus)" : "", flat, killed, back,
                    fails.isEmpty ? " · OK" : " · " + fails.joined(separator: " · ")))
         if !fails.isEmpty { log("FEHLER EQ: " + fails.joined(separator: " · ")); exit(1) }
     }
