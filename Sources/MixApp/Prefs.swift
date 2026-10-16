@@ -297,6 +297,8 @@ struct UIPrefs: Codable, Equatable {
     var harmonyColors = true
     /// Browser-Filter „passt zum Master“ (◆ PASST, ⌘, -> BROWSER)
     var match = MatchRule()
+    /// Bezug für ◆ PASST: Decks (0–3), leer = AUTO (spielender Master, sonst Fokus-Deck); mehrere = muss zu allen passen
+    var matchDecks: [Int] = []
     /// gespielte Tracks (History dieser Sitzung bzw. seit dem letzten Reset) im Browser dimmen
     var dimPlayedTracks = true
     /// gespielte Tracks aus Collection, Playlists, Smartlists und Ordnern ausblenden (◆ UNGESPIELT; History, RUNNING

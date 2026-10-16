@@ -839,6 +839,8 @@ reference = audible key of the master deck (track key + key shift, without keylo
 * column `Match`: pitch in % the track needs to reach the master tempo (dimmed outside the bpm window). click the header -> sort by harmony: distance to the master key, then tempo difference
 * master or key shift changes -> only key and match cells of the visible rows redraw, the list stays
 * `◆ PASST` (`◆ MATCH`) in the header -> only tracks with a fitting key (same, ±1, relative; ⌘, -> BROWSER) and tempo within ±4 % (half / double optional). shows the reference, follows master changes. a track without key never fits, a master without key filters by tempo only
+* tiles above `◆ PASST`: `AUTO` (default) = playing master deck, else the focused deck. `A`-`D` = fixed reference deck(s), click toggles, bright = deck plays. several decks: a track must fit every chosen deck (key, tempo, tag groups); key colors, `Match` and `Tags ≈` use the first one. empty decks are skipped. chip shows `◆ PASST · A+B: …`. saved in `ui.matchDecks`
+* column `Tags ≈` next to `Match`: `≈` = similar, `⇄` = complementary (rules below), then the master's groups: letter in group color = same first word, grey = different, `·` = group missing. empty without a master with groups or for tracks without groups
 * tag groups (⌘, -> BROWSER -> ◆ PASST, off by default): first word per [group](#-10--tags--smartlists) counts (`K tief`, `B sub`, `H off`). `ähnlich` (`≈` on the chip): groups in `gleich` (default `K B`) same as the master. `ergänzend` (`⇄`): `gleich` (default `K`) same, `anders` (default `H`) different, no shared role. master without groups: ignored, track without groups: no match
 * on / off: chip, ⌥⌘J (last used pane), browse push on the controller (⌘, -> CONTROLLER -> browse push)
 
@@ -1026,7 +1028,8 @@ K tief lang B sub schwer galopp H off DRUMS
 ```
 
 * single capital letter = group marker, the following tags belong to it. word in capitals only (`BASIS`) = role, ends the group. tags before the first marker: no group
-* values take the color of their marker (own tag color wins), roles keep their own colors
+* values take the color of their marker (own tag color wins), roles keep their own colors. K / B / H take the waveform colors of the active preset: K = low (kick), B = held lows (bass), H = highs, darkened for the chip
+* marker chips are hidden in the comment 2 column, deck and detail bar (the color shows the group), TAGS ▾ keeps them as column heads
 * TAGS ▾: one column per group (order as in the text), then ROLE, then tags without group. click on the group head = tracks with that group
 * group names per marker in ⌘, -> TAGS (default K = KICK, B = BASS, H = HATS)
 * role buttons BASIS / SYNTH / DRUMS / VOLL / ATMO match `» BASIS` in the text or `BASIS` as a whole tag

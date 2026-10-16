@@ -114,3 +114,11 @@ import Testing
     r.groove = .complement
     #expect(r.matchesTags(layer, ref) && !r.matchesTags(near, ref) && !r.matchesTags(other, ref))
 }
+
+@Test func tagEntryWithoutMarkers() {
+    let e = TagIndex().entry("drums K tief lang B sub H off DRUMS", separators: " ")
+    let s = e.withoutMarkers
+    #expect(s.tags == ["drums", "tief", "lang", "sub", "off", "DRUMS"])
+    #expect(s.groups == [nil, "K", "K", "B", "H", "»"] && s.keys == s.tags.map(Tags.key))
+    #expect(e.shown(groups: false).tags == e.tags)
+}

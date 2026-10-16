@@ -92,8 +92,12 @@ final class MixModel {
     private(set) var harmonyBPM = 0.0
     /// Gruppen aus Kommentar 2 des Bezugs-Tracks (◆ PASST mit Gruppen)
     private(set) var harmonyTags = TagProfile()
+    /// weitere Bezugs-Decks (Kacheln über ◆ PASST, ab dem zweiten): ein Track muss auch zu ihnen passen
+    private(set) var harmonyExtra: [BrowserPaneModel.HarmonyExtra] = []
     /// Selbsttest-Bilder: fester Bezug statt der Decks
     @ObservationIgnored var harmonyFixed: HarmonyRef? { didSet { updateHarmony() } }
+    /// … und feste Tag-Gruppen dazu (Spalte „Tags ≈“)
+    @ObservationIgnored var harmonyFixedTags: String?
     var prefs = AppPrefs.load() {
         didSet {
             guard prefs != oldValue else { return }
@@ -216,10 +220,12 @@ final class MixModel {
         }
         if let c = core.pluginCatalog.crashedLastRun { print("[plugin] beim letzten Lauf abgestürzt beim Öffnen: \(c.name) -> blockiert") }
         FileServiceSetup.attach(core)
+        TagColors.wave = { [weak self] in self?.wavePreset.palette }
         BrowserPaneModel.harmonySource = { [weak self] in
             BrowserPaneModel.HarmonyInput(ref: self.flatMap { m in m.harmonyKey != nil || m.harmonyBPM > 0 ? HarmonyRef(key: m.harmonyKey, bpm: m.harmonyBPM) : nil },
                                           rule: self?.prefs.ui.match ?? MatchRule(),
-                                          tags: self.flatMap { $0.prefs.ui.match.groove != .off ? $0.harmonyTags : nil } ?? TagProfile())
+                                          tags: self.flatMap { $0.prefs.ui.match.groove != .off ? $0.harmonyTags : nil } ?? TagProfile(),
+                                          extra: self?.harmonyExtra ?? [])
         }
         loadSetup()
         for d in decks.indices { decks[d].editing = prefs.ui.editing(d) }
@@ -373,22 +379,35 @@ final class MixModel {
 
     /// Bezugs-Deck: spielender Master, sonst Fokus-Deck; Key = Track-Key um die hörbare Abweichung (gerundet) verschoben
     private func updateHarmony() {
-        var key: Int?, bpm = 0.0, tags = TagProfile()
+        var key: Int?, bpm = 0.0, tags = TagProfile(), extra: [BrowserPaneModel.HarmonyExtra] = []
+        let chosen = prefs.ui.matchDecks.filter { decks.indices.contains($0) && decks[$0].state.track != nil }
         if let f = harmonyFixed {
             key = f.key; bpm = f.bpm
+            if let s = harmonyFixedTags { tags = harmonyProfile(s) }
+        } else if !chosen.isEmpty {
+            // feste Decks: hörbarer Key und Tempo je Deck, das erste färbt Key- und Match-Spalte
+            let refs = chosen.map { d -> BrowserPaneModel.HarmonyExtra in
+                let t = decks[d].state.track!
+                return .init(ref: HarmonyRef(key: t.harmonyCode.map { Harmony.shifted($0, by: Int(keyDeviation(d).rounded())) },
+                                             bpm: (decks[d].state.bpm * 10).rounded() / 10),
+                             tags: harmonyProfile(t.comment2))
+            }
+            key = refs[0].ref.key; bpm = refs[0].ref.bpm; tags = refs[0].tags
+            extra = Array(refs.dropFirst())
         } else {
             let m = effectiveMaster.flatMap { decks[$0].state.playing ? $0 : nil }
             let d = m ?? focusedDeck
             if decks.indices.contains(d), let t = decks[d].state.track {
                 key = t.harmonyCode.map { Harmony.shifted($0, by: Int(keyDeviation(d).rounded())) }
                 bpm = m != nil || state.clockMaster ? state.masterTempo : decks[d].state.bpm
-                if prefs.ui.match.groove != .off { tags = harmonyProfile(t.comment2) }
+                tags = harmonyProfile(t.comment2)
             }
         }
         bpm = (bpm * 10).rounded() / 10
         if key != harmonyKey { harmonyKey = key }
         if bpm != harmonyBPM { harmonyBPM = bpm }
         if tags != harmonyTags { harmonyTags = tags }
+        if extra != harmonyExtra { harmonyExtra = extra }
     }
 
     /// Gruppen-Profil je Kommentar-2-Text (läuft mit jedem Abgleich, neu nur bei anderem Text)
