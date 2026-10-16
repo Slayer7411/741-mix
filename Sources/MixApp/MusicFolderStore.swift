@@ -202,7 +202,7 @@ struct MusicFolderTree: View {
     }
 }
 
-private struct MusicFolderRow: View, SourceMenus {
+struct MusicFolderRow: View, SourceMenus {
     @Environment(MixModel.self) private var mix
     @Environment(LibraryStore.self) var store
     @Environment(HistoryStore.self) var history
@@ -438,5 +438,44 @@ enum BrowserShot {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Theme.void)
         }
+    }
+}
+
+/// EXPLORER: Laufwerke (USB-Sticks, externe Platten, Netz) und Benutzerordner wie im Finder. Ordner wie bei
+/// MUSIC FOLDERS (Unterordner aufklappen, Audiodateien in der Liste). Laufwerke folgen dem Ein-/Ausstecken
+struct ExplorerTree: View {
+    @Binding var selection: BrowserSource
+    @State private var open = false
+    @State private var expanded: Set<String> = []
+    @State private var volumes: [URL] = ExplorerTree.mountedVolumes()
+
+    static func mountedVolumes() -> [URL] {
+        let keys: [URLResourceKey] = [.volumeIsRootFileSystemKey, .volumeNameKey]
+        return (FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes]) ?? [])
+            .filter { (try? $0.resourceValues(forKeys: [.volumeIsRootFileSystemKey]).volumeIsRootFileSystem) != true }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
+    static var places: [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [home.path] + ["Music", "Desktop", "Downloads"].map { home.appendingPathComponent($0).path }
+            .filter { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $open) {
+            ForEach(volumes, id: \.self) { v in
+                MusicFolderRow(path: v.path, expanded: $expanded)
+                    .contextMenu {
+                        Button("Auswerfen") { try? NSWorkspace.shared.unmountAndEjectDevice(at: v) }
+                        Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([v]) }
+                    }
+            }
+            ForEach(Self.places, id: \.self) { MusicFolderRow(path: $0, expanded: $expanded) }
+        } label: {
+            MusicFolderRow.label("⌂", "EXPLORER")
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in volumes = Self.mountedVolumes() }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { _ in volumes = Self.mountedVolumes() }
     }
 }
