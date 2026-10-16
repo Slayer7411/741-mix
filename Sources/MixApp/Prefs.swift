@@ -288,6 +288,10 @@ struct UIPrefs: Codable, Equatable {
     var checkOnStart = false
     /// Collection prüfen: Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen
     var checkMusicFolders = true
+    /// TIDAL: Client-ID der eigenen App (öffentlich, kein Geheimnis); ⌘, → Browser
+    var tidalClientID = ""
+    /// TIDAL: Name der Playlist für MISSING (%Y %y %m %d)
+    var tidalPlaylistPattern = TidalMatch.defaultPattern
     /// Zoom des Hauptfensters (1 = 100 %, ZoomSteps)
     var zoom = 1.0
     /// eigene Analyse: BPM-Bereich genau eine Oktave, Untergrenze (Obergrenze = 2 ×)
