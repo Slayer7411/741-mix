@@ -541,6 +541,28 @@ struct DeckSettings: View {
                     .settingsAnchor("decks.prep.clip")
                 Toggle("Vorbereiten JOIN: Tempo der zweiten angleichen (bis ±0,5 %)", isOn: $mix.prefs.ui.prepJoinMatchTempo)
                     .settingsAnchor("decks.prep.jointempo")
+                Picker("Ausgabe: Format", selection: $mix.prefs.ui.export.container) {
+                    ForEach(ExportContainer.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .settingsAnchor("decks.export.format")
+                Picker("Ausgabe: Bit", selection: $mix.prefs.ui.export.bits) {
+                    ForEach(ExportBits.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .settingsAnchor("decks.export.bits")
+                Picker("Ausgabe: Abtastrate", selection: $mix.prefs.ui.export.rate) {
+                    ForEach(ExportOptions.rates, id: \.self) { Text(ExportOptions.rateLabel($0)).tag($0) }
+                }
+                .settingsAnchor("decks.export.rate")
+                Picker("Ausgabe: AAC-Bitrate", selection: $mix.prefs.ui.export.aacKbps) {
+                    ForEach(ExportOptions.aacRates, id: \.self) { Text("\($0) kbit/s").tag($0) }
+                }
+                .settingsAnchor("decks.export.aac")
+                Toggle("Ausgabe: Dither (TPDF) beim Schritt auf 16 Bit", isOn: $mix.prefs.ui.export.dither)
+                    .settingsAnchor("decks.export.dither")
+                TextField("Ausgabe: Dateiname (Muster {name} {tag}, leer = wie bisher)", text: $mix.prefs.ui.export.pattern)
+                    .settingsAnchor("decks.export.pattern")
+                Text("ausgabe von render, schnitt, join, split und tool-loop. wie quelle: wav / aiff bleiben (vorbereiten), sonst apple lossless. dither nur beim schritt auf 16 bit. metadaten stehen in der datei: m4a mit atom-schlüsseln, wav / aiff als id3-chunk (wav zusätzlich list info). das fenster export (vor render im audio-edit) ändert das für eine datei.")
+                    .settingsHint()
                 Text("vorbereiten (profil oder deck-zeile): amp hebt nur an (samples × faktor, kein limiter), ohne clipping höchstens bis 0 dbfs, norm = spitze −0.3 dbfs. join hängt die zweite datei am nächsten taktanfang an, split teilt am takt. alles als neue datei neben dem original.")
                     .settingsHint()
             }

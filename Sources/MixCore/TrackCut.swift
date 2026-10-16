@@ -94,14 +94,14 @@ public enum TrackCut {
 
     /// Dateiname „<Name> [cut].m4a“, belegt -> „ [cut 2]“ usw.; ein Name, der schon auf [cut] / [cut n] endet,
     /// bekommt keine zweite Klammer
-    public static func fileName(_ original: String, taken: (String) -> Bool) -> String {
+    public static func fileName(_ original: String, ext: String = "m4a", taken: (String) -> Bool) -> String {
         var base = (original as NSString).deletingPathExtension
         if let r = base.range(of: #" \[cut( \d+)?\]$"#, options: .regularExpression) { base.removeSubrange(r) }
         for n in 1...9999 {
-            let name = base + (n == 1 ? " [cut]" : " [cut \(n)]") + ".m4a"
+            let name = base + (n == 1 ? " [cut]" : " [cut \(n)]") + "." + ext
             if !taken(name) { return name }
         }
-        return base + " [cut \(UUID().uuidString.prefix(8))].m4a"
+        return base + " [cut \(UUID().uuidString.prefix(8))]." + ext
     }
 
     /// Track der neuen Datei: Metadaten des Originals (Titel mit [cut]), Grid und Cues verschoben, neue Länge.
