@@ -195,6 +195,8 @@ struct UIPrefs: Codable, Equatable {
     /// Wellenform-Preset des Stils 3-Band (WavePreset.id, "" = noch nicht aus `blendPreset` / `waveformPalette` umgestellt)
     var wavePreset = ""
     var showBeatgrid = true
+    /// Maus in der Wellenform greifen: aus (nur suchen), Vinyl (Scratch) oder Jog (Nudge laufend, suchen im Stopp)
+    var waveGrab = WaveGrab.jog
     var showBarNumbers = true
     var dimPlayed = true
     var waveformHeight = 60.0

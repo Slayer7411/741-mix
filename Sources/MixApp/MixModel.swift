@@ -682,6 +682,10 @@ final class MixModel {
         pull()
     }
     func bend(_ d: Int, _ v: Double) { run { core.bend(d, v) } }
+    /// Wellenform greifen: ohne `run` (kein Abgleich je Mausereignis), der Steuertakt holt den Stand nach
+    func grabBend(_ d: Int, _ v: Double) { core.bend(d, v) }
+    func grab(_ d: Int, _ on: Bool) { core.grab(d, on) }
+    func scratch(_ d: Int, to seconds: Double, held: Bool) { core.scratch(d, to: seconds, held: held) }
     func updateDeck(_ d: Int, _ f: (inout DeckState) -> Void) { run { core.updateDeck(d, f) } }
     func setCrossfader(_ v: Double) { run { core.setCrossfader(v) } }
     func updateFX(_ u: Int, _ f: (inout FXUnitState) -> Void) { run { core.updateFX(u, f) } }

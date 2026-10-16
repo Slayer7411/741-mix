@@ -134,6 +134,8 @@ public struct DeckState: Equatable, Sendable {
     public var tempoRange: Double = 8
     public var nudge: Double = 0
     public var bend: Double = 0
+    /// Hand auf der Wellenform (Wellenform greifen): Sync hält die Phase, bis sie loslässt
+    public var grab = false
     public var keylock = true
     public var keyShift = 0
     public var sync = false
@@ -1300,6 +1302,24 @@ public final class MixController: @unchecked Sendable {
         }
         onNotice?(notice)
     }
+
+    /// Wellenform greifen (Vinyl): die Hand läuft dem Ziel (Sekunden) nach; `held` false = losgelassen. Im Fix-Sync hält
+    /// das Loslassen die erreichte Phase, wie ein Sprung von Hand
+    public func scratch(_ d: Int, to seconds: Double, held: Bool) {
+        locked {
+            guard audio[d] != nil else { return }
+            let was = state.decks[d].grab
+            state.decks[d].grab = held
+            engine.scratch(d, seconds: seconds, held: held)
+            if !held, was, state.prefs.syncMode == .fixed, state.decks[d].sync, let g = state.decks[d].grid, let mb = masterBeat() {
+                phaseOffset[d] = BeatGrid.phaseError(own: g.beatPosition(at: seconds), master: mb)
+                bigError[d] = 0
+            }
+        }
+    }
+
+    /// Wellenform greifen (Jog): Hand auf dem Teller oder losgelassen; solange sie drauf ist, zieht der Sync nicht nach
+    public func grab(_ d: Int, _ on: Bool) { locked { state.decks[d].grab = on } }
 
     /// Pitch-Bend: −1…1 × eingestellte Stärke
     public func bend(_ d: Int, _ v: Double) {
@@ -2487,7 +2507,7 @@ public final class MixController: @unchecked Sendable {
                 var changed = abs(target - state.decks[d].tempoPct) > 0.0001
                 state.decks[d].tempoPct = target
                 // rückwärts (Flux-Reverse, Reverse) nicht nachziehen – beim Loslassen kommt die Flux-Position, die bleibt in Phase
-                if state.prefs.phaseLock, state.prefs.syncMode != .tempo, !state.decks[d].reverse, state.decks[d].bend == 0,
+                if state.prefs.phaseLock, state.prefs.syncMode != .tempo, !state.decks[d].reverse, state.decks[d].bend == 0, !state.decks[d].grab,
                    let e = phaseErrorLocked(d) {
                     // harter Sprung nur, wenn der Fehler groß ist und > 100 ms anhält – sonst weich nachziehen
                     bigError[d] = abs(e) > 0.25 ? bigError[d] + 1 : 0

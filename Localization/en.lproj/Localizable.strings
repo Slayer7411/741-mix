@@ -1526,6 +1526,10 @@
 "Mindesthöhe (pt, wächst mit dem Fenster)" = "Minimum height (pt, grows with the window)";
 "Sichtbare Sekunden je Seite (Zoom)" = "Visible seconds per side (zoom)";
 "Pitch-Bend-Stärke" = "Pitch bend amount";
+"Wellenform greifen" = "Grab waveform";
+"maus in der wellenform ohne taste, nicht im edit-modus: vinyl = teller, die position folgt der hand (scratch); jog = läuft das deck, pitch-bend nach der geschwindigkeit der hand, steht es, suchen. aus = nur suchen." = "mouse in the waveform without a key, not in edit mode: vinyl = turntable, the position follows the hand (scratch); jog = while playing, pitch bend by the hand speed, stopped = seek. off = seek only.";
+"Vinyl" = "Vinyl";
+"Jog" = "Jog";
 "Track-Ende-Warnung (s, 0 = aus)" = "Track end warning (s, 0 = off)";
 "UDP-Port" = "UDP port";
 "Vorhören im Browser ab (Anteil)" = "Browser preview from (share)";
