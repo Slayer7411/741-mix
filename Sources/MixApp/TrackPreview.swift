@@ -136,9 +136,9 @@ final class Overviews {
         jobs.enqueue(tracks.filter { !$0.path.isEmpty }.map { .init(key: $0.key, path: $0.path, explicit: true, label: StatusCenter.trackName($0)) })
     }
 
-    /// sichtbare Zeile ohne Übersicht -> vor den Hintergrund
+    /// sichtbare Zeile ohne Übersicht (auch lose Ordner-Dateien) -> vor den Hintergrund
     func want(_ t: Track) {
-        guard !stopped, !t.loose, t.fileExists else { return }
+        guard !stopped, t.fileExists else { return }
         jobs.want(key: t.key, path: t.path)
     }
 
@@ -685,7 +685,7 @@ struct PreviewSettings: View {
             .settingsAnchor("browser.preview.fill")
             if mix.prefs.ui.previewMode == .fullRow {
                 Picker("Schrift über dem Band", selection: $mix.prefs.ui.previewTextSize) {
-                    ForEach([11.0, 12, 13, 14], id: \.self) { Text(verbatim: "\(Int($0)) pt").tag($0) }
+                    ForEach([11.0, 12, 13, 14, 15, 16, 18], id: \.self) { Text(verbatim: "\(Int($0)) pt").tag($0) }
                 }
                 .settingsAnchor("browser.preview.textsize")
                 Toggle("Schrift halbfett", isOn: $mix.prefs.ui.previewTextBold)
