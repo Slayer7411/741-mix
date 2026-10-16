@@ -83,6 +83,7 @@ struct PlaylistsSection: View, SourceMenus {
     @Environment(LibraryStore.self) var store
     @Environment(HistoryStore.self) var history
     @Environment(PlaylistTreeUI.self) private var ui
+    @Environment(MixModel.self) private var mix
     @Binding var selection: BrowserSource
 
     var body: some View {
@@ -97,6 +98,7 @@ struct PlaylistsSection: View, SourceMenus {
                     .favoriteDrag { BrowserFavorite.source(.node(node), store: store) }
                     .contextMenu {
                         resetPlayedButton(.node(node), marked: ui.marked)
+                        autoMixMenuButton(.node(node), marked: ui.marked, mix: mix)
                         if node.kind != .folder { exportMenu(.node(node)) }
                         OverviewMenuButton { nodeTracks(node) }
                         AnalysisMenuButtons { nodeTracks(node) }
@@ -192,6 +194,7 @@ struct OwnItemRow: View, SourceMenus {
     @Environment(LibraryStore.self) var store
     @Environment(HistoryStore.self) var history
     @Environment(PlaylistTreeUI.self) private var ui
+    @Environment(MixModel.self) private var mix
     let item: PlaylistItem
     @Binding var selection: BrowserSource
 
@@ -277,6 +280,7 @@ struct OwnItemRow: View, SourceMenus {
         Button("Löschen …") { ui.deleting = item }
         Divider()
         resetPlayedButton(src, marked: ui.marked)
+        autoMixMenuButton(src, marked: ui.marked, mix: mix)
         if item.kind != .folder { exportMenu(src) }
         OverviewMenuButton { store.ownTracksDeep(item.id) }
         AnalysisMenuButtons { store.ownTracksDeep(item.id) }

@@ -590,6 +590,19 @@ per channel (order C · A · B · D):
 * headroom per mode (internal default −3 dB)
 * no limiter on purpose, hard clip as last stage
 
+### auto-mix
+
+internal mixer only. `AUTO-MIX` in the mixer (under the crossfader), view menu, or tree: select two or more entries (⌘ / ⇧ click), right click `Auto-Mix starten`. the tree start splits the selection by name, alternating side a and b.
+
+* pool: sources of browser pane a (side a) and pane b (side b), or the tree selection. tracks played in this session (history) are out
+* next track: score against the playing track, lowest wins. key relation (same > ±1 / relative > energy), clash out unless allowed, tempo inside the match window (◆ PASST rule, ⌘, -> BROWSER), tag groups (K / B like, role change free), other side preferred when close, same artist twice in a row avoided, analysed tracks first. tracks without grid are skipped
+* transition on the phrase boundary before the outro (32 bars before the end, or the next one that still fits). the incoming track starts on its phrase start, synced to the master
+* 16 bars (8 / 16 / 32): first half incoming highs and mids up from −12 dB, low killed, slight high-pass; outgoing highs down. bass swap in the middle. second half outgoing fader down with low-pass sweep. then the outgoing stops and resets, the next track loads on the free deck
+* crossfader is not used during auto-mix (both decks `·` thru), restored on stop
+* SKIP: next transition at the next phrase boundary (during a transition: end now). STOP: automation off, decks keep playing
+* a hand on a deck's fader, eq or filter pauses automation on that deck for the current transition, the mixer stays manual. play by hand on the outgoing or incoming deck ends auto-mix (decks keep playing)
+* settings (⌘, -> MIXER & FX -> Auto-Mix): transition length, bass swap, filter sweep, allow key clash (off), key sync at the transition (on)
+
 ### external mode
 
 * every deck on its own pair, default A 1/2 · B 3/4 · C 5/6 · D 7/8

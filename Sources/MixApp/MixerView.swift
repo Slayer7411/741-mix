@@ -23,6 +23,7 @@ struct MixerView: View {
             } else {
                 Text("EXTERN").font(Theme.label(9.z, .heavy)).foregroundStyle(.secondary)
             }
+            AutoMixBar()
             MasterFXStrip()
         }
         .padding(6.z)

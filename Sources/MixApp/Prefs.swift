@@ -381,6 +381,8 @@ struct AppPrefs: Codable, Equatable {
     var groove = GroovePrefs()
     /// Aufnahme (⌘, -> AUDIO)
     var record = RecordPrefs()
+    /// Auto-Mix (⌘, -> MIXER & FX)
+    var autoMix = AutoMixPrefs()
     /// eigene Tastenkürzel: Aktion-ID -> Kombination als Text ("" = frei), sonst Standard (ShortcutID.defaultCombo)
     var shortcuts: [String: String] = [:]
 

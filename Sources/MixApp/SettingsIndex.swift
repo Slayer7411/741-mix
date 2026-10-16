@@ -223,6 +223,16 @@ enum SettingsIndex {
             e(t, "Mixer-Optionen", "mixer.eqkill", "EQ-Kill (ganz links = aus)"),
             e(t, "Mixer-Optionen", "mixer.xfader", "Crossfader-Kurve"),
             e(t, "Mixer-Optionen", "mixer.filterres", "Kanalfilter-Resonanz", kw: "filter"),
+            e(t, "Auto-Mix", "automix.length", "Übergang (Takte)", hint: "Länge des Übergangs: 8, 16 oder 32 Takte. Start an der Phrasengrenze, die vor dem Outro liegt.", kw: "automix auto mix übergang crossfade bars takte"),
+
+            e(t, "Auto-Mix", "automix.bassswap", "Bass-Tausch in der Mitte", hint: "in der Mitte des Übergangs wechselt der Bass: eingehend an, ausgehend aus. aus: der Bass bleibt bis zum Ende beim alten Track.", kw: "automix bass eq kill"),
+
+            e(t, "Auto-Mix", "automix.sweep", "Filter-Sweep", hint: "eingehend startet mit leichtem Hochpass, ausgehend wird zum Ende hin tiefpass gefiltert.", kw: "automix filter hochpass tiefpass"),
+
+            e(t, "Auto-Mix", "automix.keyclash", "Tonart-Konflikt erlauben", hint: "aus: Tracks mit Tonart-Konflikt (nicht benachbart, nicht relativ) scheiden bei der Auswahl aus.", kw: "automix key clash harmonie"),
+
+            e(t, "Auto-Mix", "automix.keysync", "Key Sync beim Übergang", hint: "den eingehenden Track beim Laden auf die Tonart des ausgehenden drehen (wie Key Sync am Deck).", kw: "automix key sync tonart"),
+
             e(t, "Externer Mixer", "mixer.ext.headroom", "Headroom", kw: "extern db"),
             e(t, "Externer Mixer", "mixer.ext.autogain", "Auto-Gain", kw: "extern"),
             e(t, "Externer Mixer", "mixer.ext.mainvol", "Main-Volume wirkt auch extern"),

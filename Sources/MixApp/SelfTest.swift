@@ -216,6 +216,7 @@ enum SelfTest {
             await chainProbe(mix, tracks: c)
             await insertProbe(mix)
             await eqProbe(mix)
+            guard await autoMixProbe(mix, tracks: c) else { log("FEHLER Auto-Mix"); exit(1) }
             await previewProbe(mix, tracks: c)
             await cutProbe(mix, tracks: c)
             await editProbe(mix)
@@ -1463,6 +1464,58 @@ extension SelfTest {
                    dry.rms, one.rms, three.rms, moved.rms, moved.peak, load0.overloads, load1.overloads,
                    inst?.outOfProcess == true ? "isoliert" : "im Prozess", withPlug.rms, failures, fails.isEmpty ? "OK" : "FAIL"))
         if !fails.isEmpty { log("FEHLER Insert-Slots: " + fails.joined(separator: " · ")); exit(1) }
+    }
+
+    /// Auto-Mix: ein Übergang (8 Takte) von Deck A auf B, an die Phrasengrenze vor dem Outro gesprungen. Geprüft: der
+    /// Bass wechselt in der Mitte (vorher A 0 dB / B Kill, danach umgekehrt), der ausgehende Track stoppt am Ende, der
+    /// eingehende spielt weiter, die Pegel sind zurückgesetzt
+    static func autoMixProbe(_ mix: MixModel, tracks c: [Track]) async -> Bool {
+        let core = mix.core, am = mix.autoMix
+        func ready(_ d: Int) -> Bool { let s = mix.deck(d); return s.track != nil && !s.loading && s.grid != nil && mix.audio(d) != nil }
+        for d in 0..<2 {
+            if mix.deck(d).playing { mix.togglePlay(d) }
+            mix.updateDeck(d) { $0.eqLow = 0; $0.eqMid = 0; $0.eqHigh = 0; $0.filter = 0; $0.fader = 1 }
+        }
+        am.transitionBarsOverride = 8   // kurzer Übergang: 8 Takte (nur im Test, die Einstellung bleibt)
+        defer { am.transitionBarsOverride = nil }
+        guard c.count >= 3 else { log("Auto-Mix: zu wenige Tracks"); return false }
+        mix.load(c[0], deck: 0, force: true)
+        for _ in 0..<150 where !ready(0) { try? await Task.sleep(for: .milliseconds(100)) }
+        guard ready(0), let g = mix.deck(0).grid else { log("FEHLER Auto-Mix: Track A lädt nicht"); return false }
+        mix.togglePlay(0)
+        // Sprung: 4 Beats vor die Phrasengrenze, die der Übergang nimmt (wie im Modell berechnet)
+        let phrase = Double(max(4, mix.prefs.ui.phraseBeats))
+        let end = g.beatPosition(at: mix.deck(0).playRange.upperBound)
+        guard let b = AutoMixTimeline.outBeat(endBeat: end, now: g.beatPosition(at: mix.position(0)), phraseBeats: phrase, transitionBeats: 32),
+              b - 4 > g.beatPosition(at: mix.position(0)) else { log("FEHLER Auto-Mix: kein Ausstieg auf Track A"); return false }
+        // Pool: frische Tracks (nicht in der History dieser Sitzung), der laufende Track A ist der Ausgang
+        let heard = Set(am.history?.live.map(\.key) ?? [])
+        let fresh = c.dropFirst().filter { !heard.contains($0.key) }
+        guard fresh.count >= 2 else { log("Auto-Mix: zu wenige frische Tracks"); return false }
+        am.start(tracks: Array(fresh.prefix(2)))
+        try? await Task.sleep(for: .milliseconds(200))
+        core.seek(0, seconds: g.time(ofBeat: b - 4))
+        var mixing = false
+        for _ in 0..<600 where !mixing {
+            try? await Task.sleep(for: .milliseconds(100))
+            mixing = am.phase == .mixing
+        }
+        guard mixing else { log("FEHLER Auto-Mix: kein Übergang gestartet (\(am.phase))"); am.stop(); return false }
+        var before = false, swapped = false
+        for _ in 0..<400 where am.phase == .mixing {
+            let o = mix.deck(0), i = mix.deck(1)
+            if o.eqLow == 0 && i.eqLow <= -40 { before = true }
+            if o.eqLow <= -40 && i.eqLow == 0 { swapped = true }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        try? await Task.sleep(for: .milliseconds(300))
+        let stopped = !mix.deck(0).playing && mix.deck(0).eqLow == 0 && mix.deck(0).fader == 1
+        let running = mix.deck(1).playing
+        log("Auto-Mix: Bass vorher \(before) · getauscht \(swapped) · A gestoppt \(stopped) · B spielt \(running) · Phase \(am.phase)")
+        am.stop()
+        for d in 0..<2 where mix.deck(d).playing { mix.togglePlay(d) }
+        for d in 0..<2 { mix.updateDeck(d) { $0.eqLow = 0; $0.eqMid = 0; $0.eqHigh = 0; $0.filter = 0; $0.fader = 1 } }
+        return before && swapped && stopped && running
     }
 
     /// EQ im Kanalzug (intern): Kill auf dem Tief-Regal senkt den Pegel an Deck A, 0 dB stellt ihn wieder her
