@@ -48,7 +48,7 @@ enum SignalTestRun {
             guard let ring = RecordRing(capacityFrames: Int(rate * 4)) else { log("RAM"); return }
             let input = CoreAudioInput()
             let info: CoreAudioInput.Info
-            do { info = try input.start(device: mix.engine.routing.device, firstChannel: firstInput, ring: ring) } catch {
+            do { info = try input.start(device: mix.engine.outputDeviceID, firstChannel: firstInput, ring: ring) } catch {
                 log("\(name): Eingang startet nicht: \(error.localizedDescription)"); continue
             }
             guard abs(info.rate - rate) < 0.5 else { input.stop(); log("\(name): Eingang \(Int(info.rate)) Hz ≠ Ausgang \(Int(rate)) Hz"); continue }
