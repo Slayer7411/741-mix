@@ -255,8 +255,16 @@ final class TrackRowView: NSTableRowView, NSViewToolTipOwner {
 
 /// Spaltenkopf: Chitin, Plex Mono, Haarlinien, Sortierung als ▲/▼
 final class TrackHeaderCell: NSTableHeaderCell {
-    var sortMark = ""
-    var font11: NSFont = TableStyle.mono(11)
+    // keine eigenen Swift-Referenzen: AppKit kopiert Header-Zellen bitweise (NSCell), eine kopierte Swift-Eigenschaft
+    // wurde doppelt freigegeben (Absturz in drawInterior). Ablage in Eigenschaften, die NSCell selbst richtig kopiert
+    var sortMark: String {
+        get { placeholderString ?? "" }
+        set { placeholderString = newValue.isEmpty ? nil : newValue }
+    }
+    var font11: NSFont {
+        get { font ?? TableStyle.mono(11) }
+        set { font = newValue }
+    }
 
     override func draw(withFrame f: NSRect, in v: NSView) {
         TableStyle.chitin.setFill()

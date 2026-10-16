@@ -40,3 +40,19 @@ import MixCore
     #expect(WaveZoomButtons.next(5, zoomIn: true) == 4 && WaveZoomButtons.next(5, zoomIn: false) == 6)
     #expect(WaveZoomButtons.next(1, zoomIn: true) == 1 && WaveZoomButtons.next(16, zoomIn: false) == 16)
 }
+
+/// Header-Zelle überlebt das bitweise Kopieren durch AppKit (Marke und Schrift in NSCell-Eigenschaften)
+@Test @MainActor func headerCellSurvivesCopies() {
+    var cells: [TrackHeaderCell] = []
+    let c = TrackHeaderCell(textCell: "Artist")
+    c.sortMark = "▼2"
+    c.font11 = TableStyle.mono(13)
+    for _ in 0..<200 { autoreleasepool { cells.append(c.copy() as! TrackHeaderCell) } }
+    cells.removeAll()
+    for _ in 0..<200 { autoreleasepool { _ = c.copy() } }
+    #expect(c.sortMark == "▼2" && c.font11.pointSize == 13)
+    let k = c.copy() as! TrackHeaderCell
+    #expect(k.sortMark == "▼2" && k.font11.pointSize == 13)
+    c.sortMark = ""
+    #expect(c.sortMark.isEmpty && k.sortMark == "▼2")
+}
