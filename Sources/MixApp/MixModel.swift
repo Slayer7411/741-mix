@@ -240,7 +240,7 @@ final class MixModel {
         migrateWavePreset()
         core.setPrefs(prefs.engine)
         previewer.setVolume(prefs.ui.previewVolume)
-        outputDevices = MixEngine.outputDevices()
+        refreshDevices()   // auch: Interface an einem anderen USB-Port
         applyRouting()
         engine.onConfigurationChange = { [weak self] in
             Task { @MainActor in
@@ -828,7 +828,18 @@ final class MixModel {
 
     var deviceChannels: Int { currentDevice?.channels ?? 2 }
 
-    func refreshDevices() { outputDevices = MixEngine.outputDevices() }
+    func refreshDevices() {
+        outputDevices = MixEngine.outputDevices()
+        // gewähltes USB-Interface an einem anderen Port: neue UID übernehmen (sonst Standardgerät bzw. ewiges Warten)
+        if let uid = deviceUID, !outputDevices.contains(where: { $0.uid == uid }),
+           let moved = MixEngine.relocatedUID(uid, among: outputDevices.map(\.uid)) {
+            deviceUID = moved
+            saveSetup()
+            let name = outputDevices.first { $0.uid == moved }?.name ?? moved
+            print("[audio] \(name) an anderem USB-Port: \(uid) -> \(moved)")
+            StatusCenter.post(.info, String(format: String(localized: "%@ an einem anderen USB-Port erkannt"), name), key: "audio.device")
+        }
+    }
 
     /// Geräteliste hat sich geändert: auf ein anderes Gerät wechseln? Gerät weg / wieder da / Ruhezustand macht die
     /// Engine (wartet auf dieselbe UID, kein Ausweichen auf die Lautsprecher). Hier: gewähltes Interface ist (wieder) da,
@@ -837,7 +848,11 @@ final class MixModel {
         let cur = engine.routing.device, w = engine.watch
         let def = MixEngine.defaultOutputDevice().flatMap { d in outputDevices.contains { $0.id == d } ? d : nil }
         if w.phase == .sleeping { return nil }
-        if w.waiting { return deviceUID == nil && def != nil ? "Standardgerät gewechselt" : nil }
+        if w.waiting {
+            // gewähltes Gerät (auch an einem anderen USB-Port) ist da, die Engine wartet auf die alte UID
+            if let uid = deviceUID, uid != w.uid, let want = outputDevices.first(where: { $0.uid == uid }) { return "\(want.name) an anderem Port" }
+            return deviceUID == nil && def != nil ? "Standardgerät gewechselt" : nil
+        }
         if !engine.running { return "Ausgabe steht" }
         if let cur, !outputDevices.contains(where: { $0.id == cur }) { return "Gerät weg" }
         if let uid = deviceUID, let want = outputDevices.first(where: { $0.uid == uid }), want.id != cur { return "\(want.name) wieder da" }
