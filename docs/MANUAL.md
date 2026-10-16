@@ -271,6 +271,7 @@ anywhere on the deck (header, cover, tags, readouts, overview, empty space) -> t
 * browser preview `like the waveform` takes the three preset colors (rgb direct: the spectrum palette)
 * drag the waveform = scrub, click the overview = jump
 * played part can be dimmed
+* other decks (⌘, -> DISPLAY -> `Andere Decks in der Wellenform`, on): one marker per other loaded deck with a grid, at the top of the waveform at the red line. triangle + letter (`B`) at the offset in beats (same phrase wrap as the code readout), purple = in phase (±1/16 beat), bone = out of phase, dimmed = that deck is stopped. off the visible range: arrow at the edge with the offset (`D +3 BARS`). own deck gets none
 
 spectrum (6 bands), colors:
 

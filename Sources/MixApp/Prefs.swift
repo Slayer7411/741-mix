@@ -197,6 +197,8 @@ struct UIPrefs: Codable, Equatable {
     var showBeatgrid = true
     var showBarNumbers = true
     var dimPlayed = true
+    /// Marken der anderen Decks mit Grid oben am Spielkopf (Abstand in Beats, Farbe = in Phase)
+    var peerMarks = true
     var waveformHeight = 60.0
     var previewStart = 0.3
     /// Vorhören: Lautstärke (linear, 1 = Track-Pegel)

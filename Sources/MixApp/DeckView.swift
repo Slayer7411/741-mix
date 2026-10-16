@@ -985,6 +985,14 @@ enum DeckShot {
         let cues = [Cue(name: "", kind: .cue, startMs: 1000, lengthMs: 0, hotcue: 0),
                     Cue(name: "", kind: .cue, startMs: 30000, lengthMs: 0, hotcue: 1),
                     Cue(name: "", kind: .loop, startMs: 60000, lengthMs: 3750, hotcue: 3)]
+        // andere Decks mit Grid für die Marken oben am Spielkopf: B drei Beats zurück (gestoppt, gedimmt), C in Phase
+        // (spielt), D zwölf Beats voraus (am rechten Rand, „D +3 BARS“)
+        for (d, anchorBeats, playing) in [(1, 3.0, false), (2, 0, true), (3, -12, false)] {
+            mix.updateDeck(d) {
+                $0.track = t; $0.duration = 300; $0.grid = BeatGrid(anchor: 1 + anchorBeats * 60 / 128, bpm: 128)
+                $0.playing = playing
+            }
+        }
         var paths: [String] = []
         for (w, h, loop, compact, edit, sizes) in [(640.0, 300.0, false, false, false, false), (480.0, 260.0, true, false, false, false),
                                                    (640.0, 300.0, false, true, false, false),

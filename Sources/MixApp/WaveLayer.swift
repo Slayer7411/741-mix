@@ -30,6 +30,8 @@ struct WaveScene: Equatable {
     /// Beatgrid kräftig (breitere, deckendere Linien) statt fein
     var boldLines = false
     var dimPlayed = true
+    /// Marken der anderen Decks (mit Grid) oben am Spielkopf
+    var peerMarks = true
     var cues: [Mark] = []
     var cuePoint: Double = 0
     var hasTrack = false
@@ -74,6 +76,14 @@ struct WaveScene: Equatable {
     var tileKey: String { "\(waveID.map { "\($0)" } ?? "-")|\(duration)|\(span)|\(hasTrack)" }
 }
 
+/// Ein anderes Deck für die Marke in der Wellenform: Grid, Position (s), Abspielgeschwindigkeit, läuft
+struct WaveformPeer {
+    var grid: BeatGrid
+    var position: Double
+    var speed: Double
+    var playing: Bool
+}
+
 struct WaveLayerView: NSViewRepresentable {
     let scene: WaveScene
     let wave: RenderedWaveform?
@@ -83,6 +93,8 @@ struct WaveLayerView: NSViewRepresentable {
     let loop: @MainActor () -> (active: Bool, start: Double, end: Double)
     /// der Loop ist der Auto-Loop vom Laden: auch inaktiv gezeigt (Bone, AUTO)
     var autoLoop: @MainActor () -> Bool = { false }
+    /// andere Decks für die Marken (nil = kein Track / Grid, oder das Deck selbst)
+    var peer: @MainActor (Int) -> WaveformPeer? = { _ in nil }
 
     func makeNSView(context: Context) -> WaveLayerNSView { WaveLayerNSView() }
 
@@ -91,6 +103,7 @@ struct WaveLayerView: NSViewRepresentable {
         v.speed = speed
         v.loop = loop
         v.autoLoop = autoLoop
+        v.peer = peer
         v.wave = wave
         v.scene = scene
     }
@@ -109,6 +122,7 @@ final class WaveLayerNSView: NSView {
     var speed: @MainActor () -> Double = { 0 }
     var loop: @MainActor () -> (active: Bool, start: Double, end: Double) = { (false, 0, 0) }
     var autoLoop: @MainActor () -> Bool = { false }
+    var peer: @MainActor (Int) -> WaveformPeer? = { _ in nil }
     var wave: RenderedWaveform? { didSet { if wave !== oldValue { rebuild(tiles: true) } } }
     var scene = WaveScene() {
         didSet {
@@ -119,7 +133,9 @@ final class WaveLayerNSView: NSView {
             (a.trim, b.trim) = (WaveScene.Trim(), WaveScene.Trim())
             (a.range, b.range) = (nil, nil)
             (a.edit, b.edit) = (nil, nil)
+            (a.peerMarks, b.peerMarks) = (true, true)
             if a == b, builtSize == bounds.size {
+                if scene.peerMarks != oldValue.peerMarks { step() }
                 if scene.cues != oldValue.cues || scene.cuePoint != oldValue.cuePoint { rebuildCues() }
                 if scene.trim != oldValue.trim { layoutTrim() }
                 if scene.range != oldValue.range { layoutRange() }
@@ -145,6 +161,9 @@ final class WaveLayerNSView: NSView {
     private let dim = CALayer()
     private let playhead = CALayer()
     private let countdown = CATextLayer()
+    // andere Decks: je Deck eine Marke am Spielkopf (oben), Lage pro Bild, Form nur bei Änderung
+    private var peerTags = (0..<MixEngine.deckCount).map { PeerTag(letter: deckLetters[$0]) }
+    private var peerSmoothers = [PlayheadSmoother](repeating: PlayheadSmoother(), count: MixEngine.deckCount)
     private var link: CADisplayLink?
     private var builtSize: CGSize = .zero
     private var pps: Double = 1   // Punkte pro Sekunde bei aktuellem Zoom
@@ -165,6 +184,27 @@ final class WaveLayerNSView: NSView {
     private static let playheadWidth: CGFloat = 2.5
     private var ruler: CGFloat { Self.rulerHeight * scene.zoom }
     private static let monoBold = CTFontCreateWithName("IBMPlexMono-SemiBold" as CFString, 9, nil)
+
+    /// Marke eines anderen Decks: Fähnchen mit Buchstabe und Dreieck darunter; am Rand Pfeil und Text („B +2 BARS“)
+    private final class PeerTag {
+        struct Look: Equatable { var clamped = false, left = false, beats = 0, inPhase = false, playing = true }
+        let letter: String
+        let root = CALayer(), box = CALayer(), tri = CAShapeLayer(), text = CATextLayer()
+        var look: Look?
+        /// Breite der Marke (Punkte) – am Rand mit Text breiter
+        var width: CGFloat = 0
+
+        init(letter: String) {
+            self.letter = letter
+            for l in [root, box, tri, text] as [CALayer] { l.actions = WaveLayerNSView.noAnimation }
+            text.font = WaveLayerNSView.monoBold
+            text.alignmentMode = .center
+            root.isHidden = true
+            root.addSublayer(tri)
+            root.addSublayer(box)
+            box.addSublayer(text)
+        }
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -227,6 +267,7 @@ final class WaveLayerNSView: NSView {
         editLayer.isHidden = true
         for l in [tiles, gridLayer, loopLayer, cueLayer, trimLayer, editLayer, rangeLayer] { strip.addSublayer(l) }
         for l in [strip, dim, playhead, countdown] { content.addSublayer(l) }
+        for t in peerTags { content.addSublayer(t.root) }
         for l in [strip, tiles, gridLayer, cueLayer, loopLayer, trimLayer, editLayer, rangeLayer, dim, playhead, countdown] as [CALayer] {
             l.actions = Self.noAnimation
         }
@@ -414,6 +455,85 @@ final class WaveLayerNSView: NSView {
         cueLayer.sublayers = nil
         buildCues(h: bounds.height)
         step()   // steht der Display-Link (offscreen), sonst nichts zu tun: Position unverändert
+    }
+
+    /// Marken der anderen Decks (mit Track und Grid): Lage je Bild, Form, Farbe und Text nur bei Änderung.
+    /// Abstand in Beats gegen den Spielkopf dieses Decks (Phrasen-Raster), Pixel über die Beat-Länge dieses Grids
+    private func layoutPeers(pos: Double, grid g: BeatGrid?, t: Double?) {
+        let w = bounds.width, z = scene.zoom
+        guard scene.peerMarks, let g, g.bpm > 0, w > 0, bounds.height > 0 else {
+            for m in peerTags { m.root.isHidden = true }
+            return
+        }
+        let own = g.beatPosition(at: pos), phrase = Double(max(4, scene.phraseBeats))
+        let limit = Double(w / 2 - 6 * z)
+        for e in 0..<MixEngine.deckCount {
+            let tag = peerTags[e]
+            guard let p = peer(e) else { tag.root.isHidden = true; continue }
+            // Position wie der eigene Spielkopf: zwischen den Meldungen des Kerns gleichmäßig weiter
+            var sec = p.position
+            if !Self.unsmoothed {
+                if let t { sec = peerSmoothers[e].update(raw: p.position, speed: p.speed, at: t) }
+                else if !peerSmoothers[e].shown.isNaN { sec = peerSmoothers[e].shown }
+            }
+            let off = PeerMark.offsetBeats(own: own, other: (sec - p.grid.anchor) / p.grid.beat, phraseBeats: phrase)
+            let (dx, clamped) = PeerMark.place(offsetBeats: off, beatSeconds: g.beat, pointsPerSecond: pps, limit: limit)
+            let look = PeerTag.Look(clamped: clamped, left: dx < 0, beats: clamped ? Int(off.rounded()) : 0,
+                                    inPhase: PeerMark.inPhase(off), playing: p.playing)
+            if look != tag.look { applyPeerLook(tag, look) }
+            // am Spielkopf zentriert; am Rand an die Kante geklebt. Transaktion nur, wenn sich die Lage ändert
+            let rw = tag.width
+            let x: CGFloat = clamped ? (look.left ? 0 : w - rw) : w / 2 + CGFloat(dx) - rw / 2
+            let target = CGRect(x: px(Double(x)), y: 0, width: rw, height: 12 * z)
+            if tag.root.isHidden || target != tag.root.frame {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                tag.root.frame = target
+                tag.root.isHidden = false
+                CATransaction.commit()
+            }
+        }
+    }
+
+    /// Form, Farbe und Text einer Marke (nur bei Wechsel von Modus, Phase oder Laufen)
+    private func applyPeerLook(_ tag: PeerTag, _ look: PeerTag.Look) {
+        tag.look = look
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        let z = scene.zoom, boxH = 9 * z, size = 8 * z
+        let lbl = look.clamped ? PhraseCode.label(beats: look.beats) : nil
+        let str = lbl.map { "\(tag.letter) \($0)" } ?? tag.letter
+        let boxW = look.clamped ? CGFloat(str.count) * size * 0.62 + 4 * z : 11 * z
+        let boxX: CGFloat = look.clamped && look.left ? 6 * z : 0
+        tag.width = look.clamped ? boxW + 6 * z : boxW
+        let fill = look.inPhase ? NSColor(Theme.secondary) : NSColor(Theme.bone)
+        tag.root.opacity = look.playing ? 1 : 0.4   // steht das Deck: gedimmt
+        tag.box.frame = CGRect(x: boxX, y: 0, width: boxW, height: boxH)
+        tag.box.backgroundColor = fill.cgColor
+        tag.text.string = str
+        tag.text.fontSize = size
+        tag.text.contentsScale = scale
+        tag.text.foregroundColor = (look.inPhase ? NSColor(Theme.bone) : NSColor(Theme.wave)).cgColor
+        tag.text.frame = CGRect(x: 0, y: 0.5 * z, width: boxW, height: boxH)
+        let p = CGMutablePath(), mid = boxH / 2
+        if !look.clamped {
+            p.move(to: CGPoint(x: boxW / 2 - 3.5 * z, y: boxH))
+            p.addLine(to: CGPoint(x: boxW / 2 + 3.5 * z, y: boxH))
+            p.addLine(to: CGPoint(x: boxW / 2, y: boxH + 3 * z))
+        } else if look.left {
+            p.move(to: CGPoint(x: 1 * z, y: mid))
+            p.addLine(to: CGPoint(x: 5 * z, y: mid - 3 * z))
+            p.addLine(to: CGPoint(x: 5 * z, y: mid + 3 * z))
+        } else {
+            p.move(to: CGPoint(x: boxW + 5 * z, y: mid))
+            p.addLine(to: CGPoint(x: boxW + 1 * z, y: mid - 3 * z))
+            p.addLine(to: CGPoint(x: boxW + 1 * z, y: mid + 3 * z))
+        }
+        p.closeSubpath()
+        tag.tri.path = p
+        tag.tri.fillColor = fill.cgColor
+        tag.tri.frame = CGRect(x: 0, y: 0, width: tag.width, height: 12 * z)
     }
 
     private func clearTiles() {
@@ -703,7 +823,10 @@ final class WaveLayerNSView: NSView {
     /// t = Zeit des Bildes (Display-Link); nil = außerhalb des Takts neu aufgebaut: Spielkopf vom letzten Bild,
     /// lief der Takt nicht (Ansicht verdeckt, offscreen), die gemeldete Position
     private func step(at t: Double? = nil) {
-        guard scene.hasTrack else { return }
+        guard scene.hasTrack else {
+            for m in peerTags where !m.root.isHidden { m.root.isHidden = true }
+            return
+        }
         let raw = position()
         let pos: Double
         if Self.unsmoothed { pos = raw }
@@ -716,6 +839,7 @@ final class WaveLayerNSView: NSView {
             if !benchX.isNaN { Self.bench.px.append(abs(x - benchX) * scale) }
             benchX = x
         }
+        layoutPeers(pos: pos, grid: scene.grid, t: t)   // vor dem Abbruch: die anderen Decks laufen auch, wenn dieses steht
         // Deck steht: nichts verschieben, keine Transaktion (sonst 4 Decks × 120 Hz im Leerlauf)
         if pos == lastPos, !loopChanged, tilesPending.isEmpty { return }
         lastPos = pos

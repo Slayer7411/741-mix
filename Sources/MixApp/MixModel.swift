@@ -409,6 +409,14 @@ final class MixModel {
                           phraseBars: max(4, prefs.ui.phraseBeats) / 4)
     }
 
+    /// Deck für die Marke „andere Decks“ in der Wellenform (je Bild gelesen): nil ohne Track oder Grid
+    func peerDeck(_ e: Int) -> WaveformPeer? {
+        guard decks.indices.contains(e) else { return nil }
+        let s = decks[e].state
+        guard s.track != nil, let g = s.grid, g.bpm > 0 else { return nil }
+        return WaveformPeer(grid: g, position: position(e), speed: playSpeed(e), playing: s.playing)
+    }
+
     // MARK: - Befehle (weitergeleitet an den Kern)
 
     /// Lade-Schutz (⌘, → DECKS): spielt das Deck, bleibt es, wie es ist (Hinweis in der Statusleiste).

@@ -102,6 +102,9 @@ enum SettingsIndex {
             e(t, w, "display.wave.seconds", "Sichtbare Sekunden je Seite (Zoom)", kw: "wellenform waveform zoom"),
             e(t, w, "display.wave.height", "Mindesthöhe (pt, wächst mit dem Fenster)", kw: "wellenform waveform"),
             e(t, w, "display.wave.dim", "Gespielten Teil abdunkeln", kw: "wellenform waveform"),
+            e(t, w, "display.wave.peers", "Andere Decks in der Wellenform",
+              hint: "dreieck mit buchstabe oben am roten strich: wo das andere deck (mit grid) gegenüber diesem track läuft. lila = in phase, grau = steht. am rand: pfeil mit abstand.",
+              kw: "wellenform waveform phase code sync"),
         ] + wave + [
             e(t, "Beatgrid", "display.grid.show", "Beatgrid anzeigen", kw: "grid"),
             e(t, "Beatgrid", "display.grid.colorful", "Farbig (Phrasen, Takte, Beats)", kw: "grid"),
