@@ -13,23 +13,26 @@ import MixCore
     let full = TrackMenu.BrowserFacts(hasEdits: true, hasAnalysis: true, preparation: true, ownPlaylist: true, cloud: true, playlists: tree)
     let items = TrackMenu.browserItems(full, rip: rip, TrackMenu.Actions())
     #expect(items.outline == ["In Deck A laden", "In Deck B laden", "In Deck C laden", "In Deck D laden", "—",
-                              "Bearbeiten …", "Eigene Änderungen verwerfen", "—",
+                              "Bearbeiten …", "Eigene Änderungen verwerfen", "—", "Bewertung ▸", "—",
                               "Analysieren", "Neu analysieren", "Analyse verwerfen", "Rip prüfen", "—",
                               "An Preparation anhängen", "Aus Preparation entfernen", "Zur Playlist hinzufügen ▸", "Aus Playlist entfernen", "—",
-                              "Bereitmachen (herunterladen)", "Vorhören", "Im Finder zeigen", "—", "Reset Played State"])
+                              "Bereitmachen (herunterladen)", "Vorhören", "Im Finder zeigen", "Artist – Titel kopieren", "Pfad kopieren",
+                              "(Nach Artist suchen)", "(Nach Label suchen)", "Alle auswählen", "—", "Reset Played State"])
     let menu = items.menu()
-    let edit = menu.items[5], remove = menu.items[16]
+    let edit = menu.items[5], remove = menu.items[18]
     #expect(edit.keyEquivalent == "e" && edit.keyEquivalentModifierMask == .command)
     #expect(remove.keyEquivalent == "\u{8}" && remove.keyEquivalentModifierMask == [])
-    let sub = menu.items[15].submenu?.items ?? []
+    let sub = menu.items[17].submenu?.items ?? []
     #expect(sub.map(\.title) == [OwnGlyph.folder + " Sets", "   " + OwnGlyph.playlist + " Friday", OwnGlyph.playlist + " Warmup", "",
                                  "Neue Playlist mit der Auswahl"])
     #expect(sub.first?.isEnabled == false && sub[1].isEnabled)
 
     let plain = TrackMenu.browserItems(TrackMenu.BrowserFacts(), rip: rip, TrackMenu.Actions())
     #expect(plain.outline == ["In Deck A laden", "In Deck B laden", "In Deck C laden", "In Deck D laden", "—",
-                              "Bearbeiten …", "—", "Analysieren", "Neu analysieren", "Rip prüfen", "—",
-                              "An Preparation anhängen", "Zur Playlist hinzufügen ▸", "—", "Vorhören", "Im Finder zeigen", "—", "Reset Played State"])
+                              "Bearbeiten …", "—", "Bewertung ▸", "—", "Analysieren", "Neu analysieren", "Rip prüfen", "—",
+                              "An Preparation anhängen", "Zur Playlist hinzufügen ▸", "—", "Vorhören", "Im Finder zeigen",
+                              "Artist – Titel kopieren", "Pfad kopieren", "(Nach Artist suchen)", "(Nach Label suchen)", "Alle auswählen",
+                              "—", "Reset Played State"])
 }
 
 private func loaded(deck: Int = 0, decks: Int = 2, playing: Bool = false) -> TrackMenu.DeckFacts {
@@ -38,7 +41,8 @@ private func loaded(deck: Int = 0, decks: Int = 2, playing: Bool = false) -> Tra
 
 @MainActor @Test func deckMenuWithTrack() {
     let items = TrackMenu.deckItems(loaded(), rip: rip, TrackMenu.Actions())
-    #expect(items.outline == ["Track bearbeiten …", "Im Browser zeigen", "Im Finder zeigen", "Auf Deck B kopieren", "Auswerfen", "—",
+    #expect(items.outline == ["Track bearbeiten …", "Im Browser zeigen", "Im Finder zeigen", "Pfad kopieren", "Artist – Titel kopieren", "Vorhören",
+                              "Auf Deck B kopieren", "Auswerfen", "—",
                               "An Preparation anhängen", "Zur Playlist hinzufügen ▸", "—",
                               "Analysieren", "Neu analysieren", "Vorschau berechnen", "Rip prüfen", "—", "Bewertung ▸"])
     // Bewertung: aktuelle Stufe abgehakt
@@ -52,8 +56,9 @@ private func loaded(deck: Int = 0, decks: Int = 2, playing: Bool = false) -> Tra
     f.daw = ("Clip", false)
     f.hasAnalysis = true
     let o = TrackMenu.deckItems(f, rip: rip, TrackMenu.Actions()).outline
-    #expect(Array(o.prefix(8)) == ["Track bearbeiten …", "Im Browser zeigen", "Im Finder zeigen", "Auf Deck A kopieren", "Auf Deck C kopieren",
-                                   "Auf Deck D kopieren", "(Grid des DAW-Clips übernehmen (Clip))", "Auswerfen"])
+    #expect(Array(o.prefix(11)) == ["Track bearbeiten …", "Im Browser zeigen", "Im Finder zeigen", "Pfad kopieren", "Artist – Titel kopieren",
+                                    "Vorhören", "Auf Deck A kopieren", "Auf Deck C kopieren", "Auf Deck D kopieren",
+                                    "(Grid des DAW-Clips übernehmen (Clip))", "Auswerfen"])
     #expect(o.contains("Analyse verwerfen"))
 }
 

@@ -110,7 +110,7 @@ enum UISelfTest {
 
         let u = UIDriver(mix: mix, store: store, browser: browser, history: history)
         let cases: [(String, (UIDriver, [Track]) -> Void)] = [
-            ("deck-menü", deckMenu), ("deck-menü-fläche", deckMenuArea), ("drop aufs deck", dropOnDeck), ("bereich in der wellenform", waveRange),
+            ("deck-menü", deckMenu), ("deck-menü-fläche", deckMenuArea), ("drop aufs deck", dropOnDeck), ("bereich in der wellenform", waveRange), ("wellenform greifen", waveGrab),
             ("spaltenbreite per doppelklick", fitColumn), ("statusleiste automatisch", autoStatusBar), ("statusleiste job", statusBarJob),
             ("tastenkürzel", shortcuts), ("werkzeugleiste", toolbar), ("zoom", zoom),
             ("edit-modus", editMode),
@@ -134,6 +134,9 @@ enum UISelfTest {
             ("deck-groessen", deckSizes),
             ("insert-slots", insertSlots),
             ("zweizeilig", twoLineRows),
+            ("browser-höhe", splitDrag),
+            ("audio-edit", audioEdit),
+            ("audio-editor", audioEditor),
         ]
         let only = env["MIX741_UITEST_ONLY"].flatMap { $0.isEmpty ? nil : Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         var n = 0
@@ -325,6 +328,51 @@ enum UISelfTest {
         check(u.mix.range(0) == nil, "Esc hebt den Bereich nicht auf")
     }
 
+    /// Wellenform greifen (⌘, -> DECKS) an Deck A: Vinyl folgt dem Zug (Position um die gezogene Strecke, auch im Stopp);
+    /// Jog im Stopp sucht wie bisher; Jog spielend bleibt das Deck nach dem Loslassen am Laufen. ⌃ + Ziehen bleibt Bereich
+    static func waveGrab(_ u: UIDriver, _ t: [Track]) {
+        guard let w = u.views.compactMap({ $0 as? WaveMouseView }).first(where: { $0.d == 0 }) else { fail("Wellenform A nicht gefunden") }
+        let mix = u.mix
+        guard mix.deck(0).track != nil else { fail("Deck A ohne Track") }
+        let saved = mix.prefs.ui.waveGrab
+        defer { mix.prefs.ui.waveGrab = saved }
+        if mix.deck(0).playing { mix.togglePlay(0); u.spin(1) { !mix.deck(0).playing } }
+        mix.setRange(0, nil)
+        let r = u.frame(w), spp = mix.prefs.ui.waveformSeconds * 2 / Double(r.width)
+        // 40 pt nach links = vorwärts um 40 Punkte Zeit
+        let want = 10 + 40 * spp
+        func zug(_ grab: WaveGrab, playing: Bool) -> Double {
+            mix.prefs.ui.waveGrab = grab
+            mix.core.seek(0, seconds: 10)
+            u.spin(0.3)
+            if playing { mix.togglePlay(0); u.spin(0.3) }
+            let p0 = mix.position(0)
+            u.drag(from: NSPoint(x: r.midX + 60, y: r.midY), to: NSPoint(x: r.midX + 20, y: r.midY), steps: 8)
+            let p1 = mix.position(0)
+            log(String(format: "wellenform greifen %@ %@: %.3f → %.3f s", grab.rawValue, playing ? "spielend" : "steht", p0, p1))
+            return p1 - p0
+        }
+        let v = zug(.vinyl, playing: false)
+        check(abs(10 + v - want) < 0.03, "Vinyl: Zug um 40 pt hat die Position um \(v) s bewegt, erwartet \(want - 10)")
+        check(!mix.deck(0).playing, "Vinyl: das stehende Deck ist nach dem Loslassen angelaufen")
+        _ = zug(.jog, playing: false)
+        check(abs(mix.position(0) - (10 + 40 * spp)) < 0.03, "Jog im Stopp: Suchen landet nicht dort, wo losgelassen wurde (\(mix.position(0)))")
+        check(!mix.deck(0).playing, "Jog im Stopp: das Deck ist angelaufen")
+        // spielend: kein Sprung, sondern Nudge; das Deck läuft nach dem Loslassen weiter
+        _ = zug(.jog, playing: true)
+        u.spin(0.3)
+        check(mix.deck(0).playing, "Jog spielend: das Deck ist nach dem Loslassen stehen geblieben")
+        check(mix.position(0) > 10 && mix.position(0) < 10 + 40 * spp + 1.5, "Jog spielend: Position \(mix.position(0)) springt")
+        mix.togglePlay(0)
+        u.spin(0.5) { !mix.deck(0).playing }
+        // ⌃ + Ziehen: Bereich, keine Bewegung der Position
+        mix.core.seek(0, seconds: 10)
+        u.spin(0.3)
+        u.drag(from: NSPoint(x: r.midX + 60, y: r.midY), to: NSPoint(x: r.midX + 20, y: r.midY), modifiers: .control, steps: 8)
+        check(mix.range(0) != nil && abs(mix.position(0) - 10) < 0.03, "⌃ + Ziehen: Bereich fehlt oder die Position ist mitgewandert")
+        mix.setRange(0, nil)
+    }
+
     /// Doppelklick auf den Trenner rechts der Titel-Spalte im Kopf von Bereich A: Spalte auf den längsten Titel
     static func fitColumn(_ u: UIDriver, _ t: [Track]) {
         let pane = u.browser.paneA
@@ -452,18 +500,14 @@ enum UISelfTest {
         u.spin(0.3)
     }
 
-    /// Werkzeugleiste: MIXER und Decks 1 / 2 / 4 per Klick
+    /// Werkzeugleiste: MIXER und Decks 1 / 2 / 4 per Klick (Schalter tragen Marken, WindowBar.swift)
     static func toolbar(_ u: UIDriver, _ t: [Track]) {
         let mix = u.mix
-        // MIXER: Schalter ohne Beschriftung am Element, steht vor dem Picker „Decks“
         // ohne Fensterserver (CI-Runner) baut AppKit die Elemente der Werkzeugleiste nicht auf: dann nur melden, nicht scheitern
-        let itemLabels = u.window.toolbar?.items.map { "\($0.label)\($0.view == nil ? "(ohne View)" : "")" } ?? []
-        guard let items = u.window.toolbar?.items, let di = items.firstIndex(where: { $0.label == String(localized: "Decks") }), di > 0,
-              let mixer = items[di - 1].view.flatMap({ u.control(in: $0) as? NSButton }) else {
-            log("werkzeugleiste nicht aufgebaut (\(itemLabels.joined(separator: " · "))) – fall übersprungen")
+        guard let mixer = u.named("toolbar mixer"), u.named("toolbar decks 4") != nil else {
+            log("werkzeugleiste nicht aufgebaut – fall übersprungen")
             return
         }
-        check((mixer.state == .on) == mix.prefs.ui.showMixer, "Schalter vor „Decks“ zeigt nicht den Mixer-Zustand")
         let m0 = mix.prefs.ui.showMixer
         u.click(at: u.center(mixer))
         u.spin(1) { mix.prefs.ui.showMixer != m0 }
@@ -471,14 +515,10 @@ enum UISelfTest {
         u.click(at: u.center(mixer))
         u.spin(1) { mix.prefs.ui.showMixer == m0 }
         check(mix.prefs.ui.showMixer == m0, "zweiter Klick auf MIXER schaltet nicht zurück")
-        // Decks 1 / 2 / 4: Segment nach Beschriftung, Klick auf die Mitte des Segments
-        guard let seg = items[di].view.flatMap({ u.control(in: $0) as? NSSegmentedControl }) else { log("Decks 1 / 2 / 4 in der Werkzeugleiste ohne View – übersprungen"); return }
-        let labels = (0..<seg.segmentCount).map { seg.label(forSegment: $0) ?? "" }
+        // Decks 1 / 2 / 4: Klick auf die Marke des Schalters
         func click(_ n: Int) {
-            guard let i = labels.firstIndex(of: "\(n)") else { fail("Decks: kein Segment „\(n)“ (\(labels))") }
-            let r = u.frame(seg)
-            let x0 = (0..<i).reduce(r.minX) { $0 + seg.width(forSegment: $1) }, w = seg.width(forSegment: i)
-            u.click(at: NSPoint(x: w > 0 ? x0 + w / 2 : r.minX + r.width * (CGFloat(i) + 0.5) / CGFloat(seg.segmentCount), y: r.midY))
+            guard let b = u.named("toolbar decks \(n)") else { fail("Decks: kein Schalter „\(n)“") }
+            u.click(at: u.center(b))
             u.spin(1) { mix.prefs.ui.deckCount == n }
             check(mix.prefs.ui.deckCount == n, "Klick auf „\(n)“: \(mix.prefs.ui.deckCount) Decks")
         }
@@ -695,11 +735,13 @@ final class UIDriver {
     /// Ziehen: Drücken, `steps` Bewegungen, Loslassen
     /// Ziehen: alles direkt ans Fenster. Über die Warteschlange gepostete Zieh-Ereignisse kommen ohne ihre Position an
     /// (das Fenster ignoriert die Maus, AppKit ordnet sie beim Abholen neu zu) – der Bereich landete dann bei 0 s
-    func drag(from a: NSPoint, to b: NSPoint, modifiers: NSEvent.ModifierFlags = [], steps: Int = 6) {
+    /// `each`: nach jedem Schritt aufrufen (Messung während des Ziehens)
+    func drag(from a: NSPoint, to b: NSPoint, modifiers: NSEvent.ModifierFlags = [], steps: Int = 6, each: (() -> Void)? = nil) {
         window.sendEvent(mouse(.leftMouseDown, a, modifiers))
         for i in 1...max(1, steps) {
             let f = CGFloat(i) / CGFloat(max(1, steps))
             window.sendEvent(mouse(.leftMouseDragged, NSPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f), modifiers))
+            if let each { spin(0.05); each() }
         }
         window.sendEvent(mouse(.leftMouseUp, b, modifiers))
         spin(0.2)
@@ -1270,6 +1312,116 @@ extension UISelfTest {
     /// Profil „Vorbereiten“ an Deck A mit einer eigenen WAV (16 Bit, Spitze 0.5, 120 BPM, im Temp-Ordner): Werkzeugzeile
     /// da, Deck im EDIT-Modus, Klick auf +3 -> Gain +3 dB, Klick auf RENDER -> `[amp +3].wav` im Test-Ordner mit
     /// Spitze × 1,41. MIX741_UITEST_PREPSHOT=<png>: Bild des Fensters. Danach Ansicht und Deck A wie vorher
+    /// AUDIO-EDIT: Import-Lauf über drei Tracks, ein Deck, WEITER lädt den nächsten, ERLEDIGT markiert, Verlassen stellt die Ansicht her
+    static func audioEdit(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, m = AudioEditMode.shared, d = AudioEditMode.deck
+        if mix.deck(d).playing { mix.togglePlay(d) }
+        let before = LayoutProfile(name: "", ui: mix.prefs.ui, maximized: u.browser.maximized)
+        let tracks = Array(t.prefix(3))
+        check(tracks.count >= 2, "audio-edit: weniger als zwei Tracks")
+        m.importRun(tracks, title: "UITest")
+        u.spin(20) { m.active && mix.deck(d).track != nil && !mix.deck(d).loading }
+        check(m.active, "audio-edit: Modus nicht an")
+        check(!m.list.isEmpty, "audio-edit: Arbeitsliste leer")
+        check(mix.prefs.ui.deckCount == 1, "audio-edit: nicht ein Deck (\(mix.prefs.ui.deckCount))")
+        check(mix.deck(d).track?.key == m.list[0].key, "audio-edit: Deck A lädt nicht den ersten Track")
+        if m.list.count >= 2 {
+            let second = m.list[1].key
+            m.next()
+            u.spin(20) { mix.deck(d).track?.key == second && !mix.deck(d).loading }
+            check(mix.deck(d).track?.key == second, "audio-edit: WEITER lädt nicht den nächsten Track")
+            let first = m.list[1].key
+            m.done()
+            check(m.store.isReviewed(first), "audio-edit: ERLEDIGT markiert nicht")
+        }
+        let n = m.list.count
+        m.leave()
+        check(!m.active, "audio-edit: nicht verlassen")
+        let after = LayoutProfile(name: "", ui: mix.prefs.ui, maximized: u.browser.maximized)
+        check(after.sameView(as: before), "audio-edit: Ansicht nach dem Verlassen anders")
+        m.store.reset()
+        log("audio-edit: \(n) Tracks · WEITER lädt · ERLEDIGT · Verlassen stellt die Ansicht her")
+    }
+
+    /// Editor im AUDIO-EDIT-Modus: Zoom bis auf die Samples, Auswahl, Rückwärts / Löschen / Kopieren und Einfügen (je mit
+    /// Rückgängig), Marken, Schritte, Verlassen. MIX741_UITEST_EDITSHOT=<png>: Bild des Fensters (Auswahl im Sample-Zoom)
+    static func audioEditor(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, m = AudioEditMode.shared, d = AudioEditMode.deck
+        if mix.deck(d).playing { mix.togglePlay(d) }
+        let wasEditing = mix.editing(d)
+        let tracks = Array(t.prefix(2))
+        check(tracks.count >= 1, "audio-editor: keine Tracks")
+        UndoStack.shared.clearAll()
+        m.importRun(tracks, title: "UITest")
+        u.spin(20) { m.active && mix.deck(d).track != nil && !mix.deck(d).loading && mix.editSession(d) != nil }
+        check(m.active && mix.editSession(d) != nil, "audio-editor: Editor nicht bereit")
+        u.spin(5) { m.secPerPoint > 0 }
+        check(m.secPerPoint > 0 && m.viewWidth > 0, "audio-editor: keine Ansicht")
+        let dur = m.duration
+        check(abs(dur - mix.deck(d).duration) < 1e-6, "audio-editor: Dauer des Editors weicht ab")
+        check(!m.snap, "audio-editor: Raster nicht aus")
+        // Zoom bis auf die Samples und zurück auf die ganze Datei
+        for _ in 0..<60 where m.secPerPoint * m.rate > 1 { m.zoomKey(AudioEditView.zoomStep) }
+        check(m.secPerPoint * m.rate <= 1, "audio-editor: Zoom erreicht die Sample-Ebene nicht")
+        m.fitView()
+        check(abs(m.secPerPoint - dur / m.viewWidth) < 1e-9, "audio-editor: ALLES passt nicht")
+        // Auswahl (Sekunden auf Samples gerastet), rückwärts, Rückgängig
+        let a = 1.0, b = 2.0
+        m.setSelection(TrackRange(a, b))
+        check(m.selection == TrackRange(a, b), "audio-editor: Auswahl weicht ab")
+        m.reverse()
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(m.shown?.segments.contains { $0.isReversed } == true, "audio-editor: rückwärts fehlt")
+        check(abs(m.duration - dur) < 1e-6, "audio-editor: Länge ändert sich beim Rückwärts")
+        UndoStack.shared.perform(redo: false)
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(m.shown?.isPlain == true, "audio-editor: Rückgängig stellt das Original nicht her")
+        // Löschen, Kopieren, Einfügen
+        m.setSelection(TrackRange(a, b))
+        m.delete()
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(abs(m.duration - (dur - 1)) < 1e-6, "audio-editor: Löschen ändert die Länge nicht")
+        m.setSelection(TrackRange(0, 0.5))
+        check(m.copy(), "audio-editor: Kopieren ohne Ergebnis (Auswahl \(String(describing: m.selection)), Track \(m.editTrack?.key ?? "-"), Stücke \(m.shown?.segments.count ?? -1), Dauer \(m.duration))")
+        m.setCursor(3)
+        m.paste()
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(abs(m.duration - (dur - 0.5)) < 1e-6, "audio-editor: Einfügen ändert die Länge nicht")
+        // dritter Schritt (Rückgängig oben hat den ersten zurückgenommen, Neues löscht Wiederherstellen)
+        m.setSelection(TrackRange(0, 1))
+        m.reverse()
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        // Marken am Cursor und am Bereich, Name über den Dialog nicht (der hält den Test an)
+        m.setCursor(2)
+        m.addMarker(range: false)
+        m.setSelection(TrackRange(0, 1))
+        m.addMarker(range: true)
+        check(m.marks.count == 2, "audio-editor: Marken \(m.marks.count) statt 2")
+        check(m.marks.contains { $0.end != nil }, "audio-editor: Bereichsmarke fehlt")
+        // Schritte: Rückgängig springt zum ersten Schritt zurück
+        let steps = UndoStack.shared.timeline.count
+        check(steps >= 3, "audio-editor: Schritte \(steps) statt mindestens 3")
+        UndoStack.shared.jump(to: 0)
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(UndoStack.shared.timeline.filter { !$0.undone }.count == 1, "audio-editor: Sprung zum Schritt")
+        UndoStack.shared.jump(to: steps - 1)
+        u.spin(20) { mix.editSession(d)?.rendering == false }
+        check(UndoStack.shared.timeline.filter { !$0.undone }.count == steps, "audio-editor: Vorwärts-Sprung")
+        // Bild: Auswahl von 10 ms, im Sample-Zoom
+        m.setSelection(TrackRange(1, 1.01))
+        m.zoomToSelection()
+        u.spin(2)
+        if let out = ProcessInfo.processInfo.environment["MIX741_UITEST_EDITSHOT"] { shot(u, out, "audio-editor") }
+        // Verlassen: Ansicht und EDIT von Deck A wie vorher
+        m.marks.forEach { m.deleteMarker($0.id) }
+        UndoStack.shared.clearAll()
+        m.leave()
+        check(!m.active, "audio-editor: nicht verlassen")
+        check(mix.editing(d) == wasEditing, "audio-editor: EDIT von Deck A nicht wiederhergestellt")
+        m.store.reset()
+        log("audio-editor: Zoom bis Sample · Auswahl · rückwärts · Löschen · Kopieren/Einfügen · Marken · Schritte · Verlassen")
+    }
+
     static func prepareMode(_ u: UIDriver, _ t: [Track]) {
         let mix = u.mix, d = 0
         if mix.deck(d).playing { mix.togglePlay(d) }
@@ -1615,6 +1767,9 @@ extension UISelfTest {
         check(tv.sortDescriptors.map(\.key) == ["artist"], "Tabelle zeigt nicht die Artist-Sortierung: \(tv.sortDescriptors.map { $0.key ?? "?" })")
         func header(_ id: String) -> NSPoint {
             guard let i = tv.tableColumns.firstIndex(where: { $0.identifier.rawValue == id && !$0.isHidden }) else { fail("Spalte \(id) fehlt") }
+            // Spalte sichtbar machen (breite Tabellen: sonst klickt der Test neben das Fenster)
+            tv.scrollColumnToVisible(i)
+            u.spin(0.2)
             let r = head.headerRect(ofColumn: i)
             return head.convert(NSPoint(x: r.midX, y: r.midY), to: nil)
         }
@@ -2235,6 +2390,19 @@ extension UISelfTest {
         check(mix.slots(b).map(\.id) == ["DELAY", plug], "nach + AULowpass: \(mix.slots(b).map(\.id))")
         check(mix.core.pluginInstance(b, slot: 1) != nil, "AULowpass lädt nicht: \(mix.pluginError(b) ?? "-")")
         check(row(1, plug) != nil, "Zeile 2 AULowpass fehlt in der Leiste")
+        // EDIT: an dem Plugin-Slot, nicht am eingebauten; öffnet das Plugin-Fenster (kommt der Klick nicht an: Direktaktion)
+        check(mark("fx edit \(b) 0", in: u.window) == nil, "EDIT an eingebautem Effekt DELAY")
+        if let edit = mark("fx edit \(b) 1", in: u.window) {
+            func pluginWindows() -> [NSWindow] { NSApp.windows.filter { $0.isVisible && $0.title.hasPrefix("◆ PLUGIN") } }
+            u.click(at: u.center(edit))
+            u.spin(2) { !pluginWindows().isEmpty }
+            if pluginWindows().isEmpty { log("insert-slots: EDIT kommt nicht an (synthetisch) – öffne direkt"); PluginWindow.show(unit: b, slot: 1, core: mix.core) }
+            check(!pluginWindows().isEmpty, "EDIT öffnet kein Plugin-Fenster")
+            pluginWindows().forEach { $0.close() }
+            u.spin(0.5)
+        } else {
+            fail("EDIT an Plugin-Slot 2 fehlt in der Leiste")
+        }
         // ✕ über das Kontextmenü der Zeile
         let item = String(localized: "Slot entfernen")
         if let r = row(1, plug), let menu = u.rightClick(at: u.center(r)), let i = menu.items.firstIndex(where: { $0.title == item }) {
@@ -2324,5 +2492,30 @@ extension UISelfTest {
         log("zweizeilig: zeile \(tv.rowHeight) pt, detailleiste \(bar.track?.title ?? "-"), tag „\(tag)“ -> \(pane.shown.count) tracks")
         mix.prefs.ui.browserRows = rows0
         mix.prefs.ui.detailBar = bar0
+    }
+}
+
+extension UISelfTest {
+    /// Trenner Decks/Browser in Schritten ziehen (nach oben, Fensterkoordinaten): die Browser-Höhe steigt in jedem Schritt
+    /// ohne Umkehr (vorher zitterte sie, weil der Griff mit der Höhe wanderte), gespeichert wird erst beim Loslassen
+    static func splitDrag(_ u: UIDriver, _ t: [Track]) {
+        let mix = u.mix, pane = u.browser.paneA
+        let h0 = mix.prefs.ui.browserHeight
+        defer { mix.prefs.ui.browserHeight = h0; u.spin(0.3) }
+        u.mix.pull()
+        guard let grip = u.named("split handle") else { fail("Trenner fehlt") }
+        let c = u.center(grip)
+        var seen: [Double] = [Double(pane.paneHeight)]
+        var savedDuring: [Double] = []
+        u.drag(from: c, to: NSPoint(x: c.x, y: c.y + 90), steps: 12, each: {
+            seen.append(Double(pane.paneHeight))
+            savedDuring.append(mix.prefs.ui.browserHeight)
+        })
+        let h1 = mix.prefs.ui.browserHeight
+        log("trenner: \(seen.map { Int($0) }) · gespeichert \(h0) → \(h1)")
+        check(seen.last! > seen.first! + 30, "Browser wächst nicht: \(seen.first!) → \(seen.last!)")
+        check(zip(seen, seen.dropFirst()).allSatisfy { $1 >= $0 - 0.5 }, "Höhe springt beim Ziehen: \(seen.map { Int($0) })")
+        check(savedDuring.allSatisfy { $0 == h0 }, "Höhe während des Ziehens gespeichert: \(savedDuring)")
+        check(abs(h1 - seen.last!) < 1.5, "gespeicherte Höhe \(h1) ≠ Browser \(seen.last!)")
     }
 }

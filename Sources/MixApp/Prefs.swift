@@ -195,8 +195,12 @@ struct UIPrefs: Codable, Equatable {
     /// Wellenform-Preset des Stils 3-Band (WavePreset.id, "" = noch nicht aus `blendPreset` / `waveformPalette` umgestellt)
     var wavePreset = ""
     var showBeatgrid = true
+    /// Maus in der Wellenform greifen: aus (nur suchen), Vinyl (Scratch) oder Jog (Nudge laufend, suchen im Stopp)
+    var waveGrab = WaveGrab.jog
     var showBarNumbers = true
     var dimPlayed = true
+    /// Marken der anderen Decks mit Grid oben am Spielkopf (Abstand in Beats, Farbe = in Phase)
+    var peerMarks = true
     var waveformHeight = 60.0
     var previewStart = 0.3
     /// Vorhören: Lautstärke (linear, 1 = Track-Pegel)
@@ -253,6 +257,8 @@ struct UIPrefs: Codable, Equatable {
     var previewTextBold = true
     /// Vorschau „ganze Zeile“: Deckkraft des Bandes (1 = voll, kleiner = gedämpft, Text hebt sich ab)
     var previewBandAlpha = 0.75
+    /// Vorschau „ganze Zeile“: Breite des Bandes (sichtbare Breite des Browsers oder ganze Zeile)
+    var previewBandSpan = PreviewBandSpan.visible
     /// Browser-Zeilen: Luft um den Text in pt (Zeilenhöhe = Schrift + Luft; 11 = wie bisher), Trennlinie unter jeder Zeile
     var browserRowPadding = 11.0
     var browserRowLines = true
@@ -282,6 +288,10 @@ struct UIPrefs: Codable, Equatable {
     var checkOnStart = false
     /// Collection prüfen: Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen
     var checkMusicFolders = true
+    /// TIDAL: Client-ID der eigenen App (öffentlich, kein Geheimnis); ⌘, → Browser
+    var tidalClientID = ""
+    /// TIDAL: Name der Playlist für MISSING (%Y %y %m %d)
+    var tidalPlaylistPattern = TidalMatch.defaultPattern
     /// Zoom des Hauptfensters (1 = 100 %, ZoomSteps)
     var zoom = 1.0
     /// eigene Analyse: BPM-Bereich genau eine Oktave, Untergrenze (Obergrenze = 2 ×)
@@ -290,6 +300,10 @@ struct UIPrefs: Codable, Equatable {
     var ripWithAnalysis = true
     /// Rip-Befund beim Laden als markierten Bereich setzen (nichts wird geschnitten)
     var ripMarkOnLoad = true
+    /// Audio-Edit: NORM / AMP vorschlagen, wenn die Spitze mehr als so viele dB unter 0 dBFS liegt
+    var audioEditHeadroom = 3.0
+    /// Audio-Edit: Raster beim Markieren beim Eintritt an (in der Werkzeugzeile per RASTER umschalten); Standard aus
+    var audioEditSnap = false
     /// DAW-Brücke: Pakete des Remote Scripts auf 127.0.0.1 empfangen (UDP)
     var dawBridge = true
     var dawBridgePort = 7411
@@ -297,13 +311,15 @@ struct UIPrefs: Codable, Equatable {
     var harmonyColors = true
     /// Browser-Filter „passt zum Master“ (◆ PASST, ⌘, -> BROWSER)
     var match = MatchRule()
+    /// Bezug für ◆ PASST: Decks (0–3), leer = AUTO (spielender Master, sonst Fokus-Deck); mehrere = muss zu allen passen
+    var matchDecks: [Int] = []
     /// gespielte Tracks (History dieser Sitzung bzw. seit dem letzten Reset) im Browser dimmen
     var dimPlayedTracks = true
     /// gespielte Tracks aus Collection, Playlists, Smartlists und Ordnern ausblenden (◆ UNGESPIELT; History, RUNNING
     /// und Preparation zeigen sie weiter)
     var hidePlayedTracks = false
-    /// Gespielt-Markierungen beim Start der App zurücksetzen
-    var resetPlayedOnStart = false
+    /// Played-Status beim Start der App zurücksetzen (wie ⌥⌘P), Standard an
+    var resetPlayedOnStart = true
     /// Schneiden (Bereich entfernen / auf Bereich kürzen): Ergebnis gleich ins selbe Deck laden (Lade-Schutz gilt)
     var cutLoadsResult = false
     /// EDIT-Modus: Raster beim Markieren (Ziehen in der Wellenform), ⌥ = frei
@@ -314,6 +330,8 @@ struct UIPrefs: Codable, Equatable {
     var prepAllowClipping = false
     /// Vorbereiten JOIN: Tempo der zweiten Datei angleichen, wenn es bis ±0,5 % gleich ist
     var prepJoinMatchTempo = true
+    /// Ausgabe der gerenderten Dateien (RENDER, Schnitt, JOIN, SPLIT, Tool-Loop): Format, Bit, Abtastrate, Dither, Name
+    var export = ExportOptions()
 
     /// Ansichts-Profile (Menü Darstellung -> Profil, ⌘, -> Anzeige); fehlt das Feld, legt AppPrefs.decode drei an
     var layoutProfiles: [LayoutProfile] = []
@@ -367,6 +385,8 @@ struct AppPrefs: Codable, Equatable {
     var groove = GroovePrefs()
     /// Aufnahme (⌘, -> AUDIO)
     var record = RecordPrefs()
+    /// Auto-Mix (⌘, -> MIXER & FX)
+    var autoMix = AutoMixPrefs()
     /// eigene Tastenkürzel: Aktion-ID -> Kombination als Text ("" = frei), sonst Standard (ShortcutID.defaultCombo)
     var shortcuts: [String: String] = [:]
 

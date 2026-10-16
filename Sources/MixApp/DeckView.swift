@@ -27,7 +27,7 @@ struct DeckView: View {
             VStack(alignment: .leading, spacing: 4.z) {
                 // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen), am Cover und an den Zusatzinfos
                 row("header", DeckHeader(d: d).modifier(DeckDropTarget(d: d)),
-                    key: [ui.showMixer ? 0 : ui.fxUnitCount, ui.deckCoverInHeader ? Int(ui.deckCoverSize) : 0, rows.info ? 1 : 0, rows.comment || rows.tags ? 1 : 0])
+                    key: [ui.showMixer ? 0 : ui.fxUnitCount, !ui.showMixer && mix.eqVisible ? 1 : 0, ui.deckCoverInHeader ? Int(ui.deckCoverSize) : 0, rows.info ? 1 : 0, rows.comment || rows.tags ? 1 : 0])
                 WaveformView(d: d)
                     .overlay { DeckIdleView(d: d) }   // leer: Lobster, nach Ladefehler 5 s Totenkopf
                     .frame(minHeight: mix.prefs.ui.waveformHeight.z, maxHeight: .infinity)
@@ -221,6 +221,7 @@ struct DeckHeader: View {
     struct Model: Equatable {
         var playing = false, title = "", subtitle = "", isError = false
         var showFX = false, fxUnits = 2, fxAssign: [Bool] = [], info = true, meta = true
+        var showEQ = false, eq: [Double] = [0, 0, 0]   // HI, MID, LO: ohne Mixer-Ansicht am Deck
         var bpm = 0.0, tempoPct = 0.0, gridEdited = false
         var time = TimeReadout.Model(), code = CodeReadout.Model(), key = KeyReadout.Model(), phaseActive = false
     }
@@ -233,6 +234,8 @@ struct DeckHeader: View {
         m.subtitle = s.error ?? s.track?.artist ?? String(localized: "Kein Track geladen")
         m.isError = s.error != nil
         m.showFX = !ui.showMixer
+        m.showEQ = !ui.showMixer && mix.eqVisible
+        m.eq = [s.eqHigh, s.eqMid, s.eqLow]
         m.fxUnits = ui.fxUnitCount
         m.fxAssign = s.fxAssign
         m.info = ui.deckRows.info
@@ -269,6 +272,14 @@ struct DeckHeader: View {
                 .layoutPriority(1)   // Titel vor den Tags
                 // Kommentar und Tags in der freien Mitte des Kopfs statt in einer eigenen Zeile
                 if m.meta { DeckMetaRow(d: d, inline: true) } else { Spacer(minLength: 4.z) }
+                if m.showEQ {
+                    // ohne Mixer-Ansicht: EQ direkt am Deck
+                    HStack(alignment: .bottom, spacing: 3.z) {
+                        eqKnob(mix, d, \.eqHigh, "HI", size: 22)
+                        eqKnob(mix, d, \.eqMid, "MID", size: 22)
+                        eqKnob(mix, d, \.eqLow, "LO", size: 22)
+                    }
+                }
                 if m.showFX {
                     // ohne Mixer-Ansicht: FX-Zuweisung direkt am Deck
                     // FX-Zuweisung am Kanal: 1 2 (3 4)
@@ -328,7 +339,7 @@ struct DeckMetaRow: View {
             if ui.deckRows.comment { m.comment = t.comment }
             if ui.deckRows.tags {
                 // Zerlegung aus dem Speicher des Browsers (je Text einmal)
-                m.tags = BrowserPaneModel.tags(of: t, separators: ui.tagSeparators)
+                m.tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: ui.tagSeparators).shown(groups: ui.tagGroups).tags
                 m.tagHighlight = ui.tagHighlight
                 m.tagColors = ui.tagColors
                 m.tagGroups = ui.tagGroups
@@ -406,27 +417,27 @@ struct TransportRow: View {
 
         var body: some View {
             HStack(spacing: 3.z) {
-                DeckButton(title: "CUP", width: 26) { mix.cup(d) }.stable()
+                DeckButton(title: "CUP", width: 26) { mix.cup(d) }.stable().helpInfo("deck.cup")
                 PressButton(title: "CUE", active: m.cueHeld, width: 30, down: { mix.cueDown(d) }, up: { mix.cueUp(d) })
                 DeckButton(title: m.playing ? "❚❚" : "▶", active: m.playing, color: Theme.state, width: 30) { mix.togglePlay(d) }.stable()
                 Divider().frame(height: 14.z)
-                DeckButton(title: "SYNC", active: m.sync, color: Theme.state) { mix.toggleSync(d) }.stable()
+                DeckButton(title: "SYNC", active: m.sync, color: Theme.state) { mix.toggleSync(d) }.stable().helpInfo("deck.sync")
                 DeckButton(title: "MASTER", active: m.master,
-                           color: Theme.secondary) { mix.toggleMaster(d) }.stable()
-                DeckButton(title: "KEY", active: m.keylock, color: Theme.state) { mix.toggleKeylock(d) }.stable()
+                           color: Theme.secondary) { mix.toggleMaster(d) }.stable().helpInfo("deck.master")
+                DeckButton(title: "KEY", active: m.keylock, color: Theme.state) { mix.toggleKeylock(d) }.stable().helpInfo("deck.keylock")
                 DeckButton(title: "−") { mix.shiftKey(d, -1) }.stable()
                 DeckButton(title: "+") { mix.shiftKey(d, 1) }.stable()
-                DeckButton(title: "REV", active: m.reverse, color: Theme.state) { mix.toggleReverse(d) }.stable()
-                DeckButton(title: "FLUX", active: m.flux, color: Theme.state) { mix.toggleFlux(d) }.stable()
+                DeckButton(title: "REV", active: m.reverse, color: Theme.state) { mix.toggleReverse(d) }.stable().helpInfo("deck.rev")
+                DeckButton(title: "FLUX", active: m.flux, color: Theme.state) { mix.toggleFlux(d) }.stable().helpInfo("deck.flux")
                 Spacer(minLength: 2.z)
-                DeckButton(title: "DBL") { mix.instantDouble(from: d ^ 1, to: d) }.stable()
+                DeckButton(title: "DBL") { mix.instantDouble(from: d ^ 1, to: d) }.stable().helpInfo("deck.dbl")
                     .help(String(localized: "Instant Double: Track, Position, Tempo, Key, Loop von Deck \(deckLetters[d ^ 1]) übernehmen, läuft synchron mit (⌥-Klick: auch wenn dieses Deck spielt, Rechtsklick: anderes Deck)"))
                     .contextMenu {
                         ForEach((0..<4).filter { $0 != d }, id: \.self) { s in
                             Button(String(localized: "Double von Deck \(deckLetters[s])")) { mix.instantDouble(from: s, to: d) }
                         }
                     }
-                DeckButton(title: "EDIT", active: m.edit, color: Theme.state) { mix.toggleEdit(d) }.stable()
+                DeckButton(title: "EDIT", active: m.edit, color: Theme.state) { mix.toggleEdit(d) }.stable().helpInfo("deck.edit")
                     .help("EDIT-Modus: Schnitt und Grid setzen (⌥⌘E)")
             }
         }
@@ -529,6 +540,7 @@ struct CutRow: View {
         @Environment(MixModel.self) private var mix
         let d: Int
         let m: Model
+        @State private var exporting = false
         static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.m == b.m }
 
         var body: some View {
@@ -564,6 +576,13 @@ struct CutRow: View {
                 }
                 if w != .tiny {
                     Divider().frame(height: 14.z)
+                    if AudioEditMode.shared.active {
+                        DeckButton(title: "EXPORT") { exporting = true }.stable()
+                            .help("Format, Bit, Abtastrate und Metadaten der neuen Datei, dann RENDER")
+                            .sheet(isPresented: $exporting) {
+                                if let b = mix.editSession(d)?.base { ExportSheet(d: d, base: b, options: mix.prefs.ui.export) }
+                            }
+                    }
                     DeckButton(title: "RENDER", active: m.previewing, color: Theme.state) { mix.editRenderFile(d) }.stable()
                         .help("Schnittliste als neue Datei rendern (<Name> [cut].m4a, Original bleibt)")
                 }
@@ -638,7 +657,7 @@ struct CueRow: View {
                     let c = m.colors[n]
                     DeckButton(title: m.active[n] ? "\(n + 1) •" : "\(n + 1)", active: c != nil, color: c ?? .gray, fill: true) {
                         mix.hotcue(d, n, delete: NSEvent.modifierFlags.contains(.option))
-                    }.stable()
+                    }.stable().helpInfo("deck.hotcue")
                     .help(m.loops[n] ? "Klick: springen/setzen · ⌥-Klick: löschen · Rechtsklick: Active Loop" : "Klick: springen/setzen · ⌥-Klick: löschen")
                     .contextMenu {
                         if m.loops[n] {
@@ -648,9 +667,9 @@ struct CueRow: View {
                     }
                 }
                 Divider().frame(height: 14.z)
-                DeckButton(title: "IN", active: m.inArmed, color: Theme.state) { mix.setLoopIn(d) }.stable()
-                DeckButton(title: "OUT") { mix.setLoopOut(d) }.stable()
-                DeckButton(title: "RE") { mix.reloop(d) }.stable()
+                DeckButton(title: "IN", active: m.inArmed, color: Theme.state) { mix.setLoopIn(d) }.stable().helpInfo("deck.loopIn")
+                DeckButton(title: "OUT") { mix.setLoopOut(d) }.stable().helpInfo("deck.loopOut")
+                DeckButton(title: "RE") { mix.reloop(d) }.stable().helpInfo("deck.reloop")
             }
         }
     }
@@ -677,7 +696,7 @@ struct LoopRow: View {
 
         var body: some View {
             HStack(spacing: 3.z) {
-                DeckButton(title: "LOOP", active: m.active, color: Theme.state, width: 30) { mix.autoLoop(d) }.stable()
+                DeckButton(title: "LOOP", active: m.active, color: Theme.state, width: 30) { mix.autoLoop(d) }.stable().helpInfo("deck.loop")
                 ForEach(BeatSizes.loop, id: \.self) { s in
                     let selected = DeckView.same(m.size, s)
                     DeckButton(title: BeatSizes.label(s), active: selected, color: Theme.secondary, fill: true) {
@@ -706,13 +725,13 @@ struct JumpRow: View {
 
         var body: some View {
             HStack(spacing: 3.z) {
-                DeckButton(title: "◀◀", width: 30) { mix.beatjump(d, beats: -mix.deck(d).jumpSize) }.stable()
+                DeckButton(title: "◀◀", width: 30) { mix.beatjump(d, beats: -mix.deck(d).jumpSize) }.stable().helpInfo("deck.beatjump")
                 ForEach(BeatSizes.jump, id: \.self) { s in
                     DeckButton(title: BeatSizes.label(s), active: DeckView.same(size, s), color: Theme.state, fill: true) {
                         mix.setJumpSize(d, s)
                     }.stable()
                 }
-                DeckButton(title: "▶▶", width: 30) { mix.beatjump(d, beats: mix.deck(d).jumpSize) }.stable()
+                DeckButton(title: "▶▶", width: 30) { mix.beatjump(d, beats: mix.deck(d).jumpSize) }.stable().helpInfo("deck.beatjump")
             }
         }
     }
@@ -985,6 +1004,14 @@ enum DeckShot {
         let cues = [Cue(name: "", kind: .cue, startMs: 1000, lengthMs: 0, hotcue: 0),
                     Cue(name: "", kind: .cue, startMs: 30000, lengthMs: 0, hotcue: 1),
                     Cue(name: "", kind: .loop, startMs: 60000, lengthMs: 3750, hotcue: 3)]
+        // andere Decks mit Grid für die Marken oben am Spielkopf: B drei Beats zurück (gestoppt, gedimmt), C in Phase
+        // (spielt), D zwölf Beats voraus (am rechten Rand, „D +3 BARS“)
+        for (d, anchorBeats, playing) in [(1, 3.0, false), (2, 0, true), (3, -12, false)] {
+            mix.updateDeck(d) {
+                $0.track = t; $0.duration = 300; $0.grid = BeatGrid(anchor: 1 + anchorBeats * 60 / 128, bpm: 128)
+                $0.playing = playing
+            }
+        }
         var paths: [String] = []
         for (w, h, loop, compact, edit, sizes) in [(640.0, 300.0, false, false, false, false), (480.0, 260.0, true, false, false, false),
                                                    (640.0, 300.0, false, true, false, false),

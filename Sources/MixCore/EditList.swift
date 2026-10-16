@@ -1,16 +1,38 @@
 import Foundation
 
-/// Stück der Schnittliste: Bereich der Quelle in Sekunden; stumm = Stille gleicher Länge
+/// Stück der Schnittliste: Bereich der Quelle in Sekunden; stumm = Stille gleicher Länge. `reversed` (nil = vorwärts,
+/// sonst true): Ausgabe läuft von `end` nach `start`. `silence` (Länge in s): Stille ohne Quelle, `start` = `end` ist dann
+/// die Stelle der Einfügung. Optionale Felder: ältere Dateien bleiben lesbar, nie `false` speichern (Gleichheit)
 public struct EditSegment: Codable, Equatable, Hashable, Sendable {
     public var start: Double
     public var end: Double
     public var muted: Bool
+    public var reversed: Bool?
+    public var silence: Double?
 
-    public init(_ start: Double, _ end: Double, muted: Bool = false) {
+    public init(_ start: Double, _ end: Double, muted: Bool = false, reversed: Bool = false, silence: Double? = nil) {
         self.start = start; self.end = end; self.muted = muted
+        self.silence = silence
+        self.reversed = reversed && silence == nil ? true : nil
     }
 
-    public var length: Double { max(0, end - start) }
+    /// Stille der Länge `length` an der Stelle `at`
+    public static func silent(at: Double, length: Double) -> EditSegment { EditSegment(at, at, silence: max(0, length)) }
+
+    public var length: Double { silence.map { max(0, $0) } ?? max(0, end - start) }
+    public var isSilent: Bool { silence != nil }
+    public var isReversed: Bool { reversed == true && silence == nil }
+
+    /// an Ausgabe-Versatz `d` (0 < d < Länge) in zwei Stücke teilen, gleiche Stummschaltung und Richtung
+    func parts(at d: Double) -> (EditSegment, EditSegment) {
+        if let l = silence { return (.silent(at: start, length: d), .silent(at: start, length: l - d)) }
+        if isReversed {
+            let s = end - d
+            return (EditSegment(s, end, muted: muted, reversed: true), EditSegment(start, s, muted: muted, reversed: true))
+        }
+        let s = start + d
+        return (EditSegment(start, s, muted: muted), EditSegment(s, end, muted: muted))
+    }
 }
 
 /// Schnittliste (EDL) eines Tracks, nicht destruktiv: Stücke der Quelle in Ausgabe-Reihenfolge. Alle Bearbeitungen
@@ -47,19 +69,24 @@ public struct EditList: Codable, Equatable, Sendable {
     /// Nähte zwischen den Stücken (Ausgabe-Zeit)
     public var joints: [Double] { Array(starts.dropFirst()) }
 
-    /// Naht k (zwischen Stück k und k+1) schneidet: Quelle springt oder stumm wechselt. Sonst nur eine Marke
-    public func isCut(joint k: Int) -> Bool {
-        guard segments.indices.contains(k + 1) else { return false }
-        let a = segments[k], b = segments[k + 1]
-        return abs(a.end - b.start) > Self.eps || a.muted != b.muted
+    /// b setzt a ohne Naht fort: gleiche Richtung und Stummschaltung, Quelle lückenlos (rückwärts: a beginnt, wo b endet)
+    static func joined(_ a: EditSegment, _ b: EditSegment) -> Bool {
+        guard !a.isSilent, !b.isSilent, a.muted == b.muted, a.isReversed == b.isReversed else { return false }
+        return a.isReversed ? abs(a.start - b.end) <= eps : abs(a.end - b.start) <= eps
     }
 
-    /// Stücke wie gehört: Nachbarn ohne Schnitt zusammengelegt (Marken zählen nicht)
+    /// Naht k (zwischen Stück k und k+1) schneidet: Quelle springt, Richtung oder Stille wechselt. Sonst nur eine Marke
+    public func isCut(joint k: Int) -> Bool {
+        guard segments.indices.contains(k + 1) else { return false }
+        return !Self.joined(segments[k], segments[k + 1])
+    }
+
+    /// Stücke wie gehört: Nachbarn ohne Schnitt zusammengelegt (Marken zählen nicht); Stille bleibt einzeln
     public var audible: [EditSegment] {
         var out: [EditSegment] = []
         for g in segments where g.length > Self.eps {
-            if var last = out.last, abs(last.end - g.start) <= Self.eps, last.muted == g.muted {
-                last.end = g.end
+            if var last = out.last, Self.joined(last, g) {
+                if last.isReversed { last.start = g.start } else { last.end = g.end }
                 out[out.count - 1] = last
             } else {
                 out.append(g)
@@ -72,7 +99,7 @@ public struct EditList: Codable, Equatable, Sendable {
     public var isPlain: Bool {
         let a = audible
         guard let f = a.first else { return source <= 0 }
-        return a.count == 1 && !f.muted && f.start <= Self.eps && f.end >= source - Self.eps
+        return a.count == 1 && !f.muted && !f.isSilent && !f.isReversed && f.start <= Self.eps && f.end >= source - Self.eps
     }
 
     /// gleiches Audio (Marken egal)
@@ -86,19 +113,37 @@ public struct EditList: Codable, Equatable, Sendable {
         return nil
     }
 
-    /// Ausgabe-Zeit -> Quelle
+    /// Ausgabe-Zeit -> Quelle (Stille: die Stelle der Einfügung; rückwärts: von hinten nach vorn)
     public func sourceTime(_ t: Double) -> Double? {
         guard let k = segment(at: t) else { return nil }
         let g = segments[k]
-        return min(g.end, max(g.start, g.start + t - starts[k]))
+        if g.isSilent { return g.start }
+        let off = t - starts[k]
+        return g.isReversed ? min(g.end, max(g.start, g.end - off)) : min(g.end, max(g.start, g.start + off))
     }
 
     /// Quelle -> Ausgabe-Zeit (erstes Vorkommen), nil = nicht in der Liste
     public func outputTime(_ s: Double) -> Double? {
         let st = starts
-        for (k, g) in segments.enumerated() where s >= g.start - Self.eps && s < g.end - Self.eps { return st[k] + s - g.start }
-        if let k = segments.indices.first(where: { abs(segments[$0].end - s) <= Self.eps }) { return st[k] + segments[k].length }
+        for (k, g) in segments.enumerated() where !g.isSilent && s >= g.start - Self.eps && s < g.end - Self.eps {
+            return st[k] + (g.isReversed ? g.end - s : s - g.start)
+        }
+        if let k = segments.indices.first(where: { !segments[$0].isSilent && abs((segments[$0].isReversed ? segments[$0].start : segments[$0].end) - s) <= Self.eps }) {
+            return st[k] + segments[k].length
+        }
         return nil
+    }
+
+    /// Quelle an der Ausgabe-Stelle, an der ein Stück beginnt (vorwärts: Anfang, rückwärts: Ende der Quelle)
+    func entry(_ k: Int) -> Double {
+        let g = segments[k]
+        return g.isReversed ? g.end : g.start
+    }
+
+    /// Quelle an der Ausgabe-Stelle, an der ein Stück endet (vorwärts: Ende, rückwärts: Anfang der Quelle)
+    func exit(_ k: Int) -> Double {
+        let g = segments[k]
+        return g.isSilent ? g.start : g.isReversed ? g.start : g.end
     }
 
     /// Ausgabe-Bereich eines Stücks
@@ -117,9 +162,9 @@ public struct EditList: Codable, Equatable, Sendable {
         for (k, g) in segments.enumerated() {
             let a = st[k], b = a + g.length
             guard t > a + Self.minSegment - Self.eps, t < b - Self.minSegment + Self.eps else { continue }
-            let s = g.start + (t - a)
-            segments[k].end = s
-            segments.insert(EditSegment(s, g.end, muted: g.muted), at: k + 1)
+            let (l, r) = g.parts(at: t - a)
+            segments[k] = l
+            segments.insert(r, at: k + 1)
             return true
         }
         return false
@@ -129,19 +174,20 @@ public struct EditList: Codable, Equatable, Sendable {
     @discardableResult
     public mutating func removeMark(_ k: Int) -> Bool {
         guard segments.indices.contains(k + 1), !isCut(joint: k) else { return false }
-        segments[k].end = segments[k + 1].end
+        if segments[k].isReversed { segments[k].start = segments[k + 1].start } else { segments[k].end = segments[k + 1].end }
         segments.remove(at: k + 1)
         return true
     }
 
     /// Naht k auf Ausgabe-Zeit t verschieben (rollen): das linke Stück endet später/früher, das rechte beginnt
-    /// entsprechend, die Länge bleibt. Begrenzt auf die Quelle und `minSegment`
+    /// entsprechend, die Länge bleibt. Begrenzt auf die Quelle und `minSegment`; Stille und Rückwärts nicht
     @discardableResult
     public mutating func moveJoint(_ k: Int, to t: Double) -> Bool {
         guard segments.indices.contains(k + 1) else { return false }
         let at = starts[k + 1]
         var dt = t - at
         let a = segments[k], b = segments[k + 1]
+        guard !a.isSilent, !b.isSilent, !a.isReversed, !b.isReversed else { return false }
         dt = max(dt, Self.minSegment - a.length, -b.start)
         dt = min(dt, b.length - Self.minSegment, source - a.end)
         guard abs(dt) > Self.eps else { return false }
@@ -229,29 +275,95 @@ public struct EditList: Codable, Equatable, Sendable {
         return TrackRange(a + nb.length, b + nb.length)
     }
 
+    /// Stille der Länge `length` (s) an Ausgabe-Zeit t einfügen (vor dem Stück, das t beginnt; am Ende nach dem letzten)
+    @discardableResult
+    public mutating func insertSilence(at t: Double, length: Double) -> Bool {
+        guard length >= Self.minSegment - Self.eps else { return false }
+        split(at: t)
+        let st = starts
+        let k = segments.indices.first { st[$0] >= t - Self.eps } ?? segments.count
+        let anchor = k < segments.count ? entry(k) : (segments.isEmpty ? 0 : exit(segments.count - 1))
+        segments.insert(.silent(at: anchor, length: length), at: k)
+        return true
+    }
+
+    /// Bereich durch Stille gleicher Länge ersetzen (Dauer bleibt)
+    @discardableResult
+    public mutating func replaceWithSilence(_ r: TrackRange) -> Bool {
+        var n = self
+        guard let i = n.isolate(r) else { return false }
+        let len = n.segments[i].reduce(0) { $0 + $1.length }
+        n.segments.replaceSubrange(i, with: [.silent(at: n.entry(i.lowerBound), length: len)])
+        self = n
+        return true
+    }
+
+    /// Bereich rückwärts: Reihenfolge der Stücke umkehren und jedes Stück drehen (Stille bleibt). Liefert den Bereich
+    @discardableResult
+    public mutating func reverse(_ r: TrackRange) -> TrackRange? {
+        var n = self
+        guard let i = n.isolate(r) else { return nil }
+        let a = n.starts[i.lowerBound], len = n.segments[i].reduce(0) { $0 + $1.length }
+        let block: [EditSegment] = n.segments[i].reversed().map { g in
+            g.isSilent ? g : EditSegment(g.start, g.end, muted: g.muted, reversed: !g.isReversed)
+        }
+        n.segments.replaceSubrange(i, with: block)
+        self = n
+        return TrackRange(a, a + len)
+    }
+
+    /// Kopie des Bereichs (Stücke wie sie liegen, für Einfügen); nil = Bereich zu kurz
+    public func copy(_ r: TrackRange) -> [EditSegment]? {
+        var n = self
+        guard let i = n.isolate(r) else { return nil }
+        return Array(n.segments[i])
+    }
+
+    /// Stücke an Ausgabe-Zeit t einfügen (vor dem Stück, das t beginnt); liefert den Bereich des Eingefügten
+    @discardableResult
+    public mutating func paste(_ pieces: [EditSegment], at t: Double) -> TrackRange? {
+        guard !pieces.isEmpty else { return nil }
+        split(at: t)
+        let st = starts
+        let k = segments.indices.first { st[$0] >= t - Self.eps } ?? segments.count
+        let at = k < st.count ? st[k] : duration
+        segments.insert(contentsOf: pieces, at: k)
+        return TrackRange(at, at + pieces.reduce(0) { $0 + $1.length })
+    }
+
     // MARK: Audio, Grid, Cues
 
-    /// Stücke in Frames bei `rate` (Ränder gerundet, Längen sample-genau aufaddiert) und stumm je Stück; leere fallen weg
-    public func frames(rate: Double, sourceFrames n: Int) -> (pieces: [Range<Int>], muted: [Bool]) {
-        var p: [Range<Int>] = [], m: [Bool] = []
+    /// Stücke in Frames bei `rate` (Ränder gerundet, Längen sample-genau aufaddiert), je Stück stumm, rückwärts und Stille;
+    /// leere fallen weg. Stille hat keine Quelle: Länge in Frames, Lage 0 (wird nicht gelesen)
+    public func frames(rate: Double, sourceFrames n: Int) -> (pieces: [Range<Int>], muted: [Bool], reversed: [Bool], silent: [Bool]) {
+        var p: [Range<Int>] = [], m: [Bool] = [], r: [Bool] = [], s: [Bool] = []
         for g in audible {
+            if let l = g.silence {
+                let len = Int((max(0, l) * rate).rounded())
+                guard len > 0 else { continue }
+                p.append(0..<len); m.append(true); r.append(false); s.append(true)
+                continue
+            }
             let a = min(n, max(0, Int((g.start * rate).rounded()))), b = min(n, max(0, Int((g.end * rate).rounded())))
             guard b > a else { continue }
             p.append(a..<b)
             m.append(g.muted)
+            r.append(g.isReversed)
+            s.append(false)
         }
-        return (p, m)
+        return (p, m, r, s)
     }
 
     /// Grid der Ausgabe: Taktlage ab dem ersten Stück wie in der Quelle (Anker auf ganze Takte nach vorn).
-    /// Schnitte auf Beats halten das Raster dahinter; freie Schnitte verschieben es
+    /// Schnitte auf Beats halten das Raster dahinter; freie Schnitte verschieben es. Beginnt die Liste mit Stille
+    /// oder rückwärts, bleibt das Grid des Originals
     public func grid(_ g: BeatGrid) -> BeatGrid {
-        guard let f = segments.first else { return g }
+        guard let f = segments.first, !f.isSilent, !f.isReversed else { return g }
         return TrackCut.grid(g, mode: .keep, range: TrackRange(f.start, f.start + f.length))
     }
 
-    /// Cues (Hotcues, Memory-Cues, Loops) aufs erste Vorkommen; Loops nur, wenn sie ganz in einem Stück liegen.
-    /// Grid-Marker fallen weg (das Grid rechnet `grid`)
+    /// Cues (Hotcues, Memory-Cues, Loops) aufs erste Vorkommen; Loops nur, wenn sie ganz in einem vorwärts laufenden Stück
+    /// liegen (rückwärts: nur Hotcues). Grid-Marker fallen weg (das Grid rechnet `grid`)
     public func cues(_ cues: [Cue]) -> [Cue] {
         let st = starts
         return cues.compactMap { c in
@@ -259,8 +371,9 @@ public struct EditList: Codable, Equatable, Sendable {
             let s = c.startMs / 1000, len = c.kind == .loop ? max(0, c.lengthMs / 1000) : 0
             guard let k = segments.indices.first(where: { segments[$0].start - Self.eps <= s && s < segments[$0].end - Self.eps
                 && s + len <= segments[$0].end + Self.eps }) else { return nil }
+            if segments[k].isReversed && c.kind == .loop { return nil }
             var n = c
-            n.startMs = (st[k] + s - segments[k].start) * 1000
+            n.startMs = (st[k] + (segments[k].isReversed ? segments[k].end - s : s - segments[k].start)) * 1000
             return n
         }
     }
@@ -341,14 +454,14 @@ public enum ToolLoop {
     }
 
     /// „<Name> [tool-loop 8].m4a“, belegt -> „[tool-loop 8 #2]“ usw.
-    public static func fileName(_ original: String, beats: Int, taken: (String) -> Bool) -> String {
+    public static func fileName(_ original: String, beats: Int, ext: String = "m4a", taken: (String) -> Bool) -> String {
         var base = (original as NSString).deletingPathExtension
         if let r = base.range(of: #" \[(cut|tool-loop)( \d+)?( #\d+)?\]$"#, options: .regularExpression) { base.removeSubrange(r) }
         for n in 1...9999 {
-            let name = base + (n == 1 ? " [tool-loop \(beats)]" : " [tool-loop \(beats) #\(n)]") + ".m4a"
+            let name = base + (n == 1 ? " [tool-loop \(beats)]" : " [tool-loop \(beats) #\(n)]") + "." + ext
             if !taken(name) { return name }
         }
-        return base + " [tool-loop \(beats) \(UUID().uuidString.prefix(8))].m4a"
+        return base + " [tool-loop \(beats) \(UUID().uuidString.prefix(8))]." + ext
     }
 
     /// „tool-loop 8 beats · 128 BPM · from <Titel>“

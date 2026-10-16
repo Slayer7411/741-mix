@@ -105,6 +105,8 @@ enum TagShot {
         let exclude = co.filter { $0.value < withBoth.count }.max { $0.value < $1.value }?.key
         log("gewählt: \(pick.joined(separator: " + ")) (\(withBoth.count) tracks) · ausgeschlossen: \(exclude ?? "-")")
 
+        // Bezug für die Spalte „Tags ≈“: MIX741_SHOT_REFTAGS (Kommentar 2 des Masters)
+        if let r = env["MIX741_SHOT_REFTAGS"] { mix.harmonyFixedTags = r; mix.harmonyFixed = HarmonyRef(key: nil, bpm: 0) }
         let model = BrowserPaneModel(name: "Shot")
         model.showTree = false
         model.sortOrder = [KeyPathComparator(\Track.artist)]
@@ -396,5 +398,6 @@ enum TagShot {
         exit(ok ? 0 : 1)
     }
 
-    private static func tags(_ t: Track, _ seps: String) -> [String] { BrowserPaneModel.tagIndex.entry(t.comment2, separators: seps).tags }
+    /// Tags wie angezeigt (Gruppen an: ohne Marker)
+    private static func tags(_ t: Track, _ seps: String) -> [String] { BrowserPaneModel.tagIndex.entry(t.comment2, separators: seps).shown(groups: UIPrefs().tagGroups).tags }
 }

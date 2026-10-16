@@ -75,7 +75,8 @@ tracks without an analysis in the collection play, but have no grid -> no sync. 
 ## ◆ 03 · SCREEN
 
 ```
-┌ toolbar ─ PROFILE ▾ ───── MIXER · 1 / 2 / 4 · browser layout · DECKS · ↻ ┐
+┌ toolbar ─ ◆ MINOS-741 0.8.1 · db052b1 · PROFILE ▾ ── CLOCK · TAKT · LINK · HID · CPU · TRACKS ── MIXER │ 1 2 4 │ ▭ ◫ ⬒ │ DECKS │ ↻ ┐
+├ phrase of the master deck ─────────────────────────────────────────────────┤
 ├ FX 1 ───────┬ master clock + link + metronome ─┬ bars ┬ clock ┬ REC ┬ FX 2 ─┤
 ├ deck A ───────────────────────┬ deck B ────────────────────────────┤
 ├ deck C ───────────────────────┼ deck D ────────────────────────────┤
@@ -83,12 +84,15 @@ tracks without an analysis in the collection play, but have no grid -> no sync. 
 └ status: message · detail ─ device · routing · prep ─ DSP LAT DROP RAM CPU ┘
 ```
 
-* PROFILE ▾ (left) -> view profile, see [view profiles](#view-profiles)
-* MIXER -> internal mixer on / off (⌥⌘M)
-* 1 / 2 / 4 -> decks shown. 1 = deck A over the full width (mixer next to it when on), 2 = A + B, 4 = A-D. hidden decks keep playing. ⌥⌘4 switches 2 ↔ 4 (from 1 -> 4)
-* browser layout -> one pane, side by side, stacked
-* DECKS -> hide decks, big browser (⌥⌘B)
-* ↻ -> reload the collection
+* left: `◆ MINOS-741` with version and build (the window title, also in the window menu), PROFILE chip -> view profile, see [view profiles](#view-profiles). the chip shows the active profile in caps (`DEFAULT SETUP *`, `*` = view changed)
+* middle, status line (ticks 10 times a second, each value on its own, nothing hidden): CLOCK = master tempo · TAKT = bar in the phrase cycle (`3/16`, `—/16` without a playing master) · LINK = ● peers, ○ = link off, red = peers gone · HID = connected controllers, red = one missing · CPU = process cpu, red = DSP over the 70 % budget · TRACKS = tracks in the collection. too narrow -> the last values drop out
+* right, groups separated by hairlines, all cells 18 pt:
+  * MIXER -> internal mixer on / off (⌥⌘M)
+  * 1 / 2 / 4 -> decks shown. 1 = deck A over the full width (mixer next to it when on), 2 = A + B, 4 = A-D. hidden decks keep playing. ⌥⌘4 switches 2 ↔ 4 (from 1 -> 4)
+  * ▭ ◫ ⬒ -> browser layout: one pane, side by side, stacked
+  * DECKS -> hide decks, big browser (⌥⌘B)
+  * ↻ -> reload the collection
+* the thin line under the toolbar = phrase of the master deck (phrase length, default 16 bars): filled up to the playhead, red in the last bar before the phrase change. no master -> plain line
 * the line between decks and browser can be dragged, the height is saved
 * fullscreen -> toolbar hides, comes back with the mouse at the top
 * zoom like a web browser -> ⌘+ / ⌘− / ⌘0 (view menu), 50 · 67 · 75 · 80 · 90 · 100 · 110 · 125 · 150 · 175 · 200 %, step shown in the status bar, saved. text, controls, waveform marks and table columns scale at full resolution. minimum window size × zoom, capped at what fits the screen. toolbar, settings and dialogs stay at 100 %
@@ -136,6 +140,12 @@ click on the meters -> details (keylock lookahead, own vs device overloads).
 * every key action of KEYBOARD and the controller blocks are in the index too (`loop` also finds the loop key)
 * click or enter -> opens the section, scrolls to the row and marks it purple for 1.5 s. ↑ / ↓ selects a result. the search stays until cleared or a section is clicked; `◆ n TREFFER` under the field returns to the list. a hidden row (e.g. preset fields while the waveform style is not 3-band) -> the row that shows it
 
+### help mode
+
+* `?` in the top bar (or menu View -> `Hilfe-Modus`) switches it on. rest the mouse 2 s over a control: a small card with name, function and key (if assigned). off: nothing changes, the normal tooltips stay
+* the card is in the app language (german / english). texts in one table (`HelpTable`); covered: top bar clock (LINK, AUTO, MASTER, TAP), deck transport and sync, loop, hotcues, beatjump, FX assign, mixer fader, browser chips (TAGS, UNGESPIELT, ◆ PASST), tree rows, FX slots, RIP
+* one timer at a time while the mode is on; no work per frame
+
 ## ◆ 04 · DECKS
 
 ### header
@@ -174,7 +184,7 @@ anywhere on the deck (header, cover, tags, readouts, overview, empty space) -> t
 
 * `Track bearbeiten …`: edit window, PREV / NEXT through the list of the active pane
 * `Im Browser zeigen`: selects the track in the active pane and scrolls to it. not in the list -> TRACK COLLECTION, search and filters cleared (UNPLAYED off if the track is played)
-* `Im Finder zeigen`
+* `Im Finder zeigen`, `Pfad kopieren`, `Artist – Titel kopieren`, `Vorhören`
 * `Auf Deck … kopieren`: instant double onto that deck (load lock applies)
 * `Grid des DAW-Clips übernehmen` (only with a DAW clip of the same file)
 * `Auswerfen`: empties the deck (also a running load or a load error). greyed out while the deck plays
@@ -260,6 +270,7 @@ anywhere on the deck (header, cover, tags, readouts, overview, empty space) -> t
 
 ## ◆ 05 · WAVEFORM + GRID
 
+* `−` / `+` bottom right in every deck waveform: zoom out / in, steps 1 · 1.5 · 2 · 3 · 4 · 6 · 8 · 12 · 16 s per side, all decks together (same as ⌘, -> DISPLAY -> visible seconds)
 * rendered as bitmap tiles in screen resolution (background thread) -> sharp at any zoom, no load on the render server
 * smooth edges: zoomed in (a block wider than a device pixel) the height runs linearly between block centres, zoomed out a column takes the highest block, edge blocks count by their share of the column. the top pixel row gets alpha by the share the peak reaches. 3-band blend: single-block notches in the peaks are filled (no comb of bright / dark columns at 1 block per pixel). spectrum / mono: outline through the block centres
 * height = real file level, full height = 0 dBFS, no normalizing -> loud masters look loud
@@ -270,7 +281,11 @@ anywhere on the deck (header, cover, tags, readouts, overview, empty space) -> t
 * display fields redraw the decks at once. analysis fields: loaded tracks are analysed again in the background from the samples in memory (~0.1 s cpu per 6-minute track, release), the old picture stays until the new one is ready. the track cache (`.mtrk`) always holds the default analysis; a preset with other analysis values re-analyses each track after loading
 * browser preview `like the waveform` takes the three preset colors (rgb direct: the spectrum palette)
 * drag the waveform = scrub, click the overview = jump
+* grab the waveform like a record (⌘, -> DECKS -> `Wellenform greifen`, default `Jog`; `aus` = scrub only). no modifier key and not in edit mode: open hand over the waveform, closed while dragging. ⌃ / ⌥ keep their meaning (range, free)
+  * `Vinyl`: the position follows the hand by the dragged distance (zoom aware), audible like a scratch, also while stopped. release: a playing deck continues at its speed, a stopped one stays at the new spot
+  * `Jog`: playing -> pitch bend by the hand's speed (drag left = faster, right = slower, back to the speed when the hand stops or lets go), no jump. stopped -> scrub, stays where released. a synced deck keeps its phase while the hand is on the waveform
 * played part can be dimmed
+* other decks (⌘, -> DISPLAY -> `Andere Decks in der Wellenform`, on): one marker per other loaded deck with a grid, at the top of the waveform at the red line. triangle + letter (`B`) at the offset in beats (same phrase wrap as the code readout), purple = in phase (±1/16 beat), bone = out of phase, dimmed = that deck is stopped. off the visible range: arrow at the edge with the offset (`D +3 BARS`). own deck gets none
 
 spectrum (6 bands), colors:
 
@@ -441,6 +456,30 @@ real cut = a new audio file. the original is never changed.
 * metadata: all fields of the original, title + ` [cut]`, bpm, key, comments, tags (comment 2), cover of the original. grid: anchor before the removed range stays, else it moves back by the removed length. keep: anchor from the new start, by whole bars behind it when it would lie before. hotcues, memory cues and loops outside the removed part move along, inside are dropped (loops over a cut edge too). a grid marker on a hotcue slot stays there on the new anchor
 * browser: tree entry CUTS (once a cut exists) with all cuts and their metadata, the file in MUSIC FOLDERS shows the same. saved in `cuts.json`, never in the collection file. `Collection prüfen` lists a cut in a music folder like any file without an entry
 
+### export
+
+settings for every new file of RENDER, cut, join, split and tool-loop: ⌘, -> DECKS -> EDIT-Modus & Tool-Loops (`Ausgabe: …`). defaults keep the old files. in AUDIO-EDIT the `EXPORT` button before `RENDER` opens a window for one file; `remember as default` stores its format part.
+
+| setting | choices |
+|---|---|
+| format | `wie Quelle` (default), WAV, AIFF, Apple Lossless (.m4a), AAC (.m4a, 128 / 192 / 256 / 320 kbit/s) |
+| bit depth | `wie Quelle` (default), 16, 24, 32 bit float (WAV only) |
+| sample rate | `wie Quelle` (default), 44.1 / 48 / 88.2 / 96 kHz |
+| dither | TPDF, default on. applied on the step to 16 bit (source with more bits, or rate changed) |
+| file name | `wie bisher` (default), or pattern: `{name}` = source name, `{tag}` = the job's tag (`cut`, `tool-loop 8`, `part 1`, `join`, `amp +3`) |
+
+* `wie Quelle`: wav / aiff stay wav / aiff in their depth (prepare row, as before). cut, EDIT RENDER and tool-loop write apple lossless as before; WAV or AIFF is picked explicitly
+* no mp3: on this system there is no mp3 encoder (AVFoundation and Core Audio), so mp3 is not offered
+* bit depth: apple lossless and AIFF take 16 or 24 bit, float only in WAV. AAC ignores the bit depth
+* sample rate: streaming converter (AVAudioConverter, best quality, mastering algorithm). length = frames × new rate / old rate, rounded
+* dither: TPDF (two uniform values, ±1 LSB, fixed seed: same input, same file). off = plain rounding
+* pattern: `/` and `:` become `-`. a taken name gets ` #2`, ` #3` …
+* metadata in every new file: title, artist, album, remixer, label, genre, year, comment, key (open key), bpm, cover. the EXPORT window fills them from the source; fields not changed keep what the job derived (title keeps ` [cut]`, comment the tool-loop text)
+* m4a (apple lossless, AAC): `©nam`, `©ART`, `©alb`, `©cmt`, `©gen`, `©pub`, `©day`, `tmpo` (bpm), freeform `REMIXER` and `initialkey`. passthrough, no second encode
+* wav: `id3 ` chunk (ID3v2.4, UTF-8) and LIST INFO. aiff: `ID3 ` chunk
+* cover: `Quelle übernehmen` (default) = embedded image of the source, `keins`, `Bild …` (JPEG or PNG). the image goes into the file (m4a `covr`, ID3 `APIC`)
+* the collection entry (when on, see browser) and CUTS take the same metadata
+
 ### prepare mode
 
 one deck, one row to get tracks ready: grid, cut, gain, join, split, all on the grid. profile `Vorbereiten` (PROFILE ▾, view menu -> profile) or DECKS -> ROWS -> `Vorbereiten`. while the row is shown the deck is in edit mode (drag = mark on the snap, click = cut mark); when the row goes, edit mode goes off again if the row switched it on. every result is a new file next to the original, the original is never written.
@@ -483,7 +522,7 @@ amp (gain only):
 RENDER:
 
 * edit list + gain in one pass. file `<name> [amp +3].m4a`, with edits `[cut amp +3]`, edits only `[cut]` (taken -> `#2` …). nothing changed -> `Nichts zu rendern`
-* format: wav / aiff sources stay wav / aiff in their bit depth (float wav stays float), everything else apple lossless (16 bit from 16-bit sources, else 24; mp3 / aac decoded, no second lossy generation)
+* format: wav / aiff sources stay wav / aiff in their bit depth (float wav stays float), everything else apple lossless (16 bit from 16-bit sources, else 24; mp3 / aac decoded, no second lossy generation). the settings in [export](#export) change it
 * metadata, grid and cues of the original through the edit list (as RENDER in edit mode). a grid set while the edit list plays counts (mapped back to the original). `load result into the deck` loads it (load lock applies)
 
 JOIN:
@@ -569,16 +608,29 @@ GROOVE  HATS+BASS ▾  OFF ▾  [ 16-step grid ]  ⚄  ▶ MIDI  ■  .MID
 per channel (order C · A · B · D):
 
 * gain + auto-gain (loudness from the collection)
-* eq hi / mid / lo, knob fully left = kill (setting)
+* eq hi / mid / lo: low shelf 100 Hz, bell 1 kHz, high shelf 10 kHz, −26 … +12 dB, double click = 0 dB. fully left = kill (−40 dB, setting). in the deck header when the mixer is hidden. changes are smoothed (~15 ms)
 * one-knob filter: left = low pass, right = high pass
 * fx assign, channel fader, crossfader assign + curve (smooth / sharp)
 * headroom per mode (internal default −3 dB)
 * no limiter on purpose, hard clip as last stage
 
+### auto-mix
+
+internal mixer only. `AUTO-MIX` in the mixer (under the crossfader), view menu, or tree: select two or more entries (⌘ / ⇧ click), right click `Auto-Mix starten`. the tree start splits the selection by name, alternating side a and b.
+
+* pool: sources of browser pane a (side a) and pane b (side b), or the tree selection. tracks played in this session (history) are out
+* next track: score against the playing track, lowest wins. key relation (same > ±1 / relative > energy), clash out unless allowed, tempo inside the match window (◆ PASST rule, ⌘, -> BROWSER), tag groups (K / B like, role change free), other side preferred when close, same artist twice in a row avoided, analysed tracks first. tracks without grid are skipped
+* transition on the phrase boundary before the outro (32 bars before the end, or the next one that still fits). the incoming track starts on its phrase start, synced to the master
+* 16 bars (8 / 16 / 32): first half incoming highs and mids up from −12 dB, low killed, slight high-pass; outgoing highs down. bass swap in the middle. second half outgoing fader down with low-pass sweep. then the outgoing stops and resets, the next track loads on the free deck
+* crossfader is not used during auto-mix (both decks `·` thru), restored on stop
+* SKIP: next transition at the next phrase boundary (during a transition: end now). STOP: automation off, decks keep playing
+* a hand on a deck's fader, eq or filter pauses automation on that deck for the current transition, the mixer stays manual. play by hand on the outgoing or incoming deck ends auto-mix (decks keep playing)
+* settings (⌘, -> MIXER & FX -> Auto-Mix): transition length, bass swap, filter sweep, allow key clash (off), key sync at the transition (on)
+
 ### external mode
 
 * every deck on its own pair, default A 1/2 · B 3/4 · C 5/6 · D 7/8
-* gain / eq / fader happen on your desk
+* gain / fader happen on your desk. eq too, unless `EQ in external mode` (⌘, -> MIXER & FX) is on: then the same hi / mid / lo knobs work per deck before its pair (default off, the desk's eq stays in the chain)
 * own headroom and auto-gain setting, main volume off by default
 * metronome on an own pair
 * record the desk's sum through its usb input -> [16 · recording](#-16--recording)
@@ -636,11 +688,13 @@ FX 1  RACK  +          D/W   knob 1   knob 2   knob 3
 3 REVERB  ○ ▬
 ```
 
-* row: slot number · effect (click = pick another) · ON dot · D/W bar (drag, double click = 100 %)
+* row: slot number · effect (click = pick another) · ON dot · D/W bar (drag, double click = 100 %) · EDIT on plugin rows
 * right click a row: parameters / plugin window, on / off, earlier / later, remove slot. drag a row onto another = move it there
 * `+` -> effect picker (add a slot at the end). up to 4 rows per column, 5-6 slots = 2 columns
 * RACK -> the whole rack: ON, effect, D/W, ▲ ▼, EDIT, ✕ per slot, `+ SLOT`, VORLAGEN, RACKS, plugin latency
 * EDIT on a built-in effect -> its parameters (D/W, knobs, switches, value with unit). on a plugin -> its window
+* EDIT on a plugin row (top bar and rack) opens the plugin window, raises it when open. greyed while the plugin loads or is not loaded (help says why). built-in rows have no EDIT in the top bar
+* master bus: no rows in the top bar, its slots and EDIT sit in the rack (`RACK` on MASTER)
 
 ### effect picker
 
@@ -782,7 +836,7 @@ insert slots on the sum of the decks, after the faders and the crossfader, befor
 * sort by up to three columns: click a header -> that column sorts first, the previous ones stay behind it (`▼`, `▼2`, `▲3`); click the first again = reverse. right click the header -> take a column out, `Sortierung zurücksetzen`. saved with the session
 * stacked: the pane header is a column left of the list (more rows per pane)
 * favorites bar on top of each pane: 6 slots, source or filter. click = switch, right click = assign / rename / clear, drag a tree entry onto a slot, ⌃⌥1-6. details: [library · favorites](library.md#-favorites)
-* tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), TOOL-LOOPS (cut files with the tag `tool-loop`, see [full edit](#full-edit--tool-loops)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, MUSIC FOLDERS, PLAYLISTS (see [playlists](#playlists))
+* tree: TRACK COLLECTION, RUNNING TRACKS, CUTS (cut files, see [cut audio](#cut-audio)), TOOL-LOOPS (cut files with the tag `tool-loop`, see [full edit](#full-edit--tool-loops)), PREPARATION, PREPARATION ARCHIV, HISTORY, HISTORY ARCHIV, MUSIC FOLDERS, PLAYLISTS (see [playlists](#playlists)), MISSING (tracks without a file, see [missing + tidal](#missing--tidal), only shown while there are some)
 * MUSIC FOLDERS = the music library on disk, folder by folder. click a folder -> its audio files (mp3, m4a, aac, aiff, wav, flac, ogg, opus)
   * files in the collection show bpm, key, tags, comments like everywhere else
   * files not in the collection are grey, no grid, load and preview anyway
@@ -794,7 +848,8 @@ insert slots on the sum of the decks, after the faders and the crossfader, befor
 * search: artist, title, comment 1 + 2, label, genre, album, key. several words = all must match, case and accents ignored
 * right click a track -> load into deck A-D, add to / remove from preparation, add to a playlist, preview, show in finder, reset played state
 * drag tracks out of the list in any direction: onto a deck, PREPARATION, a playlist or PLAYLISTS (several rows: select with ⇧ / ⌘ first). a deck title drags too: onto another deck, PREPARATION or a playlist. ⌫ in PREPARATION or an own playlist removes the selected rows
-* played column ▶: ✓ = played since the last reset. reset: right click a track or TRACK COLLECTION -> Reset Played State, or ⌥⌘P
+* played column ▶: ✓ = played since the last reset. reset: right click TRACK COLLECTION (all), a playlist, smartlist, folder, music folder or PREPARATION in the tree (folders with everything inside), or the selected tracks in the list -> Reset Played State; ⌥⌘P resets all. several tree entries: select with ⌘ / ⇧ first, the menu resets all marked ones. undo like any other step
+* `Played-Status beim Start zurücksetzen` (⌘, -> BROWSER -> played tracks, `ui.resetPlayedOnStart`, on by default): the played state is reset at every start, like ⌥⌘P
 * `UNGESPIELT` (`UNPLAYED`) in the header -> played tracks hidden in collection, playlists, smartlists, music folders and search. history, running tracks and preparation (+ archive) keep showing them. count in the header: `812 · 14 ausgeblendet`. one setting for both panes, same as ⌘, -> BROWSER -> played tracks and browser menu -> `Gespielte Tracks ausblenden`, key assignable (no default). load lock, decks, controller browse unchanged
 * the left controller drives the left pane, the right controller the right one
 * tree can hide while decks are visible (setting)
@@ -831,6 +886,11 @@ one tree PLAYLISTS: own folders, playlists and smartlists first, below them the 
 * short values (⌘, -> BROWSER, on): version at the title end as a small tag (`Original Mix` -> `OM`, `Extended Mix` -> `EXT`, `Foo Remix` -> `Foo RMX`, radio edit, dub, vip, instrumental …, case ignored), title and artist cut in the middle when too long (the end stays visible), bpm without decimals when within 0.05 of a whole number (else one), import / last played `14.10.` (younger than ~11 months) or `Okt 24`. sort and search use the full values
 * selection: red tint (32 %, without focus 20 %) and a 2 pt red stripe at the left of every selected row
 
+### right click
+
+* track rows (selection or the row under the mouse): `In Deck A … D laden`, `Bearbeiten …`, `Eigene Änderungen verwerfen`, `Bewertung ▸` (0-5 stars, the current one checked; several tracks: no check), `Analysieren`, `Neu analysieren`, `Analyse verwerfen`, `Rip prüfen`, `An Preparation anhängen`, `Aus Preparation entfernen`, `Zur Playlist hinzufügen ▸`, `Aus Playlist entfernen` (⌫), `Bereitmachen (herunterladen)` (cloud), `Vorhören`, `Im Finder zeigen`, `Artist – Titel kopieren`, `Pfad kopieren` (one line per track), `Nach Artist suchen`, `Nach Label suchen` (first track of the selection), `Alle auswählen`, `Reset Played State`
+* collection: `Exportieren`, `Collection prüfen …`, `Collection neu laden`, `Reset Played State`, `Gespielte Tracks ausblenden`, `Vorschauen berechnen`, analysis, `Bereitmachen`. music folder: `Neu einlesen`, `Pfad kopieren`, `Im Finder zeigen`
+
 ### harmony + matching
 
 reference = audible key of the master deck (track key + key shift, without keylock + tempo, rounded to semitones). no master playing -> focused deck.
@@ -839,6 +899,8 @@ reference = audible key of the master deck (track key + key shift, without keylo
 * column `Match`: pitch in % the track needs to reach the master tempo (dimmed outside the bpm window). click the header -> sort by harmony: distance to the master key, then tempo difference
 * master or key shift changes -> only key and match cells of the visible rows redraw, the list stays
 * `◆ PASST` (`◆ MATCH`) in the header -> only tracks with a fitting key (same, ±1, relative; ⌘, -> BROWSER) and tempo within ±4 % (half / double optional). shows the reference, follows master changes. a track without key never fits, a master without key filters by tempo only
+* tiles above `◆ PASST`: `AUTO` (default) = playing master deck, else the focused deck. `A`-`D` = fixed reference deck(s), click toggles, bright = deck plays. several decks: a track must fit every chosen deck (key, tempo, tag groups); key colors, `Match` and `Tags ≈` use the first one. empty decks are skipped. chip shows `◆ PASST · A+B: …`. saved in `ui.matchDecks`
+* column `Tags ≈` next to `Match`: `≈` = similar, `⇄` = complementary (rules below), then the master's groups: letter in group color = same first word, grey = different, `·` = group missing. empty without a master with groups or for tracks without groups
 * tag groups (⌘, -> BROWSER -> ◆ PASST, off by default): first word per [group](#-10--tags--smartlists) counts (`K tief`, `B sub`, `H off`). `ähnlich` (`≈` on the chip): groups in `gleich` (default `K B`) same as the master. `ergänzend` (`⇄`): `gleich` (default `K`) same, `anders` (default `H`) different, no shared role. master without groups: ignored, track without groups: no match
 * on / off: chip, ⌥⌘J (last used pane), browse push on the controller (⌘, -> CONTROLLER -> browse push)
 
@@ -847,6 +909,7 @@ reference = audible key of the master deck (track key + key shift, without keylo
 a mini overview of the whole track per row. modes (⌘, -> BROWSER -> browser preview):
 
 * `Ganze Zeile (zweizeilig)` (default): rows twice as high, text on top, the overview as a band across the full row width underneath, continuous over all columns. selection and inline edit work as usual (the editor sits in the text line)
+* band width (`Band-Breite`, with `Ganze Zeile`, `ui.previewBandSpan`): `Sichtbare Breite` (default) = the band covers only the part of the row the browser shows and stays in view while scrolling sideways. `Ganze Zeile` = across all columns, most of it off screen with many columns. click into the band and the playhead use the same band
 * `Eigene Spalte`: PREVIEW column after the title
 * `Hinter dem Titel`: 25 % under the title text
 * `Aus`
@@ -913,6 +976,35 @@ right click tracks, TRACK COLLECTION, PREPARATION, a playlist, smartlist, playli
 * synthetic checks (`swift test`): 6.3 s silence -> cut IN before the first beat · 4 bars 128 bpm C, hard cut, 126 bpm F# -> break at 7.50 s (±30 ms), 4 bars · 8 bars -> loop 4 bars, without grid ±0.1 s · breakdown intro 30 s same key -> nothing · drum intro 16 bars -> nothing · 8 s silence at the end -> cut OUT on the next beat, 4 s -> nothing · end with the next track -> break at 90.00 s · clean track -> nothing. 8 / 8
 * against the collection (`MIX741_RIP_NML=<collection.nml> MIX741_RIP_N=100 swift test --filter ripAgainstCollection`, read only), 96 local tracks: 3 with a foreign start / end, 17 with more than 6 s silence at the end, 1 grid suspect, not checked by ear
 * runtime (release, 20 local tracks): rip check alone (decode + check) ~0.75 s per track, the check itself ~0.04 s, with the analysis +0.04 s
+
+### audio-edit mode
+
+work list for the import analysis: one deck, the tracks that still need work, suggestions for the loaded one.
+
+* enter: `AUDIO-EDIT` in the toolbar, view menu (⌘, -> KEYBOARD, no default key) or tree right click `Import analysieren …` on TRACK COLLECTION, music folders, playlists and folders
+* `AUDIO-EDIT` / `✕ AUDIO-EDIT` leaves it and restores the view and the active profile as they were. the profile `Audio-Edit` is not in the list
+* `Import analysieren …`: tracks not analysed yet (no own analysis or missing tempo / grid, key, loudness) or without a rip check in the current version, plus tracks imported since the last run (`importDate`). queued like `Analysieren` + rip check (same throttling). the run time is kept in `audioedit.json`
+* the view button without import (keyboard or toolbar) takes the active browser pane's list as it is
+* list rows: `wartet`, `analysiert …`, `Vorschläge n`, `ok`, `erledigt`. click = load into deck A
+* deck A: a track is loaded only when deck A is not playing; otherwise the status line asks and nothing loads. an open rip finding is marked as range (as on load)
+* suggestions: rip finding with the same actions as the track menu (cut IN / OUT, remove as new file, discard), grid suspect (grid tools), loudness with NORM / AMP when the peak headroom is over `Audio-Edit: Lautheit vorschlagen ab` (default 3 dB, ⌘, -> BROWSER -> analyse), missing key / tempo / grid
+* `◀ ZURÜCK`, `WEITER ▶`, `✓ ERLEDIGT` (marks done, goes to the next). keys without default: `AUDIO-EDIT: zurück / weiter / erledigt und weiter` (⌘, -> KEYBOARD). right click a done row -> `Erledigt zurücknehmen`
+* `erledigt` is kept in `audioedit.json` (MINOS-741 folder), never in the collection. ⌘, -> BROWSER -> analyse -> `Import-Lauf und erledigt zurücksetzen` clears the run time and all done marks
+* writes only through the existing paths (`edits.json`, new files). nothing is cut automatically
+
+#### editor
+
+above the work list: toolbar, waveform of deck A (the output of its edit list), readout, markers, steps. deck A runs in EDIT for as long as the mode is on (back to its old state on leave). the original file is never written; results go through the edit list (`edits.json`) and render, as in edit mode
+
+* zoom: `+` / `−`, pinch, scroll wheel (up = in, at the pointer), `ALLES` (whole track), `AUF AUSWAHL` (`z`). horizontal scroll or `⇧` + scroll pans. down to the sample level: from 1 point per sample a line through the samples, dots from 8 points per sample, sample numbers on the ruler
+* selection: drag (free, to the sample). `⇧` + click or drag extends from the nearer edge. drag an edge to move it (a loupe shows the samples around the edit point). double click = the piece under the pointer. `⌘A` selects all. click = cursor (deck A jumps there when stopped)
+* `RASTER` (`g`): snap to the beats of the grid. off when the mode opens; default setting `Audio-Edit: Raster beim Markieren`
+* readout: start, end, length in `m:ss.mmm` and in samples; type into a field, enter applies. cursor on the right
+* keys: `space` play / stop (from the cursor), `l` play from the cursor, `k` stop, `j` 5 s back, `+ − 0` zoom (they stay zoom keys in this mode), `⌫` delete the selection, `⌥⌫` keep only the selection, `i` silence, `r` reverse, `⌘X` / `⌘C` / `⌘V` cut / copy / paste at the cursor, `m` marker at the cursor, `⌘Z` / `⇧⌘Z` undo / redo
+* delete, keep only, silence, reverse, cut, copy, paste: edit list operations, each one undo step. silence over a selection keeps its length; silence at the cursor asks for the length. reverse: the pieces in the range play backwards with a 2 ms crossfade at each joint. paste inserts at the cursor and only into the track the clip came from. the clipboard lives in memory
+* markers (`MARKEN`): `m` or `+ CURSOR` at the cursor, `BEREICH → MARKE` for the selection (a range from its two ends). double click = name, click = jump, `✕` = delete. stored in source time in `audioedit-marks.json` next to `edits.json`, per track, not in the collection, not in undo. a marker whose spot was cut away is listed as `–`
+* `SCHRITTE`: the undo steps, newest on top with the time. click a step = go back to it (or forward again for undone ones). the highlighted row is the current state
+* settings: `⌘,` -> BROWSER -> analyse -> `Audio-Edit: Raster beim Markieren` (default off). keys: `⌘,` -> KEYBOARD -> `AUDIO-EDIT` (the group lists every editor key; `space`, `l`, `+ − 0` and `⌘Z` are the usual ones and work here too)
 
 ### edit tracks
 
@@ -1002,6 +1094,22 @@ BROWSER menu -> `Collection prüfen …` or right click TRACK COLLECTION. read o
 * `NEW` needs the music folder scan (setting, on by default)
 * ⌘, -> BROWSER -> check collection: check on start (off), scan music folders (on)
 
+### missing + tidal
+
+tree entry `MISSING n` (under ZU BEARBEITEN, only while at least one track has no file): the tracks whose file is missing. same data as the check above: cloud status `fehlt`, else the load check at start (`fehlen n` in the console). sortable like any list, export and overview work too.
+
+* header `→ TIDAL` (gray without client id): creates a playlist on TIDAL from the missing tracks. each track is searched by artist and title (no `(Original Mix)`-style suffixes), a hit counts when the title and artist match and the duration is within 5 s when both are known
+* name of the playlist: ⌘, -> BROWSER -> TIDAL, pattern `missing-%y%m%d` (`%Y` year, `%y` two digits, `%m`, `%d`). the playlist is created UNLISTED; each run creates a new one
+* progress and ✕ in the status bar. result e.g. `TIDAL: 231 von 254 gefunden · Playlist missing-261016`. `NICHT GEFUNDEN n` opens the tracks without a hit (artist – title) with COPY
+* login: the first run opens TIDAL in the browser. the answer comes back to `http://localhost:7412/tidal/callback` on this mac only. tokens go to the keychain (service `MINOS-741 TIDAL`) and are refreshed on their own; ⌘, -> BROWSER -> TIDAL -> sign out deletes them
+
+setup, once, on developer.tidal.com:
+
+1. create an app, public client (no client secret)
+2. redirect URI: `http://localhost:7412/tidal/callback`
+3. scopes: `user.read`, `playlists.read`, `playlists.write`, `search.read`
+4. ⌘, -> BROWSER -> TIDAL -> client ID: the id of the app (it is not a secret, it stays in the settings)
+
 ## ◆ 10 · TAGS + SMARTLISTS
 
 comment 2 is split into tags at a separator (⌘, -> TAGS, default space, mine `·`):
@@ -1026,7 +1134,8 @@ K tief lang B sub schwer galopp H off DRUMS
 ```
 
 * single capital letter = group marker, the following tags belong to it. word in capitals only (`BASIS`) = role, ends the group. tags before the first marker: no group
-* values take the color of their marker (own tag color wins), roles keep their own colors
+* values take the color of their marker (own tag color wins), roles keep their own colors. K / B / H take the waveform colors of the active preset: K = low (kick), B = held lows (bass), H = highs, darkened for the chip
+* marker chips are hidden in the comment 2 column, deck and detail bar (the color shows the group), TAGS ▾ keeps them as column heads
 * TAGS ▾: one column per group (order as in the text), then ROLE, then tags without group. click on the group head = tracks with that group
 * group names per marker in ⌘, -> TAGS (default K = KICK, B = BASS, H = HATS)
 * role buttons BASIS / SYNTH / DRUMS / VOLL / ATMO match `» BASIS` in the text or `BASIS` as a whole tag
@@ -1067,6 +1176,7 @@ full syntax -> [nml files](nml-files.md#-smartlist-queries).
 history:
 
 * a track counts as played after 30 s audible (⌘, -> BROWSER -> history & preparation)
+* played state is reset at every start by default (⌘, -> BROWSER -> played tracks -> `Played-Status beim Start zurücksetzen`); the history itself stays
 * internal mode: only with fader / crossfader open. external mode: always
 * saved as nml under `history_2026-10-10-01.nml` (day + session number), optional copy into the collection's history folder (time-stamped name)
 * quitting asks first (also the red close button and ⌘W on the main window), then session and history are written

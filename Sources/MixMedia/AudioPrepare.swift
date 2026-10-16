@@ -5,17 +5,35 @@ import Foundation
 import MixCore
 
 extension AudioCutWriter {
-    /// Format einer neuen Datei: Apple Lossless (.m4a) oder PCM wie die Quelle (WAV, AIFF)
+    /// Format einer neuen Datei: Apple Lossless (.m4a), AAC (.m4a) oder PCM wie die Quelle (WAV, AIFF)
     public struct Format: Equatable, Sendable {
-        public enum Container: Sendable { case alac, wav, aiff }
+        public enum Container: Sendable { case alac, wav, aiff, aac }
         public var container: Container
         public var bitDepth: Int
         /// PCM als Float (nur WAV)
         public var float = false
         /// Endung der neuen Datei
         public var ext: String
+        /// Abtastrate der Datei (nil = wie die Quelle)
+        public var rate: Double?
+        /// TPDF-Dither beim Schritt auf 16 Bit
+        public var dither = false
+        /// AAC: Bitrate in kbit/s
+        public var kbps = 256
+
+        public init(container: Container, bitDepth: Int, float: Bool = false, ext: String, rate: Double? = nil, dither: Bool = false,
+                    kbps: Int = 256) {
+            self.container = container; self.bitDepth = bitDepth; self.float = float; self.ext = ext
+            self.rate = rate; self.dither = dither; self.kbps = kbps
+        }
 
         public static func alac(_ depth: Int) -> Format { Format(container: .alac, bitDepth: depth == 16 ? 16 : 24, ext: "m4a") }
+
+        /// Sample-Format der Datei für den Schreibpuffer: Float (WAV Float, AAC), sonst Ganzzahl 16 Bit oder 24 Bit in Int32
+        var processing: AVAudioCommonFormat {
+            if container == .aac || float { return .pcmFormatFloat32 }
+            return bitDepth == 16 ? .pcmFormatInt16 : .pcmFormatInt32
+        }
 
         func settings(sampleRate: Double, channels: Int) throws -> [String: Any] {
             var s: [String: Any] = [AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: channels]
@@ -23,6 +41,9 @@ extension AudioCutWriter {
             case .alac:
                 s[AVFormatIDKey] = kAudioFormatAppleLossless
                 s[AVEncoderBitDepthHintKey] = bitDepth
+            case .aac:
+                s[AVFormatIDKey] = kAudioFormatMPEG4AAC
+                s[AVEncoderBitRateKey] = kbps * 1000
             case .wav, .aiff:
                 s[AVFormatIDKey] = kAudioFormatLinearPCM
                 s[AVLinearPCMBitDepthKey] = bitDepth
@@ -49,6 +70,23 @@ extension AudioCutWriter {
             if ["aif", "aiff"].contains(ext), !float { return Format(container: .aiff, bitDepth: depth, ext: ext) }
         }
         return .alac(bitDepth(f.fileFormat))
+    }
+
+    /// Ein Kanal eines Blocks in den Schreibpuffer: Float unverändert, Ganzzahl mit Wandlung (16 Bit mit Dither, 24 Bit)
+    static func store(_ x: UnsafeMutablePointer<Float>, count n: Int, into buf: AVAudioPCMBuffer, channel c: Int, format: Format,
+                      rng: inout AudioDither, quant: UnsafeMutablePointer<Int32>) {
+        switch format.processing {
+        case .pcmFormatInt16:
+            AudioDither.quantize(x, count: n, bits: 16, dither: format.dither, rng: &rng, into: quant)
+            let o = buf.int16ChannelData![c]
+            for i in 0..<n { o[i] = Int16(truncatingIfNeeded: quant[i]) }
+        case .pcmFormatInt32:
+            AudioDither.quantize(x, count: n, bits: 24, dither: false, rng: &rng, into: quant)
+            let o = buf.int32ChannelData![c]
+            for i in 0..<n { o[i] = quant[i] << 8 }
+        default:
+            buf.floatChannelData![c].update(from: x, count: n)
+        }
     }
 
     /// Spitze (Betrag, linear) der Ausgabe über alle Kanäle

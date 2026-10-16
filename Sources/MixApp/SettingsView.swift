@@ -429,6 +429,10 @@ struct DeckSettings: View {
                 .settingsAnchor("decks.syncmode")
                 sliderRow("Pitch-Bend-Stärke", $mix.prefs.engine.bendAmount, 0.01...0.12, format: "%.2f")
                     .settingsAnchor("decks.bend")
+                Picker("Wellenform greifen", selection: $mix.prefs.ui.waveGrab) {
+                    ForEach(WaveGrab.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                .settingsAnchor("decks.wavegrab")
                 sliderRow("Link-Versatz (ms)", $mix.prefs.engine.linkOffsetMs, -50...50, step: 1, format: "%+.0f", unit: "ms")
                     .settingsAnchor("decks.linkoffset")
             }
@@ -537,6 +541,28 @@ struct DeckSettings: View {
                     .settingsAnchor("decks.prep.clip")
                 Toggle("Vorbereiten JOIN: Tempo der zweiten angleichen (bis ±0,5 %)", isOn: $mix.prefs.ui.prepJoinMatchTempo)
                     .settingsAnchor("decks.prep.jointempo")
+                Picker("Ausgabe: Format", selection: $mix.prefs.ui.export.container) {
+                    ForEach(ExportContainer.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .settingsAnchor("decks.export.format")
+                Picker("Ausgabe: Bit", selection: $mix.prefs.ui.export.bits) {
+                    ForEach(ExportBits.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .settingsAnchor("decks.export.bits")
+                Picker("Ausgabe: Abtastrate", selection: $mix.prefs.ui.export.rate) {
+                    ForEach(ExportOptions.rates, id: \.self) { Text(ExportOptions.rateLabel($0)).tag($0) }
+                }
+                .settingsAnchor("decks.export.rate")
+                Picker("Ausgabe: AAC-Bitrate", selection: $mix.prefs.ui.export.aacKbps) {
+                    ForEach(ExportOptions.aacRates, id: \.self) { Text("\($0) kbit/s").tag($0) }
+                }
+                .settingsAnchor("decks.export.aac")
+                Toggle("Ausgabe: Dither (TPDF) beim Schritt auf 16 Bit", isOn: $mix.prefs.ui.export.dither)
+                    .settingsAnchor("decks.export.dither")
+                TextField("Ausgabe: Dateiname (Muster {name} {tag}, leer = wie bisher)", text: $mix.prefs.ui.export.pattern)
+                    .settingsAnchor("decks.export.pattern")
+                Text("ausgabe von render, schnitt, join, split und tool-loop. wie quelle: wav / aiff bleiben (vorbereiten), sonst apple lossless. dither nur beim schritt auf 16 bit. metadaten stehen in der datei: m4a mit atom-schlüsseln, wav / aiff als id3-chunk (wav zusätzlich list info). das fenster export (vor render im audio-edit) ändert das für eine datei.")
+                    .settingsHint()
                 Text("vorbereiten (profil oder deck-zeile): amp hebt nur an (samples × faktor, kein limiter), ohne clipping höchstens bis 0 dbfs, norm = spitze −0.3 dbfs. join hängt die zweite datei am nächsten taktanfang an, split teilt am takt. alles als neue datei neben dem original.")
                     .settingsHint()
             }
@@ -570,6 +596,25 @@ struct MixerFXSettings: View {
                 sliderRow("Kanalfilter-Resonanz", $mix.prefs.engine.channelFilterResonance, 0.2...1.5)
                     .settingsAnchor("mixer.filterres")
             }
+            Section("Auto-Mix") {
+                Picker("Übergang", selection: $mix.prefs.autoMix.transitionBars) {
+                    Text(verbatim: "8 Takte").tag(8)
+                    Text(verbatim: "16 Takte").tag(16)
+                    Text(verbatim: "32 Takte").tag(32)
+                }
+                .pickerStyle(.segmented)
+                .settingsAnchor("automix.length")
+                Toggle("Bass-Tausch in der Mitte", isOn: $mix.prefs.autoMix.bassSwap)
+                    .settingsAnchor("automix.bassswap")
+                Toggle("Filter-Sweep", isOn: $mix.prefs.autoMix.filterSweep)
+                    .settingsAnchor("automix.sweep")
+                Toggle("Tonart-Konflikt erlauben", isOn: $mix.prefs.autoMix.allowKeyClash)
+                    .settingsAnchor("automix.keyclash")
+                Toggle("Key Sync beim Übergang", isOn: $mix.prefs.autoMix.keySync)
+                    .settingsAnchor("automix.keysync")
+                Text("auto-mix (interner mixer): wählt nach match den nächsten track aus den quellen der beiden bereiche, fährt den übergang über a und b und dreht sich an phrasengrenzen. match-regel wie ◆ passt (⌘, → browser).")
+                    .settingsHint()
+            }
             Section("Externer Mixer") {
                 headroomPicker("Headroom", $mix.prefs.engine.headroomExternal)
                     .settingsAnchor("mixer.ext.headroom")
@@ -577,6 +622,10 @@ struct MixerFXSettings: View {
                     .settingsAnchor("mixer.ext.autogain")
                 Toggle("Main-Volume wirkt auch extern", isOn: $mix.prefs.engine.masterVolumeExternal)
                     .settingsAnchor("mixer.ext.mainvol")
+                Toggle("EQ im externen Modus", isOn: $mix.prefs.engine.eqExternal)
+                    .settingsAnchor("mixer.ext.eq")
+                Text("Aus: das Pult macht den EQ. An: EQ vor jedem Kanalpaar in MINOS-741, Regler im Mixer und am Deck.")
+                    .settingsHint()
             }
             Section("FX-Units (Insert-Slots)") {
                 Toggle("FX-Units anzeigen", isOn: $mix.prefs.ui.showFXUnits)
@@ -769,6 +818,8 @@ struct DisplaySettings: View {
                     .settingsAnchor("display.wave.height")
                 Toggle("Gespielten Teil abdunkeln", isOn: $mix.prefs.ui.dimPlayed)
                     .settingsAnchor("display.wave.dim")
+                Toggle("Andere Decks in der Wellenform", isOn: $mix.prefs.ui.peerMarks)
+                    .settingsAnchor("display.wave.peers")
             }
             Section("Beatgrid") {
                 Toggle("Beatgrid anzeigen", isOn: $mix.prefs.ui.showBeatgrid)
@@ -1069,9 +1120,9 @@ struct BrowserSettings: View {
                     .settingsAnchor("browser.dimplayed")
                 Toggle("Gespielte Tracks ausblenden", isOn: $mix.prefs.ui.hidePlayedTracks)
                     .settingsAnchor("browser.hideplayed")
-                Toggle("Gespielt beim Start zurücksetzen", isOn: $mix.prefs.ui.resetPlayedOnStart)
+                Toggle("Played-Status beim Start zurücksetzen", isOn: $mix.prefs.ui.resetPlayedOnStart)
                     .settingsAnchor("browser.resetplayed")
-                Text("gespielt = in der history (ab der schwelle unter history & preparation), bis zum zurücksetzen. ausblenden (auch ◆ UNGESPIELT im kopf des bereichs, menü browser) gilt für collection, playlists, smartlists, ordner und suche; history, running tracks und preparation zeigen sie weiter. zurücksetzen jederzeit: rechtsklick auf track collection -> reset played state").settingsHint()
+                Text("gespielt = in der history (ab der schwelle unter history & preparation), bis zum zurücksetzen. ausblenden (auch ◆ UNGESPIELT im kopf des bereichs, menü browser) gilt für collection, playlists, smartlists, ordner und suche; history, running tracks und preparation zeigen sie weiter. zurücksetzen jederzeit: rechtsklick auf track collection (alles), auf playlist, smartlist, ordner, music folder, preparation oder auf markierte tracks (nur diese) -> reset played state. im baum mehrere einträge mit ⌘ / ⇧ markieren").settingsHint()
             }
             Section("History & Preparation") {
                 sliderRow("Als gespielt nach (s hörbar)", $mix.prefs.engine.historyThreshold, 5...120, step: 5, format: "%.0f", unit: "s")
@@ -1151,6 +1202,7 @@ struct BrowserSettings: View {
                 Text("browser-menü -> collection prüfen … oder rechtsklick auf TRACK COLLECTION. nur lesen: dateien, audio-kopf, dauer, schreibweise, namen, doppelte, analyse, grid, playlist-einträge. abbrechen jederzeit.")
                     .settingsHint()
             }
+            TidalSettingsSection()
             Section("Analyse") {
                 // genau eine Oktave: jede Grenze stellt die andere mit
                 Stepper(value: Binding(get: { mix.prefs.ui.analysisBpmLow }, set: { mix.prefs.ui.analysisBpmLow = max(40, min(150, $0)) }),
@@ -1172,6 +1224,22 @@ struct BrowserSettings: View {
                 Toggle("Rip-Befund beim Laden markieren", isOn: $mix.prefs.ui.ripMarkOnLoad)
                     .settingsAnchor("browser.ripmark")
                 Text("lädt ein deck einen track mit offenem befund, wird der vorgeschlagene teil als bereich markiert (RIP · …). geschnitten wird nichts: rechtsklick -> markierten bereich entfernen.")
+                    .settingsHint()
+                Stepper(value: Binding(get: { mix.prefs.ui.audioEditHeadroom }, set: { mix.prefs.ui.audioEditHeadroom = max(1, min(12, $0)) }),
+                        in: 1...12, step: 0.5) {
+                    Text("Audio-Edit: Lautheit vorschlagen ab \(String(format: "%.1f", mix.prefs.ui.audioEditHeadroom)) dB Reserve")
+                }
+                .settingsAnchor("browser.auditheadroom")
+                Text("audio-edit (AUDIO-EDIT, ⌘, -> KEYBOARD): ab dieser reserve unter 0 dBFS schlägt er NORM / AMP vor.")
+                    .settingsHint()
+                Toggle("Audio-Edit: Raster beim Markieren an", isOn: $mix.prefs.ui.audioEditSnap)
+                    .settingsAnchor("browser.auditsnap")
+                Text("beim eintritt in AUDIO-EDIT rastet die auswahl auf beats des grids ein. RASTER in der werkzeugzeile schaltet um; ohne diese einstellung ist es aus, freies markieren bis auf das sample.")
+                    .settingsHint()
+                Button("Import-Lauf und erledigt zurücksetzen") { AudioEditMode.shared.resetRun() }
+                    .settingsControlColumn()
+                    .settingsAnchor("browser.auditreset")
+                Text("der nächste import analysieren nimmt wieder alle tracks ohne analyse und alle seit dem letzten lauf importierten. erledigt-markierungen fallen weg. die collection bleibt unberührt.")
                     .settingsHint()
                 KeyProfileSettings()
             }

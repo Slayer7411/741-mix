@@ -202,8 +202,11 @@ struct MusicFolderTree: View {
     }
 }
 
-private struct MusicFolderRow: View {
-    @Environment(LibraryStore.self) private var store
+private struct MusicFolderRow: View, SourceMenus {
+    @Environment(MixModel.self) private var mix
+    @Environment(LibraryStore.self) var store
+    @Environment(HistoryStore.self) var history
+    @Environment(PlaylistTreeUI.self) private var ui
     let path: String
     @Binding var expanded: Set<String>
 
@@ -228,9 +231,13 @@ private struct MusicFolderRow: View {
             .favoriteDrag { [path] in BrowserFavorite.source(.folder(path), store: store) }
             .contextMenu {
                 Button("Neu einlesen") { store.folders.rescan(path) }
+                resetPlayedButton(.folder(path), marked: ui.marked)
+                autoMixMenuButton(.folder(path), marked: ui.marked, mix: mix)
                 OverviewMenuButton { store.folders.tracks(in: path, recursive: true, library: store) }
                 AnalysisMenuButtons { store.folders.tracks(in: path, recursive: true, library: store) }
+                ImportMenuButton(source: (path as NSString).lastPathComponent) { store.folders.tracks(in: path, recursive: true, library: store) }
                 Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                Button("Pfad kopieren") { TrackMenu.copy(path) }
             }
     }
 

@@ -57,6 +57,8 @@ public struct EnginePrefs: Codable, Equatable, Sendable {
     public var trackEndWarning = 30.0
     public var crossfaderCurve = CrossfaderCurve.smooth
     public var eqKill = true
+    /// EQ auch im externen Modus (vor dem Kanalpaar). Aus: das Pult macht den EQ, Standard wegen Doppel-EQ
+    public var eqExternal = false
     public var channelFilterResonance = 0.6
     public var defaultLoopSize = 4.0
     public var defaultJumpSize = 4.0
@@ -134,6 +136,8 @@ public struct DeckState: Equatable, Sendable {
     public var tempoRange: Double = 8
     public var nudge: Double = 0
     public var bend: Double = 0
+    /// Hand auf der Wellenform (Wellenform greifen): Sync hält die Phase, bis sie loslässt
+    public var grab = false
     public var keylock = true
     public var keyShift = 0
     public var sync = false
@@ -1301,6 +1305,24 @@ public final class MixController: @unchecked Sendable {
         onNotice?(notice)
     }
 
+    /// Wellenform greifen (Vinyl): die Hand läuft dem Ziel (Sekunden) nach; `held` false = losgelassen. Im Fix-Sync hält
+    /// das Loslassen die erreichte Phase, wie ein Sprung von Hand
+    public func scratch(_ d: Int, to seconds: Double, held: Bool) {
+        locked {
+            guard audio[d] != nil else { return }
+            let was = state.decks[d].grab
+            state.decks[d].grab = held
+            engine.scratch(d, seconds: seconds, held: held)
+            if !held, was, state.prefs.syncMode == .fixed, state.decks[d].sync, let g = state.decks[d].grid, let mb = masterBeat() {
+                phaseOffset[d] = BeatGrid.phaseError(own: g.beatPosition(at: seconds), master: mb)
+                bigError[d] = 0
+            }
+        }
+    }
+
+    /// Wellenform greifen (Jog): Hand auf dem Teller oder losgelassen; solange sie drauf ist, zieht der Sync nicht nach
+    public func grab(_ d: Int, _ on: Bool) { locked { state.decks[d].grab = on } }
+
     /// Pitch-Bend: −1…1 × eingestellte Stärke
     public func bend(_ d: Int, _ v: Double) {
         locked {
@@ -1700,12 +1722,13 @@ public final class MixController: @unchecked Sendable {
         let auto = (ext ? p.autoGainExternal : p.autoGain) ? (s.track?.perceivedDb ?? 0) : 0
         engine.setGain(d, db: s.gainDb + auto + (ext ? p.headroomExternal : p.headroomInternal))
         engine.setChannelFilter(d, s.filter, resonance: p.channelFilterResonance)
-        if state.externalMixer {
-            engine.setEQ(d, low: 0, mid: 0, high: 0, kill: p.eqKill)
+        // Extern: EQ nur mit eigener Einstellung, sonst macht das Pult den EQ
+        let eqOn = !ext || p.eqExternal
+        engine.setEQ(d, low: eqOn ? s.eqLow : 0, mid: eqOn ? s.eqMid : 0, high: eqOn ? s.eqHigh : 0, kill: p.eqKill)
+        if ext {
             engine.setChannelVolume(d, 1)
             return
         }
-        engine.setEQ(d, low: s.eqLow, mid: s.eqMid, high: s.eqHigh, kill: p.eqKill)
         let x = state.crossfader
         let side: Double = switch s.xf {
             case .a: x <= 0 ? 1 : 1 - x
@@ -2487,7 +2510,7 @@ public final class MixController: @unchecked Sendable {
                 var changed = abs(target - state.decks[d].tempoPct) > 0.0001
                 state.decks[d].tempoPct = target
                 // rückwärts (Flux-Reverse, Reverse) nicht nachziehen – beim Loslassen kommt die Flux-Position, die bleibt in Phase
-                if state.prefs.phaseLock, state.prefs.syncMode != .tempo, !state.decks[d].reverse, state.decks[d].bend == 0,
+                if state.prefs.phaseLock, state.prefs.syncMode != .tempo, !state.decks[d].reverse, state.decks[d].bend == 0, !state.decks[d].grab,
                    let e = phaseErrorLocked(d) {
                     // harter Sprung nur, wenn der Fehler groß ist und > 100 ms anhält – sonst weich nachziehen
                     bigError[d] = abs(e) > 0.25 ? bigError[d] + 1 : 0

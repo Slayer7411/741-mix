@@ -33,7 +33,7 @@ typedef enum {
     MD_REVERSE,         // 0/1
     MD_FLUX,            // 0/1
     MD_GAIN_DB,         // Kanal-Gain inkl. Auto-Gain
-    MD_EQ_LOW, MD_EQ_MID, MD_EQ_HIGH,   // dB (≤ -96 = Kill)
+    MD_EQ_LOW, MD_EQ_MID, MD_EQ_HIGH,   // dB, -40 … +12 (Kill = -40; Werte darunter klemmt der Kern)
     MD_FILTER,          // -1 … 1 (LP … HP)
     MD_FILTER_RES,      // Resonanz 0.2 … 1.5
     MD_VOLUME,          // Fader × Crossfader, 0 … 1
@@ -123,6 +123,10 @@ void mdsp_set_loop(MDEngine *e, int deck, bool active, double startSeconds, doub
 /// Instant Double: am Anfang des nächsten Blocks die hörbare Position von `source` übernehmen (sample-genau zum Quell-Deck,
 /// gleiche Datei vorausgesetzt). Gilt nach mdsp_set_track/mdsp_seek desselben Blocks
 void mdsp_follow(MDEngine *e, int deck, int source);
+/// Wellenform greifen (Vinyl): die Hand auf der Platte. held = true: der Lesekopf läuft dem Ziel (Sekunden) nach, mit
+/// geglätteter Geschwindigkeit wie ein Scratch (ohne Keylock, auch im Stopp hörbar). held = false: losgelassen, läuft auf
+/// das Ziel aus; danach gelten wieder Tempo und Spielzustand wie vorher. Der Kern rechnet das Ziel selbst nach (Schnitt, Track)
+void mdsp_scratch(MDEngine *e, int deck, double seconds, bool held);
 /// Schnitt (nicht destruktiv): nur zwischen Start und Ende ist etwas hörbar (Sekunden, Ende <= 0 = Track-Ende).
 /// Sprünge und Ladeposition landen im Schnitt, ein Loop wirkt nur bis zu dessen Ende, vorwärts stoppt das Deck am Ende
 /// wie am Track-Ende, rückwärts bleibt es am Start stehen. Ende <= Start = kein Schnitt. Gilt bis zum nächsten Aufruf.

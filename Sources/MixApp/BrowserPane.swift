@@ -102,6 +102,12 @@ final class BrowserPaneModel: Identifiable {
         var rule = MatchRule()
         /// Gruppen des Bezugs-Tracks (nur mit `rule.groove`)
         var tags = TagProfile()
+        /// weitere Bezugs-Decks: auch zu ihnen muss ein Track passen
+        var extra: [HarmonyExtra] = []
+    }
+    struct HarmonyExtra: Hashable, Sendable {
+        var ref: HarmonyRef
+        var tags: TagProfile
     }
 
     var harmonySorted: Bool { sortOrder.contains { $0.keyPath == \Track.harmonySort } }
@@ -155,7 +161,7 @@ final class BrowserPaneModel: Identifiable {
         var all = base + [search, roles, tags, excludedTags, separators, localOnly, localOnly ? CloudLibrary.shared.revision : 0,
                           ripOnly, ripOnly ? RipChecks.shared.revision : 0,
                           excl != nil, excl != nil ? history?.playedRevision ?? 0 : 0] as [AnyHashable]
-        if matching, let h { all += [h.ref, h.rule, h.tags] as [AnyHashable] }
+        if matching, let h { all += [h.ref, h.rule, h.tags, h.extra] as [AnyHashable] }
         return (base, all)
     }
 
@@ -268,7 +274,7 @@ final class BrowserPaneModel: Identifiable {
         var tags = TagFilter()
         var words: [[UInt8]] = []
         var separators = ""
-        var match: (ref: HarmonyRef, rule: MatchRule, tags: TagProfile)?
+        var match: (ref: HarmonyRef, rule: MatchRule, tags: TagProfile, extra: [HarmonyExtra])?
         /// gespielte Tracks (Schlüssel), die nicht in der Liste stehen sollen
         var exclude: Set<String>?
         var isEmpty: Bool { roles.isEmpty && tags.isEmpty && words.isEmpty && match == nil && exclude == nil }
@@ -276,7 +282,7 @@ final class BrowserPaneModel: Identifiable {
 
     private func criteria(_ separators: String, _ h: HarmonyInput?, _ excl: Set<String>? = nil) -> Criteria {
         Criteria(roles: roles, tags: tagFilter, words: search.split(separator: " ").map { Track.fold(String($0)) }, separators: separators,
-                 match: matching ? h.flatMap { h in h.ref.map { ($0, h.rule, h.tags) } } : nil, exclude: excl)
+                 match: matching ? h.flatMap { h in h.ref.map { ($0, h.rule, h.tags, h.extra) } } : nil, exclude: excl)
     }
 
     /// Sortierwert „Harmonie“ (nur mit Bezug)
@@ -327,9 +333,13 @@ final class BrowserPaneModel: Identifiable {
         }
         if !c.words.isEmpty { list = list.filter { $0.matches(words: c.words) } }
         if let m = c.match {
-            list = list.filter { m.rule.matches($0, m.ref) }
-            if m.rule.groove != .off, !m.tags.isEmpty {
-                list = list.filter { let e = index.entry($0.comment2, separators: c.separators); return m.rule.matchesTags(TagProfile(tags: e.tags, groups: e.groups), m.tags) }
+            // alle Bezüge: erstes Deck (oder AUTO) und die weiteren gewählten
+            let refs = [HarmonyExtra(ref: m.ref, tags: m.tags)] + m.extra
+            for r in refs { list = list.filter { m.rule.matches($0, r.ref) } }
+            if m.rule.groove != .off {
+                for r in refs where !r.tags.isEmpty {
+                    list = list.filter { let e = index.entry($0.comment2, separators: c.separators); return m.rule.matchesTags(TagProfile(tags: e.tags, groups: e.groups), r.tags) }
+                }
             }
         }
         guard let x = c.exclude else { return (list, 0) }
@@ -524,6 +534,7 @@ struct PaneHeader: View {
                 .help("Baum ein/aus")
             Text(model.source.title.uppercased()).font(Theme.label(13.z, .bold)).lineLimit(1)
             RowCount(model: model)
+            if model.source == .missing { TidalMissingButton() }
             OwnSmartlistEditButton(model: model)
             if !model.source.isHistory { RowsButtons(model: model) }
         }
@@ -552,7 +563,7 @@ struct PaneHeader: View {
     }
 
     private var tagsButton: some View {
-        DeckButton(title: "TAGS ▾", active: showTags) { showTags.toggle() }
+        DeckButton(title: "TAGS ▾", active: showTags) { showTags.toggle() }.helpInfo("browser.tags")
             .popover(isPresented: $showTags, arrowEdge: .bottom) {
                 TagPicker(model: model, separators: decks.prefs.ui.tagSeparators)
             }
@@ -605,7 +616,7 @@ struct UnplayedChip: View {
     @Environment(MixModel.self) private var mix
 
     var body: some View {
-        DeckButton(title: "UNGESPIELT", active: mix.prefs.ui.hidePlayedTracks) { mix.prefs.ui.hidePlayedTracks.toggle() }
+        DeckButton(title: "UNGESPIELT", active: mix.prefs.ui.hidePlayedTracks) { mix.prefs.ui.hidePlayedTracks.toggle() }.helpInfo("browser.played")
             .help("Gespielte Tracks ausblenden: Collection, Playlists, Smartlists, Ordner, Suche – History, Running Tracks und Preparation zeigen sie weiter. Auch ⌘, → Browser, Menü Browser")
             .background(UITestMark(name: "unplayed"))
     }
@@ -621,8 +632,49 @@ struct MatchChip: View {
         let ref = on ? mix.harmonyKey.map(Track.openKey(code:)) ?? "–" : ""
         let bpm = on && mix.harmonyBPM > 0 ? String(format: " %.1f", mix.harmonyBPM) : ""
         let groove = on ? [MatchRule.Groove.off: "", .similar: " ≈", .complement: " ⇄"][mix.prefs.ui.match.groove] ?? "" : ""
-        DeckButton(title: String(localized: "◆ PASST") + (on ? " · \(ref)\(bpm)\(groove)" : ""), active: on, verbatim: true) { model.matching.toggle() }
+        let chosen = mix.prefs.ui.matchDecks.sorted().map { deckLetters[$0] }.joined(separator: "+")
+        let deckText = on && !chosen.isEmpty ? " \(chosen):" : ""
+        VStack(alignment: .leading, spacing: 1.z) {
+            MatchDeckTiles()
+            DeckButton(title: String(localized: "◆ PASST") + (on ? " ·\(deckText) \(ref)\(bpm)\(groove)" : ""), active: on, verbatim: true) { model.matching.toggle() }.helpInfo("browser.matching")
             .help("Nur Tracks, die zum Master passen: Key (gleich, ±1, Relativ), Tempo im Fenster, optional Tag-Gruppen (≈ ähnlich, ⇄ ergänzend) – einstellbar unter ⌘, → Browser")
+        }
+    }
+}
+
+/// Kacheln über ◆ PASST: AUTO (spielender Master, sonst Fokus-Deck) oder feste Decks, mehrere = Track muss zu allen passen.
+/// Hell = Deck spielt, gefüllt = gewählt
+struct MatchDeckTiles: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        let sel = mix.prefs.ui.matchDecks, n = max(2, mix.prefs.ui.deckCount)
+        HStack(spacing: 1.z) {
+            tile("AUTO", on: sel.isEmpty, playing: false) { mix.prefs.ui.matchDecks = [] }
+                .help("Bezug: spielendes Master-Deck, sonst das Fokus-Deck")
+            ForEach(0..<n, id: \.self) { d in
+                tile(deckLetters[d], on: sel.contains(d), playing: mix.deck(d).playing) {
+                    var s = Set(sel)
+                    if s.contains(d) { s.remove(d) } else { s.insert(d) }
+                    mix.prefs.ui.matchDecks = s.sorted()
+                }
+                .help("Bezug Deck \(deckLetters[d]) – mehrere Decks: Track muss zu allen passen")
+            }
+        }
+    }
+
+    private func tile(_ t: String, on: Bool, playing: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(verbatim: t)
+                .font(Theme.label(7.5.z, .bold))
+                .frame(minWidth: 11.z)
+                .frame(height: 9.z)
+                .padding(.horizontal, 2.z)
+                .foregroundStyle(on ? Theme.void : playing ? Theme.bone : Theme.muted)
+                .background(Rectangle().fill(on ? Theme.state.opacity(0.85) : Theme.void))
+                .overlay(Rectangle().stroke(on ? Theme.state : playing ? Theme.bone.opacity(0.6) : Theme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -794,7 +846,9 @@ struct SourceTree: View {
     // Zeilen in eigenen Ansichten: ein Quellenwechsel wertet nur die Auswahl der Liste neu aus, nicht alle Zeilen
     // (Baum bleibt auch ausgeblendet in der Ansicht, siehe BrowserPane)
     var body: some View {
-        List(selection: Binding<BrowserSource?>(get: { selection }, set: { if let s = $0 { selection = s } })) {
+        // Markiert ist immer die Quelle; ⌘ / ⇧ Klick nimmt Einträge dazu oder weg (Menü „Reset Played State“ gilt für alle)
+        List(selection: Binding<Set<BrowserSource>>(get: { treeUI.marked.contains(selection) ? treeUI.marked : [selection] },
+                                                    set: { pick($0) })) {
             SourceTreeFixed()
             MusicFolderTree(selection: $selection)
             PlaylistsSection(selection: $selection)
@@ -804,6 +858,26 @@ struct SourceTree: View {
         .background(Theme.chitin)
         .environment(treeUI)
         .modifier(PlaylistTreeDialogs(ui: treeUI, selection: $selection))
+        .onChange(of: selection) { if !treeUI.marked.contains(selection) { treeUI.marked = [selection] } }
+    }
+
+    /// Auswahl aus der Liste übernehmen: ein Eintrag = die Quelle; bei mehreren nimmt die Quelle den neu dazugekommenen
+    /// Eintrag (⌘-Klick), bleibt sie bei einem Bereich (⇧-Klick) stehen, wenn sie noch dabei ist
+    private func pick(_ new: Set<BrowserSource>) {
+        guard !new.isEmpty else { return }   // ⌘-Klick auf den einzigen Eintrag lässt die Quelle stehen
+        let primary = Self.primary(new, marked: treeUI.marked, selection: selection)
+        treeUI.marked = new
+        if let primary, primary != selection { selection = primary }
+    }
+
+    /// Quelle nach einer Auswahl im Baum (pur): ein Eintrag = er; mehrere: der neu dazugekommene (⌘-Klick), bei einem
+    /// Bereich (⇧-Klick) bleibt die Quelle, wenn sie dabei ist
+    nonisolated static func primary(_ new: Set<BrowserSource>, marked: Set<BrowserSource>, selection: BrowserSource) -> BrowserSource? {
+        guard !new.isEmpty else { return nil }
+        if new.count == 1 { return new.first }
+        let added = new.subtracting(marked)
+        if added.count == 1 { return added.first }
+        return new.contains(selection) ? selection : new.first
     }
 }
 
@@ -812,17 +886,20 @@ struct SourceTreeFixed: View, SourceMenus {
     @Environment(LibraryStore.self) var store
     @Environment(HistoryStore.self) var history
     @Environment(MixModel.self) private var decks
+    @Environment(PlaylistTreeUI.self) private var ui
 
     var body: some View {
-        row("≣", "TRACK COLLECTION").tag(BrowserSource.collection)
+        row("≣", "TRACK COLLECTION").tag(BrowserSource.collection).helpInfo("tree.collection")
             .favoriteDrag { BrowserFavorite.source(.collection, store: store) }
             .contextMenu {
                 exportMenu(.collection)
                 Button("Collection prüfen …") { ConsistencyWindow.show(store: store) }
                 Button("Reset Played State") { history.resetPlayed() }
+                Button("Collection neu laden") { store.load(store.sourceURL ?? LibraryStore.defaultNML) }
                 Toggle("Gespielte Tracks ausblenden", isOn: Binding(get: { decks.prefs.ui.hidePlayedTracks }, set: { decks.prefs.ui.hidePlayedTracks = $0 }))
                 OverviewMenuButton { store.tracks }
                 AnalysisMenuButtons { store.tracks }
+                ImportMenuButton(source: "Track Collection") { store.tracks }
                 KeyProfileMenuButtons { store.tracks }
                 CloudMenuButton(label: "Track Collection") { store.tracks }
             }
@@ -847,7 +924,12 @@ struct SourceTreeFixed: View, SourceMenus {
                 .help("Tracks mit offenem Befund der Rip-Prüfung (Stille, fremder Anfang oder fremdes Ende, Grid prüfen)")
                 .contextMenu { AnalysisMenuButtons { store.tracks(for: .ripTodo) } }
         }
-        row("▤", "PREPARATION").tag(BrowserSource.preparation)
+        if store.missingTracks.count > 0 {
+            row("✕", "MISSING \(store.missingTracks.count)").tag(BrowserSource.missing)
+                .help("Tracks ohne Datei: Cloud „fehlt“ oder nicht auf der Platte. → TIDAL im Kopf: Playlist bei TIDAL")
+                .contextMenu { exportMenu(.missing); OverviewMenuButton { store.tracks(for: .missing) } }
+        }
+        row("▤", "PREPARATION").tag(BrowserSource.preparation).helpInfo("tree.preparation")
             .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
             .treeDrop(targeted: .constant(false)) { strings in
                 let keys = strings.compactMap(TreeDrag.track).filter { store.track($0) != nil }
@@ -857,6 +939,7 @@ struct SourceTreeFixed: View, SourceMenus {
             }
             .contextMenu {
                 exportMenu(.preparation)
+                resetPlayedButton(.preparation, marked: ui.marked)
                 OverviewMenuButton { store.tracks(for: .preparation) }
                 AnalysisMenuButtons { store.tracks(for: .preparation) }
                 CloudMenuButton(label: "Preparation") { store.tracks(for: .preparation) }
@@ -867,7 +950,7 @@ struct SourceTreeFixed: View, SourceMenus {
                     .contextMenu { exportMenu(.prepArchive(s)) }
             }
         } label: { row("▸", String(localized: "PREPARATION ARCHIV")) }
-        row("◷", "HISTORY").tag(BrowserSource.historyLive)
+        row("◷", "HISTORY").tag(BrowserSource.historyLive).helpInfo("tree.history")
             .favoriteDrag { BrowserFavorite.source(.historyLive, store: store) }
             .contextMenu { exportMenu(.historyLive) }
         DisclosureGroup {
@@ -910,6 +993,25 @@ extension SourceMenus {
     /// Tracks eines Knotens, Ordner mit allen Unterknoten
     func nodeTracks(_ n: PlaylistNode) -> [Track] {
         n.kind == .folder ? n.children.flatMap(nodeTracks) : store.tracks(for: .node(n))
+    }
+
+    /// Track-Schlüssel eines Baum-Eintrags (Ordner mit allen darunter) für „Reset Played State“
+    func treeKeys(_ src: BrowserSource) -> Set<String> {
+        switch src {
+        case .preparation: Set(store.preparation)
+        case let .own(r): Set(store.ownTracksDeep(r.id).map(\.key))
+        case let .node(n): Set(nodeTracks(n).map(\.key))
+        case let .folder(p): Set(store.folders.tracks(in: p, recursive: true, library: store).map(\.key))
+        default: Set(store.tracks(for: src).map(\.key))
+        }
+    }
+
+    /// „Reset Played State“ an einem Baum-Eintrag: sind mehrere markiert und dieser ist dabei, gilt es für alle markierten
+    @ViewBuilder func resetPlayedButton(_ src: BrowserSource, marked: Set<BrowserSource>) -> some View {
+        Button("Reset Played State") {
+            let srcs = marked.contains(src) ? marked : [src]
+            history.resetPlayed(keys: srcs.reduce(into: Set<String>()) { $0.formUnion(treeKeys($1)) })
+        }
     }
 
     func icon(_ n: PlaylistNode) -> String {
@@ -1012,7 +1114,7 @@ struct TrackTable: View {
                 inlineCtl.writeBack = { [decks] in decks.prefs.ui.writeCollection }
                 // Tag-Chip unter dem Klick, nur ganz sichtbare (abgeschnittene enden in „…“)
                 inlineCtl.chipAt = { [decks] t, x, width in
-                    let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: decks.prefs.ui.tagSeparators).tags
+                    let tags = BrowserPaneModel.tagIndex.entry(t.comment2, separators: decks.prefs.ui.tagSeparators).shown(groups: decks.prefs.ui.tagGroups).tags
                     return TagChipsText.spans(tags: tags, .of(decks.prefs.ui)).firstIndex { $0.contains(x) && $0.upperBound <= width }.map { tags[$0] }
                 }
                 inlineCtl.textTop = { [weak table] in table?.bandTop }

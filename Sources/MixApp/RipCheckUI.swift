@@ -232,6 +232,7 @@ struct RipDeckButton: View {
             DeckButton(title: "RIP", active: true, color: Theme.state) {
                 if NSEvent.modifierFlags.contains(.option) || !mix.markNextRip(d) { show.toggle() }
             }
+                .helpInfo("deck.rip")
                 .help("Rip-Prüfung: Befund am Anfang oder Ende als Bereich markieren (nichts wird geschnitten), ⌥-Klick: Befunde")
                 .popover(isPresented: $show, arrowEdge: .bottom) { RipFindingsView(track: t, mark: { [mix, d] in mix.markRip(d, $0) }) { show = false } }
         }

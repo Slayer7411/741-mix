@@ -95,6 +95,29 @@ struct LayoutProfile: Codable, Equatable, Identifiable {
     static let defaultSetupID = UUID(uuidString: "741D0000-0000-4000-8000-000000000001")!
     static let searchID = UUID(uuidString: "741D0000-0000-4000-8000-000000000002")!
     static let prepareID = UUID(uuidString: "741D0000-0000-4000-8000-000000000003")!
+    static let audioEditID = UUID(uuidString: "741D0000-0000-4000-8000-000000000004")!
+
+    /// „Audio-Edit“ (nur während des Modus, nicht in der Profilliste): ein Deck, unten der Editor (Werkzeuge, Wellenform)
+    /// und die Arbeitsliste, Deck = Kopf, Übersicht, Vorbereiten-Zeile, Hotcues
+    static func audioEdit(from ui: UIPrefs) -> LayoutProfile {
+        var p = LayoutProfile(name: String(localized: "Audio-Edit"), ui: ui)
+        p.id = audioEditID
+        p.deckCount = 1
+        p.showMixer = false
+        p.showFXUnits = false
+        var r = DeckRows()
+        r.comment = false; r.tags = false; r.phaseBar = false; r.transport = false
+        r.loop = false; r.jump = false; r.tempo = false; r.groove = false
+        r.hotcues = true; r.prepare = true
+        p.deckRows = r
+        p.showGridTools = false
+        p.browserHeight = 540
+        p.browserMaximized = false
+        p.hideTreeWithDecks = false
+        p.overviewHeight = max(ui.overviewHeight, 48)
+        p.statusBar = .always
+        return p
+    }
 
     /// „Vorbereiten“: ein Deck über die volle Breite, Browser groß, Deck = Kopf, Wellenform, Übersicht und eine
     /// Werkzeugzeile (Play, Grid, Schnitt, Amp, Join, Split, Render); das Deck geht dabei in den EDIT-Modus
@@ -319,8 +342,16 @@ struct LayoutProfileMenu: View {
             Button("Profil aktualisieren") { LayoutProfiles.update(mix: mix, browser: browser) }
                 .disabled(ui.activeProfile == nil)
         } label: {
-            if let title { Text(verbatim: title).font(Theme.label(11)) } else { Text("PROFIL").font(Theme.label(11)) }
+            // Chip wie DeckButton: aktives Profil in Versalien (DEFAULT SETUP *)
+            Text(verbatim: (title?.uppercased() ?? String(localized: "PROFIL")) + " ▾")
+                .font(Theme.label(10, .bold)).foregroundStyle(Theme.bone).lineLimit(1)
+                .padding(.horizontal, 6)
+                .frame(height: 18)
+                .background(Rectangle().fill(Theme.void))
+                .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("Ansichts-Profil (⌃⌥⌘1–4, ⌃⌥⇥ nächstes; * = Ansicht geändert)")
     }

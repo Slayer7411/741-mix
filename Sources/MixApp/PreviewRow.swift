@@ -9,10 +9,14 @@ enum PreviewRow {
     /// Mindesthöhe des Zelleninhalts zweizeilig; mit dem Rand der Tabelle ~34 pt je Zeile (Text ~17 pt + Band).
     /// Größere Schrift: Zeile wächst mit, das Band bleibt gleich hoch
     static func rowHeight(textSize: Double) -> CGFloat { 26 + max(0, CGFloat(textSize) - 12) * 1.5 }
-    /// Band: untere Hälfte (zweizeiliger Text: unter dem Textbereich, `top` pt ab Zeilenoberkante), 2 pt Luft unten
-    @MainActor static func band(in row: NSRect, top: CGFloat? = nil) -> NSRect {
+    /// Band: untere Hälfte (zweizeiliger Text: unter dem Textbereich, `top` pt ab Zeilenoberkante), 2 pt Luft unten.
+    /// `visible` = sichtbarer Ausschnitt der Tabelle (gleiche Koordinaten wie `row`): mit `.visible` nur dessen Breite
+    /// (Band bleibt beim Scrollen im Bild), mit `.row` die ganze Zeile
+    @MainActor static func band(in row: NSRect, visible: NSRect, span: PreviewBandSpan, top: CGFloat? = nil) -> NSRect {
+        var x0 = row.minX, x1 = row.maxX
+        if span == .visible { x0 = max(x0, visible.minX); x1 = min(x1, visible.maxX) }
         let y = top ?? row.height * 0.5
-        return NSRect(x: row.minX + 2.z, y: row.minY + y, width: row.width - 4.z, height: row.height - y - 2.z)
+        return NSRect(x: x0 + 2.z, y: row.minY + y, width: max(0, x1 - x0 - 4.z), height: row.height - y - 2.z)
     }
 }
 
@@ -29,6 +33,8 @@ final class PreviewRowController {
     var on = false { didSet { if on != oldValue { sync() } } }
     /// Deckkraft des Bandes (Prefs)
     var alpha: CGFloat = 1 { didSet { if alpha != oldValue { view?.needsDisplay = true } } }
+    /// Breite des Bandes (Prefs): sichtbare Breite der Tabelle oder ganze Zeile
+    var span: PreviewBandSpan = .visible { didSet { if span != oldValue { view?.needsDisplay = true } } }
     /// Vorhören: Track mit Strich im Band, Klick ins Band springt
     var previewKey: String? { didSet { if previewKey != oldValue { followPreview() } } }
     private var playheadTimer: Timer?
@@ -68,8 +74,15 @@ final class PreviewRowController {
                      nc.addObserver(forName: NSTableView.columnDidMoveNotification, object: tv, queue: .main, using: redraw)]
     }
 
+    /// Inhaltsbereich ohne den Spaltenkopf: ab macOS 26 läuft der Inhalt unter dem Kopf weiter, die Bänder sonst darüber
     private func place(_ v: NSView, _ scroll: NSScrollView) {
-        if v.frame != scroll.contentView.frame { v.frame = scroll.contentView.frame }
+        var f = scroll.contentView.frame
+        if let head = (v as? BandView)?.table?.headerView?.superview, head.superview === scroll, head.frame.intersects(f) {
+            let h = head.frame
+            f = scroll.isFlipped ? NSRect(x: f.minX, y: h.maxY, width: f.width, height: max(0, f.maxY - h.maxY))
+                                 : NSRect(x: f.minX, y: f.minY, width: f.width, height: max(0, h.minY - f.minY))
+        }
+        if v.frame != f { v.frame = f }
     }
 
     /// Strich 10 × je Sekunde nachführen, solange vorgehört wird (eine Ebene, nur ihr Rahmen)
@@ -88,7 +101,7 @@ final class PreviewRowController {
         guard on, let key = previewKey, let tv = inline?.table else { return nil }
         let range = tv.rows(in: tv.visibleRect), rows = rows()
         for r in range.location..<min(rows.count, range.location + range.length) where rows[r].key == key {
-            return v.convert(PreviewRow.band(in: tv.rect(ofRow: r), top: bandTop()), from: tv)
+            return v.convert(PreviewRow.band(in: tv.rect(ofRow: r), visible: tv.visibleRect, span: span, top: bandTop()), from: tv)
         }
         return nil
     }
@@ -131,6 +144,7 @@ final class PreviewRowController {
         override init(frame: NSRect) {
             super.init(frame: frame)
             wantsLayer = true
+            layer?.masksToBounds = true
             layerContentsRedrawPolicy = .onSetNeedsDisplay
             playhead.backgroundColor = NSColor(Theme.state).cgColor
             playhead.zPosition = 1
@@ -176,9 +190,9 @@ final class PreviewRowController {
             if let tv = table, let c = controller {
                 let range = tv.rows(in: tv.visibleRect)
                 let opacity = Float(c.alpha)
-                let rows = c.rows(), top = c.bandTop()
+                let rows = c.rows(), top = c.bandTop(), visible = tv.visibleRect
                 for r in range.location..<min(rows.count, range.location + range.length) {
-                    let rect = convert(PreviewRow.band(in: tv.rect(ofRow: r), top: top), from: tv)
+                    let rect = convert(PreviewRow.band(in: tv.rect(ofRow: r), visible: visible, span: c.span, top: top), from: tv)
                     guard rect.intersects(bounds), let img = c.image(rows[r]) else { continue }
                     if used == bands.count {
                         let l = CALayer()
@@ -232,6 +246,7 @@ struct PreviewRowHost: NSViewRepresentable {
         controller.mix = mix
         controller.on = on
         controller.alpha = CGFloat(mix.prefs.ui.previewBandAlpha)
+        controller.span = mix.prefs.ui.previewBandSpan
         controller.previewKey = previewKey
         // Tabelle entsteht erst nach diesem Durchlauf
         DispatchQueue.main.async { controller.refresh() }

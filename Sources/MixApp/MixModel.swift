@@ -65,6 +65,12 @@ struct ClockMirror: Equatable {
 final class MixModel {
     @ObservationIgnored let core = MixController()
     var engine: MixEngine { core.engine }
+    /// Auto-Mix (interner Mixer): Übergänge zwischen den Decks A und B, Anzeige im Mixer
+    @ObservationIgnored lazy var autoMix: AutoMixModel = {
+        let m = AutoMixModel()
+        m.mix = self
+        return m
+    }()
 
     /// Gespiegelter Zustand (ohne Sync-Nudge) – nicht beobachtet: Ansichten lesen nur die Teile, die sie zeigen
     /// (DeckMirror, FXMirror, clock, crossfader), sonst rendert jede Änderung alles neu, was `state` liest
@@ -92,8 +98,12 @@ final class MixModel {
     private(set) var harmonyBPM = 0.0
     /// Gruppen aus Kommentar 2 des Bezugs-Tracks (◆ PASST mit Gruppen)
     private(set) var harmonyTags = TagProfile()
+    /// weitere Bezugs-Decks (Kacheln über ◆ PASST, ab dem zweiten): ein Track muss auch zu ihnen passen
+    private(set) var harmonyExtra: [BrowserPaneModel.HarmonyExtra] = []
     /// Selbsttest-Bilder: fester Bezug statt der Decks
     @ObservationIgnored var harmonyFixed: HarmonyRef? { didSet { updateHarmony() } }
+    /// … und feste Tag-Gruppen dazu (Spalte „Tags ≈“)
+    @ObservationIgnored var harmonyFixedTags: String?
     var prefs = AppPrefs.load() {
         didSet {
             guard prefs != oldValue else { return }
@@ -216,10 +226,12 @@ final class MixModel {
         }
         if let c = core.pluginCatalog.crashedLastRun { print("[plugin] beim letzten Lauf abgestürzt beim Öffnen: \(c.name) -> blockiert") }
         FileServiceSetup.attach(core)
+        TagColors.wave = { [weak self] in self?.wavePreset.palette }
         BrowserPaneModel.harmonySource = { [weak self] in
             BrowserPaneModel.HarmonyInput(ref: self.flatMap { m in m.harmonyKey != nil || m.harmonyBPM > 0 ? HarmonyRef(key: m.harmonyKey, bpm: m.harmonyBPM) : nil },
                                           rule: self?.prefs.ui.match ?? MatchRule(),
-                                          tags: self.flatMap { $0.prefs.ui.match.groove != .off ? $0.harmonyTags : nil } ?? TagProfile())
+                                          tags: self.flatMap { $0.prefs.ui.match.groove != .off ? $0.harmonyTags : nil } ?? TagProfile(),
+                                          extra: self?.harmonyExtra ?? [])
         }
         loadSetup()
         for d in decks.indices { decks[d].editing = prefs.ui.editing(d) }
@@ -373,22 +385,35 @@ final class MixModel {
 
     /// Bezugs-Deck: spielender Master, sonst Fokus-Deck; Key = Track-Key um die hörbare Abweichung (gerundet) verschoben
     private func updateHarmony() {
-        var key: Int?, bpm = 0.0, tags = TagProfile()
+        var key: Int?, bpm = 0.0, tags = TagProfile(), extra: [BrowserPaneModel.HarmonyExtra] = []
+        let chosen = prefs.ui.matchDecks.filter { decks.indices.contains($0) && decks[$0].state.track != nil }
         if let f = harmonyFixed {
             key = f.key; bpm = f.bpm
+            if let s = harmonyFixedTags { tags = harmonyProfile(s) }
+        } else if !chosen.isEmpty {
+            // feste Decks: hörbarer Key und Tempo je Deck, das erste färbt Key- und Match-Spalte
+            let refs = chosen.map { d -> BrowserPaneModel.HarmonyExtra in
+                let t = decks[d].state.track!
+                return .init(ref: HarmonyRef(key: t.harmonyCode.map { Harmony.shifted($0, by: Int(keyDeviation(d).rounded())) },
+                                             bpm: (decks[d].state.bpm * 10).rounded() / 10),
+                             tags: harmonyProfile(t.comment2))
+            }
+            key = refs[0].ref.key; bpm = refs[0].ref.bpm; tags = refs[0].tags
+            extra = Array(refs.dropFirst())
         } else {
             let m = effectiveMaster.flatMap { decks[$0].state.playing ? $0 : nil }
             let d = m ?? focusedDeck
             if decks.indices.contains(d), let t = decks[d].state.track {
                 key = t.harmonyCode.map { Harmony.shifted($0, by: Int(keyDeviation(d).rounded())) }
                 bpm = m != nil || state.clockMaster ? state.masterTempo : decks[d].state.bpm
-                if prefs.ui.match.groove != .off { tags = harmonyProfile(t.comment2) }
+                tags = harmonyProfile(t.comment2)
             }
         }
         bpm = (bpm * 10).rounded() / 10
         if key != harmonyKey { harmonyKey = key }
         if bpm != harmonyBPM { harmonyBPM = bpm }
         if tags != harmonyTags { harmonyTags = tags }
+        if extra != harmonyExtra { harmonyExtra = extra }
     }
 
     /// Gruppen-Profil je Kommentar-2-Text (läuft mit jedem Abgleich, neu nur bei anderem Text)
@@ -407,6 +432,14 @@ final class MixModel {
         guard let g = decks[d].state.grid, g.bpm > 0 else { return nil }
         return PhraseCode(deckBeat: g.beatPosition(at: position(d)), sessionBeat: core.sessionBeat,
                           phraseBars: max(4, prefs.ui.phraseBeats) / 4)
+    }
+
+    /// Deck für die Marke „andere Decks“ in der Wellenform (je Bild gelesen): nil ohne Track oder Grid
+    func peerDeck(_ e: Int) -> WaveformPeer? {
+        guard decks.indices.contains(e) else { return nil }
+        let s = decks[e].state
+        guard s.track != nil, let g = s.grid, g.bpm > 0 else { return nil }
+        return WaveformPeer(grid: g, position: position(e), speed: playSpeed(e), playing: s.playing)
     }
 
     // MARK: - Befehle (weitergeleitet an den Kern)
@@ -663,6 +696,10 @@ final class MixModel {
         pull()
     }
     func bend(_ d: Int, _ v: Double) { run { core.bend(d, v) } }
+    /// Wellenform greifen: ohne `run` (kein Abgleich je Mausereignis), der Steuertakt holt den Stand nach
+    func grabBend(_ d: Int, _ v: Double) { core.bend(d, v) }
+    func grab(_ d: Int, _ on: Bool) { core.grab(d, on) }
+    func scratch(_ d: Int, to seconds: Double, held: Bool) { core.scratch(d, to: seconds, held: held) }
     func updateDeck(_ d: Int, _ f: (inout DeckState) -> Void) { run { core.updateDeck(d, f) } }
     func setCrossfader(_ v: Double) { run { core.setCrossfader(v) } }
     func updateFX(_ u: Int, _ f: (inout FXUnitState) -> Void) { run { core.updateFX(u, f) } }
@@ -748,6 +785,8 @@ final class MixModel {
     }
     /// MAIN wirkt nur im internen Modus oder mit „Main-Volume wirkt auch extern“ (sonst setzt der Kern 1)
     var masterVolumeActive: Bool { mixerMode == .internalMixer || prefs.engine.masterVolumeExternal }
+    /// EQ-Regler wirken und sind sichtbar: intern immer, extern nur mit „EQ im externen Modus“
+    var eqVisible: Bool { mixerMode == .internalMixer || prefs.engine.eqExternal }
     func toggleQuantize() { prefs.engine.quantize.toggle() }
     func toggleSnap() { prefs.engine.snap.toggle() }
     func setClockMaster(_ on: Bool) { run { core.setClockMaster(on) } }

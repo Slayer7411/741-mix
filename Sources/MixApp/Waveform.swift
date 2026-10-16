@@ -445,7 +445,7 @@ struct WaveformView: View {
             waveID: wf.map { ObjectIdentifier($0) }, duration: deck.duration, grid: deck.grid, span: ui.waveformSeconds,
             showGrid: ui.showBeatgrid, colorful: ui.colorfulGrid, phraseBeats: ui.phraseBeats, barNumbers: ui.showBarNumbers, barMarkers: ui.barMarkers,
             boldLines: ui.gridLineWeight == .bold,
-            dimPlayed: ui.dimPlayed,
+            dimPlayed: ui.dimPlayed, peerMarks: ui.peerMarks,
             cues: deck.hotcues.values.sorted { $0.hotcue < $1.hotcue }.map {
                 WaveScene.Mark(t: $0.startMs / 1000, number: $0.hotcue + 1, color: NSColor(Theme.cueColor($0, deck: deck, prefs: mix.prefs)),
                                activeEnd: deck.activeLoops.contains($0.hotcue) ? ($0.startMs + $0.lengthMs) / 1000 : nil)
@@ -454,6 +454,7 @@ struct WaveformView: View {
             trim: .init(start: deck.trim.start, end: deck.trim.end, editing: mix.editing(d) && !(mix.decks[d].edit?.previewing ?? false)),
             range: mix.rangeMarked(d, grid: deck.grid), edit: mix.editing(d) ? mix.decks[d].edit : nil)
         Content(d: d, scene: scene, wave: wf, waiting: deck.track != nil && wf == nil).equatable()
+            .overlay(alignment: .bottomTrailing) { WaveZoomButtons().padding(3.z) }
     }
 
     /// Griff des Schnitts unter x (0 = Anfang, 1 = Ende), nur im EDIT-Modus; Abstand höchstens 8 pt
@@ -476,7 +477,8 @@ struct WaveformView: View {
 
         var body: some View {
             WaveLayerView(scene: scene, wave: wave, position: { [mix, d] in mix.position(d) }, speed: { [mix, d] in mix.playSpeed(d) },
-                          loop: { [mix, d] in mix.engine.loop(d) }, autoLoop: { [mix, d] in mix.deck(d).autoLoop })
+                          loop: { [mix, d] in mix.engine.loop(d) }, autoLoop: { [mix, d] in mix.deck(d).autoLoop },
+                          peer: { [mix, d] e in e == d ? nil : mix.peerDeck(e) })
                 .overlay {
                     if waiting {
                         Text("Wellenform wird berechnet …").font(Theme.mono(10.z)).foregroundStyle(.secondary).allowsHitTesting(false)
@@ -516,13 +518,23 @@ final class WaveMouseView: NSView {
     var scene = WaveScene()
 
     /// Scrub (letztes x), Griff des Schnitts, Bereich vom festen Rand aus (`fresh` = neu markiert, nicht nachgezogen),
-    /// Naht der Schnittliste
-    private enum Drag { case scrub(CGFloat), trim(end: Bool), mark(anchor: Double, fresh: Bool), joint(Int) }
+    /// Naht der Schnittliste, Wellenform greifen (Stand in `grab…`)
+    private enum Drag { case scrub(CGFloat), trim(end: Bool), mark(anchor: Double, fresh: Bool), joint(Int), grab }
     private var drag: Drag?
     private var downX: CGFloat = 0
     private var moved = false
-    private var resizeCursor = false
+    /// Zeiger: Pfeil, Horizontal-Doppelpfeil (Rand, Naht, Griff des Schnitts), offene Hand (greifbar), geschlossene Hand
+    private enum Pointer { case arrow, resize, open, closed }
+    private var pointer = Pointer.arrow
     private var tracking: NSTrackingArea?
+    /// Greifen: letztes x, Ziel der Hand in Sekunden (Vinyl; nil bis zur ersten Bewegung), geglättete Vorwärts-Geschwindigkeit
+    /// (Jog), Zeit des letzten Zugs, ob der Bend des Decks an ist, Zeitgeber, der den Bend nach dem Stillstand auslaufen lässt
+    private var grabLast: CGFloat = 0
+    private var grabTarget: Double?
+    private var grabSpeed = 0.0
+    private var grabStamp: TimeInterval = 0
+    private var grabBending = false
+    private var grabTimer: Timer?
     /// Klick im EDIT-Modus: Marke erst nach der Doppelklick-Zeit (ein Doppelklick wählt stattdessen das Stück)
     private var pendingMark: DispatchWorkItem?
 
@@ -552,6 +564,13 @@ final class WaveMouseView: NSView {
         return b < a
     }
 
+    /// Greifen der Wellenform: Einstellung an, Deck mit Track, nicht im EDIT-Modus, ohne Taste (⌃ / ⌥ und die übrigen
+    /// behalten ihre Bedeutung)
+    private func grabbable(_ e: NSEvent, _ mix: MixModel) -> Bool {
+        mix.prefs.ui.waveGrab != .off && !mix.editing(d) && scene.hasTrack && scene.duration > 0
+            && e.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
+    }
+
     /// Naht der Schnittliste unter x, höchstens 6 pt entfernt
     private func joint(at x: CGFloat, _ mix: MixModel) -> Int? {
         guard let e = scene.edit, !e.joints.isEmpty else { return nil }
@@ -568,6 +587,8 @@ final class WaveMouseView: NSView {
         moved = false
         pendingMark?.cancel()
         pendingMark = nil
+        grabTimer?.invalidate()
+        grabTimer = nil
         guard scene.hasTrack, scene.duration > 0, bounds.width > 0 else { drag = nil; return }
         if editing, e.clickCount == 2 {
             mix.editSelectSegment(d, at: time(x, mix))
@@ -583,9 +604,55 @@ final class WaveMouseView: NSView {
             drag = .trim(end: h == 1)
         } else if editing || e.modifierFlags.contains(.control) {
             drag = .mark(anchor: snap(time(x, mix), e), fresh: true)
+        } else if grabbable(e, mix) {
+            drag = .grab
+            grabLast = x
+            grabTarget = nil
+            grabSpeed = 0
+            grabBending = false
+            grabStamp = ProcessInfo.processInfo.systemUptime
+            pointer = .closed
+            NSCursor.closedHand.set()
+            if mix.prefs.ui.waveGrab == .jog {
+                grabTimer = Timer.scheduledTimer(timeInterval: 1.0 / 30, target: self, selector: #selector(grabIdle), userInfo: nil, repeats: true)
+            }
         } else {
             drag = .scrub(x)
         }
+    }
+
+    /// Greifen: ein Zug um das letzte x. Vinyl: die Hand legt das Ziel fest, der Kern läuft nach (Scratch), im Stopp auch.
+    /// Jog: läuft das Deck, Pitch-Bend nach der Hand-Geschwindigkeit; steht es, suchen wie bisher.
+    private func grabMove(_ x: CGFloat, _ mix: MixModel) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let dragPx = Double(x - grabLast), dt = now - grabStamp
+        grabLast = x
+        grabStamp = now
+        let w = Double(bounds.width)
+        switch mix.prefs.ui.waveGrab {
+        case .vinyl:
+            let t = (grabTarget ?? mix.position(d)) + WaveGrabMath.seconds(dragPx: dragPx, span: scene.span, width: w)
+            grabTarget = t
+            mix.scratch(d, to: t, held: true)
+        case .jog where mix.deck(d).playing:
+            grabSpeed = 0.5 * grabSpeed + 0.5 * WaveGrabMath.speed(dragPx: dragPx, dt: dt, span: scene.span, width: w)
+            if !grabBending { grabBending = true; mix.grab(d, true) }
+            mix.grabBend(d, WaveGrabMath.bend(speed: grabSpeed))
+        default:
+            if grabBending { grabBending = false; mix.grabBend(d, 0); mix.grab(d, false) }
+            // eigenes Ziel wie bei Vinyl: die gemeldete Position hängt beim Suchen nach, Schritte darauf summierten den Fehler
+            let t = (grabTarget ?? mix.position(d)) + WaveGrabMath.seconds(dragPx: dragPx, span: scene.span, width: w)
+            grabTarget = t
+            mix.scrub(d, seconds: t)
+        }
+    }
+
+    /// Hand steht still: der Bend läuft aus (ohne neuen Zug bliebe der letzte Wert stehen)
+    @objc private func grabIdle() {
+        guard grabBending, let mix, ProcessInfo.processInfo.systemUptime - grabStamp > 0.05 else { return }
+        grabSpeed *= 0.5
+        if abs(grabSpeed) < 0.01 { grabSpeed = 0 }
+        mix.grabBend(d, WaveGrabMath.bend(speed: grabSpeed))
     }
 
     override func mouseDragged(with e: NSEvent) {
@@ -605,12 +672,16 @@ final class WaveMouseView: NSView {
             mix.setRange(d, abs(t - anchor) < 1e-6 ? nil : TrackRange(anchor, t))
         case let .joint(k):
             mix.editShowJoint(d, k, at: snapBeat(time(x, mix), e))
+        case .grab:
+            grabMove(x, mix)
         }
     }
 
     override func mouseUp(with e: NSEvent) {
         guard let mix else { return }
         defer { drag = nil }
+        grabTimer?.invalidate()
+        grabTimer = nil
         switch drag {
         case let .mark(_, fresh) where fresh && !moved:
             if editing {
@@ -632,10 +703,15 @@ final class WaveMouseView: NSView {
             }
         case let .joint(k):
             if moved { mix.editMoveJoint(d, k, to: snapBeat(time(point(e), mix), e)) }
-        case .scrub where !moved:
+        case .scrub where !moved, .grab where !moved:
             if let r = mix.range(d), !(r.start...r.end).contains(time(point(e), mix)) { mix.setRange(d, nil) }   // Klick daneben
+        case .grab:
+            // losgelassen: der Kern läuft aufs Ziel aus (Vinyl) bzw. der Bend läuft aus (Jog)
+            if let t = grabTarget { mix.scratch(d, to: t, held: false) }
+            if grabBending { grabBending = false; mix.grabBend(d, 0); mix.grab(d, false) }
         default: break
         }
+        updatePointer(e)
     }
 
     /// Wartezeit vor einer Marke (Doppelklick-Zeit des Systems, höchstens 0,35 s)
@@ -669,7 +745,7 @@ final class WaveMouseView: NSView {
         return WaveRangeMenu.make(mix: mix, d: d, label: mix.rangeMarked(d, grid: scene.grid)?.label ?? "")
     }
 
-    // Zeiger: über einem Rand des Bereichs, einer Naht oder einem Griff des Schnitts ↔
+    // Zeiger: über einem Rand des Bereichs, einer Naht oder einem Griff des Schnitts ↔, sonst offene Hand, wo sich greifen lässt
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let t = tracking { removeTrackingArea(t) }
@@ -678,18 +754,26 @@ final class WaveMouseView: NSView {
         tracking = t
     }
 
-    override func mouseMoved(with e: NSEvent) {
+    override func mouseMoved(with e: NSEvent) { updatePointer(e) }
+
+    private func updatePointer(_ e: NSEvent) {
         guard let mix else { return }
         let x = point(e)
-        let on = edge(at: x, mix) != nil || joint(at: x, mix) != nil
+        let resize = edge(at: x, mix) != nil || joint(at: x, mix) != nil
             || WaveformView.trimHandle(at: x, width: bounds.width, scene: scene, position: mix.position(d)) != nil
-        guard on != resizeCursor else { return }
-        resizeCursor = on
-        (on ? NSCursor.resizeLeftRight : NSCursor.arrow).set()
+        let p: Pointer = resize ? .resize : grabbable(e, mix) ? .open : .arrow
+        guard p != pointer else { return }
+        pointer = p
+        switch p {
+        case .arrow: NSCursor.arrow.set()
+        case .resize: NSCursor.resizeLeftRight.set()
+        case .open: NSCursor.openHand.set()
+        case .closed: NSCursor.closedHand.set()
+        }
     }
 
     override func mouseExited(with e: NSEvent) {
-        if resizeCursor { resizeCursor = false; NSCursor.arrow.set() }
+        if pointer != .arrow { pointer = .arrow; NSCursor.arrow.set() }
     }
 }
 
@@ -941,5 +1025,39 @@ struct OverviewView: View {
                     .onEnded { _ in handle = nil })
             }
         }
+    }
+}
+
+/// − / + unten rechts in der Wellenform: sichtbare Sekunden je Seite in festen Stufen (alle Decks gleich,
+/// Beat-Abstände bleiben zwischen den Decks vergleichbar)
+struct WaveZoomButtons: View {
+    @Environment(MixModel.self) private var mix
+    static let steps: [Double] = [1, 1.5, 2, 3, 4, 6, 8, 12, 16]
+
+    /// nächste Stufe: rein = weniger Sekunden, raus = mehr
+    static func next(_ cur: Double, zoomIn: Bool) -> Double {
+        zoomIn ? steps.last { $0 < cur - 1e-9 } ?? steps[0] : steps.first { $0 > cur + 1e-9 } ?? steps[steps.count - 1]
+    }
+
+    var body: some View {
+        let cur = mix.prefs.ui.waveformSeconds
+        HStack(spacing: 1.z) {
+            cell("−", enabled: cur < Self.steps.last! - 1e-9) { mix.prefs.ui.waveformSeconds = Self.next(cur, zoomIn: false) }
+                .help("Wellenform verkleinern (mehr Sekunden)")
+            cell("+", enabled: cur > Self.steps[0] + 1e-9) { mix.prefs.ui.waveformSeconds = Self.next(cur, zoomIn: true) }
+                .help("Wellenform vergrößern (weniger Sekunden)")
+        }
+    }
+
+    private func cell(_ t: String, enabled: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(verbatim: t).font(Theme.mono(11.z, .semibold))
+                .frame(width: 14.z, height: 13.z)
+                .foregroundStyle(enabled ? Theme.bone : Theme.muted)
+                .background(Theme.void.opacity(0.75))
+                .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
     }
 }

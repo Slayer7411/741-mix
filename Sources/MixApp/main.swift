@@ -26,10 +26,13 @@ struct ContentView: View {
     /// Höhe der Deck-Fläche vor dem Zuklappen – ohne Beobachtung, Messen löst kein neues Layout aus
     private final class Height { var value: CGFloat = 0 }
     @State private var deckAreaHeight = Height()
+    /// Browser-Höhe während des Ziehens am Trenner; gespeichert wird sie erst beim Loslassen
+    @State private var dragHeight: Double?
     @State private var donate = false
 
     var body: some View {
         VStack(spacing: 0) {
+            PhraseLine()   // Phrasen-Fortschritt direkt unter der Werkzeugleiste
             // Decks oben, Browser unten – Trenner verschiebbar. Browser groß: Decks nur zusammengeklappt,
             // nicht neu aufgebaut (sonst dauert das Umschalten mit 14k Zeilen spürbar). Zugeklappt behalten sie
             // ihre letzte Höhe: kein neues Deck-Layout, keine neuen Wellenform-Kacheln
@@ -43,10 +46,12 @@ struct ContentView: View {
                 .clipped()
                 .layoutPriority(big ? 0 : 1)
             if !big {
-                SplitHandle(height: Binding(get: { mix.prefs.ui.browserHeight }, set: { mix.prefs.ui.browserHeight = $0 }), snap: snapBrowserHeight)
+                SplitHandle(height: Binding(get: { dragHeight ?? mix.prefs.ui.browserHeight }, set: { dragHeight = $0 }),
+                            snap: snapBrowserHeight, onEnd: endSplitDrag)
+                    .onDisappear { endSplitDrag() }   // Browser groß mitten im Ziehen: Höhe trotzdem speichern
             }
             browsers
-                .frame(height: big ? nil : mix.prefs.ui.browserHeight.z)
+                .frame(height: big ? nil : (dragHeight ?? mix.prefs.ui.browserHeight).z)
                 .frame(maxHeight: big ? .infinity : nil)
                 .layoutPriority(big ? 1 : 0)
             if mix.prefs.ui.statusBar == .always { statusBar }
@@ -57,32 +62,13 @@ struct ContentView: View {
         .tint(Theme.state)
         .preferredColorScheme(.dark)
         .toolbar {
-            ToolbarItem(placement: .navigation) { LayoutProfileMenu() }
-            ToolbarItemGroup {
-                Toggle(isOn: Binding(get: { mix.prefs.ui.showMixer }, set: { mix.prefs.ui.showMixer = $0 })) {
-                    Text("MIXER").font(Theme.label(11))
-                }
-                .help("Internen Mixer ein-/ausblenden")
-                Picker("Decks", selection: Binding(get: { mix.prefs.ui.deckCount }, set: { mix.prefs.ui.deckCount = $0 })) {
-                    ForEach([1, 2, 4], id: \.self) { Text(verbatim: "\($0)").tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .help("Sichtbare Decks: 1 / 2 / 4")
-                Picker("Browser", selection: Binding(get: { mix.prefs.ui.browserLayout }, set: { mix.prefs.ui.browserLayout = $0 })) {
-                    ForEach(BrowserLayout.allCases) { Text($0.icon).help($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .help("Browser-Anordnung")
-                Toggle(isOn: Binding(get: { !browserState.maximized }, set: { browserState.maximized = !$0 })) {
-                    Text("DECKS").font(Theme.label(11))
-                }
-                    .help("Decks ein-/ausblenden (Browser groß)")
-                Button { store.load(store.sourceURL ?? LibraryStore.defaultNML) } label: {
-                    Text("↻")
-                }
-                .help("Collection neu laden")
-            }
+            // Marke + Profil links, Statuszeile in der Mitte, Schalter rechts (WindowBar.swift)
+            ToolbarItem(placement: .navigation) { WindowBrand() }.flat()
+            ToolbarItem(placement: .principal) { WindowStatus() }.flat()
+            ToolbarItem(placement: .primaryAction) { WindowSwitches() }.flat()
         }
+        .toolbar(removing: .title)   // Titel steht als ◆ MINOS-741 + Version in der Leiste (Fenstertitel bleibt)
+        .toolbarBackground(Theme.void, for: .windowToolbar)
         .windowToolbarFullScreenVisibility(.onHover)
         .background(MainWindowHook())
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification)) { n in
@@ -110,6 +96,7 @@ struct ContentView: View {
                 if l.contains("nobrowser") { mix.prefs.ui.browserLayout = .single; mix.prefs.ui.browserHeight = 120 }
             }
             mix.library = store   // Schneiden trägt neue Dateien in CUTS ein
+            AudioEditMode.shared.attach(mix: mix, browser: browserState)
             RipChecks.shared.mix = mix
             RipChecks.shared.library = store
             SelfTest.run(store: store, mix: mix, browser: browserState)
@@ -141,11 +128,19 @@ struct ContentView: View {
         return BrowserSnap.height(h, chrome: chrome, row: TableStyle.rowHeight(ui, twoText: m.twoText(ui)) / 1.z)
     }
 
-    /// Ziehbarer Trenner zwischen Decks und Browser; Höhe wird gespeichert, `snap` rundet sie beim Ziehen. Sichtbar 3 pt
-    /// (Linie + 1 pt Luft), greifbar 9 pt: die Griff-Fläche ragt nach oben in den Deck-Rand (unten gewinnt der Browser)
+    /// Ende des Ziehens am Trenner: Höhe speichern (einmal, nicht bei jeder Bewegung)
+    private func endSplitDrag() {
+        guard let h = dragHeight else { return }
+        mix.prefs.ui.browserHeight = h
+        dragHeight = nil
+    }
+
+    /// Ziehbarer Trenner zwischen Decks und Browser; `snap` rundet die Höhe beim Ziehen, `onEnd` beim Loslassen.
+    /// Sichtbar 3 pt (Linie + 1 pt Luft), greifbar 9 pt: die Griff-Fläche ragt nach oben in den Deck-Rand (unten gewinnt der Browser)
     struct SplitHandle: View {
         @Binding var height: Double
         var snap: (Double) -> Double = { $0 }
+        var onEnd: () -> Void = {}
         @State private var start: Double?
         var body: some View {
             Rectangle().fill(Theme.hairline).frame(height: 1)
@@ -153,13 +148,17 @@ struct ContentView: View {
                 .overlay {
                     Color.clear.frame(height: 9.z)
                         .contentShape(Rectangle())
+                        .background(UITestMark(name: "split handle"))
                         .onHover { inside in if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
-                        .gesture(DragGesture(minimumDistance: 1)
+                        // Fensterkoordinaten: der Griff wandert mit der Höhe, lokal gemessen würde die Verschiebung gegen die
+                        // Bewegung zurückgedreht (Zittern). Höhe = Starthöhe − Verschiebung seit dem Griff
+                        .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                             .onChanged { g in
-                                if start == nil { start = height }
-                                height = snap(max(120, min(900, (start ?? height) - g.translation.height / 1.z)))
+                                let s = start ?? height
+                                start = s
+                                height = BrowserDrag.height(start: s, translation: g.translation.height / 1.z, snap: snap)
                             }
-                            .onEnded { _ in start = nil })
+                            .onEnded { _ in start = nil; onEnd() })
                 }
         }
     }
@@ -196,19 +195,24 @@ struct ContentView: View {
         .padding(.bottom, gap)
     }
 
+    /// Audio-Edit: Arbeitsliste und Vorschläge statt der Browser-Bereiche
     @ViewBuilder private var browsers: some View {
-        switch layout {
-        case .single:
-            BrowserPane(model: paneA)
-        case .sideBySide:
-            HSplitView {
+        if AudioEditMode.shared.active {
+            AudioEditArea()
+        } else {
+            switch layout {
+            case .single:
                 BrowserPane(model: paneA)
-                BrowserPane(model: paneB)
-            }
-        case .stacked:
-            VSplitView {
-                BrowserPane(model: paneA)
-                BrowserPane(model: paneB)
+            case .sideBySide:
+                HSplitView {
+                    BrowserPane(model: paneA)
+                    BrowserPane(model: paneB)
+                }
+            case .stacked:
+                VSplitView {
+                    BrowserPane(model: paneA)
+                    BrowserPane(model: paneB)
+                }
             }
         }
     }
@@ -254,6 +258,14 @@ struct MixApp: App {
     @State private var history = HistoryStore()
     @State private var controller: ControllerManager?
     @State private var sessionTimer: Timer?
+
+    /// Version und Build für die Marke in der Leiste („0.8.1 · db052b1“), gleiche Quelle wie der Fenstertitel
+    static var versionLine: String {
+        let info = Bundle.main.infoDictionary
+        guard let v = info?["CFBundleShortVersionString"] as? String else { return "dev" }
+        let b = info?["CFBundleVersion"] as? String ?? ""
+        return b.isEmpty || b == v ? v : "\(v) · \(b)"
+    }
 
     static var appTitle: String {
         let info = Bundle.main.infoDictionary
@@ -315,8 +327,14 @@ struct MixApp: App {
                     .shortcut(keys.combo(.redo)).disabled(u.redoLabel == nil)
             }
             CommandGroup(before: .toolbar) {
+                Toggle(String(localized: "Hilfe-Modus"), isOn: Binding(get: { HelpMode.shared.enabled }, set: { HelpMode.shared.enabled = $0 }))
+                Divider()
                 Toggle("Mixer", isOn: Binding(get: { mix.prefs.ui.showMixer }, set: { mix.prefs.ui.showMixer = $0 }))
                     .shortcut(keys.combo(.toggleMixer))
+                Toggle("AUTO-MIX", isOn: Binding(get: { mix.autoMix.isOn }, set: { on in
+                    if on { mix.autoMix.startFromPanes() } else { mix.autoMix.stop(String(localized: "Auto-Mix aus")) }
+                }))
+                .disabled(mix.mixerMode != .internalMixer)
                 Picker("Decks", selection: Binding(get: { mix.prefs.ui.deckCount }, set: { mix.prefs.ui.deckCount = $0 })) {
                     Text("1 Deck").tag(1)
                     Text("2 Decks").tag(2)
@@ -352,6 +370,8 @@ struct MixApp: App {
                     Button("Profil löschen …") { LayoutProfiles.deleteAsking(mix: mix) }
                         .disabled(ui.activeProfile == nil)
                 }
+                Button(ShortcutID.audioEdit.title) { run(.audioEdit) }
+                    .shortcut(keys.combo(.audioEdit))
                 Divider()
                 ForEach([ShortcutID.zoomIn, .zoomOut, .zoomReset]) { a in
                     Button(a.title) { run(a) }.shortcut(keys.combo(a))
@@ -433,6 +453,9 @@ extension MixApp {
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
         history.start(store: store, mix: mix)
         store.history = history
+        mix.autoMix.store = store
+        mix.autoMix.history = history
+        mix.autoMix.browser = browser
         appDelegate.onQuit = { [mix, browser, history] in
             mix.recorder.stopNow()   // laufende Aufnahme sauber schließen (Tracklist dabei)
             Session.saveNow(mix: mix, browser: browser)
@@ -553,6 +576,14 @@ enum BrowserSnap {
         guard row > 0, h > chrome else { return h }
         let rows = max(1, ((h - chrome) / row).rounded())
         return chrome + rows * row
+    }
+}
+
+/// Browser-Höhe beim Ziehen am Trenner: nur Starthöhe und Verschiebung seit dem Griff (unskaliert), nie die laufende Höhe.
+/// Damit ist jede Verschiebung genau einer Höhe zugeordnet – das Einrasten wirkt nicht gegen die Bewegung
+enum BrowserDrag {
+    static func height(start: Double, translation: Double, snap: (Double) -> Double) -> Double {
+        snap(max(120, min(900, start - translation)))
     }
 }
 
