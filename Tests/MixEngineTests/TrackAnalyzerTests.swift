@@ -61,12 +61,13 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
     return abs(d - d.rounded()) * beat * 1000
 }
 
-/// Klick-Track 127,3 BPM, erster Schlag bei 0,350 s: Tempo ±0,05 BPM, Anker ±5 ms auf dem Beat, Anker ≥ 0
+/// Klick-Track 127,3 BPM, erster Schlag bei 0,350 s: Tempo ±0,05 BPM, Anker ±12 ms auf dem Beat, Anker ≥ 0
+/// (`kickLead` ist auf echte Kicks gemessen; der Klick hier hat keinen Anstieg und liegt ~9 ms früher)
 @Test func analyzerFindsTempoAndGrid() throws {
     let bpm = 127.3, offset = 0.35
     let r = try analyze(clickTrack(bpm: bpm, offset: offset, seconds: 90))
     #expect(abs(r.bpm - bpm) < 0.05, "bpm \(r.bpm)")
-    #expect(gridError(r.anchor, offset: offset, bpm: bpm) < 5, "anchor \(r.anchor)")
+    #expect(gridError(r.anchor, offset: offset, bpm: bpm) < 12, "anchor \(r.anchor)")
     #expect(r.anchor >= 0 && r.anchor < 32 * 60 / bpm + offset + 0.01)
     #expect(r.tempoConfidence > 0.2)
     #expect(abs(r.duration - 90) < 0.01)
@@ -77,7 +78,7 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
     let bpm = 140.0, offset = 1.234
     let r = try analyze(clickTrack(bpm: bpm, offset: offset, seconds: 90, rate: 48000), rate: 48000)
     #expect(abs(r.bpm - bpm) < 0.05, "bpm \(r.bpm)")
-    #expect(gridError(r.anchor, offset: offset, bpm: bpm) < 5, "anchor \(r.anchor)")
+    #expect(gridError(r.anchor, offset: offset, bpm: bpm) < 12, "anchor \(r.anchor)")
 }
 
 /// Oktave aus der Einstellung: 96 BPM bleibt in 80–160 bei 96, in 100–200 wird es 192; 127,3 in 60–120 -> 63,65
@@ -86,7 +87,7 @@ private func gridError(_ anchor: Double, offset: Double, bpm: Double) -> Double 
     let s = clickTrack(bpm: bpm, offset: offset, seconds: 90)
     let r = try analyze(s, octave: 80...160)
     #expect(abs(r.bpm - bpm) < 0.05, "bpm \(r.bpm)")
-    #expect(gridError(r.anchor, offset: offset, bpm: bpm) < 5, "anchor \(r.anchor)")
+    #expect(gridError(r.anchor, offset: offset, bpm: bpm) < 12, "anchor \(r.anchor)")
     let d = try analyze(s)
     #expect(abs(d.bpm - 2 * bpm) < 0.1, "bpm \(d.bpm)")
     let h = try analyze(clickTrack(bpm: 127.3, offset: 0.2, seconds: 60), octave: 60...120)

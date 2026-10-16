@@ -67,6 +67,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * browser big / decks toggle: 0.1 s ease-out on the heights, the decks stay in place (bench `toggle`, median 60 -> 11 ms to big, 68 -> 13 ms back)
 
 ### fixed
+* analysis grid: anchor on the kick (bass × rest onset with ±10 ms tolerance plus the measured window lead) instead of a ±40 ms fine search that often caught a hat or bass note one 8th / 16th next to the kick. against set collection grids (155 tracks): 16th errors 14 -> 3
 * browser preview: loose files (MUSIC FOLDERS, EXPLORER) get waveform, grid and cues in visible rows (were skipped, analysed tracks stayed empty)
 * decks: edit mode switched on by the prepare row or AUDIO-EDIT was saved and stuck after a restart (cut row instead of loop sizes, grid row, no edit button in a view without the transport row). borrowed edit mode is no longer saved; deck right click `EDIT-Modus beenden`
 * audio: a usb interface plugged into another usb port was not found (its uid carries the port position) -> minos fell back to the default output on start or kept waiting. same device (all uid parts but the position, exactly one match) is taken, its new uid stored, status line note
