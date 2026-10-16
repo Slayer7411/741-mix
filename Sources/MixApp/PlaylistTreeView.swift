@@ -101,7 +101,7 @@ struct PlaylistsSection: View, SourceMenus {
                     }
             }
         } label: {
-            row("▸", "PLAYLISTS")
+            row("▸", "PLAYLISTS").helpInfo("tree.playlists")
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .background(ui.rootTargeted ? Theme.chitinRaised : .clear)

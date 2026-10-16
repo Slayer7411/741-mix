@@ -427,6 +427,7 @@ private struct SlotRow: View {
             Divider()
             Button("Slot entfernen") { mix.removeSlot(b, slot: k) }
         }
+        .helpInfo("fx.slot")
         .draggable("minos-slot:\(b):\(k)")
         .dropDestination(for: String.self) { items, _ in
             guard let s = items.first, s.hasPrefix("minos-slot:") else { return false }

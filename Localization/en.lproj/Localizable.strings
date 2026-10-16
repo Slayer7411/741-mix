@@ -75,6 +75,11 @@
 "History zusätzlich in den History-Ordner der Collection schreiben" = "Also write history into the collection's history folder";
 "Hotcue-Sprung hält die Beat-Phase" = "Hotcue jump keeps the beat phase";
 "Im Finder zeigen" = "Show in Finder";
+"Alle auswählen" = "Select all";
+"Hilfe-Modus" = "Help mode";
+"Artist – Titel kopieren" = "Copy artist – title";
+"Nach Artist suchen" = "Search for artist";
+"Nach Label suchen" = "Search for label";
 "In Deck %@ laden" = "Load into deck %@";
 "Intern – Mixer in MINOS-741" = "Internal – mixer in MINOS-741";
 "Intern" = "Internal";

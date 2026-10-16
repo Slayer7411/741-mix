@@ -552,7 +552,7 @@ struct PaneHeader: View {
     }
 
     private var tagsButton: some View {
-        DeckButton(title: "TAGS ▾", active: showTags) { showTags.toggle() }
+        DeckButton(title: "TAGS ▾", active: showTags) { showTags.toggle() }.helpInfo("browser.tags")
             .popover(isPresented: $showTags, arrowEdge: .bottom) {
                 TagPicker(model: model, separators: decks.prefs.ui.tagSeparators)
             }
@@ -605,7 +605,7 @@ struct UnplayedChip: View {
     @Environment(MixModel.self) private var mix
 
     var body: some View {
-        DeckButton(title: "UNGESPIELT", active: mix.prefs.ui.hidePlayedTracks) { mix.prefs.ui.hidePlayedTracks.toggle() }
+        DeckButton(title: "UNGESPIELT", active: mix.prefs.ui.hidePlayedTracks) { mix.prefs.ui.hidePlayedTracks.toggle() }.helpInfo("browser.played")
             .help("Gespielte Tracks ausblenden: Collection, Playlists, Smartlists, Ordner, Suche – History, Running Tracks und Preparation zeigen sie weiter. Auch ⌘, → Browser, Menü Browser")
             .background(UITestMark(name: "unplayed"))
     }
@@ -621,7 +621,7 @@ struct MatchChip: View {
         let ref = on ? mix.harmonyKey.map(Track.openKey(code:)) ?? "–" : ""
         let bpm = on && mix.harmonyBPM > 0 ? String(format: " %.1f", mix.harmonyBPM) : ""
         let groove = on ? [MatchRule.Groove.off: "", .similar: " ≈", .complement: " ⇄"][mix.prefs.ui.match.groove] ?? "" : ""
-        DeckButton(title: String(localized: "◆ PASST") + (on ? " · \(ref)\(bpm)\(groove)" : ""), active: on, verbatim: true) { model.matching.toggle() }
+        DeckButton(title: String(localized: "◆ PASST") + (on ? " · \(ref)\(bpm)\(groove)" : ""), active: on, verbatim: true) { model.matching.toggle() }.helpInfo("browser.matching")
             .help("Nur Tracks, die zum Master passen: Key (gleich, ±1, Relativ), Tempo im Fenster, optional Tag-Gruppen (≈ ähnlich, ⇄ ergänzend) – einstellbar unter ⌘, → Browser")
     }
 }
@@ -814,12 +814,13 @@ struct SourceTreeFixed: View, SourceMenus {
     @Environment(MixModel.self) private var decks
 
     var body: some View {
-        row("≣", "TRACK COLLECTION").tag(BrowserSource.collection)
+        row("≣", "TRACK COLLECTION").tag(BrowserSource.collection).helpInfo("tree.collection")
             .favoriteDrag { BrowserFavorite.source(.collection, store: store) }
             .contextMenu {
                 exportMenu(.collection)
                 Button("Collection prüfen …") { ConsistencyWindow.show(store: store) }
                 Button("Reset Played State") { history.resetPlayed() }
+                Button("Collection neu laden") { store.load(store.sourceURL ?? LibraryStore.defaultNML) }
                 Toggle("Gespielte Tracks ausblenden", isOn: Binding(get: { decks.prefs.ui.hidePlayedTracks }, set: { decks.prefs.ui.hidePlayedTracks = $0 }))
                 OverviewMenuButton { store.tracks }
                 AnalysisMenuButtons { store.tracks }
@@ -847,7 +848,7 @@ struct SourceTreeFixed: View, SourceMenus {
                 .help("Tracks mit offenem Befund der Rip-Prüfung (Stille, fremder Anfang oder fremdes Ende, Grid prüfen)")
                 .contextMenu { AnalysisMenuButtons { store.tracks(for: .ripTodo) } }
         }
-        row("▤", "PREPARATION").tag(BrowserSource.preparation)
+        row("▤", "PREPARATION").tag(BrowserSource.preparation).helpInfo("tree.preparation")
             .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
             .treeDrop(targeted: .constant(false)) { strings in
                 let keys = strings.compactMap(TreeDrag.track).filter { store.track($0) != nil }
@@ -867,7 +868,7 @@ struct SourceTreeFixed: View, SourceMenus {
                     .contextMenu { exportMenu(.prepArchive(s)) }
             }
         } label: { row("▸", String(localized: "PREPARATION ARCHIV")) }
-        row("◷", "HISTORY").tag(BrowserSource.historyLive)
+        row("◷", "HISTORY").tag(BrowserSource.historyLive).helpInfo("tree.history")
             .favoriteDrag { BrowserFavorite.source(.historyLive, store: store) }
             .contextMenu { exportMenu(.historyLive) }
         DisclosureGroup {
