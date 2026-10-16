@@ -536,12 +536,8 @@ final class WaveLayerNSView: NSView {
             cap.addRect(CGRect(x: cx - cw / 2, y: r, width: cw, height: ch))
             cap.addRect(CGRect(x: cx - cw / 2, y: px(Double(h)) - ch, width: cw, height: ch))
         }
-        let rulerBG = CALayer()
-        rulerBG.actions = Self.noAnimation
-        rulerBG.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
-        rulerBG.frame = CGRect(x: 0, y: 0, width: strip.bounds.width, height: r)
+        // Lineal ohne eigene Abdunklung: Phrasen-Tönung läuft über die ganze Höhe
         gridLayer.addSublayer(shape(bands, lila.withAlphaComponent(0.08)))
-        gridLayer.addSublayer(rulerBG)
         gridLayer.addSublayer(shape(beats, bone.withAlphaComponent(lw.beatAlpha)))
         gridLayer.addSublayer(shape(bars, bone.withAlphaComponent(lw.barAlpha)))
         gridLayer.addSublayer(shape(caps, bone.withAlphaComponent(lw.capAlpha)))
@@ -734,7 +730,8 @@ final class WaveLayerNSView: NSView {
                 loopLayer.frame = CGRect(x: x0, y: 0, width: x1 - x0, height: bounds.height)
                 let c = auto ? NSColor(Theme.bone) : NSColor(Theme.state)
                 loopLayer.backgroundColor = c.withAlphaComponent(auto ? 0.06 : 0.2).cgColor
-                loopLayer.borderColor = c.withAlphaComponent(auto ? 0.6 : 1).cgColor
+                // Auto-Schleife ohne Rahmen (lief oben und unten als Linie über den Track), nur Tönung + AUTO
+                loopLayer.borderColor = c.withAlphaComponent(auto ? 0 : 1).cgColor
                 let z = scene.zoom
                 loopLabel.frame = CGRect(x: 4 * z, y: ruler + 3 * z, width: 30 * z, height: 11 * z)
             }
