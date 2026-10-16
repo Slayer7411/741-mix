@@ -325,6 +325,7 @@ enum SettingsIndex {
             e(t, "TIDAL", "browser.tidal.clientid", "Client-ID", hint: TidalSettingsSection.hint, kw: "tidal login anmelden developer app"),
             e(t, "TIDAL", "browser.tidal.pattern", "Playlist-Name",
               hint: "Muster der Playlist für MISSING: %Y Jahr, %y zwei Stellen, %m Monat, %d Tag. Standard missing-%y%m%d", kw: "tidal playlist missing"),
+            e(t, "TIDAL", "browser.tidal.signin", "Anmelden", kw: "tidal login anmelden"),
             e(t, "TIDAL", "browser.tidal.signout", "Abmelden", kw: "tidal logout abmelden"),
             e(t, a, "browser.bpmlow", "BPM-Bereich ab", kw: "tempo analyse"),
             e(t, a, "browser.bpmhigh", "BPM-Bereich bis",
