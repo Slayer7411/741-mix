@@ -299,18 +299,20 @@ enum UISelfTest {
         guard let hdr = u.named("A header") else { fail("Deck-Kopf A nicht gefunden") }
         // die Zeile der Tabelle A wie beim echten Ziehen: der Eintrag, den die Tabelle selbst schreibt
         guard let table = u.views.compactMap({ $0 as? TrackNSTable }).min(by: { u.frame($0).minX < u.frame($1).minX }),
-              let item = table.dataSource?.tableView?(table, pasteboardWriterForRow: 0) as? NSPasteboardItem,
+              // erste ladbare Zeile (echte Collection: oben stehen auch Tracks, die nur online oder weg sind)
+              let row = u.browser.paneA.shown.prefix(200).firstIndex(where: { $0.fileExists && CloudLibrary.shared.isLocal($0.path) }),
+              let item = table.dataSource?.tableView?(table, pasteboardWriterForRow: row) as? NSPasteboardItem,
               let s = item.string(forType: .string) else { fail("Tabelle A: Zeile nicht ziehbar") }
         let key = String(s.dropFirst(TrackDrag.prefix.count))
         let r = u.frame(hdr)
         let ok = u.drop(string: s, at: NSPoint(x: r.midX, y: r.midY))
         check(ok, "Drop auf Deck A nicht angenommen")
-        u.spin(5) { u.mix.deck(0).track?.key == key }
+        u.spin(30) { u.mix.deck(0).track?.key == key }   // echte Dateien (Cloud-Ordner) dekodieren länger als die Fixture
         check(u.mix.deck(0).track?.key == key, "Deck A hat nach dem Drop \(u.mix.deck(0).track?.title ?? "nichts") statt \(key) · spielt \(u.mix.deck(0).playing) · Meldung \(StatusCenter.shared.current.map { "\($0.level) \($0.text)" } ?? "-")")
         // Datei aus dem Finder auf Deck A: lädt den Track der Collection mit diesem Pfad
         let other = t[1]
         check(u.drop(file: URL(fileURLWithPath: other.path), at: NSPoint(x: r.midX, y: r.midY)), "Finder-Datei auf Deck A nicht angenommen")
-        u.spin(5) { u.mix.deck(0).track?.key == other.key }
+        u.spin(30) { u.mix.deck(0).track?.key == other.key }
         check(u.mix.deck(0).track?.key == other.key, "Finder-Datei: Deck A hat \(u.mix.deck(0).track?.title ?? "nichts") statt \(other.title)")
         u.spin(30) { u.mix.core.trackAudio(0) != nil && u.mix.deck(0).grid != nil }
         check(u.mix.core.trackAudio(0) != nil, "Deck A lädt nach dem Drop nicht")
