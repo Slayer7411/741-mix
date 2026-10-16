@@ -1687,6 +1687,9 @@ extension UISelfTest {
         check(tv.sortDescriptors.map(\.key) == ["artist"], "Tabelle zeigt nicht die Artist-Sortierung: \(tv.sortDescriptors.map { $0.key ?? "?" })")
         func header(_ id: String) -> NSPoint {
             guard let i = tv.tableColumns.firstIndex(where: { $0.identifier.rawValue == id && !$0.isHidden }) else { fail("Spalte \(id) fehlt") }
+            // Spalte sichtbar machen (breite Tabellen: sonst klickt der Test neben das Fenster)
+            tv.scrollColumnToVisible(i)
+            u.spin(0.2)
             let r = head.headerRect(ofColumn: i)
             return head.convert(NSPoint(x: r.midX, y: r.midY), to: nil)
         }
