@@ -69,6 +69,8 @@ struct StatusBar: View {
                     }
                     if m.cancellable {
                         Button("✕") { center.cancel(m) }.buttonStyle(.plain).foregroundStyle(Theme.muted).help("Abbrechen")
+                    } else if m.sticky {
+                        Button("✕") { center.dismiss(m) }.buttonStyle(.plain).foregroundStyle(Theme.muted).help("Schließen")
                     }
                 }
                 .font(Theme.mono(11.z))

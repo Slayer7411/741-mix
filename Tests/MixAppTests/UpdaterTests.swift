@@ -161,12 +161,30 @@ import Testing
 
     @Test func autoInstallOnlyWhenIdleAndFree() {
         let idle = UpdateRules.autoIdle
-        #expect(UpdateRules.autoInstallDue(enabled: true, pending: true, block: nil, idle: idle))
-        #expect(!UpdateRules.autoInstallDue(enabled: true, pending: true, block: nil, idle: idle - 1))
-        #expect(!UpdateRules.autoInstallDue(enabled: false, pending: true, block: nil, idle: idle + 600))
-        #expect(!UpdateRules.autoInstallDue(enabled: true, pending: false, block: nil, idle: idle + 600))
-        #expect(!UpdateRules.autoInstallDue(enabled: true, pending: true, block: .deckPlaying, idle: idle + 600))
-        #expect(!UpdateRules.autoInstallDue(enabled: true, pending: true, block: .live, idle: idle + 600))
+        #expect(UpdateRules.autoInstallDue(enabled: true, pending: true, block: nil, idle: idle, skipped: false))
+        #expect(!UpdateRules.autoInstallDue(enabled: true, pending: true, block: nil, idle: idle - 1, skipped: false))
+        #expect(!UpdateRules.autoInstallDue(enabled: false, pending: true, block: nil, idle: idle + 600, skipped: false))
+        #expect(!UpdateRules.autoInstallDue(enabled: true, pending: false, block: nil, idle: idle + 600, skipped: false))
+        #expect(!UpdateRules.autoInstallDue(enabled: true, pending: true, block: .deckPlaying, idle: idle + 600, skipped: false))
+        #expect(!UpdateRules.autoInstallDue(enabled: true, pending: true, block: .live, idle: idle + 600, skipped: false))
+    }
+
+    @Test func skippedBuildIsNeverAutoInstalled() {
+        let idle = UpdateRules.autoIdle + 600
+        #expect(!UpdateRules.autoInstallDue(enabled: true, pending: true, block: nil, idle: idle, skipped: true))
+        #expect(UpdateRules.autoSkipped(build: "b2", skipBuild: "b2"))
+        #expect(!UpdateRules.autoSkipped(build: "b3", skipBuild: "b2"))
+        #expect(!UpdateRules.autoSkipped(build: "b2", skipBuild: ""))
+    }
+
+    /// Überspringen fällt, sobald ein anderer, neuerer Build erscheint; der übersprungene selbst hebt es nicht auf
+    @Test func newerBuildClearsSkip() {
+        let skipDate = "2026-10-16T09:00:00Z"
+        #expect(UpdateRules.clearsSkip(Self.manifest(build: "b3", date: "2026-10-16T10:00:00Z"), skipBuild: "b2", skipDate: skipDate))
+        #expect(!UpdateRules.clearsSkip(Self.manifest(build: "b2", date: "2026-10-16T10:00:00Z"), skipBuild: "b2", skipDate: skipDate))
+        #expect(!UpdateRules.clearsSkip(Self.manifest(build: "b3", date: "2026-10-16T08:00:00Z"), skipBuild: "b2", skipDate: skipDate))
+        #expect(!UpdateRules.clearsSkip(Self.manifest(build: "b3", date: "2026-10-16T10:00:00Z"), skipBuild: "", skipDate: skipDate))
+        #expect(!UpdateRules.clearsSkip(Self.manifest(build: "b3", date: "2026-10-16T10:00:00Z"), skipBuild: "b2", skipDate: ""))
     }
 
     // MARK: Prüfsumme und Bereitstellung

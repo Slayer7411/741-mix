@@ -1,6 +1,6 @@
 {
   "name": "self-update",
-  "description": "Update aus dem Ordner-Kanal: latest.json und DMG prüfen, App im Testordner tauschen, neu starten (der neue Prozess meldet den neuen Build), keine weitere Meldung danach, Rückgabe zur vorherigen Version",
+  "description": "Update aus dem Ordner-Kanal: latest.json und DMG prüfen, App im Testordner tauschen, neu starten (der neue Prozess meldet den neuen Build), keine weitere Meldung danach, Rückgabe zur vorherigen Version; der verlassene Build ist danach übersprungen (manuell weiter anbietbar)",
   "instances": ["A"],
   "update": true,
   "steps": [
@@ -31,6 +31,8 @@
     ]},
     {"do": "plist", "file": "${root}/apps/installed/.MINOS-741-previous.app/Contents/Info.plist", "expect": [
       {"path": "CFBundleVersion", "equals": "${update_build}"}
-    ]}
+    ]},
+    {"do": "prefs-get", "expect": [{"path": "body.ui.updateSkipBuild", "equals": "${update_build}"}]},
+    {"do": "update-check", "retry": true, "expect": [{"path": "body.available.build", "equals": "${update_build}"}]}
   ]
 }

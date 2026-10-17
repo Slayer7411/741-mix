@@ -369,6 +369,10 @@ struct UIPrefs: Codable, Equatable {
     var updateChannel = UpdateChannel.latestBuild
     /// Update-Ordner für den Kanal „Eigener Ordner“ (latest.json + DMG, scripts/make-dmg.sh --publish)
     var updateFolder = ""
+    /// Build, den ein Zurückwechseln verlassen hat: nicht automatisch installieren (manuell „Installieren“ bleibt möglich)
+    var updateSkipBuild = ""
+    /// Erstellungsdatum dieses Builds (MINOSBuildDate): ein späterer Build hebt das Überspringen auf
+    var updateSkipDate = ""
     /// Updates automatisch installieren, sobald nichts spielt, LIVE aus ist und 2 min keine Eingabe kam; Standard aus
     var autoUpdate = false
 

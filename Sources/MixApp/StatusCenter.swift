@@ -36,13 +36,13 @@ final class StatusCenter {
 
     /// von jedem Thread; auf dem Hauptthread sofort, sonst der Reihe nach über die Haupt-Queue
     nonisolated static func post(_ level: StatusMessage.Level, _ text: String, detail: String? = nil, key: String? = nil,
-                                 progress: Double? = nil, progressText: String? = nil, job: Bool = false,
+                                 progress: Double? = nil, progressText: String? = nil, job: Bool = false, sticky: Bool = false,
                                  cancel: (@MainActor @Sendable () -> Void)? = nil,
                                  action: (title: String, run: @MainActor @Sendable () -> Void)? = nil) {
         let now = Date()
         let run: @MainActor @Sendable () -> Void = {
             shared.post(level, text, detail: detail, key: key, progress: progress, progressText: progressText, job: job,
-                        cancel: cancel, action: action, now: now)
+                        sticky: sticky, cancel: cancel, action: action, now: now)
         }
         if Thread.isMainThread { MainActor.assumeIsolated { run() } } else { DispatchQueue.main.async { run() } }
     }
@@ -53,10 +53,11 @@ final class StatusCenter {
     }
 
     func post(_ level: StatusMessage.Level, _ text: String, detail: String? = nil, key: String? = nil,
-              progress: Double? = nil, progressText: String? = nil, job: Bool = false, cancel: (@MainActor () -> Void)? = nil,
-              action: (title: String, run: @MainActor () -> Void)? = nil, now: Date = Date()) {
+              progress: Double? = nil, progressText: String? = nil, job: Bool = false, sticky: Bool = false,
+              cancel: (@MainActor () -> Void)? = nil, action: (title: String, run: @MainActor () -> Void)? = nil,
+              now: Date = Date()) {
         let id = log.post(level, text, detail: detail, key: key, progress: progress, progressText: progressText,
-                          cancellable: cancel != nil, job: job, now: now)
+                          cancellable: cancel != nil, job: job, sticky: sticky, now: now)
         cancels[id] = cancel
         actions[id] = action
         if let m = log.history.first(where: { $0.id == id }) {

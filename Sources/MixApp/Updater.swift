@@ -170,9 +170,21 @@ enum UpdateRules {
         return nil
     }
 
-    /// Automatik: an, ein Update liegt bereit, nichts blockiert, und die App war `autoIdle` Sekunden ohne Eingabe
-    static func autoInstallDue(enabled: Bool, pending: Bool, block: Block?, idle: TimeInterval) -> Bool {
-        enabled && pending && block == nil && idle >= autoIdle
+    /// Automatik: an, ein Update liegt bereit, nichts blockiert, nicht übersprungen, und die App war `autoIdle` Sekunden
+    /// ohne Eingabe
+    static func autoInstallDue(enabled: Bool, pending: Bool, block: Block?, idle: TimeInterval, skipped: Bool) -> Bool {
+        enabled && pending && block == nil && !skipped && idle >= autoIdle
+    }
+
+    /// Übersprungen (nach Zurückwechseln): genau dieser Build wird nicht automatisch installiert
+    static func autoSkipped(build: String, skipBuild: String) -> Bool { !skipBuild.isEmpty && build == skipBuild }
+
+    /// Ein anderer Build, der neuer ist als der übersprungene, hebt das Überspringen auf
+    static func clearsSkip(_ m: UpdateManifest, skipBuild: String, skipDate: String) -> Bool {
+        guard !skipBuild.isEmpty, m.build != skipBuild, let new = parseDate(m.date), let skip = parseDate(skipDate) else {
+            return false
+        }
+        return new > skip
     }
 
     /// SHA-256 (Hex, Kleinbuchstaben) und Größe der Datei, blockweise gelesen
@@ -346,7 +358,9 @@ final class Updater {
             if due { lastAutoCheck = now; check() }
         }
         if mix.prefs.ui.autoUpdate, let c = candidate, c.manifest.build != autoFailedBuild, !installing, !relaunching,
-           UpdateRules.autoInstallDue(enabled: true, pending: true, block: block, idle: now.timeIntervalSince(lastActivity)) {
+           UpdateRules.autoInstallDue(enabled: true, pending: true, block: block, idle: now.timeIntervalSince(lastActivity),
+                                      skipped: UpdateRules.autoSkipped(build: c.manifest.build,
+                                                                       skipBuild: mix.prefs.ui.updateSkipBuild)) {
             install { result in
                 if case .failure = result { Updater.shared.autoFailedBuild = c.manifest.build }
             }
@@ -420,11 +434,17 @@ final class Updater {
         case .success(let c):
             lastError = nil
             candidate = c
+            if let c, let mix, UpdateRules.clearsSkip(c.manifest, skipBuild: mix.prefs.ui.updateSkipBuild,
+                                                      skipDate: mix.prefs.ui.updateSkipDate) {
+                mix.prefs.ui.updateSkipBuild = ""
+                mix.prefs.ui.updateSkipDate = ""
+            }
             if let c, announced != c.manifest.build {
-                // einmal je Build melden; Menü und Einstellungen zeigen es weiter
+                // einmal je Build melden; bleibt stehen bis Klick oder ✕, Menü und Einstellungen zeigen es weiter
                 announced = c.manifest.build
                 let text = String(format: String(localized: "Update verfügbar: %@ (%@)"), c.manifest.version, c.manifest.build)
-                StatusCenter.post(.info, text, key: "update", action: (String(localized: "Installieren"), { Updater.shared.install() }))
+                StatusCenter.post(.info, text, key: "update", sticky: true,
+                                  action: (String(localized: "Installieren"), { Updater.shared.install() }))
             }
             completion?(.success(c))
         }
@@ -508,6 +528,9 @@ final class Updater {
             return fail(.io(String(localized: "Helfer nicht gestartet")))
         }
         relaunching = true
+        // der verlassene Build wird nicht automatisch wieder installiert (Einstellung bleibt nach dem Neustart)
+        mix?.prefs.ui.updateSkipBuild = currentBuild
+        mix?.prefs.ui.updateSkipDate = currentDate ?? ""
         completion?(.success(["relaunch": true, "rollback": true, "to": target.path]))
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
     }
@@ -676,7 +699,9 @@ struct UpdateSettingsSection: View {
         if up.checking { return String(localized: "Prüfe …") }
         if let e = up.lastError { return e }
         if let c = up.candidate {
-            return String(format: String(localized: "Neuere Version: %@ (%@)"), c.manifest.version, c.manifest.build)
+            let text = String(format: String(localized: "Neuere Version: %@ (%@)"), c.manifest.version, c.manifest.build)
+            return UpdateRules.autoSkipped(build: c.manifest.build, skipBuild: mix.prefs.ui.updateSkipBuild)
+                ? text + " · " + String(localized: "nicht automatisch (nach Zurückwechseln)") : text
         }
         if let d = up.lastChecked {
             return String(format: String(localized: "Aktuell: %@ (%@) · geprüft %@"), up.currentVersion, up.currentBuild,
