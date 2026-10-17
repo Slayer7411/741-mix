@@ -383,11 +383,11 @@ struct CrashPromptView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12.z) {
-            Text("MINOS-741 ist abgestürzt. Bericht ansehen?").font(Theme.label(15.z))
+            Text("MINOS-741 ist abgestürzt. Bericht ansehen?").font(Theme.label(15.z)).textCase(.uppercase)
             if let p = prompt.item {
                 Text(p.count > 1 ? "\(p.count) neue Berichte, gezeigt wird der neueste. Bereinigt: ohne Pfade, Nutzer, Rechner und Geräte. Nichts wird automatisch gesendet."
                      : "Bereinigt: ohne Pfade, Nutzer, Rechner und Geräte. Nichts wird automatisch gesendet.")
-                    .font(Theme.mono(10.z)).foregroundStyle(Theme.bone.opacity(0.7)).fixedSize(horizontal: false, vertical: true)
+                    .font(Theme.mono(11.z)).foregroundStyle(Theme.bone.opacity(0.7)).fixedSize(horizontal: false, vertical: true)
                 ScrollView {
                     Text(verbatim: p.text)
                         .font(Theme.mono(10.z))
@@ -400,17 +400,43 @@ struct CrashPromptView: View {
                 .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
             }
             HStack(spacing: 8.z) {
-                Button("Als GitHub-Issue senden") { prompt.openIssue() }.keyboardShortcut(.defaultAction)
-                Button("Kopieren") { if let t = prompt.item?.text { prompt.copy(t) } }
+                flatButton("Als GitHub-Issue senden", primary: true) { prompt.openIssue() }.keyboardShortcut(.defaultAction)
+                flatButton("Kopieren") { if let t = prompt.item?.text { prompt.copy(t) } }
                 Spacer()
-                Button("Verwerfen") { prompt.close() }.keyboardShortcut(.cancelAction)
+                flatButton("Verwerfen") { prompt.close() }.keyboardShortcut(.cancelAction)
             }
             Toggle("Nicht mehr fragen", isOn: Binding(get: { prompt.dontAsk }, set: { prompt.dontAsk = $0 }))
+                .toggleStyle(FlatToggleStyle())
         }
         .padding(18.z)
         .frame(width: 560.z)
         .background(Theme.background)
         .foregroundStyle(Theme.bone)
         .tint(Theme.state)
+    }
+
+    /// Flacher 741-Schalter wie DeckButton (Versalien, Haarlinie); `primary` = rot gefüllt
+    private func flatButton(_ title: String, primary: Bool = false, _ action: @escaping () -> Void) -> some View {
+        DeckButton(title: title, active: primary, action: action).textCase(.uppercase)
+    }
+}
+
+/// Kästchen mit Beschriftung daneben (Haarlinie, an = rot gefüllt), wie SettingsToggleStyle ohne feste Spalte
+private struct FlatToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .center, spacing: 8.z) {
+            ZStack {
+                Rectangle().fill(Theme.void)
+                Rectangle().stroke(configuration.isOn ? Theme.state : Theme.muted, lineWidth: 1)
+                if configuration.isOn { Rectangle().fill(Theme.state).padding(3.z) }
+            }
+            .frame(width: 14.z, height: 14.z)
+            configuration.label
+                .font(Theme.mono(11.z)).foregroundStyle(Theme.bone)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { configuration.isOn.toggle() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isToggle)
     }
 }
