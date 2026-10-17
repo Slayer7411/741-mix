@@ -242,19 +242,18 @@ struct ContentView: View {
             // Hosting-View (DeckHost), damit eine Deck-Änderung nicht das ganze Fenster neu misst
             // 1 Deck: nur A über die volle Breite, B–D spielen unsichtbar weiter
             GeometryReader { geo in
-                let n = mix.deckCount
-                let rows: CGFloat = n >= 4 ? 2 : 1
+                // Plätze aus ⌘, -> DARSTELLUNG -> Layout; ausgeblendete Decks spielen unsichtbar weiter
+                let cols = DeckLayout.columns(visible: mix.visibleDecks, slots: mix.prefs.ui.deckSlots)
+                let rows = CGFloat(max(1, cols.left.count, cols.right.count))
                 let deckH = max(120.z, (geo.size.height - (rows - 1) * gap) / rows)
                 HStack(alignment: .top, spacing: gap) {
                     VStack(spacing: gap) {
-                        DeckHost(d: 0).frame(height: deckH)
-                        if n >= 4 { DeckHost(d: 2).frame(height: deckH) }
+                        ForEach(cols.left, id: \.self) { DeckHost(d: $0).frame(height: deckH) }
                     }
                     if mix.prefs.ui.showMixer { MixerView().fixedSize(horizontal: true, vertical: false) }
-                    if n >= 2 {
+                    if !cols.right.isEmpty {
                         VStack(spacing: gap) {
-                            DeckHost(d: 1).frame(height: deckH)
-                            if n >= 4 { DeckHost(d: 3).frame(height: deckH) }
+                            ForEach(cols.right, id: \.self) { DeckHost(d: $0).frame(height: deckH) }
                         }
                     }
                 }
@@ -339,7 +338,6 @@ struct MixApp: App {
     @State private var controller: ControllerManager?
     @State private var sessionTimer: Timer?
 
-    init() { PairLink.applyLabels(AppPrefs.load().ui.pairRole) }
 
     /// Version und Build für die Marke in der Leiste („0.8.1 · db052b1“), gleiche Quelle wie der Fenstertitel
     static var versionLine: String {
@@ -371,6 +369,7 @@ struct MixApp: App {
                 .onChange(of: mix.prefs.controller) { controller?.prefs = mix.prefs.controller }
                 .onChange(of: mix.prefs.ui.fxUnitCount) { controller?.fxUnits = mix.prefs.ui.fxUnitCount }
                 .onChange(of: mix.prefs.ui.zoom) { ZoomControl.apply(mix.prefs.ui.zoom) }
+                .onChange(of: mix.prefs.ui.pair) { PairLink.shared.configure(mix.prefs.ui.pair, history: history, mix: mix) }
         }
         Settings {
             SettingsView()
@@ -534,7 +533,7 @@ extension MixApp {
         browser.history = history
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
         history.start(store: store, mix: mix)
-        PairLink.shared.start(role: mix.prefs.ui.pairRole, history: history, mix: mix)
+        PairLink.shared.configure(mix.prefs.ui.pair, history: history, mix: mix)
         store.history = history
         mix.autoMix.store = store
         mix.autoMix.history = history

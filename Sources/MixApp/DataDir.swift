@@ -39,19 +39,19 @@ enum DataDir {
 /// Einstellungen als Datei im Datenordner (`settings.plist`): alle Werte der App (auch Fenster, Teiler, Audio-Interface,
 /// Kanalpaare, Controller), damit die Session überall gleich aussieht. Beim Start übernommen, wenn die Datei seit dem
 /// letzten Mal geändert wurde (anderer Mac, zurückgespielt); geschrieben beim Start, nach jeder Änderung und beim
-/// Beenden. Nur die Zwei-Mac-Rolle bleibt auf dem Mac (sonst wären beide Mac 1)
+/// Beenden. Nur der Zwei-Mac-Modus bleibt auf dem Mac (wer schreibt, welche Decks – sonst wären beide gleich)
 enum SettingsFile {
     static var url: URL { DataDir.shared.appendingPathComponent("settings.plist") }
     static let stampKey = "settings.imported"
 
     static func shared(_ key: String) -> Bool { key != stampKey }
 
-    /// `prefs.v1` aus der Datei mit der eigenen Zwei-Mac-Rolle
+    /// `prefs.v1` aus der Datei mit dem eigenen Zwei-Mac-Modus
     static func keepingRole(_ incoming: Data, local: Data?) -> Data {
         guard var inc = (try? JSONSerialization.jsonObject(with: incoming)) as? [String: Any] else { return incoming }
         var ui = inc["ui"] as? [String: Any] ?? [:]
         let own = local.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }?["ui"] as? [String: Any]
-        if let r = own?["pairRole"] { ui["pairRole"] = r } else { ui.removeValue(forKey: "pairRole") }
+        if let r = own?["pair"] { ui["pair"] = r } else { ui.removeValue(forKey: "pair") }
         inc["ui"] = ui
         return (try? JSONSerialization.data(withJSONObject: inc)) ?? incoming
     }

@@ -1,15 +1,15 @@
 import Foundation
 
-/// Zwei-Mac-Modus: Nachrichten zwischen Mac 1 (schreibt, Decks A/C) und Mac 2 (Decks B/D), eine JSON-Zeile je Nachricht
+/// Zwei-Mac-Modus: Nachrichten zwischen dem schreibenden Mac und dem anderen, eine JSON-Zeile je Nachricht
 public enum PairMessage: Codable, Equatable, Sendable {
-    /// nach dem Verbinden: Rolle, Protokoll, eigene Gespielt-Markierungen
-    case hello(leader: Bool, version: Int, name: String, played: [String])
-    /// Mac 1 -> Mac 2: gemeinsamer Stand nach dem Verbinden
+    /// nach dem Verbinden: schreibt dieser Mac, seine Decks (0 = A … 3 = D), Protokoll, Gespielt-Markierungen
+    case hello(writes: Bool, decks: [Int], version: Int, name: String, played: [String])
+    /// schreibender Mac -> anderer: gemeinsamer Stand nach dem Verbinden
     case playedSet([String])
     /// Änderung der Gespielt-Markierungen (beide Richtungen)
     case played(add: [String], remove: [String])
 
-    public static let version = 1
+    public static let version = 2
 
     public func line() -> Data {
         var d = (try? JSONEncoder().encode(self)) ?? Data()
@@ -41,5 +41,19 @@ public struct PairLineReader: Sendable {
 
 /// gemeinsamer Stand beim Verbinden: nichts geht verloren (Vereinigung)
 public enum PairPlayed {
-    public static func merged(leader: Set<String>, follower: Set<String>) -> Set<String> { leader.union(follower) }
+    public static func merged(_ a: Set<String>, _ b: Set<String>) -> Set<String> { a.union(b) }
+}
+
+/// Prüfung beim Verbinden: genau ein Mac schreibt, kein Deck auf beiden
+public enum PairCheck {
+    public enum Problem: Equatable, Sendable { case bothWrite, noneWrites, sharedDecks([Int]) }
+
+    public static func problems(ownWrites: Bool, ownDecks: [Int], peerWrites: Bool, peerDecks: [Int]) -> [Problem] {
+        var p: [Problem] = []
+        if ownWrites && peerWrites { p.append(.bothWrite) }
+        if !ownWrites && !peerWrites { p.append(.noneWrites) }
+        let shared = Set(ownDecks).intersection(peerDecks).sorted()
+        if !shared.isEmpty { p.append(.sharedDecks(shared)) }
+        return p
+    }
 }

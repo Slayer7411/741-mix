@@ -4,29 +4,17 @@ import SystemConfiguration
 import MixCore
 import MixEngine
 
-/// Zwei-Mac-Modus: Rolle dieses Macs (wirkt nach Neustart)
-enum PairRole: String, CaseIterable, Codable, Identifiable {
-    case off = "Aus", leader = "Mac 1 · Decks A/C · schreibt", follower = "Mac 2 · Decks B/D"
-    var id: String { rawValue }
-    var letters: [String] {
-        switch self {
-        case .off: ["A", "B", "C", "D"]
-        case .leader: DeckLabels.leader
-        case .follower: DeckLabels.follower
-        }
-    }
-}
-
-/// Zwei Macs als eine Session: Mac 1 bietet sich per Bonjour an (`_minos741._tcp`, jede Verbindung: Ethernet,
-/// Thunderbolt-/USB-Bridge, WLAN), Mac 2 verbindet sich. Jeder Mac spielt seine Decks über sein eigenes Interface,
-/// den Takt hält Link. Über die Verbindung laufen die Gespielt-Markierungen; in die Collection schreibt nur Mac 1.
+/// Zwei Macs als eine Session: der schreibende Mac bietet sich per Bonjour an (`_minos741._tcp`, jede Verbindung:
+/// Ethernet, Thunderbolt-/USB-Bridge, WLAN), der andere verbindet sich. Jeder Mac spielt seine Decks (⌘, -> DECKS)
+/// über sein eigenes Interface, den Takt hält Link. Über die Verbindung laufen die Gespielt-Markierungen; in die
+/// Collection schreibt nur der schreibende Mac. Umschalten wirkt sofort
 @MainActor
 final class PairLink {
     static let shared = PairLink()
     static let service = "_minos741._tcp"
 
     private let queue = DispatchQueue(label: "minos741.pair", qos: .utility)
-    private(set) var role = PairRole.off
+    private(set) var setup = PairSetup()
     private weak var history: HistoryStore?
     private weak var mix: MixModel?
     private var listener: NWListener?
@@ -34,18 +22,26 @@ final class PairLink {
     private var connection: NWConnection?
     private var reader = PairLineReader()
 
-    /// vor dem ersten Zeichnen: Deck-Buchstaben der Rolle
-    static func applyLabels(_ role: PairRole) { DeckLabels.letters = role.letters }
-
-    func start(role: PairRole, history: HistoryStore, mix: MixModel) {
-        guard role != .off, !Session.isSelfTest, self.role == .off else { return }
-        self.role = role
+    /// Einstellung übernehmen: Verbindung abbauen und nach der neuen Einstellung wieder aufbauen
+    func configure(_ new: PairSetup, history: HistoryStore, mix: MixModel) {
+        guard !Session.isSelfTest, new != setup else { return }
+        listener?.cancel(); listener = nil
+        browser?.cancel(); browser = nil
+        let old = connection
+        connection = nil
+        old?.cancel()
+        setup = new
         self.history = history
         self.mix = mix
+        guard new.on else {
+            history.onPlayedChange = nil
+            StatusCenter.post(.info, String(localized: "Zwei-Mac: aus"), key: "pair")
+            return
+        }
         history.onPlayedChange = { add, remove in
             PairLink.shared.send(.played(add: add.sorted(), remove: remove.sorted()))
         }
-        if role == .leader { listen() } else { browse() }
+        if new.writes { listen() } else { browse() }
     }
 
     private static var computerName: String {
@@ -74,11 +70,11 @@ final class PairLink {
             l.service = NWListener.Service(name: Self.computerName, type: Self.service)
             l.newConnectionHandler = { c in Self.main { PairLink.shared.adopt(c) } }
             l.stateUpdateHandler = { s in
-                if case .failed = s { Self.main { PairLink.shared.restartListener() } }
+                if case .failed = s { Self.main { if PairLink.shared.listener === l { PairLink.shared.restartListener() } } }
             }
             l.start(queue: queue)
             listener = l
-            StatusCenter.post(.info, String(localized: "Zwei-Mac: Mac 1 wartet auf Mac 2"), key: "pair")
+            StatusCenter.post(.info, String(localized: "Zwei-Mac: schreibender Mac wartet auf den zweiten"), key: "pair")
         } catch {
             StatusCenter.post(.error, String(localized: "Zwei-Mac: kein Netz-Dienst (\(error.localizedDescription))"), key: "pair")
         }
@@ -87,7 +83,9 @@ final class PairLink {
     private func restartListener() {
         listener?.cancel()
         listener = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { MainActor.assumeIsolated { PairLink.shared.listen() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            MainActor.assumeIsolated { let p = PairLink.shared; if p.setup.on, p.setup.writes, p.listener == nil { p.listen() } }
+        }
     }
 
     private func browse() {
@@ -99,7 +97,7 @@ final class PairLink {
         }
         b.start(queue: queue)
         browser = b
-        StatusCenter.post(.info, String(localized: "Zwei-Mac: Mac 2 sucht Mac 1"), key: "pair")
+        StatusCenter.post(.info, String(localized: "Zwei-Mac: sucht den schreibenden Mac"), key: "pair")
     }
 
     private func found(_ ep: NWEndpoint) {
@@ -121,7 +119,7 @@ final class PairLink {
         guard c === connection else { return }
         switch s {
         case .ready:
-            send(.hello(leader: role == .leader, version: PairMessage.version, name: Self.computerName,
+            send(.hello(writes: setup.writes, decks: setup.decks, version: PairMessage.version, name: Self.computerName,
                         played: (history?.played ?? []).sorted()))
             if let mix, !mix.clock.linkEnabled { mix.toggleLink() }
         case .failed, .waiting:
@@ -129,9 +127,11 @@ final class PairLink {
         case .cancelled:
             connection = nil
             StatusCenter.post(.warning, String(localized: "Zwei-Mac: Verbindung getrennt"), key: "pair")
-            // Mac 2: neu suchen (die Trefferliste meldet nur Änderungen)
-            if role == .follower {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { MainActor.assumeIsolated { PairLink.shared.browse() } }
+            // nicht schreibender Mac: neu suchen (die Trefferliste meldet nur Änderungen)
+            if setup.on, !setup.writes {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    MainActor.assumeIsolated { let p = PairLink.shared; if p.setup.on, !p.setup.writes, p.connection == nil { p.browse() } }
+                }
             }
         default:
             break
@@ -159,21 +159,27 @@ final class PairLink {
     private func handle(_ m: PairMessage) {
         guard let history else { return }
         switch m {
-        case let .hello(leader, version, name, played):
-            guard leader != (role == .leader) else {
-                StatusCenter.post(.error, String(localized: "Zwei-Mac: beide Macs haben dieselbe Rolle (⌘, -> DECKS)"), key: "pair")
+        case let .hello(writes, decks, version, name, played):
+            let problems = PairCheck.problems(ownWrites: setup.writes, ownDecks: setup.decks, peerWrites: writes, peerDecks: decks)
+            if problems.contains(.bothWrite) || problems.contains(.noneWrites) {
+                StatusCenter.post(.error, problems.contains(.bothWrite) ? String(localized: "Zwei-Mac: beide Macs schreiben (⌘, -> DECKS)")
+                                  : String(localized: "Zwei-Mac: kein Mac schreibt (⌘, -> DECKS)"), key: "pair")
                 connection?.cancel()
                 return
             }
-            let note = version == PairMessage.version ? "" : " · " + String(localized: "andere Version")
-            StatusCenter.post(.ok, String(localized: "Zwei-Mac: verbunden mit \(name)") + note, key: "pair")
-            if role == .leader {
-                let s = PairPlayed.merged(leader: history.played, follower: Set(played))
+            var note = version == PairMessage.version ? "" : " · " + String(localized: "andere Version")
+            for case let .sharedDecks(d) in problems {
+                note += " · " + String(localized: "Deck \(d.map { deckLetters[$0] }.joined(separator: "/")) auf beiden")
+            }
+            let theirs = decks.map { deckLetters[$0] }.joined(separator: "/")
+            StatusCenter.post(note.isEmpty ? .ok : .warning, String(localized: "Zwei-Mac: verbunden mit \(name) (Decks \(theirs))") + note, key: "pair")
+            if setup.writes {
+                let s = PairPlayed.merged(history.played, Set(played))
                 history.applyPlayed(s)
                 send(.playedSet(s.sorted()))
             }
         case let .playedSet(s):
-            if role == .follower { history.applyPlayed(Set(s)) }
+            if !setup.writes { history.applyPlayed(Set(s)) }
         case let .played(add, remove):
             history.applyPlayed(history.played.subtracting(remove).union(add))
         }

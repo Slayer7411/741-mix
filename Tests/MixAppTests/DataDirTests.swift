@@ -35,11 +35,11 @@ private func tempDir(_ name: String) throws -> URL {
         #expect(SettingsFile.shared(k), "\(k)")
     }
     #expect(!SettingsFile.shared(SettingsFile.stampKey))
-    let incoming = try JSONSerialization.data(withJSONObject: ["ui": ["pairRole": "Mac 1 · Decks A/C · schreibt", "zoom": 1.2]])
-    let local = try JSONSerialization.data(withJSONObject: ["ui": ["pairRole": "Mac 2 · Decks B/D", "zoom": 1.0]])
+    let incoming = try JSONSerialization.data(withJSONObject: ["ui": ["pair": ["on": true, "writes": true], "zoom": 1.2]])
+    let local = try JSONSerialization.data(withJSONObject: ["ui": ["pair": ["on": true, "writes": false], "zoom": 1.0]])
     let merged = try #require(try JSONSerialization.jsonObject(with: SettingsFile.keepingRole(incoming, local: local)) as? [String: Any])
     let ui = try #require(merged["ui"] as? [String: Any])
-    #expect(ui["pairRole"] as? String == "Mac 2 · Decks B/D" && ui["zoom"] as? Double == 1.2)
+    #expect((ui["pair"] as? [String: Any])?["writes"] as? Bool == false && ui["zoom"] as? Double == 1.2)
     let none = try #require(try JSONSerialization.jsonObject(with: SettingsFile.keepingRole(incoming, local: nil)) as? [String: Any])
-    #expect((none["ui"] as? [String: Any])?["pairRole"] == nil)
+    #expect((none["ui"] as? [String: Any])?["pair"] == nil)
 }

@@ -1881,19 +1881,29 @@
 
 /* Zwei-Mac-Modus */
 "Zwei Macs" = "Two Macs";
-"Dieser Mac" = "This Mac";
 "Aus" = "Off";
-"Mac 1 · Decks A/C · schreibt" = "Mac 1 · decks A/C · writes";
-"Mac 2 · Decks B/D" = "Mac 2 · decks B/D";
-"zwei macs als eine session: jeder spielt seine zwei decks über sein eigenes interface ins pult, takt über link (schaltet sich beim verbinden ein). verbindung per ethernet, usb-c/thunderbolt-kabel oder gleiches netz, ohne einrichten. gespielt-markierungen gelten auf beiden. collection auf beiden unter demselben pfad (google drive); in die collection schreibt nur mac 1. wirkt nach neustart." = "two macs as one session: each plays its two decks through its own interface into the mixer, tempo via link (turns on when connected). connection via ethernet, usb-c/thunderbolt cable or the same network, no setup. played marks apply on both. collection on both under the same path (google drive); only mac 1 writes to the collection. takes effect after restart.";
-"Zwei-Mac: Mac 1 wartet auf Mac 2" = "Two Macs: Mac 1 waiting for Mac 2";
-"Zwei-Mac: Mac 2 sucht Mac 1" = "Two Macs: Mac 2 looking for Mac 1";
 "Zwei-Mac: kein Netz-Dienst (%@)" = "Two Macs: no network service (%@)";
 "Zwei-Mac: Verbindung getrennt" = "Two Macs: connection lost";
-"Zwei-Mac: beide Macs haben dieselbe Rolle (⌘, -> DECKS)" = "Two Macs: both Macs have the same role (⌘, -> DECKS)";
-"Zwei-Mac: verbunden mit %@" = "Two Macs: connected to %@";
 "andere Version" = "other version";
 
 /* EXPLORER-Suche */
 "Suchen (Ordner, Dateien)" = "Search (folders, files)";
 "sucht …" = "searching …";
+
+/* Zwei-Mac-Modus, Deck-Anordnung */
+"Zwei-Mac-Modus" = "Two-Mac mode";
+"Dieser Mac schreibt (Collection, History)" = "This Mac writes (collection, history)";
+"Decks dieses Macs (höchstens 2)" = "Decks of this Mac (at most 2)";
+"zwei macs als eine session: jeder spielt seine decks über sein eigenes interface ins pult (kanalpaare unter audio), takt über link (schaltet sich beim verbinden ein). genau ein mac schreibt in collection und history-ordner, der andere verbindet sich mit ihm. verbindung per ethernet, usb-c/thunderbolt-kabel oder gleiches netz, ohne einrichten. gespielt-markierungen gelten auf beiden. wirkt sofort; die anordnung der decks unter darstellung -> layout. bleibt auf diesem mac (nicht in settings.plist)." = "two macs as one session: each plays its decks through its own interface into the mixer (channel pairs under audio), tempo via link (turns on when connected). exactly one mac writes to the collection and the history folder, the other connects to it. connection via ethernet, usb-c/thunderbolt cable or the same network, no setup. played marks apply on both. takes effect at once; deck positions under display -> layout. stays on this mac (not in settings.plist).";
+"Links oben" = "Top left";
+"Links unten" = "Bottom left";
+"Rechts oben" = "Top right";
+"Rechts unten" = "Bottom right";
+"platz je deck in der übersicht. ein deck an einen besetzten platz -> die beiden tauschen. ausgeblendete decks (1 / 2 decks, zwei-mac-modus) lassen ihren platz frei; ist nur eine seite belegt, nutzen die decks die volle breite." = "position of each deck in the overview. a deck on an occupied position -> the two swap. hidden decks (1 / 2 decks, two-mac mode) leave their position free; with only one side used the decks take the full width.";
+"Zwei-Mac: aus" = "Two Macs: off";
+"Zwei-Mac: schreibender Mac wartet auf den zweiten" = "Two Macs: writing Mac waiting for the second";
+"Zwei-Mac: sucht den schreibenden Mac" = "Two Macs: looking for the writing Mac";
+"Zwei-Mac: beide Macs schreiben (⌘, -> DECKS)" = "Two Macs: both Macs write (⌘, -> DECKS)";
+"Zwei-Mac: kein Mac schreibt (⌘, -> DECKS)" = "Two Macs: no Mac writes (⌘, -> DECKS)";
+"Zwei-Mac: verbunden mit %@ (Decks %@)" = "Two Macs: connected to %@ (decks %@)";
+"Deck %@ auf beiden" = "deck %@ on both";
