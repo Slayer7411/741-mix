@@ -116,7 +116,7 @@ MIX741_SELFTEST=1 MIX741_NOEXT=1 swift run minos741
 
 **[→ MANUAL](docs/MANUAL.md)** -> install, decks, sync, mixer, fx, browser, tags, keys, troubleshooting, faq
 
-* [settings](docs/settings.md) · [controllers](docs/controllers.md) · [library](docs/library.md)
+* [features](docs/FEATURES.md) · [settings](docs/settings.md) · [controllers](docs/controllers.md) · [library](docs/library.md)
 * [architecture](docs/architecture.md) · [nml files](docs/nml-files.md) · [roadmap](docs/roadmap.md)
 * [changelog](CHANGELOG.md) · [contributing](CONTRIBUTING.md) · [all docs](docs/README.md)
 
