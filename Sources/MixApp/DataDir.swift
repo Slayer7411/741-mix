@@ -6,8 +6,8 @@ import Foundation
 enum DataDir {
     static let local = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("MINOS-741")
-    /// bleibt lokal: Wellenform-Cache, Vorschauen, Lasttests, Plugin-Liste (Pfade dieses Macs)
-    static let localOnly: Set<String> = ["cache", "overviews", "loadtest", "plugins.json", ".DS_Store"]
+    /// bleibt lokal: Wellenform-Cache, Vorschauen, Lasttests (Daten, keine Einstellungen; baut jeder Mac selbst)
+    static let localOnly: Set<String> = ["cache", "overviews", "loadtest", ".DS_Store"]
     static let name = "MINOS-741"
 
     /// beim ersten Zugriff festgelegt (Start): Ordner neben der Collection, beim ersten Mal aus Application Support befüllt.
@@ -20,32 +20,31 @@ enum DataDir {
         let parent = collection.deletingLastPathComponent()
         guard fm.fileExists(atPath: parent.path) else { return local }
         let dir = parent.appendingPathComponent(name, isDirectory: true)
-        if fm.fileExists(atPath: dir.path) { return dir }
+        let existed = fm.fileExists(atPath: dir.path)
         do {
-            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            if !existed { try fm.createDirectory(at: dir, withIntermediateDirectories: true) }
+            // was im Ordner fehlt, aus Application Support (erster Start; später dazugekommene Dateien wie plugins.json)
             for item in (try? fm.contentsOfDirectory(atPath: local.path)) ?? [] where !localOnly.contains(item) {
-                try fm.copyItem(at: local.appendingPathComponent(item), to: dir.appendingPathComponent(item))
+                let to = dir.appendingPathComponent(item)
+                if !fm.fileExists(atPath: to.path) { try fm.copyItem(at: local.appendingPathComponent(item), to: to) }
             }
             return dir
         } catch {
-            try? fm.removeItem(at: dir)
-            return local
+            if !existed { try? fm.removeItem(at: dir) }
+            return existed ? dir : local
         }
     }
 }
 
-/// Einstellungen als Datei im Datenordner (`settings.plist`): beim Start übernommen, wenn sie seit dem letzten Mal
-/// geändert wurde (anderer Mac, zurückgespielt), nach dem Speichern und beim Beenden geschrieben. Geräte-gebundene
-/// Werte (Audio-Interface, Kanalpaare, Controller-Seriennummern) und die Zwei-Mac-Rolle bleiben auf dem Mac
+/// Einstellungen als Datei im Datenordner (`settings.plist`): alle Werte der App (auch Fenster, Teiler, Audio-Interface,
+/// Kanalpaare, Controller), damit die Session überall gleich aussieht. Beim Start übernommen, wenn die Datei seit dem
+/// letzten Mal geändert wurde (anderer Mac, zurückgespielt); geschrieben beim Start, nach jeder Änderung und beim
+/// Beenden. Nur die Zwei-Mac-Rolle bleibt auf dem Mac (sonst wären beide Mac 1)
 enum SettingsFile {
     static var url: URL { DataDir.shared.appendingPathComponent("settings.plist") }
     static let stampKey = "settings.imported"
-    static let localKeys: Set<String> = ["deviceUID", "sampleRate", "bufferSize", "internalPair", "previewPair", "deckPairs", stampKey]
-    static let localPrefixes = ["NS", "Apple", "com_apple", "com.apple", "migrated.", "donate", "x1."]
 
-    static func shared(_ key: String) -> Bool {
-        !localKeys.contains(key) && !localPrefixes.contains { key.hasPrefix($0) }
-    }
+    static func shared(_ key: String) -> Bool { key != stampKey }
 
     /// `prefs.v1` aus der Datei mit der eigenen Zwei-Mac-Rolle
     static func keepingRole(_ incoming: Data, local: Data?) -> Data {
@@ -76,22 +75,34 @@ enum SettingsFile {
 
     /// alle geteilten Werte in die Datei (atomar)
     static func export(_ d: UserDefaults = .standard) {
-        guard !Session.isSelfTest else { return }
-        let dict = d.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? d.dictionaryRepresentation()
+        guard !Session.isSelfTest, let id = Bundle.main.bundleIdentifier, let dict = d.persistentDomain(forName: id) else { return }
         let out = dict.filter { shared($0.key) }
-        guard !out.isEmpty, let data = try? PropertyListSerialization.data(fromPropertyList: out, format: .xml, options: 0) else { return }
+        guard !out.isEmpty, let data = try? PropertyListSerialization.data(fromPropertyList: out, format: .binary, options: 0) else { return }
+        // unverändert: nicht schreiben (Drive, Zeitstempel)
+        if let old = try? Data(contentsOf: url), old == data { return }
         guard (try? data.write(to: url, options: .atomic)) != nil, let s = stamp(url) else { return }
         d.set(s, forKey: stampKey)
     }
 
     nonisolated(unsafe) private static var pending: DispatchWorkItem?
-    /// nach dem Speichern der Einstellungen: gesammelt nach 2 s
+    nonisolated(unsafe) private static var observer: NSObjectProtocol?
+
+    /// nach einer Änderung: gesammelt nach 2 s
     static func scheduleExport() {
         DispatchQueue.main.async {
             pending?.cancel()
             let w = DispatchWorkItem { export() }
             pending = w
             DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
+        }
+    }
+
+    /// Start: gleich schreiben, danach jede Änderung (auch Fenster, Spalten, Audio) gesammelt
+    static func watch() {
+        guard !Session.isSelfTest, observer == nil else { return }
+        scheduleExport()
+        observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: nil) { _ in
+            scheduleExport()
         }
     }
 }

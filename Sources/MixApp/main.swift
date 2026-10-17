@@ -599,6 +599,7 @@ if CommandLine.arguments.count >= 4, CommandLine.arguments[1] == PluginSelfCheck
 
 AppResources.migrateDefaults()
 SettingsFile.importIfChanged()   // Einstellungen aus dem Datenordner neben der Collection (anderer Mac, zurückgespielt)
+SettingsFile.watch()
 // Sprache aus den Einstellungen (vor dem ersten Fenster)
 switch AppPrefs.load().ui.language {
 case "de", "en": UserDefaults.standard.set([AppPrefs.load().ui.language], forKey: "AppleLanguages")
