@@ -1090,14 +1090,17 @@ struct TrackTable: View {
 
     var body: some View {
         let ui = decks.prefs.ui
+        // Live-Lesbarkeit: einzeilig, ohne Vorschau (Band und Spalte aus), eigene Spalten und Schrift in der Tabelle
+        let live = ui.liveListOn(live: decks.live)
+        let lui: UIPrefs = { var u = ui; if live { u.previewMode = .off }; return u }()
         // stößt die Liste an (Hintergrund); die Tabelle zeigt immer `model.shown`, neue Listen kommen über `onList`
         let _ = rows == nil ? model.list(from: store, history: history, separators: ui.tagSeparators, hidePlayed: ui.hidePlayedTracks) : []
         // Vorschau-Bilder in Zellen hängen am Übersichten-Zähler, das Band (ganze Zeile) zeichnet PreviewRowLayer
-        let tick = ui.previewMode == .column || ui.previewMode == .behindTitle ? Overviews.shared.tick : 0
-        let look = TrackTableController.Look(ui: ui, zoom: UIZoom.shared.factor, filter: model.tagFilter, inline: model.inline,
+        let tick = lui.previewMode == .column || lui.previewMode == .behindTitle ? Overviews.shared.tick : 0
+        let look = TrackTableController.Look(ui: lui, zoom: UIZoom.shared.factor, filter: model.tagFilter, inline: model.inline,
                                              played: history.played, cloud: CloudLibrary.shared.revision, rip: RipChecks.shared.revision, tick: tick,
-                                             preview: ui.previewMode == .column || ui.previewMode == .behindTitle ? decks.previewing?.key : nil,
-                                             twoText: model.twoText(ui))
+                                             preview: lui.previewMode == .column || lui.previewMode == .behindTitle ? decks.previewing?.key : nil,
+                                             twoText: model.twoText(ui) && !live, liveList: live)
         TrackTableView(controller: table, look: look, selection: model.selection, sort: model.sortOrder) { table in
                 table.model = model
                 table.fixedRows = rows
@@ -1124,7 +1127,7 @@ struct TrackTable: View {
                 rowBand.bandTop = { [weak table] in table?.bandTop }
                 table.onReload = { [rowBand] in rowBand.refresh() }
             }
-            .background(PreviewRowLayer(controller: rowBand, mix: decks, on: ui.previewMode == .fullRow))
+            .background(PreviewRowLayer(controller: rowBand, mix: decks, on: ui.previewMode == .fullRow && !live))
             .onAppear { inlineCtl.install() }
             .onDisappear { inlineCtl.uninstall(); rowBand.remove(); table.detach() }
             .onChange(of: model.selection) { browser.activePaneID = model.id }

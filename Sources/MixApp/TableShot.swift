@@ -415,6 +415,30 @@ enum TableShot {
             win.contentView = nil
             win.close()
         }
+        // Live-Lesbarkeit (MIX741_SHOT_MODES=live): dieselbe Liste normal (before) und im Live-Modus (after), zwei gespielte
+        // Tracks, eine Auswahl; PNG live-list-before.png / live-list-after.png
+        if only?.contains("live") ?? false, rows.count > first + 6 {
+            mix.prefs.ui.previewMode = .off
+            pane.twoLine = nil
+            pane.detailBar = nil
+            history.setPlayed(history.played.union([rows[first + 1].key, rows[first + 3].key]))
+            for (name, on) in [("before", false), ("after", true)] {
+                mix.prefs.ui.liveList = on
+                let (h, win) = host(size: NSSize(width: Double(env["MIX741_SHOT_W"] ?? "") ?? 1400, height: 640))
+                for _ in 0..<8 { h.layoutSubtreeIfNeeded(); spin(0.2) }
+                guard let tv = table(h) else { log("keine tabelle"); exit(1) }
+                tv.scroll(NSPoint(x: 0, y: tv.rect(ofRow: first).minY))
+                pane.selection = [rows[first + 2].key]
+                for _ in 0..<4 { h.layoutSubtreeIfNeeded(); spin(0.3) }
+                spin(1)
+                png(h, "live-list-\(name).png")
+                log("live \(name): zeile \(tv.rowHeight) pt · spalten " + tv.tableColumns.filter { !$0.isHidden }.map { "\($0.identifier.rawValue) \(Int($0.width))" }.joined(separator: ", "))
+                pane.selection = []
+                win.contentView = nil
+                win.close()
+            }
+            mix.prefs.ui.liveList = false
+        }
         // Zeilen zweizeilig (Sammelspalte), Detailleiste, Auswahl (drei Zeilen gewählt, eine davon gespielt-gedimmt):
         // table-<name>.png; MIX741_SHOT_MODES=two,two-row,two-detail,one-detail,select
         let looks: [(String, PreviewMode, Bool, Bool)] = [("two", .off, true, false), ("two-row", .fullRow, true, false),

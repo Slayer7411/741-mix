@@ -232,13 +232,16 @@ final class TrackRowView: NSTableRowView, NSViewToolTipOwner {
     override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
 
     override func drawBackground(in dirtyRect: NSRect) {
-        guard let owner, owner.rowLines else { return }
-        TableStyle.hairline.withAlphaComponent(0.45).setFill()
+        guard let owner else { return }
+        if owner.stripe(self) { LiveList.stripeFill.setFill(); bounds.fill() }
+        guard owner.rowLines else { return }
+        (owner.liveMode ? LiveList.separator : TableStyle.hairline.withAlphaComponent(0.45)).setFill()
         NSRect(x: 0, y: bounds.maxY - 1, width: bounds.width, height: 1).fill()
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
-        (isEmphasized ? TableStyle.selected : TableStyle.selectedDim).setFill()
+        // Live: harte Umkehrung (knochenweiß, die Schrift in der Zeile wird dunkel gezeichnet)
+        if owner?.liveMode == true { TableStyle.bone.setFill() } else { (isEmphasized ? TableStyle.selected : TableStyle.selectedDim).setFill() }
         bounds.fill()
         TableStyle.state.setFill()
         NSRect(x: 0, y: 0, width: TableStyle.selectionStripe, height: bounds.height).fill()
@@ -477,6 +480,8 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         var preview: String?
         /// Zeilen zweizeilig mit Sammelspalte (Bereich bzw. ⌘, -> BROWSER)
         var twoText = false
+        /// Live-Lesbarkeit: feste Spalten (LiveList), Schrift und Zeilen nach den Einstellungen
+        var liveList = false
     }
 
     private var rows: [Track] = []
@@ -502,8 +507,20 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     private(set) var detailKey: String?
     /// Trennlinie unter jeder Zeile (⌘, -> BROWSER)
     var rowLines = true
+    /// Live-Lesbarkeit aktiv: feste Spalten (gespeicherte Anordnung bleibt unberührt), Schrift und Zeilen aus LiveList
+    private(set) var liveMode = false
+    /// Schrift für BPM und Key im Live-Modus (fett, eine Stufe größer); sonst wie `font`
+    private var emphasisFont: NSFont = TableStyle.mono(11)
+    /// Zeile gerade invertiert gezeichnet (Live-Modus, ausgewählt): Schrift dunkel
+    private var inverted = false
 
     var shownRows: [Track] { rows }
+
+    /// Zeile mit abwechselndem Hintergrund (Live-Modus, Einstellung)
+    func stripe(_ rv: TrackRowView) -> Bool {
+        guard liveMode, look?.ui.liveListStripes == true, let tv = table else { return false }
+        return tv.row(for: rv) % 2 == 1
+    }
 
     func makeView() -> NSScrollView {
         let tv = TrackNSTable()
@@ -565,7 +582,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
     // MARK: Spalten
 
     /// Schlüssel der gespeicherten Anordnung: einzeilig `columns.<bereich>`, zweizeilig `columns.<bereich>.2`
-    private var layoutKey: String? { model.map { "columns.\($0.name)" + (twoText ? ".2" : "") } }
+    private var layoutKey: String? { model.flatMap { LiveList.storageKey(name: $0.name, twoText: twoText, live: liveMode) } }
 
     /// von der Sammelspalte ersetzte Spalten (zweizeilig immer versteckt)
     private var replaced: Set<String> { twoText ? Set(parts.compactMap(\.column)) : [] }
@@ -574,21 +591,31 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         guard let tv = table, tv.tableColumns.isEmpty else { return }
         let d0 = UserDefaults.standard, replaced = self.replaced
         let single = model.flatMap { d0.data(forKey: "columns.\($0.name)") }.flatMap(ColumnLayout.decode) ?? ColumnLayout.State()
-        let saved = twoText ? layoutKey.flatMap { d0.data(forKey: $0) }.flatMap(ColumnLayout.decode)
+        let saved = liveMode ? ColumnLayout.State() : twoText ? layoutKey.flatMap { d0.data(forKey: $0) }.flatMap(ColumnLayout.decode)
             ?? ColumnLayout.twoLine(from: single, replacing: replaced) : single
-        for id in ColumnLayout.placed(saved) {
+        let live = liveMode ? LiveList.clampSize(ui.liveListTextSize) : 0
+        for id in liveMode ? LiveList.columns : ColumnLayout.placed(saved) {
             guard let d = TrackColumn.byID[id] else { continue }
             let c = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
             let h = TrackHeaderCell(textCell: d.title)
             h.font11 = TableStyle.mono(11.z)
             c.headerCell = h
             c.title = d.title
-            c.minWidth = d.min.z
-            c.maxWidth = d.max == .greatestFiniteMagnitude ? d.max : d.max.z
-            c.width = d.fixed ? d.width.z : Swift.min(c.maxWidth, Swift.max(c.minWidth, saved.widths[id] ?? d.width.z))
-            c.resizingMask = d.fixed ? [] : [.autoresizingMask, .userResizingMask]
-            c.isHidden = id == "preview" ? ui.previewMode != .column : id == "track" ? !twoText
-                : replaced.contains(id) ? true : saved.hidden[id] ?? d.hidden
+            if liveMode {
+                let w = LiveList.width(id, size: live)
+                c.minWidth = w.min
+                c.maxWidth = w.max
+                c.width = w.ideal
+                c.resizingMask = w.min == w.max ? [] : [.autoresizingMask, .userResizingMask]
+                c.isHidden = false
+            } else {
+                c.minWidth = d.min.z
+                c.maxWidth = d.max == .greatestFiniteMagnitude ? d.max : d.max.z
+                c.width = d.fixed ? d.width.z : Swift.min(c.maxWidth, Swift.max(c.minWidth, saved.widths[id] ?? d.width.z))
+                c.resizingMask = d.fixed ? [] : [.autoresizingMask, .userResizingMask]
+                c.isHidden = id == "preview" ? ui.previewMode != .column : id == "track" ? !twoText
+                    : replaced.contains(id) ? true : saved.hidden[id] ?? d.hidden
+            }
             if d.sort != nil { c.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true) }
             tv.addTableColumn(c)
         }
@@ -616,14 +643,16 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         UserDefaults.standard.set(ColumnLayout.encode(s), forKey: key)
     }
 
-    /// Zeilen-Modus oder Teile der Sammelspalte geändert: Anordnung des alten Modus sichern, Spalten neu aus der des neuen
-    private func rebuildColumns(_ ui: UIPrefs, twoText two: Bool) {
+    /// Zeilen-Modus, Teile der Sammelspalte oder Live-Modus geändert: Anordnung des alten Modus sichern (im Live-Modus
+    /// nichts), Spalten neu aus der des neuen
+    private func rebuildColumns(_ ui: UIPrefs, twoText two: Bool, live: Bool) {
         guard let tv = table else { return }
         saveWork?.cancel()
         if !Session.isSelfTest { save() }
         applying = true
         for c in tv.tableColumns { tv.removeTableColumn(c) }
         twoText = two
+        liveMode = live
         parts = TrackParts.normalized(ui.trackParts)
         buildColumns(ui)
         applying = false
@@ -730,32 +759,46 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         let first = look == nil
         if first {
             twoText = l.twoText
+            liveMode = l.liveList
             parts = TrackParts.normalized(l.ui.trackParts)
             buildColumns(l.ui)
         }
         let old = look
         look = l
         if let old {
-            if old.twoText != l.twoText || (l.twoText && old.ui.trackParts != l.ui.trackParts) { rebuildColumns(l.ui, twoText: l.twoText) }
-            if old.zoom != l.zoom { applyZoom(from: old.zoom, to: l.zoom) }
+            // Live-Modus ein/aus, Zoom oder Schriftgröße dazu: Spalten neu (feste Breiten ohne Zoom, nichts gespeichert)
+            let rebuild = old.twoText != l.twoText || old.liveList != l.liveList || (l.twoText && old.ui.trackParts != l.ui.trackParts)
+                || (l.liveList && (old.zoom != l.zoom || old.ui.liveListTextSize != l.ui.liveListTextSize))
+            if rebuild { rebuildColumns(l.ui, twoText: l.twoText, live: l.liveList) }
+            if old.zoom != l.zoom, !rebuild { applyZoom(from: old.zoom, to: l.zoom) }
             if old.ui.previewMode != l.ui.previewMode, let c = tv.tableColumns.first(where: { $0.identifier.rawValue == "preview" }) {
                 c.isHidden = l.ui.previewMode != .column
             }
         }
-        let styleChanged = first || old?.ui != l.ui || old?.zoom != l.zoom || old?.twoText != l.twoText
+        let styleChanged = first || old?.ui != l.ui || old?.zoom != l.zoom || old?.twoText != l.twoText || old?.liveList != l.liveList
         if styleChanged {
-            let m = TagChipsText.Metrics.of(l.ui)
-            font = m.nsFont
-            boldFont = TableStyle.mono(m.size, bold: true)
-            plainFont = TableStyle.mono(m.size)
-            badgeFont = TableStyle.mono((m.size * 0.78).rounded(), bold: true)
+            if l.liveList {
+                let s = LiveList.clampSize(l.ui.liveListTextSize)
+                font = LiveList.font(s, l.ui.liveListWeight)
+                plainFont = font
+                boldFont = LiveList.font(s, .semibold)
+                emphasisFont = LiveList.font(s + 1, .semibold)
+                badgeFont = TableStyle.mono((s * 0.78).rounded(), bold: true)
+            } else {
+                let m = TagChipsText.Metrics.of(l.ui)
+                font = m.nsFont
+                boldFont = TableStyle.mono(m.size, bold: true)
+                plainFont = TableStyle.mono(m.size)
+                badgeFont = TableStyle.mono((m.size * 0.78).rounded(), bold: true)
+                emphasisFont = font
+            }
             advance = NSAttributedString(string: "0", attributes: [.font: plainFont]).size().width
             badgeWidths = [:]
             shortValues = l.ui.shortValues
-            let h = TableStyle.rowHeight(l.ui, twoText: l.twoText)
+            let h = l.liveList ? LiveList.rowHeight(LiveList.clampSize(l.ui.liveListTextSize)) : TableStyle.rowHeight(l.ui, twoText: l.twoText)
             bandTop = l.ui.previewMode != .fullRow ? nil : l.twoText ? TableStyle.textHeight(l.ui) : (h * 0.5).rounded()
             tv.rowHeight = h
-            rowLines = l.ui.browserRowLines
+            rowLines = l.liveList || l.ui.browserRowLines
             if let h = tv.headerView, h.frame.height != (24.z).rounded() { h.frame.size.height = (24.z).rounded(); tv.tile() }
         }
         if styleChanged || old?.filter != l.filter { chipCache = [:] }
@@ -1111,8 +1154,10 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         let editing = model?.inline.flatMap { $0.key == t.key ? $0.field : nil }
         var tips: [NSRect] = []
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
-        // gespielt: ganze Zeile gedimmt (⌘, -> BROWSER), nicht in der History-Tabelle (eigene Ansicht)
-        let dimmed = look?.ui.dimPlayedTracks == true && history?.played.contains(t.key) == true
+        // gespielt: ganze Zeile gedimmt (⌘, -> BROWSER), nicht in der History-Tabelle (eigene Ansicht); Live: nicht gedimmt
+        let dimmed = !liveMode && look?.ui.dimPlayedTracks == true && history?.played.contains(t.key) == true
+        inverted = liveMode && rv.isSelected
+        defer { inverted = false }
         for (i, col) in tv.tableColumns.enumerated() where !col.isHidden {
             var f = tv.frameOfCell(atColumn: i, row: r)
             f.origin.x -= origin.x
@@ -1167,7 +1212,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         let l = line(f)
         switch d.kind {
         case .played:
-            if history?.played.contains(t.key) == true { draw("✓", TableStyle.secondary, l, ctx) }
+            if history?.played.contains(t.key) == true { draw("✓", ink(TableStyle.secondary), l, ctx) }
         case .cloud:
             let b = CloudCell.badge(t.path)
             if !b.glyph.isEmpty { draw(b.glyph, NSColor(b.color), l, ctx, font: b.glyph == "☁" ? .systemFont(ofSize: 13.z) : TableStyle.mono(11.z)) }
@@ -1191,17 +1236,17 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
                 fetch("cover|" + t.path, row: row, key: t.key) { await ArtworkCache.shared.image(t.path, .small) }
             }
         case .artist:
-            drawText(t.artist, t.loose ? TableStyle.muted : t.fileExists ? TableStyle.bone : TableStyle.state, l, ctx, font: font, middle: true)
+            drawText(t.artist, t.loose ? ink(TableStyle.muted) : t.fileExists ? TableStyle.bone : TableStyle.state, l, ctx, font: font, middle: true)
         case .title:
             if look?.ui.previewMode == .behindTitle, let img = preview(t, row: row) { image(img, l.insetBy(dx: 0, dy: 1), 0.25, ctx) }
-            drawTitle(t.title, t.loose ? TableStyle.muted : TableStyle.bone, l, ctx, font: font)
+            drawTitle(t.title, t.loose ? ink(TableStyle.muted) : TableStyle.bone, l, ctx, font: font)
         case .preview:
             let h = PreviewRenderer.heightPt.z
             if let img = preview(t, row: row) { image(img, CGRect(x: l.minX, y: (l.midY - h / 2).rounded(), width: l.width, height: h), 1, ctx) }
         case let .field(fd):
             draw(fd.value(of: t), TableStyle.bone, l, ctx)
         case .bpm:
-            draw(shortValues ? ShortValues.bpm(t.bpm) : t.bpm > 0 ? String(format: "%.2f", t.bpm) : "", TableStyle.bone, l, ctx)
+            draw(shortValues ? ShortValues.bpm(t.bpm) : t.bpm > 0 ? String(format: "%.2f", t.bpm) : "", TableStyle.bone, l, ctx, font: emphasisFont)
         case .key:
             drawKey(t, l, ctx)
         case .harmony:
@@ -1240,18 +1285,21 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     /// Key, mit Bezug (Master) nach Harmonie gefärbt und mit Zeichen davor (◆ ▲ ▼ ◇) in einem festen Platz
     private func drawKey(_ t: Track, _ l: CGRect, _ ctx: CGContext) {
-        guard look?.ui.harmonyColors == true, let ref = refKey else { draw(t.openKey, TableStyle.bone, l, ctx); return }
+        guard look?.ui.harmonyColors == true, let ref = refKey else { draw(t.openKey, TableStyle.bone, l, ctx, font: emphasisFont); return }
         let slot = (font.pointSize * 0.95).rounded()
         let text = CGRect(x: l.minX + slot, y: l.minY, width: l.width - slot, height: l.height)
-        guard let code = t.harmonyCode else { draw(t.openKey, TableStyle.clash, text, ctx); return }
+        guard let code = t.harmonyCode else { draw(t.openKey, TableStyle.clash, text, ctx, font: emphasisFont); return }
         let r = Harmony.relation(code, to: ref), color = TableStyle.harmony(r.step)
         if !r.symbol.isEmpty { draw(r.symbol, color, l, ctx, font: TableStyle.mono(font.pointSize * 0.7)) }
-        draw(t.openKey, color, text, ctx)
+        draw(t.openKey, color, text, ctx, font: emphasisFont)
     }
 
     private func ctAttrs(_ font: NSFont, _ color: NSColor) -> [NSAttributedString.Key: Any] {
-        [.font: font, NSAttributedString.Key(kCTForegroundColorAttributeName as String): color.cgColor]
+        [.font: font, NSAttributedString.Key(kCTForegroundColorAttributeName as String): (inverted ? TableStyle.void : color).cgColor]
     }
+
+    /// Live-Modus: Nebenspalten knochenweiß statt gedämpft (Zustandsfarben bleiben)
+    private func ink(_ c: NSColor) -> NSColor { liveMode ? TableStyle.bone : c }
 
     /// eine Zeile Text, vertikal mittig, rechts mit „…“ gekürzt
     private func draw(_ s: String, _ color: NSColor, _ l: CGRect, _ ctx: CGContext, font f: NSFont? = nil) {

@@ -131,7 +131,10 @@ struct ContentView: View {
         let ui = mix.prefs.ui, m = paneA
         guard ui.browserSnapRows, layout != .stacked, m.paneHeight > 0, m.tableHeight > 0 else { return h }
         let chrome = (m.paneHeight - m.tableHeight + (24.z).rounded()) / 1.z
-        return BrowserSnap.height(h, chrome: chrome, row: TableStyle.rowHeight(ui, twoText: m.twoText(ui)) / 1.z)
+        // Live-Liste: Zeilenhöhe ohne Zoom
+        let row = ui.liveListOn(live: mix.live) ? LiveList.rowHeight(LiveList.clampSize(ui.liveListTextSize))
+            : TableStyle.rowHeight(ui, twoText: m.twoText(ui)) / 1.z
+        return BrowserSnap.height(h, chrome: chrome, row: row)
     }
 
     /// Beginn des Ziehens am Trenner: Decks fest in ihrer Höhe
