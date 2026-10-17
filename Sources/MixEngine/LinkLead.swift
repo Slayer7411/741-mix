@@ -68,6 +68,49 @@ public struct LinkLeadPolicy: Sendable {
     }
 }
 
+/// Wie MINOS dem Link-Takt folgt (Gegenstück zu LinkLeadPolicy, Link bleibt unberührt). Eingang je Steuertick:
+/// `diff` = eigener Beat − Beat der Link-Zeitachse zur selben Host-Zeit. Kleine Abweichungen zieht die Clock nach,
+/// ab `jumpTolerance` (geglättet) springt sie auf die Link-Zeitachse.
+public struct LinkFollowPolicy: Sendable {
+    public enum Action: Equatable, Sendable {
+        case none
+        /// Clock um −Wert Beats verschieben
+        case trim(Double)
+        /// Clock um −Wert Beats springen lassen (Phase und Takt-Lage)
+        case jump(Double)
+    }
+
+    /// ab hier (geglättet, ≈ 0,02 Beats) springt die Clock wie bei der Clock am Master-Deck
+    public static let jumpTolerance = LinkLeadPolicy.tolerance
+    public static let trimTolerance = LinkLeadPolicy.trimTolerance
+
+    public private(set) var drift = 0.0
+    private var aligned = false
+    private var hold = 0
+
+    public init() {}
+
+    public mutating func reset() { self = Self() }
+
+    public mutating func step(diff: Double) -> Action {
+        guard diff.isFinite else { return .none }
+        if hold > 0 { hold -= 1; return .none }
+        if !aligned {
+            aligned = true
+            return abs(diff) > Self.trimTolerance ? act(.jump(diff)) : .none
+        }
+        drift += (diff - drift) * LinkLeadPolicy.smoothing
+        if abs(drift) > Self.jumpTolerance { return act(.jump(diff)) }
+        if abs(drift) > Self.trimTolerance { return act(.trim(drift)) }
+        return .none
+    }
+
+    private mutating func act(_ a: Action) -> Action {
+        drift = 0; hold = LinkLeadPolicy.holdoff
+        return a
+    }
+}
+
 /// Link-Diagnose: Zähler seit dem Einschalten, letzte Werte, Fenster (Max/σ der Abweichung) seit dem letzten Abholen
 public struct LinkStats: Sendable, Equatable {
     /// Link-Zeitachse neu gesetzt (force), Tempo an Link gegeben, MINOS-Clock nachgezogen

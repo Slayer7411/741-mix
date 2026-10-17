@@ -12,6 +12,7 @@ public final class LinkSession: @unchecked Sendable {
     public var offsetMicros: Int64 = 0
     /// Nachführung (Schwellen: LinkLeadPolicy) und Diagnose
     private var policy = LinkLeadPolicy()
+    private var followPolicy = LinkFollowPolicy()
     public private(set) var stats = LinkStats()
 
     private static let timebase: mach_timebase_info_data_t = { var t = mach_timebase_info_data_t(); mach_timebase_info(&t); return t }()
@@ -41,7 +42,7 @@ public final class LinkSession: @unchecked Sendable {
         set {
             guard newValue != enabled else { return }
             abl_link_enable(link, newValue)
-            policy.reset(); stats = LinkStats()
+            policy.reset(); followPolicy.reset(); stats = LinkStats()
         }
     }
 
@@ -55,6 +56,24 @@ public final class LinkSession: @unchecked Sendable {
         var diff = (beat - abl_link_beat_at_time(state, t, quantum)).truncatingRemainder(dividingBy: quantum)
         if diff > quantum / 2 { diff -= quantum } else if diff < -quantum / 2 { diff += quantum }
         return diff
+    }
+
+    /// Wechsel zwischen Führen und Folgen: beide Nachführungen neu beginnen
+    public func resetPolicies() { policy.reset(); followPolicy.reset() }
+
+    /// Folgen: Tempo der Link-Sitzung und Aktion für die eigene Clock. `beat` ist zur Host-Zeit `hostTime` hörbar
+    /// (gleiche Abbildung wie `lead`). Link wird nicht verändert; die Clock verschiebt der Aufrufer (LinkFollowPolicy).
+    public func follow(beat: Double, hostTime: UInt64) -> (bpm: Double, action: LinkFollowPolicy.Action)? {
+        guard enabled else { return nil }
+        abl_link_capture_app_session_state(link, state)
+        let t = Self.micros(hostTicks: hostTime) + offsetMicros
+        var diff = (beat - abl_link_beat_at_time(state, t, quantum)).truncatingRemainder(dividingBy: quantum)
+        if diff > quantum / 2 { diff -= quantum } else if diff < -quantum / 2 { diff += quantum }
+        stats.record(diff)
+        let action = followPolicy.step(diff: diff)
+        stats.drift = followPolicy.drift
+        if case .trim = action { stats.trims += 1 }
+        return (abl_link_tempo(state), action)
     }
 
     /// Fenster (Max/σ) der Diagnose abholen und neu beginnen; Zähler laufen weiter

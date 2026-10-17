@@ -90,6 +90,8 @@ final class MixModel {
     private(set) var linkPeersShown = 0
     private(set) var effectiveMaster: Int?
     private(set) var clockMaster = false
+    /// TAKT (Zwei-Mac-Modus): dieser Mac führt Link (Schalter in der Leiste; setzt PairLink)
+    private(set) var taktHere = true
     /// LIVE (Schalter oben): Mac bleibt wach; nicht gespeichert, gekoppelt folgt der andere Mac
     private(set) var live = false
 
@@ -374,11 +376,17 @@ final class MixModel {
             if s.crossfader != crossfader { crossfader = s.crossfader }
             let peers = s.linkEnabled ? s.linkPeers : 0
             if peers != linkPeersShown { linkPeersShown = peers }
+            if playingMaster != lastPlayingMaster { lastPlayingMaster = playingMaster; PairLink.shared.masterDeckChanged() }
             persistEdits()
         }
     }
 
     private func run(_ f: () -> Void) { f(); pull() }
+
+    func setTaktHere(_ on: Bool) { if on != taktHere { taktHere = on } }
+    /// das Master-Deck spielt (für die Takt-Führung der Zwei Macs)
+    var playingMaster: Bool { effectiveMaster.map { decks[$0].state.playing } ?? false }
+    @ObservationIgnored private var lastPlayingMaster = false
 
     // MARK: - Abfragen
 
