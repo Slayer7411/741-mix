@@ -376,7 +376,7 @@ enum GrooveShot {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let devs = MixEngine.outputDevices()
         let dev = devs.first { $0.channels == 2 && $0.name.localizedCaseInsensitiveContains("speaker") } ?? devs.first { $0.channels < 8 }
-        UserDefaults.standard.setVolatileDomain(["deviceUID": dev?.uid ?? "-", "mixerMode": MixerMode.internalMixer.rawValue,
+        E2E.defaults.setVolatileDomain(["deviceUID": dev?.uid ?? "-", "mixerMode": MixerMode.internalMixer.rawValue,
                                                  "sampleRate": 0.0, "bufferSize": 0, "masterVolume": 0.0],
                                                 forName: UserDefaults.argumentDomain)
         let mix = MixModel()

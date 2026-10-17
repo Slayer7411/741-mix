@@ -1,12 +1,12 @@
 import AppKit
 import Foundation
+import MixCore
 
 /// Daten einer Session im Ordner `MINOS-741` neben der Collection-Datei: Einstellungen (`settings.plist`), Analysen,
 /// Edits, Cuts, Playlists, History, Preparation, Sitzung. Zieht mit der Collection um – dieselbe Collection samt Ordner
 /// ergibt auf jedem Mac dieselbe Session. Zwischenspeicher und Rechner-Gebundenes bleiben in Application Support.
 enum DataDir {
-    static let local = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("MINOS-741")
+    static let local = E2E.applicationSupport.appendingPathComponent("MINOS-741")
     /// bleibt lokal: Wellenform-Cache, Vorschauen, Lasttests (Daten, keine Einstellungen; baut jeder Mac selbst)
     static let localOnly: Set<String> = ["cache", "overviews", "loadtest", ".DS_Store"]
     static let name = "MINOS-741"
@@ -72,7 +72,7 @@ enum SettingsFile {
     }
 
     /// Start, vor dem ersten Lesen der Einstellungen
-    static func importIfChanged(_ d: UserDefaults = .standard) {
+    static func importIfChanged(_ d: UserDefaults = E2E.defaults) {
         guard !Session.isSelfTest, let s = stamp(url), d.string(forKey: stampKey) != s,
               let data = try? Data(contentsOf: url),
               let dict = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] else { return }
@@ -83,8 +83,9 @@ enum SettingsFile {
     }
 
     /// alle geteilten Werte in die Datei (atomar)
-    static func export(_ d: UserDefaults = .standard) {
-        guard !Session.isSelfTest, let id = Bundle.main.bundleIdentifier, let dict = d.persistentDomain(forName: id) else { return }
+    static func export(_ d: UserDefaults = E2E.defaults) {
+        guard !Session.isSelfTest, let id = E2E.isActive ? E2E.suite : Bundle.main.bundleIdentifier,
+              let dict = d.persistentDomain(forName: id) else { return }
         // alles in die Datei (auch das Audio-Gerät, zum Nachsehen); beim Übernehmen bleibt es lokal
         let out = dict.filter { $0.key != stampKey }
         guard !out.isEmpty, let data = try? PropertyListSerialization.data(fromPropertyList: out, format: .binary, options: 0) else { return }
@@ -117,7 +118,7 @@ enum SettingsFile {
         }
         // Beenden: sofort schreiben (auch wenn der Weg über AppDelegate.onQuit nicht läuft)
         quitObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
-            UserDefaults.standard.synchronize()
+            E2E.defaults.synchronize()
             export()
         }
     }

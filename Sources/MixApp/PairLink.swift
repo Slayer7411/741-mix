@@ -13,7 +13,8 @@ import MixEngine
 @MainActor
 final class PairLink {
     static let shared = PairLink()
-    static let service = "_minos741._tcp"
+    /// Bonjour-Art; Ende-zu-Ende: eigene Art (`MIX741_E2E_SERVICE`), nie die der echten Macs
+    static let service = E2E.isActive ? E2E.service : "_minos741._tcp"
 
     private let queue = DispatchQueue(label: "minos741.pair", qos: .utility)
     private(set) var setup = PairSetup()
@@ -77,7 +78,7 @@ final class PairLink {
     }
 
     static var computerName: String {
-        (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? "MINOS-741"
+        E2E.isActive ? E2E.name : (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? "MINOS-741"
     }
 
     private static func parameters() -> NWParameters {
@@ -102,6 +103,7 @@ final class PairLink {
             l.service = NWListener.Service(name: Self.computerName, type: Self.service)
             l.newConnectionHandler = { c in Self.main { PairLink.shared.adopt(c) } }
             l.stateUpdateHandler = { s in
+                if case .ready = s, E2E.isActive, let port = l.port?.rawValue { E2EPeers.publish(port) }
                 if case .failed = s { Self.main { if PairLink.shared.listener === l { PairLink.shared.restartListener() } } }
             }
             l.start(queue: queue)
@@ -142,6 +144,16 @@ final class PairLink {
     /// ausgehend zu einem Treffer; höchstens ein Versuch je Gegenüber
     private func found(_ name: String, _ ep: NWEndpoint) {
         guard setup.on, active?.dialed != name, !candidates.contains(where: { $0.dialed == name }) else { return }
+        if E2E.isActive {
+            // Ende-zu-Ende: Bonjour findet den Partner (echt), die Verbindung läuft über Loopback. macOS liefert eine
+            // Verbindung an die eigene LAN-Adresse nicht an den eigenen Listener (geprüft), Loopback geht.
+            guard let port = E2EPeers.port(of: name) else { retryIfIdle(); return }
+            partner = name
+            let p = Self.parameters()
+            p.requiredInterfaceType = .loopback
+            adopt(NWConnection(to: .hostPort(host: "127.0.0.1", port: port), using: p), dialed: name)
+            return
+        }
         partner = name
         adopt(NWConnection(to: ep, using: Self.parameters()), dialed: name)
     }

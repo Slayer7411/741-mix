@@ -44,7 +44,7 @@ enum TagShot {
 
         // Audio-Setup sichern (MixModel schreibt es beim Start zurück); nie das Interface einer laufenden Live-Session:
         // eingebaute Lautsprecher, stumm, Ausgabe sofort wieder aus
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         let keys = ["mixerMode", "deviceUID", "internalPair", "deckPairs", "sampleRate", "bufferSize", "prefs.v1", "columns.Shot"]
         let saved = keys.map { ($0, d.object(forKey: $0)) }
         let restore = { for (k, v) in saved { if let v { d.set(v, forKey: k) } else { d.removeObject(forKey: k) } } }

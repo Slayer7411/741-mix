@@ -19,7 +19,7 @@ enum ZoomShot {
         let zooms = (ProcessInfo.processInfo.environment["MIX741_SHOT_ZOOM"] ?? "1,1.5").split(separator: ",").compactMap { Double($0) }
 
         // Audio-Setup sichern (MixModel schreibt es beim Start zurück), nur eingebaute Lautsprecher, stumm
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         let keys = ["mixerMode", "deviceUID", "internalPair", "deckPairs", "sampleRate", "bufferSize"]
         let saved = keys.map { ($0, d.object(forKey: $0)) }
         d.setVolatileDomain(["deviceUID": "BuiltInSpeakerDevice", "mixerMode": "Intern", "sampleRate": 0.0, "bufferSize": 0],

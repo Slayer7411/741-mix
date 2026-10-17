@@ -1,0 +1,27 @@
+{
+  "name": "start-collection",
+  "description": "Start: Collection lädt, Zahlen wie in der Fixture, Quellen Collection / Playlist / Smartlist liefern die Treffer",
+  "instances": ["A"],
+  "steps": [
+    {"do": "snapshot", "expect": [
+      {"path": "ok", "equals": true},
+      {"path": "body.library.loaded", "equals": true},
+      {"path": "body.library.tracks", "equals": 10},
+      {"path": "body.library.playlists", "equals": 2},
+      {"path": "body.library.smartlists", "equals": 3},
+      {"path": "body.library.folders", "equals": 1},
+      {"path": "body.output.e2e", "equals": true},
+      {"path": "body.output.deviceID", "equals": 0}
+    ]},
+    {"do": "select-source", "args": {"source": "collection"}, "expect": [{"path": "body.source", "equals": "collection"}]},
+    {"do": "list", "expect": [{"path": "body.count", "equals": 10}]},
+    {"do": "select-source", "args": {"source": "playlist:Warmup"}, "expect": [{"path": "body.source", "equals": "node:Warmup"}]},
+    {"do": "list", "expect": [{"path": "body.count", "equals": 3}, {"path": "body.rows.0.key", "equals": "${key:t01.wav}"}]},
+    {"do": "select-source", "args": {"source": "smartlist:Techno Or Dark"}},
+    {"do": "list", "expect": [{"path": "body.count", "equals": 5}]},
+    {"do": "select-source", "args": {"source": "smartlist:Fast 125"}},
+    {"do": "list", "expect": [{"path": "body.count", "equals": 4}]},
+    {"do": "select-source", "args": {"source": "smartlist:Not Ambient"}},
+    {"do": "list", "expect": [{"path": "body.count", "equals": 9}]}
+  ]
+}

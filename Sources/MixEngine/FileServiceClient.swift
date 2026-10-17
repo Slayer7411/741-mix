@@ -3,6 +3,7 @@ import Foundation
 import MixIPC
 import MixMedia
 import MixProtocol
+import MixCore
 
 /// Datei-Dienst aus Sicht des Engine-Prozesses: Tracks werden in `minos-files`-Prozessen dekodiert (ein Auftrag je
 /// Prozess), das Ergebnis kommt als `.mtrk`-Datei (fd) zurück und wird nur lesend eingeblendet. Dieser Prozess
@@ -64,8 +65,7 @@ public final class FileServiceClient: @unchecked Sendable {
 
     /// ~/Library/Application Support/MINOS-741/cache
     public static var defaultCacheDir: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MINOS-741/cache", isDirectory: true)
+        E2E.applicationSupport.appendingPathComponent("MINOS-741/cache", isDirectory: true)
     }
 
     /// Helfer neben dem eigenen Programm (App: Contents/MacOS, Entwicklung: .build/<konfig>/)

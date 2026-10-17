@@ -1,6 +1,7 @@
 import AVFoundation
 import CryptoKit
 import Foundation
+import MixCore
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -14,7 +15,7 @@ public final class ArtworkCache: @unchecked Sendable {
 
     /// MIX741_ARTWORK_DIR: anderer Cache-Ordner (Selbsttest, Messung)
     public static let shared = ArtworkCache(directory: ProcessInfo.processInfo.environment["MIX741_ARTWORK_DIR"].map { URL(fileURLWithPath: $0) }
-        ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("MINOS-741/artwork"))
+        ?? E2E.caches.appendingPathComponent("MINOS-741/artwork"))
 
     public let directory: URL
     /// Eintrag im Speicher-Cache; image == nil heißt: Track hat kein Cover

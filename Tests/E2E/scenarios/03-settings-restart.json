@@ -1,0 +1,16 @@
+{
+  "name": "settings-restart",
+  "description": "Einstellung setzen, sauber beenden: settings.plist im Datenordner enthält sie; mit leerer Einstellungs-Domäne neu starten: Wert zurück",
+  "instances": ["A"],
+  "steps": [
+    {"do": "set-prefs", "args": {"ui": {"hidePlayedTracks": true}}, "expect": [{"path": "ok", "equals": true}]},
+    {"do": "snapshot", "expect": [{"path": "body.prefs.ui.hidePlayedTracks", "equals": true}]},
+    {"do": "quit", "exit": "sauber"},
+    {"do": "plist", "file": "${root:A}/collection/MINOS-741/settings.plist", "expect": [
+      {"path": "prefs.v1.ui.hidePlayedTracks", "equals": true}
+    ]},
+    {"do": "forget-settings", "who": "A"},
+    {"do": "restart", "who": "A"},
+    {"do": "snapshot", "expect": [{"path": "body.prefs.ui.hidePlayedTracks", "equals": true}]}
+  ]
+}

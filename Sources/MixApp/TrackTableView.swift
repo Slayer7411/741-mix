@@ -589,7 +589,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     private func buildColumns(_ ui: UIPrefs) {
         guard let tv = table, tv.tableColumns.isEmpty else { return }
-        let d0 = UserDefaults.standard, replaced = self.replaced
+        let d0 = E2E.defaults, replaced = self.replaced
         let single = model.flatMap { d0.data(forKey: "columns.\($0.name)") }.flatMap(ColumnLayout.decode) ?? ColumnLayout.State()
         let saved = liveMode ? ColumnLayout.State() : twoText ? layoutKey.flatMap { d0.data(forKey: $0) }.flatMap(ColumnLayout.decode)
             ?? ColumnLayout.twoLine(from: single, replacing: replaced) : single
@@ -640,7 +640,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             // Sammelspalte und ersetzte Spalten folgen dem Modus, nicht der gespeicherten Sichtbarkeit
             if let d = TrackColumn.byID[id], id != "track", !replaced.contains(id), c.isHidden != d.hidden { s.hidden[id] = c.isHidden }
         }
-        UserDefaults.standard.set(ColumnLayout.encode(s), forKey: key)
+        E2E.defaults.set(ColumnLayout.encode(s), forKey: key)
     }
 
     /// Zeilen-Modus, Teile der Sammelspalte oder Live-Modus geändert: Anordnung des alten Modus sichern (im Live-Modus

@@ -422,7 +422,7 @@ struct AppPrefs: Codable, Equatable {
     static func load() -> AppPrefs {
         var p = loadSaved()
         // FDN-Hall: neue Standard-Helligkeit 0,6; wer den alten Standard 0,4 nie verändert hat, bekommt den neuen (einmalig)
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         if !Session.isSelfTest, !d.bool(forKey: "migrated.reverb-fdn") {
             if d.data(forKey: key) != nil, p.engine.reverbBrightness == 0.4 { p.engine.reverbBrightness = EnginePrefs().reverbBrightness; p.save() }
             d.set(true, forKey: "migrated.reverb-fdn")
@@ -449,7 +449,7 @@ struct AppPrefs: Codable, Equatable {
     }
 
     private static func loadSaved() -> AppPrefs {
-        guard let data = UserDefaults.standard.data(forKey: key) else {
+        guard let data = E2E.defaults.data(forKey: key) else {
             var p = AppPrefs()
             p.ui.layoutProfiles = LayoutProfile.defaults(from: p.ui)
             return p
@@ -513,7 +513,7 @@ struct AppPrefs: Codable, Equatable {
 
     func save() {
         guard !Session.isSelfTest else { return }   // Selbsttest darf Christians Einstellungen nicht überschreiben
-        if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.key) }
+        if let data = try? JSONEncoder().encode(self) { E2E.defaults.set(data, forKey: Self.key) }
         SettingsFile.scheduleExport()
     }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import MixEngine
+import MixCore
 
 /// Selbsttest-Bilder der Einstellungen (MIX741_SELFTEST=1 MIX741_SHOT=settings:<ordner>):
 /// jeden Bereich offscreen rendern, je Bereich PNGs schreiben, beenden. Kein sichtbares Fenster, keine Aktivierung.
@@ -15,7 +16,7 @@ enum SettingsShot {
 
         // Audio-Einstellungen sichern: MixModel öffnet beim Start das gespeicherte Gerät und schreibt das Setup zurück.
         // Für die Bilder nur die eingebauten Lautsprecher (nie das Interface einer laufenden Live-Session), danach zurück.
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         let keys = ["mixerMode", "deviceUID", "internalPair", "deckPairs", "sampleRate", "bufferSize", "prefs.v1"]
         let saved = keys.map { ($0, d.object(forKey: $0)) }
         let restore = { for (k, v) in saved { if let v { d.set(v, forKey: k) } else { d.removeObject(forKey: k) } } }

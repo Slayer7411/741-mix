@@ -821,7 +821,7 @@ final class MixModel {
     var masterFXActive: Bool { mixerMode == .internalMixer }
     func setMasterVolume(_ v: Double) {
         run { core.setMasterVolume(v) }
-        if !Session.isSelfTest { UserDefaults.standard.set(v, forKey: "masterVolume") }
+        if !Session.isSelfTest { E2E.defaults.set(v, forKey: "masterVolume") }
     }
     /// MAIN wirkt nur im internen Modus oder mit „Main-Volume wirkt auch extern“ (sonst setzt der Kern 1)
     var masterVolumeActive: Bool { mixerMode == .internalMixer || prefs.engine.masterVolumeExternal }
@@ -966,7 +966,7 @@ final class MixModel {
     }
 
     private func loadSetup() {
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         if let m = d.string(forKey: "mixerMode").flatMap(MixerMode.init(rawValue:)) { mixerMode = m }
         deviceUID = d.string(forKey: "deviceUID")
         internalPair = d.integer(forKey: "internalPair")
@@ -995,7 +995,7 @@ final class MixModel {
 
     private func saveSetup() {
         guard !Session.isSelfTest else { return }   // Selbsttest/Messung (eingebautes Gerät): Christians Routing bleibt
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         d.set(mixerMode.rawValue, forKey: "mixerMode")
         d.set(deviceUID, forKey: "deviceUID")
         d.set(internalPair, forKey: "internalPair")

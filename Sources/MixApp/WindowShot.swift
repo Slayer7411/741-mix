@@ -25,7 +25,7 @@ enum WindowShot {
         let scale = env["MIX741_SHOT_SCALE"].flatMap(Double.init) ?? 1.25
 
         // eingebaute Lautsprecher, stumm; Argument-Domäne (-AppleLanguages) bleibt, Spalten in Standard-Anordnung
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         let args = d.volatileDomain(forName: UserDefaults.argumentDomain)
             .merging(["columns.Basis": Data(), "columns.Layer": Data()]) { $1 }
         let devs = MixEngine.outputDevices()

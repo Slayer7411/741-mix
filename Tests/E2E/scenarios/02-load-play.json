@@ -1,0 +1,27 @@
+{
+  "name": "load-play",
+  "description": "Track auf Deck A laden, starten, Position läuft (Ausgabe ohne Gerät, Kern in Echtzeit)",
+  "instances": ["A"],
+  "steps": [
+    {"do": "select-source", "args": {"source": "collection"}},
+    {"do": "load", "args": {"deck": 0, "key": "${key:t01.wav}"}, "expect": [{"path": "body.accepted", "equals": true}]},
+    {"do": "snapshot", "timeout": 20, "expect": [
+      {"path": "body.decks.0.path", "endswith": "t01.wav"},
+      {"path": "body.decks.0.trackBPM", "equals": 120.0},
+      {"path": "body.decks.0.playing", "equals": false}
+    ]},
+    {"do": "play", "args": {"deck": 0}, "retry": true, "expect": [{"path": "body.playing", "equals": true}]},
+    {"do": "sleep", "seconds": 1.0},
+    {"do": "snapshot", "save": {"pos1": "body.decks.0.position"}, "expect": [
+      {"path": "body.decks.0.playing", "equals": true},
+      {"path": "body.decks.0.position", "gt": 0.2}
+    ]},
+    {"do": "sleep", "seconds": 1.5},
+    {"do": "snapshot", "expect": [
+      {"path": "body.decks.0.position", "gt": "${pos1}"},
+      {"path": "body.output.running", "equals": true},
+      {"path": "body.output.deviceID", "equals": 0}
+    ]},
+    {"do": "pause", "args": {"deck": 0}, "retry": true, "expect": [{"path": "body.playing", "equals": false}]}
+  ]
+}

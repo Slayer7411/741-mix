@@ -30,21 +30,21 @@ final class ControllerStatus {
         guard let i = devices.firstIndex(where: { $0.id == serial }) else { return }
         devices[i].left = left
         devices[i].right = right
-        UserDefaults.standard.set([left, right], forKey: "x1.\(serial)")
+        E2E.defaults.set([left, right], forKey: "x1.\(serial)")
         manager?.assign(serial, left: left, right: right)
     }
 
     func assignPane(_ serial: String, _ pane: Int) {
         guard let i = devices.firstIndex(where: { $0.id == serial }) else { return }
         devices[i].pane = pane
-        UserDefaults.standard.set(pane, forKey: "x1pane.\(serial)")
+        E2E.defaults.set(pane, forKey: "x1pane.\(serial)")
         manager?.assignPane(serial, pane)
     }
 
     func assignFX(_ serial: String, _ unit: Int) {
         guard let i = devices.firstIndex(where: { $0.id == serial }) else { return }
         devices[i].fxUnit = unit
-        UserDefaults.standard.set(unit, forKey: "x1fx.\(serial)")
+        E2E.defaults.set(unit, forKey: "x1fx.\(serial)")
         manager?.assignFX(serial, unit)
     }
 
@@ -176,7 +176,7 @@ final class ControllerManager: @unchecked Sendable {
         let serial = rawSerial.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = ControllerSides.key(serial: serial, location: loc) ?? ControllerSides.tempPrefix + UUID().uuidString
         guard units[key] == nil else { return nil }
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         let saved = d.array(forKey: "x1.\(key)") as? [Int]
         let savedPane = d.object(forKey: "x1pane.\(key)") as? Int
         let savedFX = d.object(forKey: "x1fx.\(key)") as? Int
@@ -239,7 +239,7 @@ final class ControllerManager: @unchecked Sendable {
 
     /// eigene Deck-/Browser-/FX-Zuordnung eines Geräts verwerfen (Seite bestimmt sie wieder)
     private func clearOverrides(_ key: String) {
-        for k in ["x1.", "x1pane.", "x1fx."] { UserDefaults.standard.removeObject(forKey: k + key) }
+        for k in ["x1.", "x1pane.", "x1fx."] { E2E.defaults.removeObject(forKey: k + key) }
     }
 
     /// Seite wechseln (Steuer-Queue): Decks, Browser und FX folgen der Seite, ein anderes Gerät auf ihr tauscht

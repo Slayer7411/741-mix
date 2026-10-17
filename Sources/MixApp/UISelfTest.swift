@@ -47,7 +47,7 @@ enum UISelfTest {
         SelfTest.enabled = false   // kein Audio-Selbsttest aus ContentView.onAppear
 
         // eingebautes Gerät, stumm (wie WindowShot); Argument-Domäne danach zurück
-        let defaults = UserDefaults.standard
+        let defaults = E2E.defaults
         let args = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         let devs = MixEngine.outputDevices()
         let dev = devs.first { $0.channels == 2 && $0.name.localizedCaseInsensitiveContains("speaker") } ?? devs.first { $0.channels < 8 }

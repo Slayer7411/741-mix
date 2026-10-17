@@ -153,7 +153,7 @@ enum TableShot {
         }
 
         // Audio-Modell ohne Ton (Gerät sofort frei), Setup danach zurück; Spalten nur flüchtig
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         let keys = ["mixerMode", "deviceUID", "internalPair", "deckPairs", "sampleRate", "bufferSize", "prefs.v1"]
         let saved = keys.map { ($0, d.object(forKey: $0)) }
         var volatile: [String: Any] = ["deviceUID": "BuiltInSpeakerDevice", "mixerMode": "Intern", "sampleRate": 0.0, "bufferSize": 0]

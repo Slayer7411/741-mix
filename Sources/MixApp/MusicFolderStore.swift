@@ -44,7 +44,7 @@ final class MusicFolderStore {
     /// nach dem Laden der Collection (Index und Standard-Ordner im Hintergrund berechnet)
     func collectionLoaded(index: [String: String], defaultRoot: String?) {
         self.index = index
-        self.defaultRoot = defaultRoot ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Music").path
+        self.defaultRoot = defaultRoot ?? (E2E.music ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Music")).path
         cache = [:]
         revision += 1
         loads += 1

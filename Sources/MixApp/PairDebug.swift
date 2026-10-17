@@ -153,12 +153,12 @@ enum PairDebugResponder {
         guard let o = object(args), let key = o["key"] as? String, !key.isEmpty, let value = o["value"] else {
             return (false, text("args: {\"key\": \"…\", \"value\": …}"))
         }
-        if value is NSNull { UserDefaults.standard.removeObject(forKey: key) } else { UserDefaults.standard.set(value, forKey: key) }
+        if value is NSNull { E2E.defaults.removeObject(forKey: key) } else { E2E.defaults.set(value, forKey: key) }
         return (true, text(keyValue(key)))
     }
 
     private static func keyValue(_ key: String) -> [String: Any] {
-        ["key": key, "value": plain(UserDefaults.standard.object(forKey: key) ?? NSNull())]
+        ["key": key, "value": plain(E2E.defaults.object(forKey: key) ?? NSNull())]
     }
 
     /// UserDefaults-Wert als JSON: Daten als Base64, Datum als ISO-Zeit

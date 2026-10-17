@@ -243,7 +243,7 @@ public final class MixController: @unchecked Sendable {
     /// Messung: MIX741_CORE_RATE setzt nur die Kernrate (Gerät bleibt, AUHAL rechnet um), z. B. Live-Rate am eingebauten Gerät
     public let engine = MixEngine(rate: {
         if let r = ProcessInfo.processInfo.environment["MIX741_CORE_RATE"].flatMap(Double.init), r > 0 { return r }
-        let r = UserDefaults.standard.double(forKey: "sampleRate"); return r > 0 ? r : nil
+        let r = E2E.defaults.double(forKey: "sampleRate"); return r > 0 ? r : nil
     }())
     public let controlQueue = DispatchQueue(label: "minos741.control", qos: .userInteractive)
 

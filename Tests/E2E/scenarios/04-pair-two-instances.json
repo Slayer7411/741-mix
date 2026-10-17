@@ -1,0 +1,29 @@
+{
+  "name": "pair-two-instances",
+  "description": "Zwei Instanzen paaren sich über das Netz (eigene Bonjour-Art); Gespielt-Markierung wandert in beide Richtungen",
+  "instances": ["A", "B"],
+  "steps": [
+    {"who": "A", "do": "set-prefs", "args": {"ui": {"pair": {"on": true, "writes": true, "decks": [0, 2], "remoteDebug": true}}},
+     "expect": [{"path": "ok", "equals": true}]},
+    {"who": "B", "do": "set-prefs", "args": {"ui": {"pair": {"on": true, "writes": false, "decks": [1, 3], "remoteDebug": true}}},
+     "expect": [{"path": "ok", "equals": true}]},
+    {"who": "A", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.connected", "equals": true},
+      {"path": "body.pair.peer.name", "equals": "${name:B}"}
+    ]},
+    {"who": "B", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.connected", "equals": true},
+      {"path": "body.pair.peer.name", "equals": "${name:A}"}
+    ]},
+    {"who": "A", "do": "mark-played", "args": {"keys": ["${key:t01.wav}"]}, "expect": [{"path": "body.played", "equals": 1}]},
+    {"who": "B", "do": "snapshot", "timeout": 20, "expect": [
+      {"path": "body.played.count", "equals": 1},
+      {"path": "body.played.keys", "contains": "${key:t01.wav}"}
+    ]},
+    {"who": "B", "do": "mark-played", "args": {"keys": ["${key:t02.wav}"]}, "expect": [{"path": "body.played", "equals": 2}]},
+    {"who": "A", "do": "snapshot", "timeout": 20, "expect": [
+      {"path": "body.played.count", "equals": 2},
+      {"path": "body.played.keys", "contains": "${key:t02.wav}"}
+    ]}
+  ]
+}
