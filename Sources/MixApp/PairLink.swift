@@ -32,6 +32,10 @@ final class PairLink {
     private(set) var peer: (name: String, writes: Bool, decks: [Int])?
     /// LIVE-Schalter (nicht gespeichert): kein Ruhezustand
     @ObservationIgnored var onLive: ((Bool) -> Void)?
+    /// Takt: dieser Mac führt Link (ohne Verbindung wie bisher); Stand des anderen und zuletzt gesendete Nachricht
+    private var leads = true
+    private var peerPlaying = false, peerLeads = false
+    private var sentClock: PairMessage?
 
     private var connection: NWConnection? { active?.nw }
 
@@ -47,6 +51,7 @@ final class PairLink {
         }
         peer = nil
         partner = nil
+        dropTakt()
         listener?.cancel(); listener = nil
         browser?.cancel(); browser = nil
         let old = active
@@ -159,6 +164,7 @@ final class PairLink {
                 active = nil
                 peer = nil
                 PairDebug.shared.connectionLost()
+                dropTakt()
                 StatusCenter.post(.warning, String(localized: "Zwei-Mac: Verbindung getrennt"), key: "pair")
                 retryIfIdle()
             default:
@@ -196,8 +202,11 @@ final class PairLink {
     /// bereite Kandidat wird aktiv: hello, Link, zurückgehaltene Nachrichten
     private func promote(_ c: PairConn) {
         active = c
+        leads = setup.writes   // Anfangsführung: der schreibende Mac
+        peerPlaying = false; peerLeads = false; sentClock = nil
         send(.hello(writes: setup.writes, decks: setup.decks, version: PairMessage.version, name: Self.computerName,
                     played: (history?.played ?? []).sorted()))
+        applyTakt()
         if let mix, !mix.clock.linkEnabled { mix.toggleLink() }
         let early = c.pending
         c.pending = []
@@ -272,6 +281,7 @@ final class PairLink {
                 send(.playedSet(s.sorted()))
             }
             if let mix, mix.live { send(.live(true)) }
+            applyTakt()
         case let .debugRequest(id, command, args):
             if let mix {
                 let r = PairDebugResponder.answer(command: command, args: args, mix: mix, allowed: setup.remoteDebug)
@@ -279,6 +289,11 @@ final class PairLink {
             }
         case let .debugReply(id, ok, body):
             PairDebug.shared.received(id: id, ok: ok, body: body)
+        case let .clock(playing, leader):
+            guard peer != nil else { return }
+            peerPlaying = playing; peerLeads = leader
+            if leader, leads { leads = false }   // der Anspruch des anderen gewinnt
+            applyTakt()
         case let .state(writes, decks):
             guard let p = peer else { return }
             peer = (p.name, writes, decks)
@@ -308,6 +323,7 @@ final class PairLink {
             case let .sharedDecks(d): text += " · " + String(localized: "Deck \(d.map { deckLetters[$0] }.joined(separator: "/")) auf beiden")
             }
         }
+        text += " · " + (leads ? String(localized: "TAKT: dieser Mac") : String(localized: "TAKT: \(p.name)"))
         StatusCenter.post(problems.isEmpty ? .ok : .warning, text, key: "pair")
     }
 
@@ -315,6 +331,43 @@ final class PairLink {
 
     /// LIVE an/aus an den anderen Mac
     func sendLive(_ on: Bool) { send(.live(on)) }
+
+    /// Master-Deck spielt oder steht (Oberflächen-Takt, nur bei Änderung)
+    func masterDeckChanged() { applyTakt() }
+
+    /// TAKT-Schalter: dieser Mac führt Link, der andere gibt ab (sein Stand kommt mit der nächsten Takt-Nachricht)
+    func claimTakt() {
+        guard setup.on, peer != nil, let mix, !leads else { return }
+        leads = true
+        peerLeads = false
+        mix.core.setLinkFollow(false)
+        mix.setTaktHere(true)
+        let m = PairMessage.clock(playingMaster: mix.playingMaster, leader: true)
+        if connection?.state == .ready { sentClock = m; send(m) }
+        report()
+    }
+
+    /// Takt: wer führt (PairTempo), die Clock folgt Link, solange der andere führt; Stand nur bei Änderung senden
+    private func applyTakt() {
+        guard setup.on, let mix else { dropTakt(); return }
+        let was = leads
+        if let p = peer {
+            leads = PairTempo.leads(ownPlaying: mix.playingMaster, peerPlaying: peerPlaying, ownLeads: leads,
+                                    peerLeads: peerLeads, ownName: Self.computerName, peerName: p.name)
+        }
+        mix.core.setLinkFollow(peer != nil && !leads)
+        mix.setTaktHere(leads)
+        let m = PairMessage.clock(playingMaster: mix.playingMaster, leader: leads)
+        if m != sentClock, connection?.state == .ready { sentClock = m; send(m) }
+        if leads != was, peer != nil { report() }
+    }
+
+    /// ohne Verbindung (oder Zwei-Mac aus) führt dieser Mac Link wie bisher
+    private func dropTakt() {
+        leads = true; sentClock = nil; peerPlaying = false; peerLeads = false
+        mix?.core.setLinkFollow(false)
+        mix?.setTaktHere(true)
+    }
 }
 
 /// Eine Verbindung zum anderen Mac; `dialed` = Name des Treffers, wenn wir sie aufgebaut haben (nil: eingehend)

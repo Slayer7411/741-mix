@@ -16,8 +16,10 @@ public enum PairMessage: Codable, Equatable, Sendable {
     case debugRequest(id: Int, command: String, args: String)
     /// Antwort auf `debugRequest`: `body` ist JSON-Text
     case debugReply(id: Int, ok: Bool, body: String)
+    /// Takt: Master-Deck spielt dort, und wer führt Link (nach dem Verbinden und bei jeder Änderung; `leader` = Anspruch)
+    case clock(playingMaster: Bool, leader: Bool)
 
-    public static let version = 4
+    public static let version = 5
 
     public func line() -> Data {
         var d = (try? JSONEncoder().encode(self)) ?? Data()

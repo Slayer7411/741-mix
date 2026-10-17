@@ -203,6 +203,10 @@ struct WindowSwitches: View {
                     mix.prefs.ui.pair.writes.toggle()
                 }
                 BarDivider()
+                BarCell(title: "TAKT", active: mix.taktHere, width: 40, help: "Zwei Macs: an = dieser Mac führt Link (Tempo und Takt für beide); aus = der andere führt, dieser folgt") {
+                    PairLink.shared.claimTakt()
+                }
+                BarDivider()
             }
             BarCell(title: "MIXER", active: ui.showMixer, help: "Internen Mixer ein-/ausblenden") {
                 mix.prefs.ui.showMixer.toggle()

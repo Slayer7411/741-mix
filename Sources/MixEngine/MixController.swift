@@ -193,6 +193,10 @@ public struct MixState: Equatable, Sendable {
     public var linkPeers = 0
     /// Link-Zeitachse neu gesetzt seit dem Einschalten (Diagnose; Tooltip der LINK-Taste)
     public var linkForces = 0
+    /// Link folgen (Zwei-Mac-Modus, der andere Mac führt): Tempo und Takt der Clock kommen von Link
+    public var linkFollow = false
+    /// Folgen gerade aktiv (Link-Teilnehmer da; der Steuertick setzt es)
+    public var linkFollowing = false
     public var crossfader: Double = 0
     public var masterVolume: Double = 0.85
     public var externalMixer = false
@@ -210,9 +214,12 @@ public struct MixState: Equatable, Sendable {
 
     public init() {}
 
+    /// Die Clock ist Takt-Master für gesyncte Decks (CLOCK-Modus oder Link-Folgen); ein Master-Deck bleibt für die Anzeige
+    public var clockIsMaster: Bool { clockMaster || linkFollowing }
+
     /// Tempo, dem gesyncte Decks folgen (Clock oder Master-Deck)
     public var masterTempo: Double {
-        if clockMaster { return clockBPM }
+        if clockIsMaster { return clockBPM }
         return effectiveMaster.map { decks[$0].bpm } ?? clockBPM
     }
 
@@ -331,7 +338,7 @@ public final class MixController: @unchecked Sendable {
 
     /// Beat-Position, an der sich gesyncte Decks ausrichten (Clock oder Master-Deck)
     private func masterBeat() -> Double? {
-        if state.clockMaster { return engine.clockBeat }
+        if state.clockIsMaster { return engine.clockBeat }
         guard let m = state.effectiveMaster, let mg = state.decks[m].grid else { return nil }
         return mg.beatPosition(at: position(m))
     }
@@ -616,7 +623,7 @@ public final class MixController: @unchecked Sendable {
                 s.loopSize = p.defaultLoopSize
                 s.jumpSize = p.defaultJumpSize
             }
-            if state.semiSync, t.bpm > 0, state.clockMaster || state.effectiveMaster != nil {
+            if state.semiSync, t.bpm > 0, state.clockIsMaster || state.effectiveMaster != nil {
                 // Semi-Sync: Tempo des aktuellen Masters übernehmen (ohne Phasen-Sync); halbes/doppeltes Tempo wählt
                 // das nächste Verhältnis; der Tempo-Bereich wächst bei Bedarf auf die nächste Stufe
                 var ratio = state.masterTempo / t.bpm
@@ -1339,14 +1346,14 @@ public final class MixController: @unchecked Sendable {
 
     /// Phasenfehler ohne gehaltenen Versatz
     private func rawPhaseError(_ d: Int) -> Double? {
-        if !state.clockMaster, state.effectiveMaster == d { return nil }
+        if !state.clockIsMaster, state.effectiveMaster == d { return nil }
         guard let g = state.decks[d].grid, let mb = masterBeat() else { return nil }
         return BeatGrid.phaseError(own: g.beatPosition(at: position(d)), master: mb)
     }
 
     private func alignPhase(_ d: Int, hard: Bool) {
         guard let g = state.decks[d].grid, g.bpm > 0 else { return }
-        if !state.clockMaster { guard let m = state.effectiveMaster, m != d else { return } }
+        if !state.clockIsMaster { guard let m = state.effectiveMaster, m != d else { return } }
         state.decks[d].tempoPct = (state.masterTempo / g.bpm - 1) * 100
         state.decks[d].nudge = 0
         phaseOffset[d] = 0
@@ -1361,7 +1368,7 @@ public final class MixController: @unchecked Sendable {
     /// Nichts passiert ohne laufenden Master oder wenn das Deck selbst Master ist.
     private func semiAlignStart(_ d: Int) {
         guard state.semiSync, !state.decks[d].sync, let g = state.decks[d].grid, g.bpm > 0 else { return }
-        if !state.clockMaster { guard let m = state.effectiveMaster, m != d, state.decks[m].playing else { return } }
+        if !state.clockIsMaster { guard let m = state.effectiveMaster, m != d, state.decks[m].playing else { return } }
         guard let e = rawPhaseError(d) else { return }
         // vor dem Trackanfang / Schnitt-Start: einen Beat später
         jump(d, to: inRangeKeepingPhase(d, position(d) - e * g.beat, beat: g.beat), "semi start")
@@ -1652,6 +1659,8 @@ public final class MixController: @unchecked Sendable {
     }
 
     public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on; link.enabled = on } }
+    /// Link folgen (Zwei-Mac-Modus, der andere Mac führt Link): Tempo und Takt kommen von Link, nicht von MINOS
+    public func setLinkFollow(_ on: Bool) { locked { state.linkFollow = on } }
     /// Phasenabstand der Clock zu Link in Beats und Teilnehmer (Messung; auf der Steuer-Queue wie `lead`)
     public func linkPhase() -> (error: Double, peers: Int)? {
         controlQueue.sync {
@@ -1674,6 +1683,8 @@ public final class MixController: @unchecked Sendable {
     /// Link – MINOS gibt Tempo und Takt vor
     public let link = LinkSession()
     private var linkTicks = 0
+    /// Link folgen beim letzten Steuertick (Wechsel setzt die Nachführung neu)
+    private var linkWasFollowing = false
     /// Takt-Versatz der Clock zum Master-Deck: Zähler gleicher Werte (Ticks à 5 ms) und letzter Wert
     private var clockBarTicks = 0, clockBarLast = 0.0
 
@@ -2508,6 +2519,10 @@ public final class MixController: @unchecked Sendable {
         let handlers: [(MixController) -> Void] = locked {
             state.autoMaster = state.effectiveMaster   // Auto-Master klebt am laufenden Deck
             let master = state.effectiveMaster
+            // Link folgen: nur mit Link-Teilnehmern (die Pair-Verbindung setzt linkFollow); sonst führt MINOS wie bisher
+            let following = state.linkEnabled && state.linkFollow && link.peers > 0
+            state.linkFollowing = following
+            if following != linkWasFollowing { linkWasFollowing = following; link.resetPolicies() }
             for d in state.decks.indices {
                 let p = engine.player(d)
                 if state.decks[d].playing != p.playing, !state.decks[d].cueHeld {
@@ -2515,7 +2530,7 @@ public final class MixController: @unchecked Sendable {
                     applyRate(d)
                 }
                 checkActiveLoops(d)
-                let hasMaster = state.clockMaster || (master != nil && master != d)
+                let hasMaster = state.clockIsMaster || (master != nil && master != d)
                 guard state.decks[d].sync, state.decks[d].playing, hasMaster,
                       let g = state.decks[d].grid, g.bpm > 0 else {
                     if state.decks[d].nudge != 0, !state.decks[d].sync { state.decks[d].nudge = 0; applyRate(d) }
@@ -2543,7 +2558,7 @@ public final class MixController: @unchecked Sendable {
             }
             // AUTO-Modus: Clock folgt Tempo und Phase des Master-Decks (für Metronom und Link)
             var clockOnDeck = false
-            if !state.clockMaster, let m = master, let g = state.decks[m].grid, state.decks[m].playing {
+            if !state.clockIsMaster, let m = master, let g = state.decks[m].grid, state.decks[m].playing {
                 clockOnDeck = true
                 // Tempo-Schwelle wie bei Link (0,0005 BPM): 0,005 ließ die Clock dem Deck um ~0,02 Beats in 4 min
                 // davonlaufen, jeder Rücksprung war eine Link-Neusetzung
@@ -2567,7 +2582,17 @@ public final class MixController: @unchecked Sendable {
             if state.linkEnabled {
                 if let st = engine.clockStamp {
                     link.offsetMicros = Int64(state.prefs.linkOffsetMs * 1000)
-                    if case .trim(let d) = link.lead(bpm: state.clockBPM, beat: st.beat, hostTime: st.hostTime, canTrim: !clockOnDeck) {
+                    if following {
+                        // Folgen: Tempo und Takt von Link, Link selbst bleibt unberührt
+                        if let f = link.follow(beat: st.beat, hostTime: st.hostTime) {
+                            if f.bpm > 0, abs(f.bpm - state.clockBPM) > 0.0005 { state.clockBPM = f.bpm; engine.setClockBPM(f.bpm) }
+                            switch f.action {
+                            case .trim(let d): engine.trimClock(-d)
+                            case .jump(let d): jumpClock(to: engine.clockBeat - d); clockBarTicks = 0
+                            case .none: break
+                            }
+                        }
+                    } else if case .trim(let d) = link.lead(bpm: state.clockBPM, beat: st.beat, hostTime: st.hostTime, canTrim: !clockOnDeck) {
                         engine.trimClock(-d)
                     }
                     if link.stats.forces != state.linkForces { state.linkForces = link.stats.forces }

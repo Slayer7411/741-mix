@@ -1920,3 +1920,8 @@
 "%@ schreibt" = "%@ writes";
 "beide schreiben" = "both write";
 "kein Mac schreibt – Schalter SCHREIBT oben" = "no Mac writes – switch WRITES at the top";
+
+/* Zwei-Mac-Modus, Takt (Link folgen) */
+"TAKT: dieser Mac" = "TAKT: this Mac";
+"TAKT: %@" = "TAKT: %@";
+"Zwei Macs: an = dieser Mac führt Link (Tempo und Takt für beide); aus = der andere führt, dieser folgt" = "Two Macs: on = this Mac leads Link (tempo and beat for both); off = the other one leads, this one follows";
