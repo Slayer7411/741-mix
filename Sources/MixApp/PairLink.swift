@@ -5,8 +5,9 @@ import MixCore
 import MixEngine
 
 /// Zwei Macs als eine Session: beide bieten sich per Bonjour an (`_minos741._tcp`, jede Verbindung: Ethernet,
-/// Thunderbolt-/USB-Bridge, WLAN) und suchen sich gegenseitig; der Mac mit dem kleineren Namen verbindet sich (eine
-/// Verbindung, unabhängig davon, wer schreibt – sonst warteten zwei schreibende Macs still). Jeder Mac spielt seine Decks (⌘, -> DECKS)
+/// Thunderbolt-/USB-Bridge, WLAN) und suchen sich gegenseitig. Beide bauen ausgehend auf und nehmen eingehende an;
+/// blockt die Firewall eine Richtung, kommt die andere durch. Die erste fertige Verbindung wird aktiv; entsteht eine
+/// zweite, bleibt die des kleineren Namens (beide Macs entscheiden gleich). Jeder Mac spielt seine Decks (⌘, -> DECKS)
 /// über sein eigenes Interface, den Takt hält Link. Über die Verbindung laufen die Gespielt-Markierungen; in die
 /// Collection schreibt nur der schreibende Mac. Umschalten wirkt sofort
 @MainActor
@@ -20,12 +21,19 @@ final class PairLink {
     private weak var mix: MixModel?
     private var listener: NWListener?
     private var browser: NWBrowser?
-    private var connection: NWConnection?
-    private var reader = PairLineReader()
+    /// aktive Verbindung (ab `.ready`)
+    private var active: PairConn?
+    /// übrige Verbindungen, noch nicht bereit oder noch nicht entschieden
+    private var candidates: [PairConn] = []
+    /// Name des anderen Macs (Treffer oder hello); Initiator eingehender Verbindungen
+    private var partner: String?
+    private var retryPending = false
     /// Stand des anderen Macs (nach hello / state)
     private(set) var peer: (name: String, writes: Bool, decks: [Int])?
     /// LIVE-Schalter (nicht gespeichert): kein Ruhezustand
     @ObservationIgnored var onLive: ((Bool) -> Void)?
+
+    private var connection: NWConnection? { active?.nw }
 
     /// Einstellung übernehmen. An/aus baut die Verbindung auf oder ab; Schreiber und Decks gehen über die bestehende
     /// Verbindung an den anderen Mac (kein Neuaufbau)
@@ -38,11 +46,14 @@ final class PairLink {
             return
         }
         peer = nil
+        partner = nil
         listener?.cancel(); listener = nil
         browser?.cancel(); browser = nil
-        let old = connection
-        connection = nil
-        old?.cancel()
+        let old = active
+        active = nil
+        old?.nw.cancel()
+        candidates.forEach { $0.nw.cancel() }
+        candidates = []
         setup = new
         self.history = history
         self.mix = mix
@@ -107,67 +118,128 @@ final class PairLink {
         let b = NWBrowser(for: .bonjour(type: Self.service, domain: nil), using: Self.parameters())
         let own = Self.computerName
         b.browseResultsChangedHandler = { results, _ in
-            // der andere Mac; verbinden nur, wenn der eigene Name kleiner ist (der andere nimmt an)
+            // jeder andere Mac; ausgehend verbinden, beide Seiten tun das
             for r in results {
-                guard case let .service(name, _, _, _) = r.endpoint, Self.initiates(own: own, peer: name) else { continue }
+                guard case let .service(name, _, _, _) = r.endpoint, name != own else { continue }
                 let ep = r.endpoint
-                Self.main { PairLink.shared.found(ep) }
-                break
+                Self.main { PairLink.shared.found(name, ep) }
             }
         }
         b.start(queue: queue)
         browser = b
     }
 
-    /// wer die Verbindung aufbaut: nicht man selbst, der kleinere Name
-    nonisolated static func initiates(own: String, peer: String) -> Bool { peer != own && own < peer }
+    /// bei zwei Verbindungen bleibt die, die der kleinere Name aufgebaut hat
+    nonisolated static func keeps(initiator: String, over other: String) -> Bool { initiator < other }
 
-    private func found(_ ep: NWEndpoint) {
-        guard setup.on, connection == nil else { return }
-        adopt(NWConnection(to: ep, using: Self.parameters()))
+    /// ausgehend zu einem Treffer; höchstens ein Versuch je Gegenüber
+    private func found(_ name: String, _ ep: NWEndpoint) {
+        guard setup.on, active?.dialed != name, !candidates.contains(where: { $0.dialed == name }) else { return }
+        partner = name
+        adopt(NWConnection(to: ep, using: Self.parameters()), dialed: name)
     }
 
-    /// genau ein Gegenüber: eine neue Verbindung ersetzt die alte
-    private func adopt(_ c: NWConnection) {
-        connection?.cancel()
-        connection = c
-        reader = PairLineReader()
-        c.stateUpdateHandler = { s in Self.main { PairLink.shared.changed(s, of: c) } }
-        c.start(queue: queue)
+    /// neue Verbindung als Kandidat (`dialed`: Name des Treffers bei ausgehend, nil bei eingehend)
+    private func adopt(_ nw: NWConnection, dialed: String? = nil) {
+        let c = PairConn(nw, dialed: dialed)
+        candidates.append(c)
+        nw.stateUpdateHandler = { s in Self.main { PairLink.shared.changed(s, of: nw) } }
+        nw.start(queue: queue)
         receive(c)
     }
 
-    private func changed(_ s: NWConnection.State, of c: NWConnection) {
-        guard c === connection else { return }
+    private func changed(_ s: NWConnection.State, of nw: NWConnection) {
+        if let a = active, a.nw === nw {
+            switch s {
+            case .failed, .waiting:
+                nw.cancel()
+            case .cancelled:
+                active = nil
+                peer = nil
+                StatusCenter.post(.warning, String(localized: "Zwei-Mac: Verbindung getrennt"), key: "pair")
+                retryIfIdle()
+            default:
+                break
+            }
+            return
+        }
+        guard let c = candidates.first(where: { $0.nw === nw }) else { return }
         switch s {
         case .ready:
-            send(.hello(writes: setup.writes, decks: setup.decks, version: PairMessage.version, name: Self.computerName,
-                        played: (history?.played ?? []).sorted()))
-            if let mix, !mix.clock.linkEnabled { mix.toggleLink() }
-        case .failed, .waiting:
-            c.cancel()
-        case .cancelled:
-            connection = nil
-            peer = nil
-            StatusCenter.post(.warning, String(localized: "Zwei-Mac: Verbindung getrennt"), key: "pair")
-            // neu suchen (die Trefferliste meldet nur Änderungen)
-            if setup.on {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    MainActor.assumeIsolated { let p = PairLink.shared; if p.setup.on, p.connection == nil { p.browse() } }
+            drop(c)
+            if let a = active {
+                // zweite Verbindung: nur eine bleibt, die andere geht still weg (kein Status, kein peer-Reset)
+                if keepsDuplicate(c, over: a) {
+                    a.nw.cancel()
+                    promote(c)
+                } else {
+                    nw.cancel()
                 }
+            } else {
+                promote(c)
             }
+        case .failed, .waiting:
+            drop(c)
+            nw.cancel()
+            retryIfIdle()
+        case .cancelled:
+            drop(c)
+            retryIfIdle()
         default:
             break
         }
     }
 
-    private func receive(_ c: NWConnection) {
-        c.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) { data, _, done, error in
+    /// bereite Kandidat wird aktiv: hello, Link, zurückgehaltene Nachrichten
+    private func promote(_ c: PairConn) {
+        active = c
+        send(.hello(writes: setup.writes, decks: setup.decks, version: PairMessage.version, name: Self.computerName,
+                    played: (history?.played ?? []).sorted()))
+        if let mix, !mix.clock.linkEnabled { mix.toggleLink() }
+        let early = c.pending
+        c.pending = []
+        early.forEach(handle)
+    }
+
+    /// zweites Duplikat: bleibt es, wenn sein Initiator den kleineren Namen hat (ausgehend = man selbst, eingehend = der andere)
+    private func keepsDuplicate(_ c: PairConn, over a: PairConn) -> Bool {
+        guard let other = partner, (c.dialed != nil) != (a.dialed != nil) else { return false }
+        let own = Self.computerName
+        return c.dialed != nil ? Self.keeps(initiator: own, over: other) : Self.keeps(initiator: other, over: own)
+    }
+
+    private func drop(_ c: PairConn) {
+        candidates.removeAll { $0 === c }
+    }
+
+    /// neu suchen, solange keine Verbindung steht (die Trefferliste meldet nur Änderungen); höchstens ein Timer
+    private func retryIfIdle() {
+        guard setup.on, active == nil, !retryPending else { return }
+        retryPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            MainActor.assumeIsolated {
+                let p = PairLink.shared
+                p.retryPending = false
+                if p.setup.on, p.active == nil { p.browse() }
+            }
+        }
+    }
+
+    private func owns(_ c: PairConn) -> Bool {
+        active === c || candidates.contains { $0 === c }
+    }
+
+    /// eine Empfangsschleife je Verbindung; Kandidaten puffern, die aktive Verbindung wird zugestellt
+    private func receive(_ c: PairConn) {
+        c.nw.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) { data, _, done, error in
             Self.main {
                 let link = PairLink.shared
-                guard c === link.connection else { return }
-                if let data { link.reader.feed(data).forEach(link.handle) }
-                if done || error != nil { c.cancel() } else { link.receive(c) }
+                guard link.owns(c) else { return }
+                if let data {
+                    let msgs = c.reader.feed(data)
+                    if c === link.active { msgs.forEach(link.handle) } else { c.pending += msgs }
+                }
+                if done || error != nil { c.nw.cancel() } else { link.receive(c) }
             }
         }
     }
@@ -184,6 +256,7 @@ final class PairLink {
         switch m {
         case let .hello(writes, decks, version, name, played):
             peer = (name, writes, decks)
+            partner = name
             if version != PairMessage.version {
                 StatusCenter.post(.error, String(localized: "Zwei-Mac: \(name) hat eine andere Version – beide Macs auf denselben Stand bringen"), key: "pair")
             }
@@ -232,4 +305,19 @@ final class PairLink {
 
     /// LIVE an/aus an den anderen Mac
     func sendLive(_ on: Bool) { send(.live(on)) }
+}
+
+/// Eine Verbindung zum anderen Mac; `dialed` = Name des Treffers, wenn wir sie aufgebaut haben (nil: eingehend)
+@MainActor
+fileprivate final class PairConn {
+    let nw: NWConnection
+    let dialed: String?
+    var reader = PairLineReader()
+    /// Nachrichten vor der Aktivierung
+    var pending: [PairMessage] = []
+
+    init(_ nw: NWConnection, dialed: String?) {
+        self.nw = nw
+        self.dialed = dialed
+    }
 }
