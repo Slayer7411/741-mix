@@ -15,6 +15,15 @@ extension TrackTableController {
         return item
     }
 
+    /// Ziehen aus der Tabelle beginnt und endet: die Ablage-Schicht des Baums nimmt den Zeiger nur dazwischen an
+    func tableView(_ tv: NSTableView, draggingSession session: NSDraggingSession, willBeginAt screenPoint: NSPoint, forRowIndexes rowIndexes: IndexSet) {
+        TreeDragGate.begin()
+    }
+
+    func tableView(_ tv: NSTableView, draggingSession session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        TreeDragGate.end()
+    }
+
     func tableView(_ tv: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
                    proposedDropOperation op: NSTableView.DropOperation) -> NSDragOperation {
         guard model?.ownPlaylistID != nil, !dropKeys(info.draggingPasteboard).isEmpty else { return [] }

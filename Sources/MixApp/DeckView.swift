@@ -179,36 +179,11 @@ enum TrackDrag {
 
     /// Track-Schlüssel aus einem Pasteboard-Text; nil für fremde Texte
     static func key(_ s: String) -> String? { s.hasPrefix(prefix) ? String(s.dropFirst(prefix.count)) : nil }
-
-    /// Schlüssel aus den Providern (nur eigene Tracks) in der Reihenfolge der Zeilen; `done` auch leer (keine eigenen Texte)
-    @discardableResult
-    static func keys(_ providers: [NSItemProvider], _ done: @escaping @MainActor ([String]) -> Void) -> Bool {
-        loadStrings(providers) { all in done(all.compactMap(key)) }
-    }
-
-    /// Alle Texte der Provider in ihrer Reihenfolge (nicht in der Reihenfolge des Ladens), auf dem Hauptthread;
-    /// `done` auch leer. false, wenn kein Provider Text liefert
-    @discardableResult
-    static func loadStrings(_ providers: [NSItemProvider], _ done: @escaping @MainActor ([String]) -> Void) -> Bool {
-        let own = providers.filter { $0.canLoadObject(ofClass: NSString.self) }
-        guard !own.isEmpty else { return false }
-        let slots = OrderedSlots<String>(count: own.count)
-        let group = DispatchGroup()
-        for (i, p) in own.enumerated() {
-            group.enter()
-            p.loadObject(ofClass: NSString.self) { obj, _ in
-                slots.set(i, obj as? String)
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) { MainActor.assumeIsolated { done(slots.values) } }
-        return true
-    }
 }
 
 /// Deck als Ziel (ganze Fläche: Kopf, Wellenform, Zeilen): Track aus dem Browser, einer Playlist oder einem anderen
 /// Deck laden (Lade-Schutz wie beim Doppelklick), Finder-Datei laden, wenn sie in der Collection steht. Die Deck-
-/// Hosting-View ist das Ziel (`AreaDrop`); die Zeilen darin melden keine Ablage
+/// Hosting-View ist das Ziel (`AreaDrop`); Zonen darin (JOIN) bekommen den Zug, wenn der Zeiger darauf liegt
 @MainActor enum DeckDrop {
     static let types: [NSPasteboard.PasteboardType] = [.string, .fileURL]
 
@@ -237,7 +212,16 @@ enum TrackDrag {
     static func hasOwnTracks(_ pb: NSPasteboard) -> Bool { !ownKeys(pb).isEmpty }
 
     static func area(_ d: Int, mix: MixModel, store: LibraryStore) -> AreaDrop {
-        AreaDrop(types: types, accepts: { accepts($0) }, perform: { perform($0, deck: d, mix: mix, store: store) })
+        let regions = mix.deckDropRegions[d]
+        return AreaDrop(types: types, regions: regions,
+                        accepts: { pb, p in
+                            if let z = regions.zone(at: p) { return z.accepts(pb) }
+                            return accepts(pb)
+                        },
+                        perform: { pb, p in
+                            if let z = regions.zone(at: p) { return z.perform(pb) }
+                            return perform(pb, deck: d, mix: mix, store: store)
+                        })
     }
 }
 

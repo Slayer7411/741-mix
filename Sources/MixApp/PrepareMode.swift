@@ -442,6 +442,7 @@ struct PrepareRow: View {
         let d: Int
         let m: Model
         @State private var joinTarget = false
+        private var joinHighlight: @MainActor (Bool) -> Void { let b = $joinTarget; return { b.wrappedValue = $0 } }
         static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.m == b.m }
 
         var body: some View {
@@ -490,12 +491,13 @@ struct PrepareRow: View {
                 sep()
                 DeckButton(title: "JOIN", active: joinTarget, color: Theme.state) { mix.prepareJoinAsking(d, browser: browser, store: store) }
                     .help("Zweite Datei ans Ende am Grid: Track aus dem Browser hierher ziehen, Klick = gewählter Track im Browser oder Datei wählen")
-                    .onDrop(of: [.text], isTargeted: $joinTarget) { providers in
-                        TrackDrag.keys(providers) { keys in
-                            guard let k = keys.first, let t = store.track(k) else { return }
-                            mix.prepareJoin(d, with: t)
-                        }
-                    }
+                    // Ablagezone: der Deck-Ansicht gemeldet, die Ablage landet hier, wenn der Zeiger auf dem Knopf liegt
+                    .background(DropZone(regions: mix.deckDropRegions[d], name: "join", accepts: { DeckDrop.hasOwnTracks($0) },
+                                         perform: { pb in
+                                             guard let k = DeckDrop.ownKeys(pb).first, let t = store.track(k) else { return false }
+                                             mix.prepareJoin(d, with: t)
+                                             return true
+                                         }, highlight: joinHighlight))
                 DeckButton(title: "SPLIT") { mix.prepareSplit(d) }.stable()
                     .help("In zwei Dateien teilen: am Bereichsanfang, sonst am Taktanfang nächst der Position")
                 sep()

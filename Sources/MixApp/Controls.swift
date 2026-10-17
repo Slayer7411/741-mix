@@ -335,18 +335,23 @@ final class BoundaryHostingView<Content: View>: NSHostingView<Content>, AreaMenu
     // weil die Zeile unter dem Zeiger keine Ablage meldet
     override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation {
         guard let drop else { return super.draggingEntered(s) }
-        let ok = drop.accepts(s.draggingPasteboard)
-        setDropHighlight(ok)
+        drop.regions?.highlight(at: s.draggingLocation)
+        let ok = drop.accepts(s.draggingPasteboard, s.draggingLocation)
+        setDropHighlight(ok && drop.regions?.zone(at: s.draggingLocation) == nil)
         return ok ? .copy : []
     }
 
     override func draggingUpdated(_ s: NSDraggingInfo) -> NSDragOperation {
         guard let drop else { return super.draggingUpdated(s) }
-        return drop.accepts(s.draggingPasteboard) ? .copy : []
+        drop.regions?.highlight(at: s.draggingLocation)
+        let ok = drop.accepts(s.draggingPasteboard, s.draggingLocation)
+        setDropHighlight(ok && drop.regions?.zone(at: s.draggingLocation) == nil)
+        return ok ? .copy : []
     }
 
     override func draggingExited(_ s: NSDraggingInfo?) {
-        guard drop != nil else { return super.draggingExited(s) }
+        guard let drop else { return super.draggingExited(s) }
+        drop.regions?.clear()
         setDropHighlight(false)
     }
 
@@ -357,12 +362,14 @@ final class BoundaryHostingView<Content: View>: NSHostingView<Content>, AreaMenu
 
     override func performDragOperation(_ s: NSDraggingInfo) -> Bool {
         guard let drop else { return super.performDragOperation(s) }
+        drop.regions?.clear()
         setDropHighlight(false)
-        return drop.perform(s.draggingPasteboard)
+        return drop.perform(s.draggingPasteboard, s.draggingLocation)
     }
 
     override func concludeDragOperation(_ s: NSDraggingInfo?) {
-        guard drop != nil else { return super.concludeDragOperation(s) }
+        guard let drop else { return super.concludeDragOperation(s) }
+        drop.regions?.clear()
         setDropHighlight(false)
     }
 
@@ -393,11 +400,86 @@ final class BoundaryHostingView<Content: View>: NSHostingView<Content>, AreaMenu
     var areaMenu: ((NSEvent) -> NSMenu?)? { get }
 }
 
-/// Ablage auf eine ganze Hosting-View: angemeldete Typen, ob der Zug angenommen wird, und das Ablegen (Pasteboard synchron)
+/// Ablage auf eine ganze Hosting-View: angemeldete Typen, Zonen darin (zuerst) und ob der Zug (Fensterkoordinaten) angenommen
+/// und abgelegt wird; die Zonen-Lage wird beim Ziehen gelesen
 struct AreaDrop {
     let types: [NSPasteboard.PasteboardType]
+    let regions: DropRegions?
+    let accepts: @MainActor (NSPasteboard, NSPoint) -> Bool
+    let perform: @MainActor (NSPasteboard, NSPoint) -> Bool
+}
+
+/// Ablagezonen in einer Ansicht (Zeilen des Baums, Knopf JOIN): jede Zone ist eine unsichtbare NSView, deren Lage live
+/// gelesen wird (Scrollen, Umbau). Ziel ist die innerste sichtbare Zone unter dem Zeiger
+@MainActor final class DropRegions {
+    struct Zone {
+        weak var view: NSView?
+        let accepts: @MainActor (NSPasteboard) -> Bool
+        let perform: @MainActor (NSPasteboard) -> Bool
+        let highlight: @MainActor (Bool) -> Void
+    }
+    private var zones: [ObjectIdentifier: Zone] = [:]
+    private var lit: ObjectIdentifier?
+
+    func register(_ v: NSView, _ z: Zone) { zones[ObjectIdentifier(v)] = z }
+
+    func unregister(_ v: NSView) {
+        let id = ObjectIdentifier(v)
+        if lit == id { lit = nil }
+        zones[id] = nil
+    }
+
+    /// innerste sichtbare Zone am Punkt (Fensterkoordinaten)
+    func zone(at p: NSPoint) -> Zone? { find(p)?.zone }
+
+    /// Hervorhebung auf die Zone unter dem Zeiger (sonst aus)
+    func highlight(at p: NSPoint) {
+        let hit = find(p)
+        guard lit != hit?.key else { return }
+        clear()
+        if let hit { lit = hit.key; hit.zone.highlight(true) }
+    }
+
+    func clear() {
+        if let l = lit { zones[l]?.highlight(false) }
+        lit = nil
+    }
+
+    private func find(_ p: NSPoint) -> (key: ObjectIdentifier, zone: Zone)? {
+        var best: (key: ObjectIdentifier, zone: Zone, area: CGFloat)?
+        for (key, z) in zones {
+            guard let v = z.view, v.window != nil, !v.visibleRect.isEmpty else { continue }
+            guard v.visibleRect.contains(v.convert(p, from: nil)) else { continue }
+            let area = v.bounds.width * v.bounds.height
+            if best == nil || area < best!.area { best = (key, z, area) }
+        }
+        return best.map { ($0.key, $0.zone) }
+    }
+}
+
+/// Ablagezone: unsichtbare Fläche hinter einer Zeile bzw. einem Knopf, meldet sich bei `regions` an (Lage, Annahme, Ablage)
+struct DropZone: NSViewRepresentable {
+    let regions: DropRegions
+    var name = ""
     let accepts: @MainActor (NSPasteboard) -> Bool
     let perform: @MainActor (NSPasteboard) -> Bool
+    let highlight: @MainActor (Bool) -> Void
+
+    final class V: NSView, UITestNamed {
+        var name = ""
+        weak var regions: DropRegions?
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }   // nie im Weg: Klicks und Ziehen gehen an die Zeile
+    }
+
+    func makeNSView(context: Context) -> V { V() }
+
+    func updateNSView(_ v: V, context: Context) {
+        v.name = name
+        v.regions = regions
+        regions.register(v, .init(view: v, accepts: accepts, perform: perform, highlight: highlight))
+    }
+
+    static func dismantleNSView(_ v: V, coordinator: ()) { v.regions?.unregister(v) }
 }
 
 extension NSView {

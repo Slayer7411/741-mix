@@ -855,6 +855,7 @@ struct SourceTree: View {
             PlaylistsSection(selection: $selection)
         }
         .listStyle(.sidebar)
+        .background(TreeDropHook(regions: treeUI.regions))   // Ablage aus Tabelle und Baum: vor der Liste, nur während eines Zugs   // Ablage aus Tabelle und Baum: vor der Liste, nur während eines Zugs
         .scrollContentBackground(.hidden)
         .background(Theme.chitin)
         .environment(treeUI)
@@ -932,7 +933,9 @@ struct SourceTreeFixed: View, SourceMenus {
         }
         row("▤", "PREPARATION").tag(BrowserSource.preparation).helpInfo("tree.preparation")
             .favoriteDrag { BrowserFavorite.source(.preparation, store: store) }
-            .treeDrop(targeted: .constant(false)) { strings in
+            .background(ui.prepTargeted ? Theme.chitinRaised : .clear)
+            .treeDropZone(ui.regions, name: "tree drop prep", highlight: { ui.prepTargeted = $0 },
+                          accepts: { $0.contains { TrackDrag.key($0) != nil } }) { strings in
                 let keys = strings.compactMap(TreeDrag.track).filter { store.track($0) != nil }
                 guard !keys.isEmpty else { return false }
                 store.appendToPreparation(keys)

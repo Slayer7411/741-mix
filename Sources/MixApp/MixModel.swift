@@ -190,6 +190,8 @@ final class MixModel {
 
     /// eigene Änderungen (Grid, Hotcues, Schnitt) dauerhaft je Track – die Collection bleibt unangetastet.
     /// Selbsttest/Messung: nur lesen (Christians edits.json nie schreiben)
+    /// Ablagezonen je Deck (JOIN in der Vorbereitung): der Deck-Ansicht gemeldet, Lage live
+    @ObservationIgnored let deckDropRegions = (0..<4).map { _ in DropRegions() }
     @ObservationIgnored let edits = TrackEditStore(url: HistoryStore.baseDir.appendingPathComponent("edits.json"), writes: !Session.isSelfTest)
     @ObservationIgnored private var originals: [Int: Track] = [:]
     @ObservationIgnored private var savedEdit: [Int: TrackEdit?] = [:]

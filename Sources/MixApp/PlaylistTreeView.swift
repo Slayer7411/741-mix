@@ -25,27 +25,146 @@ enum TreeDrag {
 
     static func provider(_ id: UUID, favorite: BrowserFavorite?) -> NSItemProvider {
         _ = FavoriteDrag.provider(favorite)   // Favoritenleiste liest den Favoriten von dort
+        TreeDragGate.beginTree()              // Ablage-Schicht des Baums übernimmt, sobald mit gedrückter Taste gezogen wird
         return NSItemProvider(object: (prefix + id.uuidString) as NSString)
     }
 
     static func item(_ s: String) -> UUID? { s.hasPrefix(prefix) ? UUID(uuidString: String(s.dropFirst(prefix.count))) : nil }
     static func track(_ s: String) -> String? { TrackDrag.key(s) }
+}
 
-    /// alle Texte der Provider in Reihenfolge, auf dem Hauptthread
-    @discardableResult
-    static func strings(_ providers: [NSItemProvider], _ done: @escaping @MainActor ([String]) -> Void) -> Bool {
-        TrackDrag.loadStrings(providers, done)
+/// Zug von Tracks (Tabelle) oder Baum-Einträgen läuft: nur dann nimmt die Ablage-Schicht des Baums den Zeiger an. Sonst
+/// bleibt sie unsichtbar, damit Klicks, Rechtsklick, Scrollen und das Ziehen innerhalb der Liste unverändert gehen
+@MainActor
+enum TreeDragGate {
+    static var active = false
+    /// Baum-Eintrag angefasst: aktiv erst, wenn mit gedrückter Taste gezogen wird
+    static var pendingTree = false
+    /// Taste gehalten (beim Ziehen immer); der Selbsttest setzt es
+    static var buttonHeld: @MainActor () -> Bool = { NSEvent.pressedMouseButtons & 1 != 0 }
+    private static var monitor: Any?
+
+    /// Ziehen aus der Tabelle beginnt
+    static func begin() { install(); active = true; pendingTree = false }
+    static func beginTree() { install(); pendingTree = true }
+    /// Ende (Ablegen, Abbruch, Klick)
+    static func end() { active = false; pendingTree = false }
+
+    /// Texte des Zugs in Reihenfolge
+    static func strings(_ pb: NSPasteboard) -> [String] { (pb.pasteboardItems ?? []).compactMap { $0.string(forType: .string) } }
+
+    /// nur Tracks und Baum-Einträge (Reordering der Liste und fremde Texte bleiben bei SwiftUI bzw. werden abgelehnt)
+    static func carriesItems(_ pb: NSPasteboard) -> Bool {
+        strings(pb).contains { TrackDrag.key($0) != nil || TreeDrag.item($0) != nil }
+    }
+
+    private static func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .leftMouseDragged, .leftMouseUp]) { e in
+            MainActor.assumeIsolated {
+                if e.type == .leftMouseDragged {
+                    if pendingTree { pendingTree = false; active = true }
+                } else {
+                    end()   // vor jedem Klick aus: ein Klick nach dem Zug trifft wieder die Liste
+                }
+            }
+            return e
+        }
     }
 }
 
-/// Feste Plätze für Ergebnisse, die in beliebiger Reihenfolge eintreffen (Ladeaufrufe der Provider): `values` in
-/// der Reihenfolge der Plätze, leere Plätze fallen weg
-final class OrderedSlots<T>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var slots: [T?]
-    init(count: Int) { slots = Array(repeating: nil, count: count) }
-    func set(_ i: Int, _ v: T?) { lock.lock(); if slots.indices.contains(i) { slots[i] = v }; lock.unlock() }
-    var values: [T] { lock.lock(); defer { lock.unlock() }; return slots.compactMap { $0 } }
+/// Ablage-Schicht über der Baum-Liste: AppKit fände sonst die Zeile der SwiftUI-Liste (die nur ihre eigene Umordnung
+/// annimmt). Liegt als Geschwister vor der Liste im Hosting-View der Seitenleiste (Größe = ganze Seitenleiste). Nur während
+/// eines Zugs unter dem Zeiger sichtbar für Ablage (`TreeDragGate`), sonst transparent; Ziel ist die Zone darunter
+final class TreeDropView: NSView {
+    weak var regions: DropRegions?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard TreeDragGate.active, TreeDragGate.buttonHeld(), bounds.contains(convert(point, from: superview)) else { return nil }
+        return self
+    }
+
+    override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation { update(s) }
+    override func draggingUpdated(_ s: NSDraggingInfo) -> NSDragOperation { update(s) }
+
+    override func draggingExited(_ s: NSDraggingInfo?) {
+        regions?.clear()
+        TreeDragGate.end()
+    }
+
+    override func prepareForDragOperation(_ s: NSDraggingInfo) -> Bool { true }
+
+    override func performDragOperation(_ s: NSDraggingInfo) -> Bool {
+        regions?.clear()
+        TreeDragGate.end()
+        return regions?.zone(at: s.draggingLocation)?.perform(s.draggingPasteboard) ?? false
+    }
+
+    private func update(_ s: NSDraggingInfo) -> NSDragOperation {
+        guard let regions, TreeDragGate.carriesItems(s.draggingPasteboard) else { return [] }
+        regions.highlight(at: s.draggingLocation)
+        guard let z = regions.zone(at: s.draggingLocation), z.accepts(s.draggingPasteboard) else { return [] }
+        return .copy
+    }
+}
+
+/// Hängt die Ablage-Schicht (`TreeDropView`) an die Seitenleiste: der NSViewRepresentable liegt in der Liste, die Schicht
+/// geht an das Hosting-View darüber (vor die Liste gestellt, ganze Fläche)
+struct TreeDropHook: NSViewRepresentable {
+    let regions: DropRegions
+
+    final class V: NSView {
+        weak var overlay: TreeDropView?
+        var regions: DropRegions?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            attach()
+        }
+
+        func attach() {
+            var host: NSView? = superview
+            while let h = host, !String(describing: Swift.type(of: h)).contains("HostingView") { host = h.superview }
+            guard let host else { return }
+            let ov = overlay ?? TreeDropView()
+            if overlay == nil { ov.registerForDraggedTypes([.string]) }
+            ov.regions = regions
+            ov.frame = host.bounds
+            ov.autoresizingMask = [.width, .height]
+            if ov.superview !== host {
+                ov.removeFromSuperview()
+                host.addSubview(ov)   // nach allen bisherigen Geschwistern: vor der Liste
+            }
+            overlay = ov
+        }
+
+        func detach() {
+            overlay?.removeFromSuperview()
+            overlay = nil
+        }
+    }
+
+    func makeNSView(context: Context) -> V { V() }
+
+    func updateNSView(_ v: V, context: Context) {
+        v.regions = regions
+        v.overlay?.regions = regions
+        v.attach()
+    }
+
+    static func dismantleNSView(_ v: V, coordinator: ()) { v.detach() }
+}
+
+extension View {
+    /// Ablagezone der Baum-Ebene (Zeile, Knopf): Tracks und Baum-Einträge; `accepts`/`perform` bekommen deren Texte
+    func treeDropZone(_ regions: DropRegions, name: String = "", highlight: @escaping @MainActor (Bool) -> Void,
+                      accepts: @escaping @MainActor ([String]) -> Bool, perform: @escaping @MainActor ([String]) -> Bool) -> some View {
+        background(DropZone(regions: regions, name: name,
+                            accepts: { accepts(TreeDragGate.strings($0)) },
+                            perform: { perform(TreeDragGate.strings($0)) },
+                            highlight: highlight))
+    }
 }
 
 private struct TreeProviderBox: @unchecked Sendable { let provider: NSItemProvider }
@@ -62,6 +181,10 @@ final class PlaylistTreeUI {
     var dropTarget: UUID?
     /// PLAYLISTS selbst als Ziel
     var rootTargeted = false
+    /// PREPARATION als Ziel
+    var prepTargeted = false
+    /// Ablagezonen der Baum-Ebene (Zeilen, PREPARATION), von der Ablage-Schicht über der Liste befragt
+    @ObservationIgnored let regions = DropRegions()
     /// Mehrfachauswahl im Baum (⌘ / ⇧ Klick); die Quelle des Browsers ist der zuletzt angeklickte Eintrag
     var marked: Set<BrowserSource> = []
 
@@ -103,7 +226,8 @@ struct PlaylistsSection: View, SourceMenus {
                 .contentShape(Rectangle())
                 .background(ui.rootTargeted ? Theme.chitinRaised : .clear)
                 .contextMenu { PlaylistNewMenu(parent: nil, selection: $selection) }
-                .treeDrop(targeted: $ui.rootTargeted) { strings in
+                .treeDropZone(ui.regions, name: "tree drop", highlight: { ui.rootTargeted = $0 },
+                              accepts: { $0.contains { TreeDrag.item($0) != nil || TrackDrag.key($0) != nil } }) { strings in
                     if let id = strings.compactMap(TreeDrag.item).first {
                         store.editPlaylists(String(localized: "Verschieben")) { $0.move(id, into: nil) }
                         return true
@@ -209,8 +333,10 @@ struct OwnItemRow: View, SourceMenus {
                 let make = { MainActor.assumeIsolated { TreeProviderBox(provider: TreeDrag.provider(item.id, favorite: BrowserFavorite.source(src, store: store))) } }
                 return (Thread.isMainThread ? make() : DispatchQueue.main.sync(execute: make)).provider
             }
-            .treeDrop(targeted: Binding(get: { ui.dropTarget == item.id },
-                                        set: { ui.dropTarget = $0 ? item.id : (ui.dropTarget == item.id ? nil : ui.dropTarget) })) { drop($0) }
+            .treeDropZone(ui.regions, name: "tree drop", highlight: { on in ui.dropTarget = on ? item.id : (ui.dropTarget == item.id ? nil : ui.dropTarget) },
+                          accepts: { strings in
+                              strings.contains { TreeDrag.item($0) != nil } || (item.kind == .playlist && strings.contains { TrackDrag.key($0) != nil })
+                          }) { drop($0) }
             .contextMenu { menu(src) }
     }
 
@@ -351,21 +477,5 @@ struct PlaylistTreeDialogs: ViewModifier {
         case .playlist: return String(localized: "Playlist mit \(it.tracks.count) Tracks (die Tracks bleiben in der Collection). ⌘Z holt sie zurück.")
         case .smartlist: return String(localized: "Smartlist (nur die Regeln). ⌘Z holt sie zurück.")
         }
-    }
-}
-
-/// Ablegen auf eine Baum-Zeile: SwiftUI-Ziel wie bei den Decks. Früher eine AppKit-Ansicht mit `hitTest` = nil (Klicks
-/// gehen durch): AppKit liefert echtes Ziehen über die Trefferprüfung, also kam es nie an – nur der UI-Test (der die
-/// Ansicht direkt ansprach) sah Ablegen. Akzeptiert werden eigene Tracks und Baum-Einträge, andere Texte nicht
-extension View {
-    func treeDrop(targeted: Binding<Bool>, _ perform: @escaping @MainActor ([String]) -> Bool) -> some View {
-        background(UITestMark(name: "tree drop"))
-            .onDrop(of: [.text], isTargeted: targeted) { providers in
-                MainActor.assumeIsolated {
-                    TreeDrag.strings(providers) { all in
-                        _ = perform(all.filter { $0.hasPrefix(TrackDrag.prefix) || $0.hasPrefix(TreeDrag.prefix) })
-                    }
-                }
-            }
     }
 }

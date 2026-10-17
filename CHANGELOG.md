@@ -71,7 +71,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * browser big / decks toggle: 0.1 s ease-out on the heights, the decks stay in place (bench `toggle`, median 60 -> 11 ms to big, 68 -> 13 ms back)
 
 ### fixed
-* drag from the track list onto a deck works on the whole deck (waveform and rows, not only the title); several dragged rows load the first one, in list order
+* drag from the track list onto a deck (whole deck, not only the title) or onto playlists and preparation in the tree works again; several dragged rows load the first one, in list order
 * collection backup before every write (was at most hourly), the newest 30 kept in `Backup MINOS-741`
 * analysis grid: anchor on the kick (bass × rest onset with ±10 ms tolerance plus the measured window lead) instead of a ±40 ms fine search that often caught a hat or bass note one 8th / 16th next to the kick. against set collection grids (155 tracks): 16th errors 14 -> 3
 * browser preview: loose files (MUSIC FOLDERS, EXPLORER) get waveform, grid and cues in visible rows (were skipped, analysed tracks stayed empty)
