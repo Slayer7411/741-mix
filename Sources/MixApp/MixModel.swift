@@ -11,7 +11,7 @@ enum MixerMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-var deckLetters: [String] { DeckLabels.letters }
+let deckLetters = ["A", "B", "C", "D"]
 
 /// Zustand eines Decks für die Oberfläche – eigenes Observable, damit eine Änderung an Deck A
 /// nicht die Ansichten von B, C, D neu rendert (SwiftUI-Layout je Deck kostet messbar Zeit)
@@ -111,9 +111,8 @@ final class MixModel {
             if prefs.engine != oldValue.engine { core.setPrefs(prefs.engine) }
             if prefs.ui.previewVolume != oldValue.ui.previewVolume { previewer.setVolume(prefs.ui.previewVolume) }
             if prefs.record != oldValue.record { recorder.updateMonitoring() }
-            // 1 Deck (umgeschaltet oder ein Profil mit 1 Deck angewendet): Tasten und Doppelklick laden ins sichtbare Deck A
-            if prefs.ui.deckCount <= 1, oldValue.ui.deckCount > 1 || oldValue.ui.activeLayoutProfile != prefs.ui.activeLayoutProfile,
-               focusedDeck != 0 { focusedDeck = 0 }
+            // Decks ausgeblendet (1 Deck, Profil, Zwei-Mac-Modus): Tasten und Doppelklick laden ins erste sichtbare
+            if let first = visibleDecks.first, !visibleDecks.contains(focusedDeck) { focusedDeck = first }
         }
     }
 
@@ -227,7 +226,7 @@ final class MixModel {
         // gespeicherte Plugin-Einstellungen + Absturz-Markierung vom letzten Lauf, bevor eine Sitzung Plugins lädt.
         // Selbsttest: nur lesen (keine Markierung, keine Änderungen)
         VST3Thread.useMain = true   // VST3: Laden, Zustand, Controller, Ansicht immer auf dem Haupt-Thread
-        core.pluginCatalog = PluginCatalog(directory: DataDir.local, readOnly: Session.isSelfTest)
+        core.pluginCatalog = PluginCatalog(directory: HistoryStore.baseDir, readOnly: Session.isSelfTest)
         // Selbsttest: zusätzlicher Plugin-Ordner nur im Speicher (Bilder des PLUGINS-Tabs mit Test-Plugin)
         if Session.isSelfTest, let f = ProcessInfo.processInfo.environment["MIX741_SHOT_PLUGINS"] {
             core.pluginCatalog.update { $0.folders.append(f) }
@@ -383,6 +382,8 @@ final class MixModel {
     var masterBPM: Double { clock.masterTempo }
     var showFourDecks: Bool { prefs.ui.showFourDecks }
     var deckCount: Int { prefs.ui.deckCount }
+    /// sichtbare Decks (Anzahl, Zwei-Mac-Modus)
+    var visibleDecks: [Int] { DeckLayout.visible(deckCount: prefs.ui.deckCount, pair: prefs.ui.pair) }
 
     /// hörbare Abweichung von der Tonart des Tracks in Halbtönen: Key-Shift, ohne Keylock zusätzlich das Tempo
     /// (Kern: transpose = 2^(keyShift/12) · rate ohne Keylock)

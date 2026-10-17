@@ -180,6 +180,8 @@ struct UIPrefs: Codable, Equatable {
     /// sichtbare Decks: 1 (nur A, volle Breite), 2 (A, B) oder 4; die übrigen spielen unsichtbar weiter.
     /// Ersetzt `showFourDecks` (alte Einstellungen: AppPrefs.decode)
     var deckCount = 4
+    /// Deck je Platz: links oben, links unten, rechts oben, rechts unten (DeckLayout)
+    var deckSlots = DeckLayout.defaultSlots
     /// Abstand zwischen den Decks und zum Fensterrand in pt (0 = keiner: die Wellenformen enden am Rand)
     var deckGap = 0.0
     var showFXUnits = true
@@ -325,8 +327,8 @@ struct UIPrefs: Codable, Equatable {
     var hidePlayedTracks = false
     /// Played-Status beim Start der App zurücksetzen (wie ⌥⌘P), Standard an
     var resetPlayedOnStart = true
-    /// Zwei-Mac-Modus (wirkt nach Neustart)
-    var pairRole = PairRole.off
+    /// Zwei-Mac-Modus (bleibt auf dem Mac)
+    var pair = PairSetup()
     /// Schneiden (Bereich entfernen / auf Bereich kürzen): Ergebnis gleich ins selbe Deck laden (Lade-Schutz gilt)
     var cutLoadsResult = false
     /// EDIT-Modus: Raster beim Markieren (Ziehen in der Wellenform), ⌥ = frei

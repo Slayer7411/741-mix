@@ -18,25 +18,28 @@ private func tempDir(_ name: String) throws -> URL {
     fm.createFile(atPath: nml.path, contents: Data())
     let dir = DataDir.resolve(collection: nml, local: local, selfTest: false)
     #expect(dir == coll.appendingPathComponent("MINOS-741", isDirectory: true))
-    #expect(Set(try fm.contentsOfDirectory(atPath: dir.path)) == ["analysis.json", "History"])
-    // zweiter Start: vorhandener Ordner bleibt, nichts wird erneut kopiert
-    try fm.removeItem(at: dir.appendingPathComponent("analysis.json"))
+    #expect(Set(try fm.contentsOfDirectory(atPath: dir.path)) == ["analysis.json", "plugins.json", "History"])
+    // zweiter Start: vorhandene Dateien im Ordner bleiben, fehlende kommen dazu
+    try Data("{\"neu\":1}".utf8).write(to: dir.appendingPathComponent("analysis.json"))
+    try fm.removeItem(at: dir.appendingPathComponent("plugins.json"))
     #expect(DataDir.resolve(collection: nml, local: local, selfTest: false) == dir)
-    #expect(!fm.fileExists(atPath: dir.appendingPathComponent("analysis.json").path))
+    #expect(try String(contentsOf: dir.appendingPathComponent("analysis.json"), encoding: .utf8) == "{\"neu\":1}")
+    #expect(fm.fileExists(atPath: dir.appendingPathComponent("plugins.json").path))
     // Selbsttest und fehlender Collection-Ordner: lokal
     #expect(DataDir.resolve(collection: nml, local: local, selfTest: true) == local)
     #expect(DataDir.resolve(collection: URL(fileURLWithPath: "/nicht/da/collection.nml"), local: local, selfTest: false) == local)
 }
 
-@Test func settingsFileKeepsDeviceKeysAndRoleLocal() throws {
-    #expect(SettingsFile.shared("prefs.v1") && SettingsFile.shared("columns.Basis") && SettingsFile.shared("mixerMode"))
-    #expect(!SettingsFile.shared("deviceUID") && !SettingsFile.shared("deckPairs") && !SettingsFile.shared("x1.6CB252DB"))
-    #expect(!SettingsFile.shared("NSWindow Frame x") && !SettingsFile.shared("migrated.v2") && !SettingsFile.shared(SettingsFile.stampKey))
-    let incoming = try JSONSerialization.data(withJSONObject: ["ui": ["pairRole": "Mac 1 · Decks A/C · schreibt", "zoom": 1.2]])
-    let local = try JSONSerialization.data(withJSONObject: ["ui": ["pairRole": "Mac 2 · Decks B/D", "zoom": 1.0]])
+@Test func settingsFileTakesEverythingButTheRole() throws {
+    for k in ["prefs.v1", "columns.Basis", "mixerMode", "deviceUID", "deckPairs", "x1.6CB252DB", "NSWindow Frame x", "NSSplitView Subview Frames y"] {
+        #expect(SettingsFile.shared(k), "\(k)")
+    }
+    #expect(!SettingsFile.shared(SettingsFile.stampKey))
+    let incoming = try JSONSerialization.data(withJSONObject: ["ui": ["pair": ["on": true, "writes": true], "zoom": 1.2]])
+    let local = try JSONSerialization.data(withJSONObject: ["ui": ["pair": ["on": true, "writes": false], "zoom": 1.0]])
     let merged = try #require(try JSONSerialization.jsonObject(with: SettingsFile.keepingRole(incoming, local: local)) as? [String: Any])
     let ui = try #require(merged["ui"] as? [String: Any])
-    #expect(ui["pairRole"] as? String == "Mac 2 · Decks B/D" && ui["zoom"] as? Double == 1.2)
+    #expect((ui["pair"] as? [String: Any])?["writes"] as? Bool == false && ui["zoom"] as? Double == 1.2)
     let none = try #require(try JSONSerialization.jsonObject(with: SettingsFile.keepingRole(incoming, local: nil)) as? [String: Any])
-    #expect((none["ui"] as? [String: Any])?["pairRole"] == nil)
+    #expect((none["ui"] as? [String: Any])?["pair"] == nil)
 }

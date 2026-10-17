@@ -143,7 +143,7 @@ final class HistoryStore {
     private func save(sync: Bool = false) {
         guard !live.isEmpty else { return }
         let entries = live, index = store?.entryIndex ?? NMLEntryIndex(), uuid = uuid, url = liveURL
-        let external = mix?.prefs.ui.historyToExternal == true && mix?.prefs.ui.pairRole != .follower ? Self.externalHistoryDir.appendingPathComponent(externalName) : nil
+        let external = mix?.prefs.ui.historyToExternal == true && (mix.map { !$0.prefs.ui.pair.on || $0.prefs.ui.pair.writes } ?? true) ? Self.externalHistoryDir.appendingPathComponent(externalName) : nil
         if ProcessInfo.processInfo.environment["MIX741_SELFTEST"] == "1" { SelfTest.historyURL = url }
         let write = {
             let text = HistoryNMLWriter.nml(entries: entries, index: index, uuid: uuid)

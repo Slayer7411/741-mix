@@ -415,12 +415,23 @@ struct DeckSettings: View {
                     .settingsHint()
             }
             Section("Zwei Macs") {
-                Picker("Dieser Mac", selection: $mix.prefs.ui.pairRole) {
-                    ForEach(PairRole.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                Toggle("Zwei-Mac-Modus", isOn: $mix.prefs.ui.pair.on)
+                    .settingsAnchor("decks.pair")
+                if mix.prefs.ui.pair.on {
+                    Toggle("Dieser Mac schreibt (Collection, History)", isOn: $mix.prefs.ui.pair.writes)
+                        .settingsAnchor("decks.pairwrites")
+                    LabeledContent("Decks dieses Macs (höchstens 2)") {
+                        HStack(spacing: 4) {
+                            ForEach(0..<4, id: \.self) { d in
+                                Toggle(deckLetters[d], isOn: Binding(get: { mix.prefs.ui.pair.decks.contains(d) },
+                                                                     set: { _ in mix.prefs.ui.pair.decks = PairSetup.toggled(mix.prefs.ui.pair.decks, d) }))
+                                    .toggleStyle(.button)
+                            }
+                        }
+                    }
+                    .settingsAnchor("decks.pairdecks")
                 }
-                .settingsAnchor("decks.pair")
-                .onChange(of: mix.prefs.ui.pairRole) { _, r in if r != .off { mix.prefs.ui.deckCount = 2 } }
-                Text("zwei macs als eine session: jeder spielt seine zwei decks über sein eigenes interface ins pult, takt über link (schaltet sich beim verbinden ein). verbindung per ethernet, usb-c/thunderbolt-kabel oder gleiches netz, ohne einrichten. gespielt-markierungen gelten auf beiden. collection auf beiden unter demselben pfad (google drive); in die collection schreibt nur mac 1. wirkt nach neustart.")
+                Text("zwei macs als eine session: jeder spielt seine decks über sein eigenes interface ins pult (kanalpaare unter audio), takt über link (schaltet sich beim verbinden ein). genau ein mac schreibt in collection und history-ordner, der andere verbindet sich mit ihm. verbindung per ethernet, usb-c/thunderbolt-kabel oder gleiches netz, ohne einrichten. gespielt-markierungen gelten auf beiden. wirkt sofort; die anordnung der decks unter darstellung -> layout. bleibt auf diesem mac (nicht in settings.plist).")
                     .settingsHint()
             }
             Section("Tempo & Sync") {
@@ -777,6 +788,18 @@ struct DisplaySettings: View {
                     Text("4 Decks").tag(4)
                 }
                 .settingsAnchor("display.deckcount")
+                Group {
+                    ForEach(0..<4, id: \.self) { slot in
+                    Picker(LocalizedStringKey(DeckLayout.slotNames[slot]), selection: Binding(
+                        get: { DeckLayout.normalized(mix.prefs.ui.deckSlots)[slot] },
+                        set: { mix.prefs.ui.deckSlots = DeckLayout.setting(mix.prefs.ui.deckSlots, slot: slot, deck: $0) })) {
+                        ForEach(0..<4, id: \.self) { d in Text(verbatim: "Deck \(deckLetters[d])").tag(d) }
+                    }
+                    }
+                }
+                .settingsAnchor("display.deckslots")
+                Text("platz je deck in der übersicht. ein deck an einen besetzten platz -> die beiden tauschen. ausgeblendete decks (1 / 2 decks, zwei-mac-modus) lassen ihren platz frei; ist nur eine seite belegt, nutzen die decks die volle breite.")
+                    .settingsHint()
                 sliderRow("Abstand zwischen Decks (pt)", $mix.prefs.ui.deckGap, 0...12, step: 1, format: "%.0f")
                     .settingsAnchor("display.deckgap")
                 Text("0 = die Wellenformen enden an den Deck-Rändern und am Fensterrand, nur die Rahmenlinie dazwischen.").settingsHint()

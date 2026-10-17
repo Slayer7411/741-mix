@@ -638,7 +638,7 @@ final class LibraryStore {
         guard !writing else { scheduleWriteBack(); return }
         let ui = uiPrefs()
         // Zwei-Mac-Modus: nur Mac 1 schreibt in die gemeinsame Collection
-        guard ui.writeCollection, ui.pairRole != .follower else { return }
+        guard ui.writeCollection, !ui.pair.on || ui.pair.writes else { return }
         var job = CollectionWriter.Job(changes: meta.all.mapValues(\.values).filter { position[$0.key] != nil },
                                        analyses: analysis.unwritten.filter { position[$0.key] != nil })
         job.cues = pendingCues()

@@ -4,7 +4,7 @@ import Testing
 
 @Test func pairMessageRoundTripInChunks() {
     let msgs: [PairMessage] = [
-        .hello(leader: true, version: PairMessage.version, name: "Mac 1", played: ["a", "b"]),
+        .hello(writes: true, decks: [0, 2], version: PairMessage.version, name: "Mac 1", played: ["a", "b"]),
         .playedSet(["a", "b", "c"]),
         .played(add: ["x"], remove: ["a"]),
     ]
@@ -29,5 +29,11 @@ import Testing
 }
 
 @Test func pairPlayedMergeKeepsBoth() {
-    #expect(PairPlayed.merged(leader: ["a"], follower: ["b"]) == ["a", "b"])
+    #expect(PairPlayed.merged(["a"], ["b"]) == ["a", "b"])
+}
+
+@Test func pairCheckOneWriterNoSharedDeck() {
+    #expect(PairCheck.problems(ownWrites: true, ownDecks: [0, 2], peerWrites: false, peerDecks: [1, 3]).isEmpty)
+    #expect(PairCheck.problems(ownWrites: true, ownDecks: [0], peerWrites: true, peerDecks: [1]) == [.bothWrite])
+    #expect(PairCheck.problems(ownWrites: false, ownDecks: [0, 1], peerWrites: false, peerDecks: [1, 3]) == [.noneWrites, .sharedDecks([1])])
 }
