@@ -10,7 +10,7 @@
                                                 16 recording
 ```
 
-user manual for MINOS-741 `0.7.x`. ui terms are shown in CAPS like on screen.
+user manual for MINOS-741 `0.8.x · LIMBUS`. ui terms are shown in CAPS like on screen.
 reference pages: [docs index](README.md).
 
 ---

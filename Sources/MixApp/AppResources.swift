@@ -10,6 +10,16 @@ enum AppResources {
         return Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Resources")
     }
 
+    /// Datei im Ressourcen-Ordner (`Resources/<rel>`, z. B. `Licenses/LICENSE-VST3SDK.txt`): im App-Paket oder beim
+    /// Direktstart aus dem SwiftPM-Bundle. Nil, wenn es sie nicht gibt
+    static func file(_ rel: String) -> URL? {
+        let fm = FileManager.default
+        if let u = Bundle.main.resourceURL?.appendingPathComponent("Resources/\(rel)"), fm.fileExists(atPath: u.path) { return u }
+        if Bundle.main.bundleURL.pathExtension == "app" { return nil }
+        if let u = Bundle.module.resourceURL?.appendingPathComponent("Resources/\(rel)"), fm.fileExists(atPath: u.path) { return u }
+        return nil
+    }
+
     /// Einstellungen und Daten aus alten Namen übernehmen (741mix, 741-mix-App), einmalig
     static func migrateDefaults() {
         let d = E2E.defaults

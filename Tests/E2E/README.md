@@ -134,6 +134,11 @@ Track keys are NML keys (`E2E/:…/:music/:t01.wav`). Scenarios write them as `$
 | `update-check` | – | `{build, available: {version, build, file}\|null}`; checks the channel now (folder channel in the test: `updateChannel` folder, `updateFolder` in the root). The network channels are off in the test run |
 | `update-install` | – | `{relaunch, build, version, to}` once the helper is started; the app then quits (the runner follows the new process, step `relaunch`). Refused while a deck plays, LIVE is on or a recording runs |
 | `update-rollback` | – | `{relaunch, rollback, to}`: back to `.MINOS-741-previous.app`, same restart |
+| `window` | `id`: `about`, `manual`, `shortcuts`, `log`, `backups` | `{recorded}`: the windows asked for so far. Nothing is shown in E2E (`BasicWindows`) |
+| `issue` | – | `{opened}`: the bug-report address (`Fehler melden`), recorded only (`CrashLinks`), never in the browser |
+| `backup-list` | – | `{backups: [{name, tracks, bytes}]}` of the collection's `Backup MINOS-741` folder, newest first |
+| `backup-now` | – | `{name}`: backup of the current collection now (no minimum interval) |
+| `backup-restore` | `name` (of `backup-list`) | `{ok, message, tracks}`: same path as the menu (`CollectionRestore`), without the confirmation dialog |
 | `drag` | – | **not wired**: drops arrive as window/AppKit drag events, not reachable from the mailbox. Use `load` and `add-to-playlist` |
 
 `snapshot` body (keys used by the scenarios; the rest is the same as `scripts/pairdebug.sh snapshot`):
