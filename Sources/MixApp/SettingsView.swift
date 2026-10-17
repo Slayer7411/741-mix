@@ -1174,7 +1174,7 @@ struct BrowserSettings: View {
                 .settingsAnchor("browser.live.weight")
                 Toggle("Zeilen abwechselnd getönt", isOn: $mix.prefs.ui.liveListStripes)
                     .settingsAnchor("browser.live.stripes")
-                Text("live-liste: spalten artist, title, bpm, key, time, vorn ✓ für gespielte tracks. alles knochenweiß, gespielte nicht gedimmt, ausgewählte zeile invertiert. schriftgröße unabhängig vom zoom, zeilenhöhe = schrift × 1,6. bei LIVE automatisch an, sonst von hand. die normale spaltenanordnung bleibt gespeichert, im live-modus wird nichts gespeichert.")
+                Text("live-liste: spalten artist, title, bpm, key, time. vorn eine markerspalte: ✓ gespielt, ✕ datei fehlt, ☁ nur online, ✓ analysiert, rip-befund. alles knochenweiß, gespielte nicht gedimmt, ausgewählte zeile invertiert. schriftgröße unabhängig vom zoom, zeilenhöhe = schrift × 1,6. bei LIVE automatisch an, sonst von hand. die normale spaltenanordnung bleibt gespeichert, im live-modus wird nichts gespeichert.")
                     .settingsHint()
             }
             Section("Gespielte Tracks") {

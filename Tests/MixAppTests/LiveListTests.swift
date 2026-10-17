@@ -49,6 +49,9 @@ import MixCore
     #expect(bpm.min == bpm.max && time.min == time.max)
     #expect(bpm.ideal >= 6 * LiveList.advance(s + 1))
     #expect(time.ideal >= 5 * LiveList.advance(s))
+    // Markerspalte: Platz für vier Zustände
+    let marker = LiveList.width("played", size: s)
+    #expect(marker.min == marker.max && marker.ideal >= 4 * LiveList.markerSlot(s))
     // Artist nach oben begrenzt, Title füllt den Rest der Tabelle
     let artist = LiveList.width("artist", size: s), title = LiveList.width("title", size: s)
     #expect(artist.min < artist.ideal && artist.ideal <= artist.max && artist.max < .greatestFiniteMagnitude)

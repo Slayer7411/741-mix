@@ -1163,7 +1163,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             f.origin.x -= origin.x
             f.origin.y -= origin.y
             let id = col.identifier.rawValue
-            if id == "cloud" || id == "analyzed" || id == "info" || id == "rip" { tips.append(f) }
+            if id == "cloud" || id == "analyzed" || id == "info" || id == "rip" || (liveMode && id == "played") { tips.append(f) }
             guard f.intersects(dirty), let d = TrackColumn.byID[id] else { continue }
             if let editing, id != "track", InlineEditController.columnFields[id] == editing { continue }
             ctx.saveGState()
@@ -1196,6 +1196,12 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             let parts = [CloudCell.badge(t.path).help, Self.analyzedHelp(t)].compactMap { $0 }
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
         case "analyzed": return Self.analyzedHelp(t)
+        case "played" where liveMode:
+            let rip = RipChecks.shared.open(t.key)
+            let parts = [t.fileExists ? CloudCell.badge(t.path).help : String(localized: "Datei fehlt"), Self.analyzedHelp(t),
+                         rip.isEmpty ? nil : rip.map { RipChecks.text($0) + " – " + RipChecks.reasons($0) }.joined(separator: "\n")]
+                .compactMap { $0 }.filter { !$0.isEmpty }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
         case "rip":
             let o = RipChecks.shared.open(t.key)
             return o.isEmpty ? nil : o.map { RipChecks.text($0) + " – " + RipChecks.reasons($0) }.joined(separator: "\n")
@@ -1212,7 +1218,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         let l = line(f)
         switch d.kind {
         case .played:
-            if history?.played.contains(t.key) == true { draw("✓", ink(TableStyle.secondary), l, ctx) }
+            if liveMode { liveMarkers(t, l, ctx) } else if history?.played.contains(t.key) == true { draw("✓", TableStyle.secondary, l, ctx) }
         case .cloud:
             let b = CloudCell.badge(t.path)
             if !b.glyph.isEmpty { draw(b.glyph, NSColor(b.color), l, ctx, font: b.glyph == "☁" ? .systemFont(ofSize: 13.z) : TableStyle.mono(11.z)) }
@@ -1239,7 +1245,7 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             drawText(t.artist, t.loose ? ink(TableStyle.muted) : t.fileExists ? TableStyle.bone : TableStyle.state, l, ctx, font: font, middle: true)
         case .title:
             if look?.ui.previewMode == .behindTitle, let img = preview(t, row: row) { image(img, l.insetBy(dx: 0, dy: 1), 0.25, ctx) }
-            drawTitle(t.title, t.loose ? ink(TableStyle.muted) : TableStyle.bone, l, ctx, font: font)
+            drawTitle(t.title, t.loose ? ink(TableStyle.muted) : liveMode && !t.fileExists ? TableStyle.state : TableStyle.bone, l, ctx, font: font)
         case .preview:
             let h = PreviewRenderer.heightPt.z
             if let img = preview(t, row: row) { image(img, CGRect(x: l.minX, y: (l.midY - h / 2).rounded(), width: l.width, height: h), 1, ctx) }
@@ -1296,6 +1302,28 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     private func ctAttrs(_ font: NSFont, _ color: NSColor) -> [NSAttributedString.Key: Any] {
         [.font: font, NSAttributedString.Key(kCTForegroundColorAttributeName as String): (inverted ? TableStyle.void : color).cgColor]
+    }
+
+    /// Live: alle Zustände in der Markerspalte am Zeilenanfang, je Zustand ein fester Platz (LiveList.markerSlot):
+    /// gespielt ✓, Datei (✕ fehlt, ☁ nur online, ↓ lädt, ● lokal, · ungeprüft), analysiert ✓, Rip-Befund.
+    /// Zustandsfarben wie sonst, der Rest knochenweiß
+    private func liveMarkers(_ t: Track, _ l: CGRect, _ ctx: CGContext) {
+        let w = LiveList.markerSlot(font.pointSize)
+        func at(_ k: Int, _ s: String, _ c: NSColor, _ f: NSFont? = nil) {
+            draw(s, c, CGRect(x: l.minX + CGFloat(k) * w, y: l.minY, width: w, height: l.height), ctx, font: f)
+        }
+        if history?.played.contains(t.key) == true { at(0, "✓", TableStyle.bone) }
+        if !t.fileExists {
+            at(1, "✕", TableStyle.state)
+        } else {
+            let b = CloudCell.badge(t.path)
+            if !b.glyph.isEmpty {
+                at(1, b.glyph, b.glyph == "●" || b.glyph == "·" ? TableStyle.bone : NSColor(b.color), b.glyph == "☁" ? .systemFont(ofSize: font.pointSize) : nil)
+            }
+        }
+        if t.analyzed { at(2, "✓", TableStyle.bone) }
+        let rip = RipChecks.shared.columnText(t.key)
+        if !rip.isEmpty { at(3, rip, TableStyle.state) }
     }
 
     /// Live-Modus: Nebenspalten knochenweiß statt gedämpft (Zustandsfarben bleiben)

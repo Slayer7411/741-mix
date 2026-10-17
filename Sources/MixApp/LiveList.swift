@@ -13,7 +13,7 @@ enum LiveListWeight: String, CaseIterable, Codable, Identifiable {
 /// beim Ende des Modus wieder (im Modus wird nichts gespeichert).
 @MainActor
 enum LiveList {
-    /// Spalten in Reihenfolge (played = Marker ✓ am Zeilenanfang)
+    /// Spalten in Reihenfolge (played = Markerspalte am Zeilenanfang: alle Zustände, siehe TrackTableController.liveMarkers)
     static let columns = ["played", "artist", "title", "bpm", "key", "time"]
     static let sizeRange: ClosedRange<Double> = 11...18
     /// Zeilenhöhe je pt Schrift
@@ -31,6 +31,9 @@ enum LiveList {
     /// Breite einer Stelle: IBM Plex Mono hat 0,6 em
     static func advance(_ size: CGFloat) -> CGFloat { size * 0.6 }
 
+    /// Platz je Zustand in der Markerspalte (gespielt, Datei, analysiert, Rip-Befund)
+    static func markerSlot(_ size: CGFloat) -> CGFloat { (advance(size) + 4).rounded(.up) }
+
     static func font(_ size: CGFloat, _ w: LiveListWeight) -> NSFont {
         NSFont(name: w.fontName, size: size) ?? TableStyle.mono(size)
     }
@@ -44,7 +47,7 @@ enum LiveList {
     static func width(_ id: String, size s: CGFloat) -> (min: CGFloat, ideal: CGFloat, max: CGFloat) {
         let a = advance(s), b = advance(s + 1)
         switch id {
-        case "played": return (16, 16, 16)
+        case "played": let w = (4 * markerSlot(s) + 6).rounded(.up); return (w, w, w)
         case "bpm": let w = (6 * b + 10).rounded(.up); return (w, w, w)
         case "key": let w = ((s * 0.95).rounded() + 3 * b + 10).rounded(.up); return (w, w, w)
         case "time": let w = (5 * a + 10).rounded(.up); return (w, w, w)
