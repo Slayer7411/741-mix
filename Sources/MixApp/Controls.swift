@@ -318,10 +318,59 @@ final class BoundaryHostingView<Content: View>: NSHostingView<Content>, AreaMenu
     var name = "?"
     /// Menü der ganzen Fläche (Deck): wo SwiftUI kein eigenes Kontextmenü hat, auch für verschachtelte Hosting-Views
     var areaMenu: ((NSEvent) -> NSMenu?)?
+    /// Ablage auf die ganze Fläche (Deck), siehe `AreaDrop`
+    var drop: AreaDrop? {
+        didSet {
+            wantsLayer = true
+            if let drop { registerForDraggedTypes(drop.types) } else { unregisterDraggedTypes() }
+        }
+    }
 
     override func menu(for e: NSEvent) -> NSMenu? {
         if let m = super.menu(for: e) { return m }
         return areaMenu?(e) ?? enclosingAreaMenu(for: e)
+    }
+
+    // Ablage: diese Ansicht selbst ist das Ziel (angemeldet). Eine SwiftUI-Ablage in einer Zeile fände AppKit nicht,
+    // weil die Zeile unter dem Zeiger keine Ablage meldet
+    override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation {
+        guard let drop else { return super.draggingEntered(s) }
+        let ok = drop.accepts(s.draggingPasteboard)
+        setDropHighlight(ok)
+        return ok ? .copy : []
+    }
+
+    override func draggingUpdated(_ s: NSDraggingInfo) -> NSDragOperation {
+        guard let drop else { return super.draggingUpdated(s) }
+        return drop.accepts(s.draggingPasteboard) ? .copy : []
+    }
+
+    override func draggingExited(_ s: NSDraggingInfo?) {
+        guard drop != nil else { return super.draggingExited(s) }
+        setDropHighlight(false)
+    }
+
+    override func prepareForDragOperation(_ s: NSDraggingInfo) -> Bool {
+        guard drop != nil else { return super.prepareForDragOperation(s) }
+        return true
+    }
+
+    override func performDragOperation(_ s: NSDraggingInfo) -> Bool {
+        guard let drop else { return super.performDragOperation(s) }
+        setDropHighlight(false)
+        return drop.perform(s.draggingPasteboard)
+    }
+
+    override func concludeDragOperation(_ s: NSDraggingInfo?) {
+        guard drop != nil else { return super.concludeDragOperation(s) }
+        setDropHighlight(false)
+    }
+
+    /// Rahmen in der Akzentfarbe (wie der Rahmen der Decks) während eines annehmbaren Zugs
+    private func setDropHighlight(_ on: Bool) {
+        guard let l = layer else { return }
+        l.borderWidth = on ? 2 : 0
+        l.borderColor = on ? NSColor(red: 210 / 255, green: 31 / 255, blue: 38 / 255, alpha: 1).cgColor : nil
     }
 
     override func invalidateIntrinsicContentSize() {}
@@ -342,6 +391,13 @@ final class BoundaryHostingView<Content: View>: NSHostingView<Content>, AreaMenu
 /// Ansicht mit Menü für ihre ganze Fläche (Rechtsklick auf Unteransichten ohne eigenes Menü)
 @MainActor protocol AreaMenuHost: AnyObject {
     var areaMenu: ((NSEvent) -> NSMenu?)? { get }
+}
+
+/// Ablage auf eine ganze Hosting-View: angemeldete Typen, ob der Zug angenommen wird, und das Ablegen (Pasteboard synchron)
+struct AreaDrop {
+    let types: [NSPasteboard.PasteboardType]
+    let accepts: @MainActor (NSPasteboard) -> Bool
+    let perform: @MainActor (NSPasteboard) -> Bool
 }
 
 extension NSView {

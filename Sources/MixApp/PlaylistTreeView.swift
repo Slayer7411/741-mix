@@ -29,32 +29,23 @@ enum TreeDrag {
     }
 
     static func item(_ s: String) -> UUID? { s.hasPrefix(prefix) ? UUID(uuidString: String(s.dropFirst(prefix.count))) : nil }
-    static func track(_ s: String) -> String? { s.hasPrefix(TrackDrag.prefix) ? String(s.dropFirst(TrackDrag.prefix.count)) : nil }
+    static func track(_ s: String) -> String? { TrackDrag.key(s) }
 
-    /// alle Texte der Provider, auf dem Hauptthread
+    /// alle Texte der Provider in Reihenfolge, auf dem Hauptthread
     @discardableResult
     static func strings(_ providers: [NSItemProvider], _ done: @escaping @MainActor ([String]) -> Void) -> Bool {
-        let own = providers.filter { $0.canLoadObject(ofClass: NSString.self) }
-        guard !own.isEmpty else { return false }
-        let box = StringsBox()
-        let group = DispatchGroup()
-        for p in own {
-            group.enter()
-            p.loadObject(ofClass: NSString.self) { obj, _ in
-                if let s = obj as? String { box.add(s) }
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) { MainActor.assumeIsolated { done(box.all) } }
-        return true
+        TrackDrag.loadStrings(providers, done)
     }
+}
 
-    private final class StringsBox: @unchecked Sendable {
-        private let lock = NSLock()
-        private var list: [String] = []
-        func add(_ s: String) { lock.lock(); list.append(s); lock.unlock() }
-        var all: [String] { lock.lock(); defer { lock.unlock() }; return list }
-    }
+/// Feste Plätze für Ergebnisse, die in beliebiger Reihenfolge eintreffen (Ladeaufrufe der Provider): `values` in
+/// der Reihenfolge der Plätze, leere Plätze fallen weg
+final class OrderedSlots<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var slots: [T?]
+    init(count: Int) { slots = Array(repeating: nil, count: count) }
+    func set(_ i: Int, _ v: T?) { lock.lock(); if slots.indices.contains(i) { slots[i] = v }; lock.unlock() }
+    var values: [T] { lock.lock(); defer { lock.unlock() }; return slots.compactMap { $0 } }
 }
 
 private struct TreeProviderBox: @unchecked Sendable { let provider: NSItemProvider }

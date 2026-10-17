@@ -26,7 +26,7 @@ struct DeckView: View {
             if coverSide > 0 { CoverTile(d: d, side: coverSide).background(UITestMark(name: deckLetters[d] + " cover")).padding(.leading, 4.z) }
             VStack(alignment: .leading, spacing: 4.z) {
                 // Kopfhöhe hängt an den FX-Tasten (ohne Mixer: 1 oder 2 Reihen), am Cover und an den Zusatzinfos
-                row("header", DeckHeader(d: d).modifier(DeckDropTarget(d: d)),
+                row("header", DeckHeader(d: d),
                     key: [ui.showMixer ? 0 : ui.fxUnitCount, !ui.showMixer && mix.eqVisible ? 1 : 0, ui.deckCoverInHeader ? Int(ui.deckCoverSize) : 0, rows.info ? 1 : 0, rows.comment || rows.tags ? 1 : 0])
                 WaveformView(d: d)
                     .overlay { DeckIdleView(d: d) }   // leer: Lobster, nach Ladefehler 5 s Totenkopf
@@ -147,6 +147,7 @@ struct DeckHost: NSViewRepresentable {
         let v = BoundaryHostingView(rootView: Root(d: d, mix: mix, cache: cache, store: store, browser: browser))
         v.name = "deck " + deckLetters[d]
         v.sizingOptions = []
+        v.drop = DeckDrop.area(d, mix: mix, store: store)
         // Rechtsklick auf die Deckfläche (Zeilen, Cover, Übersicht, Wellenform ohne eigenes Menü): Track-Menü
         v.areaMenu = { [weak v] _ in
             guard let r = v?.rootView else { return nil }
@@ -158,6 +159,7 @@ struct DeckHost: NSViewRepresentable {
     func updateNSView(_ v: BoundaryHostingView<Root>, context: Context) {
         if v.rootView.d != d || v.rootView.mix !== mix || v.rootView.cache !== cache || v.rootView.store !== store || v.rootView.browser !== browser {
             v.rootView = Root(d: d, mix: mix, cache: cache, store: store, browser: browser)
+            v.drop = DeckDrop.area(d, mix: mix, store: store)
         }
     }
 
@@ -175,77 +177,67 @@ enum TrackDrag {
         NSItemProvider(object: (key.map { prefix + $0 } ?? "") as NSString)
     }
 
-    /// Schlüssel aus den Providern (nur eigene Tracks), auf dem Hauptthread; `done` auch leer (keine eigenen Texte)
+    /// Track-Schlüssel aus einem Pasteboard-Text; nil für fremde Texte
+    static func key(_ s: String) -> String? { s.hasPrefix(prefix) ? String(s.dropFirst(prefix.count)) : nil }
+
+    /// Schlüssel aus den Providern (nur eigene Tracks) in der Reihenfolge der Zeilen; `done` auch leer (keine eigenen Texte)
     @discardableResult
     static func keys(_ providers: [NSItemProvider], _ done: @escaping @MainActor ([String]) -> Void) -> Bool {
+        loadStrings(providers) { all in done(all.compactMap(key)) }
+    }
+
+    /// Alle Texte der Provider in ihrer Reihenfolge (nicht in der Reihenfolge des Ladens), auf dem Hauptthread;
+    /// `done` auch leer. false, wenn kein Provider Text liefert
+    @discardableResult
+    static func loadStrings(_ providers: [NSItemProvider], _ done: @escaping @MainActor ([String]) -> Void) -> Bool {
         let own = providers.filter { $0.canLoadObject(ofClass: NSString.self) }
         guard !own.isEmpty else { return false }
-        var keys: [String] = []
+        let slots = OrderedSlots<String>(count: own.count)
         let group = DispatchGroup()
-        for p in own {
+        for (i, p) in own.enumerated() {
             group.enter()
             p.loadObject(ofClass: NSString.self) { obj, _ in
-                if let s = obj as? String, s.hasPrefix(prefix) { keys.append(String(s.dropFirst(prefix.count))) }
+                slots.set(i, obj as? String)
                 group.leave()
             }
         }
-        group.notify(queue: .main) { MainActor.assumeIsolated { done(keys) } }
+        group.notify(queue: .main) { MainActor.assumeIsolated { done(slots.values) } }
         return true
-    }
-
-    /// Dateien aus den Providern (Finder), auf dem Hauptthread
-    static func hasFiles(_ providers: [NSItemProvider]) -> Bool {
-        providers.contains { $0.hasItemConformingToTypeIdentifier("public.file-url") }
-    }
-
-    @discardableResult
-    static func files(_ providers: [NSItemProvider], _ done: @escaping @MainActor ([URL]) -> Void) -> Bool {
-        let own = providers.filter { $0.hasItemConformingToTypeIdentifier("public.file-url") }
-        guard !own.isEmpty else { return false }
-        let box = URLBox()
-        let group = DispatchGroup()
-        for p in own {
-            group.enter()
-            _ = p.loadObject(ofClass: URL.self) { u, _ in
-                if let u { box.add(u) }
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) { MainActor.assumeIsolated { done(box.all) } }
-        return true
-    }
-
-    private final class URLBox: @unchecked Sendable {
-        private let lock = NSLock()
-        private var list: [URL] = []
-        func add(_ u: URL) { lock.lock(); list.append(u); lock.unlock() }
-        var all: [URL] { lock.lock(); defer { lock.unlock() }; return list }
     }
 }
 
-/// Deck als Ziel: Track aus einem anderen Deck (oder dem Browser) fallen lassen -> laden
-struct DeckDropTarget: ViewModifier {
-    @Environment(MixModel.self) private var mix
-    @Environment(LibraryStore.self) private var store
-    let d: Int
-    @State private var targeted = false
+/// Deck als Ziel (ganze Fläche: Kopf, Wellenform, Zeilen): Track aus dem Browser, einer Playlist oder einem anderen
+/// Deck laden (Lade-Schutz wie beim Doppelklick), Finder-Datei laden, wenn sie in der Collection steht. Die Deck-
+/// Hosting-View ist das Ziel (`AreaDrop`); die Zeilen darin melden keine Ablage
+@MainActor enum DeckDrop {
+    static let types: [NSPasteboard.PasteboardType] = [.string, .fileURL]
 
-    func body(content: Content) -> some View {
-        content
-            .onDrop(of: [.text, .fileURL], isTargeted: $targeted) { providers in
-                // Track aus dem Browser, Baum, anderem Deck; sonst Datei aus dem Finder, wenn sie in der Collection steht
-                let load: @MainActor ([String]) -> Void = { keys in
-                    guard let k = keys.first, let t = store.track(k) ?? mix.decks.compactMap({ $0.state.track }).first(where: { $0.key == k }) else { return }
-                    if !mix.load(t, deck: d) { StatusCenter.post(.warning, String(localized: "Deck \(deckLetters[d]) spielt · Laden gesperrt (⌥ erzwingt)"), key: "load.\(d)") }
-                }
-                let files: @MainActor () -> Void = {
-                    TrackDrag.files(providers) { urls in load(urls.compactMap { u in store.tracks.first { $0.path == u.path }?.key }) }
-                }
-                let text = TrackDrag.keys(providers) { keys in if keys.isEmpty { files() } else { load(keys) } }
-                if !text { files() }
-                return text || TrackDrag.hasFiles(providers)
-            }
-            .overlay { if targeted { Rectangle().stroke(Theme.state, lineWidth: 2) } }
+    static func accepts(_ pb: NSPasteboard) -> Bool {
+        hasOwnTracks(pb) || !TrackTableController.filePaths(pb).isEmpty
+    }
+
+    /// eigene Tracks in Zeilenreihenfolge, sonst Finder-Dateien, die in der Collection stehen
+    static func trackKeys(_ pb: NSPasteboard, store: LibraryStore) -> [String] {
+        if hasOwnTracks(pb) { return ownKeys(pb) }
+        let files = Set(TrackTableController.filePaths(pb))
+        return files.isEmpty ? [] : store.tracks.filter { files.contains($0.path) }.map(\.key)
+    }
+
+    static func perform(_ pb: NSPasteboard, deck d: Int, mix: MixModel, store: LibraryStore) -> Bool {
+        guard let k = trackKeys(pb, store: store).first else { return false }
+        guard let t = store.track(k) ?? mix.decks.compactMap({ $0.state.track }).first(where: { $0.key == k }) else { return false }
+        if !mix.load(t, deck: d) { StatusCenter.post(.warning, String(localized: "Deck \(deckLetters[d]) spielt · Laden gesperrt (⌥ erzwingt)"), key: "load.\(d)") }
+        return true
+    }
+
+    static func ownKeys(_ pb: NSPasteboard) -> [String] {
+        (pb.pasteboardItems ?? []).compactMap { $0.string(forType: .string).flatMap(TrackDrag.key) }
+    }
+
+    static func hasOwnTracks(_ pb: NSPasteboard) -> Bool { !ownKeys(pb).isEmpty }
+
+    static func area(_ d: Int, mix: MixModel, store: LibraryStore) -> AreaDrop {
+        AreaDrop(types: types, accepts: { accepts($0) }, perform: { perform($0, deck: d, mix: mix, store: store) })
     }
 }
 
