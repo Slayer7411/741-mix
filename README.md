@@ -7,7 +7,7 @@
 native dj software for macos. classic deck workflow, nml collection in and out, own browser, tag system and plugin host.
 built for my own setup -> after two weeks it replaced my old dj software at home. ideas -> [discussions](https://github.com/Slayer7411/MINOS-741/discussions), own needs -> fork it.
 
-new here? -> [START](docs/START.md): from zero to your first recorded set.
+new here? -> [START](docs/START.md): from zero to your first recorded set. everything it does -> [FEATURES](docs/FEATURES.md).
 
 <p align="center"><img src="docs/assets/screenshot.png" alt="MINOS-741 with 4 decks, external mixer mode and dual browser" width="100%"></p>
 
