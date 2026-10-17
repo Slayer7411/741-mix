@@ -408,7 +408,7 @@ final class LibraryStore {
             case .playlist: return n.trackKeys.compactMap { byKey[$0] }
             case .smartlist:
                 let q = (try? SmartQuery.parse(n.query)) ?? none
-                return tracks.filter { q.matches($0) }
+                return tracks.filter { q.matches($0, now: own.context.now, played: own.context.played) }
             }
         default: return nil
         }
@@ -934,7 +934,8 @@ final class LibraryStore {
             case .smartlist:
                 if let hit = smartCache[n.id] { return hit }
                 let q = (try? SmartQuery.parse(n.query)) ?? .compare(field: "TITLE", op: .eq, value: .text("\u{0}"))
-                let res = tracks.filter { q.matches($0) }
+                let ctx = smartContext(background: true)
+                let res = tracks.filter { q.matches($0, now: ctx.now, played: ctx.played) }
                 smartCache[n.id] = res
                 return res
             }

@@ -73,6 +73,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * browser big / decks toggle: 0.1 s ease-out on the heights, the decks stay in place (bench `toggle`, median 60 -> 11 ms to big, 68 -> 13 ms back)
 
 ### fixed
+* smartlists: a rule with a syntax error (e.g. `$BPM > 5 6`) crashed the app while the error was reported; `$LOCK` and `$PLAYED` (history counts too) evaluate, `$IMPORT_DATE` = `$IMPORTDATE`, text rules ignore case and accents, a date equals its whole day
 * collection backup before every write (was at most hourly), the newest 30 kept in `Backup MINOS-741`
 * analysis grid: anchor on the kick (bass × rest onset with ±10 ms tolerance plus the measured window lead) instead of a ±40 ms fine search that often caught a hat or bass note one 8th / 16th next to the kick. against set collection grids (155 tracks): 16th errors 14 -> 3
 * browser preview: loose files (MUSIC FOLDERS, EXPLORER) get waveform, grid and cues in visible rows (were skipped, analysed tracks stayed empty)
