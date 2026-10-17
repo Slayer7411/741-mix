@@ -268,6 +268,15 @@ struct UIPrefs: Codable, Equatable {
     /// Browser-Zeilen: Luft um den Text in pt (Zeilenhöhe = Schrift + Luft; 11 = wie bisher), Trennlinie unter jeder Zeile
     var browserRowPadding = 11.0
     var browserRowLines = true
+    /// Live-Lesbarkeit der Liste von Hand an (⌘, -> BROWSER, Abschnitt „Live-Lesbarkeit“)
+    var liveList = false
+    /// Live-Lesbarkeit automatisch, solange LIVE an ist
+    var liveListAuto = true
+    /// Schriftgröße der Live-Liste in pt (11…18, unabhängig vom Zoom); Zeilenhöhe folgt (LiveList.rowHeight)
+    var liveListTextSize = 14.0
+    var liveListWeight = LiveListWeight.medium
+    /// Live-Liste: Zeilen abwechselnd leicht getönt
+    var liveListStripes = true
     /// Browser-Zeilen: einzeilig oder zweizeilig mit Sammelspalte „Track“ (Standard für Bereiche ohne eigene Wahl)
     var browserRows = BrowserRows.single
     /// Sammelspalte: Teile in Reihenfolge (TrackPart.rawValue, „br“ = Zeile 2)

@@ -1163,6 +1163,22 @@ struct BrowserSettings: View {
                     .settingsHint()
             }
             BrowserRowsSettings()
+            Section("Live-Lesbarkeit") {
+                Toggle("Lesbarkeit bei LIVE automatisch", isOn: $mix.prefs.ui.liveListAuto)
+                    .settingsAnchor("browser.live.auto")
+                Toggle("Live-Lesbarkeit in der Liste", isOn: $mix.prefs.ui.liveList)
+                    .settingsAnchor("browser.live.on")
+                sliderRow("Schriftgröße der Liste", $mix.prefs.ui.liveListTextSize, 11...18, step: 1, format: "%.0f", unit: "pt")
+                    .settingsAnchor("browser.live.size")
+                Picker("Schnitt", selection: $mix.prefs.ui.liveListWeight) {
+                    ForEach(LiveListWeight.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .settingsAnchor("browser.live.weight")
+                Toggle("Zeilen abwechselnd getönt", isOn: $mix.prefs.ui.liveListStripes)
+                    .settingsAnchor("browser.live.stripes")
+                Text("live-liste: spalten artist, title, bpm, key, time. vorn eine markerspalte: ✓ gespielt, ✕ datei fehlt, ☁ nur online, ✓ analysiert, rip-befund. alles knochenweiß, gespielte nicht gedimmt, ausgewählte zeile invertiert. schriftgröße unabhängig vom zoom, zeilenhöhe = schrift × 1,6. bei LIVE automatisch an, sonst von hand. die normale spaltenanordnung bleibt gespeichert, im live-modus wird nichts gespeichert.")
+                    .settingsHint()
+            }
             Section("Gespielte Tracks") {
                 Toggle("Gespielte Tracks dimmen", isOn: $mix.prefs.ui.dimPlayedTracks)
                     .settingsAnchor("browser.dimplayed")
