@@ -5,6 +5,8 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 
 ## ◆ [UNRELEASED]
 
+## ◆ [0.8.2] · 2026-10-17 · TWO MACS
+
 ### added
 * remote debug channel between the two macs: `scripts/pairdebug.sh <command>` (ping, snapshot, status, prefs-get / prefs-set, defaults-get / defaults-set) asks the other mac over the open connection and prints its answer; the other mac answers unless ⌘, -> DECKS -> Zwei Macs -> `Fernzugriff zum Analysieren erlauben` is off (on by default). unit tests (message round trip, json merge, mailbox format)
 * live readability for the track list (⌘, -> BROWSER -> Live-Lesbarkeit, automatic with LIVE): columns artist, title, bpm, key, time with a state marker column (played, missing file, online only, analysed, rip finding), own text size 11–18 pt independent of the zoom, medium weight, all bone, played tracks not dimmed, inverted selection, optional row tint; the normal column layout stays saved
