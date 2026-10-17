@@ -238,7 +238,6 @@ struct WavePresetSettings: View {
             ? Text("eingebaut: die erste änderung legt eine eigene kopie an („… kopie“) und wählt sie. eigene presets: wave-presets.json im minos-741-ordner.")
             : Text("eigenes preset. zurücksetzen = werte des eingebauten presets, aus dem es stammt."))
             .settingsHint()
-        WavePresetFields()
     }
 
     private func askName(_ title: String, _ initial: String, _ done: (String) -> Void) {
@@ -292,8 +291,9 @@ struct WavePresetFields: View {
             .settingsAnchor("display.wave.mid")
             freqRow("Trennfrequenz Hoch", bind(\.analysis.high), 1000...8000)
                 .settingsAnchor("display.wave.high")
-            Text("tief = tiefpass, mitte = bandpass, hoch = hochpass. auto = geometrisches mittel aus tief und hoch. änderungen rechnen geladene tracks im hintergrund neu.")
+            Text("tief = tiefpass, mitte = bandpass, hoch = hochpass. auto = geometrisches mittel.")
                 .settingsHint()
+                .help("tief = tiefpass, mitte = bandpass, hoch = hochpass. auto = geometrisches mittel aus tief und hoch. änderungen rechnen geladene tracks im hintergrund neu.")
             msRow("Anstieg Tief", \.analysis.attackMs.low, 0.5...50).settingsAnchor("display.wave.attack.low")
             msRow("Abfall Tief", \.analysis.releaseMs.low, 5...400).settingsAnchor("display.wave.release.low")
             msRow("Anstieg Mitte", \.analysis.attackMs.mid, 0.5...50).settingsAnchor("display.wave.attack.mid")
@@ -344,8 +344,9 @@ struct WavePresetFields: View {
                 .settingsAnchor("display.wave.warmth")
             row("Hellblau gehaltener Höhen", num(\.look.openness), 0...1)
                 .settingsAnchor("display.wave.openness")
-            Text("rot / grün / blau direkt: bandanteile als farbkanäle (kick-anschlag rot, mitten grün, kurze höhen blau), sonst die drei farben. lautstärke = gewicht des bands in farbe und stapelhöhe. energie-anteil 1 = nur mischung, 0 = nur stapel (stärkstes band innen). sättigung nur bei rot / grün / blau direkt.")
+            Text("rot / grün / blau direkt: bandanteile als farbkanäle, sonst die drei farben.")
                 .settingsHint()
+                .help("rot / grün / blau direkt: bandanteile als farbkanäle (kick-anschlag rot, mitten grün, kurze höhen blau), sonst die drei farben. lautstärke = gewicht des bands in farbe und stapelhöhe. energie-anteil 1 = nur mischung, 0 = nur stapel (stärkstes band innen). sättigung nur bei rot / grün / blau direkt.")
         }
     }
 

@@ -79,7 +79,7 @@ private func anchorCounts() throws -> (literal: [String: Int], dynamic: Int) {
     #expect(search.search("bpm").contains { $0.entry.anchor == "decks.temporange" })   // bpm <-> tempo
     // Tastatur: Aktion über Titel und ID
     #expect(search.search("reloop").contains { $0.entry.anchor == SettingsIndex.keyAnchor(.reloop) })
-    #expect(search.search("hotcue").contains { $0.entry.tab == "TASTATUR" })
+    #expect(search.search("hotcue").contains { $0.entry.tab == "CONTROLLER & TASTEN" })
 }
 
 @Test func settingsSearchIsFast() {

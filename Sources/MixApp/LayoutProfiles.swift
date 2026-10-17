@@ -401,8 +401,9 @@ struct LayoutProfileSettings: View {
             Button("Aktuelle Ansicht speichern …") { LayoutProfiles.saveAsking(mix: mix, browser: browser) }
                 .settingsControlColumn()
                 .settingsAnchor("display.profiles")
-            Text("profil = decks (1 / 2 / 4), mixer, fx-units, zeilen je deck, browser (anordnung, höhe, baum, groß), statusleiste, last-anzeigen, wellenform-mindesthöhe, cover und cover-breite, übersicht-höhe, vorschau. nicht: audio, controller, wellenform-stil und farben, tags, tastatur. umschalten: profil-menü links in der werkzeugleiste, menü darstellung -> profil, die ersten vier per taste (⌘, -> tastatur), nächstes ⌃⌥⇥. ◆ = aktiv, * = ansicht seitdem geändert -> aktualisieren übernimmt sie.")
+            Text("was ein profil speichert: decks, mixer, fx-units, zeilen, browser, statusleiste.")
                 .settingsHint()
+                .help("profil = decks (1 / 2 / 4), mixer, fx-units, zeilen je deck, browser (anordnung, höhe, baum, groß), statusleiste, last-anzeigen, wellenform-mindesthöhe, cover und cover-breite, übersicht-höhe, vorschau. nicht: audio, controller, wellenform-stil und farben, tags, tastatur. umschalten: profil-menü links in der werkzeugleiste, menü darstellung -> profil, die ersten vier per taste (⌘, -> tastatur), nächstes ⌃⌥⇥. ◆ = aktiv, * = ansicht seitdem geändert -> aktualisieren übernimmt sie.")
         }
     }
 }

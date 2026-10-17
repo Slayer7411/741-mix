@@ -190,14 +190,24 @@ struct WindowSwitches: View {
     @Environment(MixModel.self) private var mix
     @Environment(BrowserState.self) private var browser
     @Environment(LibraryStore.self) private var store
+    /// Popover ★ (Favoriten der Einstellungen)
+    @State private var favoritesOpen = false
 
     var body: some View {
         let ui = mix.prefs.ui
+        let favorites = SettingsFavorites.resolved(ui.settingsFavorites, known: SettingsIndex.anchors)
         HStack(spacing: 0) {
             BarCell(title: "LIVE", active: mix.live, width: 30, help: "LIVE: kein Ruhezustand, kein Bildschirmschoner, Display bleibt an (gekoppelt: beide Macs)") {
                 mix.setLive(!mix.live)
             }
             BarDivider()
+            if !favorites.isEmpty {
+                BarCell(title: "★", active: favoritesOpen, width: 22, help: "Favoriten: Einstellungen schnell ändern (ohne ⌘,)") {
+                    favoritesOpen.toggle()
+                }
+                .popover(isPresented: $favoritesOpen, arrowEdge: .bottom) { FavoritesPopover(ids: favorites) }
+                BarDivider()
+            }
             if ui.pair.on {
                 BarCell(title: "SCHREIBT", active: ui.pair.writes, width: 54, help: "Zwei Macs: dieser Mac schreibt in Collection und History; an = der andere gibt ab") {
                     mix.prefs.ui.pair.writes.toggle()

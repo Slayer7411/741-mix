@@ -218,8 +218,9 @@ struct SetupFlowView: View {
                 button("Collection wählen …") { chooseCollection() }
                 Spacer()
             }
-            Text("Der Datenordner (Einstellungen, Verlauf) liegt dann neben dieser Datei. Er wird beim nächsten Start benutzt.")
+            Text("Der Datenordner liegt neben der Collection; Einstellungen und Verlauf bleiben dort.")
                 .settingsHint()
+                .help("Der Datenordner (Einstellungen, Verlauf) liegt dann neben dieser Datei. Er wird beim nächsten Start benutzt.")
         }
     }
 

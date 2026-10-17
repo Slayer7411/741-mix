@@ -330,7 +330,8 @@ struct BufferTestSettings: View {
                 }
             }
             .settingsAnchor("audio.buffertest")
-            Text(LocalizedStringKey(Self.hint)).settingsHint()
+            Text("misst je puffergröße (64 bis 1024), dann die empfehlung. lädt 4 tracks, hauptausgang stumm.").settingsHint()
+                .help(LocalizedStringKey(Self.hint))
             if case let .running(frames, step, of) = t.state {
                 Text(verbatim: String(format: String(localized: "Puffer %lld Frames · Stufe %lld von %lld"), frames, step, of))
                     .font(Theme.mono(11))

@@ -192,6 +192,8 @@ struct SetCheckView: View {
 // MARK: - Einstellungen
 
 struct CloudSettings: View {
+    @Environment(\.settingsFilter) private var filter
+    @Environment(\.settingsAdvancedPage) private var advancedPage
     @Environment(MixModel.self) private var mix
     @Environment(LibraryStore.self) private var store
 
@@ -199,6 +201,7 @@ struct CloudSettings: View {
         @Bindable var mix = mix
         let c = CloudLibrary.shared
         Form {
+            if !advancedPage || filter != nil {
             Section("Cloud-Library") {
                 LabeledContent("Stand") { Text(verbatim: stateLine(c)).foregroundStyle((c.counts[.cloud] ?? 0) > 0 ? Theme.gold : Theme.bone) }
                     .settingsAnchor("cloud.state")
@@ -209,8 +212,9 @@ struct CloudSettings: View {
                     }
                 }
                 .settingsAnchor("cloud.checked")
-                Text("spalte ☁ im browser: ● lokal · ☁ nur online · ↓ lädt · ✕ fehlt. rechtsklick auf tracks oder eine liste -> bereitmachen. set-check im browser-kopf: preparation + liste lokal? geprüft per dateistatus, ohne etwas zu laden; neu bei änderungen im ordner und alle 10 min.")
+                Text("spalte ☁ im browser: ● lokal · ☁ nur online · ↓ lädt · ✕ fehlt.")
                     .settingsHint()
+                    .help("spalte ☁ im browser: ● lokal · ☁ nur online · ↓ lädt · ✕ fehlt. rechtsklick auf tracks oder eine liste -> bereitmachen. set-check im browser-kopf: preparation + liste lokal? geprüft per dateistatus, ohne etwas zu laden; neu bei änderungen im ordner und alle 10 min.")
             }
             Section("Lokal halten, solange MINOS-741 läuft") {
                 Picker("Lokal halten", selection: $mix.prefs.cloud.keepMode) {
@@ -227,44 +231,33 @@ struct CloudSettings: View {
                 .settingsAnchor("cloud.minfree")
                 Toggle("Beim Beenden offene Downloads an den Anbieter übergeben", isOn: $mix.prefs.cloud.handOffOnQuit)
                     .settingsAnchor("cloud.handoff")
-                Text("ausgelagerte tracks (speicher optimieren) werden neu geholt. lokal halten lädt einzeln und zuletzt, bereitmachen geht vor, neue downloads warten, solange ein deck lädt. übergeben: der anbieter lädt nach dem beenden weiter, ohne MINOS-741.")
+                Text("ausgelagerte tracks werden neu geholt. übergeben: der anbieter lädt ohne MINOS-741 weiter.")
                     .settingsHint()
+                    .help("ausgelagerte tracks (speicher optimieren) werden neu geholt. lokal halten lädt einzeln und zuletzt, bereitmachen geht vor, neue downloads warten, solange ein deck lädt. übergeben: der anbieter lädt nach dem beenden weiter, ohne MINOS-741.")
             }
-            Section("Dauerhaft offline") {
-                LabeledContent("Library-Ordner") {
-                    Text(verbatim: c.folder.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "—")
-                        .lineLimit(2).truncationMode(.head)
-                }
-                .settingsAnchor("cloud.folder")
-                LabeledContent("Offline verfügbar") {
-                    Text(verbatim: pinLine(c)).foregroundStyle(c.folderStatus?.pin == .notPinned ? Theme.gold : Theme.bone)
-                }
-                .settingsAnchor("cloud.offline")
-                HStack(spacing: 8) {
-                    Button("Im Finder zeigen") { c.revealFolder() }.disabled(c.folder == nil)
-                    Button("Prüfen") { c.checkFolder() }.disabled(c.folder == nil)
-                }
-                .settingsControlColumn()
-                Text("\(c.provider ?? "Google Drive"): rechtsklick auf den ordner im finder -> „Offline verfügbar machen“. der anbieter hält dann alles lokal, auch ohne MINOS-741. MINOS-741 ändert keine einstellungen des anbieters.")
-                    .settingsHint()
+            TidalSettingsSection()
+                if filter == nil { SettingsAdvancedLink(tab: "CLOUD") }
             }
-            Section("Absturzberichte") {
-                Toggle("Nach Absturz fragen", isOn: $mix.prefs.ui.askAfterCrash)
-                    .settingsAnchor("cloud.crash.ask")
-                Text("Beim nächsten Start zeigt MINOS-741 den bereinigten Bericht (ohne Pfade, Nutzer, Rechner, Geräte). Gesendet wird nur, was du in dem Fenster auslöst: GitHub-Issue im Browser oder Kopieren.")
-                    .settingsHint()
-                Toggle("Vollständige Berichte in Ordner ablegen", isOn: $mix.prefs.ui.crashReports)
-                    .settingsAnchor("cloud.crash.on")
-                HStack {
-                    Text("Ordner")
-                    Spacer()
-                    Text(verbatim: mix.prefs.ui.crashReportFolder.isEmpty ? "—" : (mix.prefs.ui.crashReportFolder as NSString).abbreviatingWithTildeInPath)
-                        .font(Theme.mono(10)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                    Button("Ordner wählen …") { pickCrashFolder() }
+            if advancedPage || filter != nil {
+                SettingsAdvancedBack(tab: "CLOUD")
+                Section("Dauerhaft offline") {
+                    LabeledContent("Library-Ordner") {
+                        Text(verbatim: c.folder.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "—")
+                            .lineLimit(2).truncationMode(.head)
+                    }
+                    .settingsAnchor("cloud.folder")
+                    LabeledContent("Offline verfügbar") {
+                        Text(verbatim: pinLine(c)).foregroundStyle(c.folderStatus?.pin == .notPinned ? Theme.gold : Theme.bone)
+                    }
+                    .settingsAnchor("cloud.offline")
+                    HStack(spacing: 8) {
+                        Button("Im Finder zeigen") { c.revealFolder() }.disabled(c.folder == nil)
+                        Button("Prüfen") { c.checkFolder() }.disabled(c.folder == nil)
+                    }
+                    .settingsControlColumn()
+                    Text("\(c.provider ?? "Google Drive"): rechtsklick auf den ordner im finder -> „Offline verfügbar machen“. der anbieter hält dann alles lokal, auch ohne MINOS-741. MINOS-741 ändert keine einstellungen des anbieters.")
+                        .settingsHint()
                 }
-                .settingsAnchor("cloud.crash.folder")
-                Text("Mit Ordner und eingeschalteter Option wird jeder neue Absturzbericht zusätzlich vollständig dort abgelegt (Bericht, Statusmeldungen, Einstellungen ohne Geräte-Kennungen). Nichts wird ins Netz geschickt.")
-                    .settingsHint()
             }
         }
         .onAppear {
@@ -273,15 +266,6 @@ struct CloudSettings: View {
         }
     }
 
-    private func pickCrashFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.message = String(localized: "Ordner für Absturzberichte")
-        guard panel.runModal() == .OK, let u = panel.url else { return }
-        mix.prefs.ui.crashReportFolder = u.path
-    }
 
     private func stateLine(_ c: CloudLibrary) -> String {
         guard c.cloudTracks > 0 else { return String(localized: "keine Tracks in Cloud-Ordnern") }

@@ -817,7 +817,8 @@ struct UpdateSettingsSection: View {
                 .disabled(up.channel == .off || up.checking)
         }
         .settingsAnchor("display.update.check")
-        Text("Ohne Automatik meldet MINOS-741 ein Update in der Statusleiste. Die Installation startet nur, wenn kein Deck spielt und LIVE aus ist; die App wird dafür beendet und neu gestartet.")
+        Text("Ohne Automatik meldet MINOS-741 nur ein Update in der Statusleiste.")
             .settingsHint()
+            .help("Ohne Automatik meldet MINOS-741 ein Update in der Statusleiste. Die Installation startet nur, wenn kein Deck spielt und LIVE aus ist; die App wird dafür beendet und neu gestartet.")
     }
 }

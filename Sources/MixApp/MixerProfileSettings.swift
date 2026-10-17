@@ -162,6 +162,7 @@ struct MixerProfileSettings: View {
                     Text("kein bekanntes Pult am Gerät")
                 }
             }
+            .settingsAnchor("audio.mixerprofile")
             if let p = mix.mixerProfile {
                 VStack(alignment: .leading, spacing: 6) {
                     Button("Profil anwenden") { mix.applyMixerProfile(p) }
@@ -175,6 +176,7 @@ struct MixerProfileSettings: View {
             Toggle("MIDI-Clock an MIDI-Ausgang senden", isOn: Binding(
                 get: { mix.prefs.midiClock.enabled },
                 set: { mix.prefs.midiClock.enabled = $0; link.apply() }))
+                .settingsAnchor("audio.midiclock")
             Picker("Ausgang", selection: Binding(
                 get: { mix.prefs.midiClock.destination },
                 set: { mix.prefs.midiClock.destination = $0; link.apply() })) {
@@ -191,8 +193,9 @@ struct MixerProfileSettings: View {
             }
             Text(verbatim: String(localized: "Status") + ": " + link.statusText)
                 .settingsHint()
-            Text("24 Takte je Viertel aus der Master-Clock an den gewählten MIDI-Ausgang, Start und Stop folgen dem Transport. Wie das empfangende Gerät darauf reagiert, ist nicht geprüft.")
+            Text("24 Takte je Viertel aus der Master-Clock an den gewählten MIDI-Ausgang.")
                 .settingsHint()
+                .help("24 Takte je Viertel aus der Master-Clock an den gewählten MIDI-Ausgang, Start und Stop folgen dem Transport. Wie das empfangende Gerät darauf reagiert, ist nicht geprüft.")
         }
         .onAppear { link.refreshDestinations() }
     }

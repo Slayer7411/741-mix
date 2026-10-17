@@ -356,8 +356,9 @@ struct GrooveSettingsSection: View {
             .settingsAnchor("decks.groove.bars")
             Stepper("Versatz (ms): \(Int(mix.prefs.groove.offsetMs))", value: $mix.prefs.groove.offsetMs, in: -100...100, step: 1)
                 .settingsAnchor("decks.groove.offset")
-            Text("deck-zeile groove: muster des tracks am grid lesen (aktiver loop, sonst ab der nächsten eins), hats / bass dazu erzeugen. ▶ midi = virtuelle midi-quelle im takt der clock, in der daw als midi-eingang wählen. bass = grundton aus dem key, kanal 10 = drums (42 / 46 hats). ziehen aus dem raster oder .mid = midi-datei.")
+            Text("deck-zeile groove: muster des tracks am grid lesen, hats / bass dazu erzeugen.")
                 .settingsHint()
+                .help("deck-zeile groove: muster des tracks am grid lesen (aktiver loop, sonst ab der nächsten eins), hats / bass dazu erzeugen. ▶ midi = virtuelle midi-quelle im takt der clock, in der daw als midi-eingang wählen. bass = grundton aus dem key, kanal 10 = drums (42 / 46 hats). ziehen aus dem raster oder .mid = midi-datei.")
         }
         .onChange(of: mix.prefs.groove) { GrooveCenter.shared.prefsChanged(mix) }
     }

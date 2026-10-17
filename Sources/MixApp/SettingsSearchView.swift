@@ -17,6 +17,8 @@ final class SettingsNav {
     /// Anker, der gerade lila hervorgehoben ist
     var flash: String?
     var jump: Jump?
+    /// Bereiche, die gerade ihre Unterseite ERWEITERT zeigen (bleibt je Bereich, solange das Fenster offen ist)
+    var advancedTabs: Set<String> = []
     /// hochzählen = Suchfeld fokussieren (⌘F)
     var focus = 0
     @ObservationIgnored weak var window: NSWindow?
@@ -29,8 +31,14 @@ final class SettingsNav {
     func open(_ e: SettingsEntry) {
         tab = e.tab
         showResults = false
+        // ERWEITERT-Zeile: deren Unterseite direkt zeigen; sonst die Hauptseite des Bereichs
+        setAdvanced(e.tab, e.advanced)
         jumps += 1
         jump = Jump(entry: e, n: jumps)
+    }
+
+    func setAdvanced(_ tab: String, _ on: Bool) {
+        if on { advancedTabs.insert(tab) } else { advancedTabs.remove(tab) }
     }
 
     /// Bereich in der Seitenleiste angeklickt: Suche weg
@@ -61,6 +69,10 @@ enum SettingsAnchors {
 
 extension EnvironmentValues {
     @Entry var settingsFlash: String? = nil
+    /// Favoriten-Modus: nur diese Anker zeigen (nil = alle Zeilen)
+    @Entry var settingsFilter: Set<String>? = nil
+    /// Eintrag des Sprungs der Suche (klappt ERWEITERT auf)
+    @Entry var settingsJump: SettingsEntry? = nil
 }
 
 extension View {
@@ -71,6 +83,7 @@ extension View {
 private struct SettingsAnchor: ViewModifier {
     let id: String
     @Environment(\.settingsFlash) private var flash
+    @State private var hovered = false
 
     func body(content: Content) -> some View {
         let on = flash == id
@@ -83,6 +96,11 @@ private struct SettingsAnchor: ViewModifier {
                     .allowsHitTesting(false)
                 if on { UITestMark(name: "settings flash") }
             }
+            // ☆ / ★: einmal hier für alle Zeilen (Favoriten), in eigener Randspalte neben den Bedienelementen
+            .padding(.trailing, 24)
+            .overlay(alignment: .trailing) { SettingsStar(id: id, hovered: hovered) }
+            .onHover { hovered = $0 }
+            .containerValue(\.settingsAnchorId, id)
             .id(id)
             .onAppear { SettingsAnchors.present.insert(id) }
             .onDisappear { SettingsAnchors.present.remove(id) }
@@ -190,6 +208,7 @@ private struct SettingsHitRow: View {
         }
         .padding(.vertical, 7).padding(.leading, 12).padding(.trailing, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .trailing) { SettingsStar(id: entry.anchor, hovered: true).padding(.trailing, 6) }
         .background(selected ? Theme.chitinRaised : .clear)
         .overlay(alignment: .leading) { if selected { Rectangle().fill(Theme.secondary).frame(width: 3) } }
         .contentShape(Rectangle())
@@ -223,3 +242,4 @@ private struct SettingsHitRow: View {
         return "… " + s[start...]
     }
 }
+

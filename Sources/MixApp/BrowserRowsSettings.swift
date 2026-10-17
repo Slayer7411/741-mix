@@ -7,6 +7,14 @@ struct BrowserRowsSettings: View {
     var body: some View {
         @Bindable var mix = mix
         Section("Zeilen & Felder") {
+            sliderRow("Luft um den Text", $mix.prefs.ui.browserRowPadding, 3...16, step: 1, format: "%.0f", unit: "pt")
+                .settingsAnchor("browser.rowpadding")
+            Toggle("Trennlinie zwischen den Zeilen", isOn: $mix.prefs.ui.browserRowLines)
+                .settingsAnchor("browser.rowlines")
+            Toggle("Höhe rastet auf ganze Zeilen", isOn: $mix.prefs.ui.browserSnapRows)
+                .settingsAnchor("browser.snaprows")
+            Text("zeilenhöhe = schrift + luft (11 pt = bisher, 5 pt = eng). gilt für alle listen, auch mit vorschau.")
+                .settingsHint()
             Picker("Zeilen", selection: $mix.prefs.ui.browserRows) {
                 ForEach(BrowserRows.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
             }
@@ -17,8 +25,9 @@ struct BrowserRowsSettings: View {
             .settingsAnchor("browser.detailbar")
             Toggle("Werte kürzen", isOn: $mix.prefs.ui.shortValues)
                 .settingsAnchor("browser.shortvalues")
-            Text("gilt für bereiche ohne eigene wahl; je bereich umschaltbar mit ≡ / ☰ und ▭ im kopf. werte kürzen: version im titel als kürzel (OM, EXT, RMX …), titel und artist in der mitte gekürzt, bpm ganzzahlig, datum kurz. sortierung und suche nutzen die vollen werte.")
+            Text("gilt für bereiche ohne eigene wahl; je bereich umschaltbar mit ≡ / ☰ und ▭.")
                 .settingsHint()
+                .help("gilt für bereiche ohne eigene wahl; je bereich umschaltbar mit ≡ / ☰ und ▭ im kopf. werte kürzen: version im titel als kürzel (OM, EXT, RMX …), titel und artist in der mitte gekürzt, bpm ganzzahlig, datum kurz. sortierung und suche nutzen die vollen werte.")
             TrackPartsEditor(raw: $mix.prefs.ui.trackParts)
                 .settingsAnchor("browser.trackparts")
         }
@@ -59,8 +68,9 @@ struct TrackPartsEditor: View {
                     DeckButton(title: name.uppercased(), active: parts == preset, verbatim: true) { set(preset) }
                 }
             }
-            Text("zeile 1 bis „— Zeile 2 —“, der rest darunter. vorlage kommentar zuerst: kommentar · titel, darunter artist · tags. schmale spalten (☁✓, bpm, key, time …) bleiben eigene spalten.")
+            Text("zeile 1 bis „— Zeile 2 —“, der rest darunter.")
                 .settingsHint()
+                .help("zeile 1 bis „— Zeile 2 —“, der rest darunter. vorlage kommentar zuerst: kommentar · titel, darunter artist · tags. schmale spalten (☁✓, bpm, key, time …) bleiben eigene spalten.")
         }
     }
 

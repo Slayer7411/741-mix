@@ -382,6 +382,11 @@ struct UIPrefs: Codable, Equatable {
     var activeLayoutProfile = ""
     /// Reihenfolge der Bereiche in ⌘, (Titel-Schlüssel, per Ziehen in der Seitenleiste; leer = Standard)
     var settingsTabOrder: [String] = []
+    /// Favoriten der Einstellungen (Anker-IDs in Markier-Reihenfolge); unbekannte IDs werden ignoriert
+    var settingsFavorites: [String] = []
+    /// erster Start: Einstellungen öffnen auf ALLGEMEIN, danach der zuletzt gezeigte Bereich
+    var settingsOpened = false
+    var settingsLastTab = ""
 
     /// alt: 2 / 4 Decks (Kürzel ⌥⌘4, Selbsttest); von 1 Deck aus -> 4
     var showFourDecks: Bool {
@@ -469,6 +474,11 @@ struct AppPrefs: Codable, Equatable {
                 p.save()
             }
             d.set(true, forKey: "migrated.prepare-profile")
+        }
+        // Einstellungen: wer schon Einstellungen hat, öffnet nicht ALLGEMEIN, sondern den zuletzt gezeigten Bereich (einmalig)
+        if !Session.isSelfTest, !d.bool(forKey: "migrated.settings-opened") {
+            if d.data(forKey: key) != nil, !p.ui.settingsOpened { p.ui.settingsOpened = true; p.save() }
+            d.set(true, forKey: "migrated.settings-opened")
         }
         return p
     }

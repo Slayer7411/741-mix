@@ -16,6 +16,9 @@ codenames: every major version is named after a circle of hell (minos judges the
 * basics: File menu `Einstellungen exportieren …` / `Einstellungen importieren …` (same plist as settings.plist; audio device, two-mac mode, collection and crash folder stay local), `Collection-Backup wiederherstellen …`: lists the backups with date, size and track count, backs up the current collection first, refuses while the collection software runs, validates the backup before replacing it atomically, reloads the library. unit tests (round trip with local keys, backup listing and validation, restore), e2e scenario `backup-restore`
 * basics: dock menu: LIVE, stop all decks, settings, setup
 
+### changed
+* settings (⌘,): regrouped into tabs by task. new first tab ALLGEMEIN (setup, language and zoom, data folder, updates, crash reports, LIVE, start behavior; opens on first start only), new LIVE & SYNC (live readability, two macs, link, DAW bridge, groove). rare options sit on an ERWEITERT sub-page per tab (link at the bottom of each tab; search and deep links open it). favorites: ☆ on every setting, FAVORITEN page, and a ★ popover in the top bar; stored in the settings file.
+
 ### fixed
 * updates: release downloads redirected to `release-assets.githubusercontent.com` were refused silently (check found nothing). redirect target allowed, https only. `Jetzt prüfen` shows every outcome with its reason; automatic failures go to the status log after the first one
 

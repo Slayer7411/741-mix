@@ -59,6 +59,8 @@ enum TagColors {
 
 /// Einstellungen: Farbe je Tag (alle Tags der Collection, nach Häufigkeit)
 struct TagColorSettings: View {
+    /// false: Abschnitt „Tags (Kommentar 2)“; true: „Tag-Farben“ (getrennt einsortiert)
+    var colors = false
     @Environment(MixModel.self) private var mix
     @Environment(LibraryStore.self) private var store
     @State private var filter = ""
@@ -79,7 +81,8 @@ struct TagColorSettings: View {
         let counts = Dictionary(store.tracks.flatMap { BrowserPaneModel.tags(of: $0, separators: seps) }.map { ($0, 1) }, uniquingKeysWith: +)
         let list = counts.filter { filter.isEmpty || $0.key.localizedCaseInsensitiveContains(filter) }
             .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
-        Form {
+        Group {
+            if !colors {
             Section("Tags (Kommentar 2)") {
                 LabeledContent("Trennzeichen") {
                     TextField("", text: $mix.prefs.ui.tagSeparators).settingsField().frame(width: 80)
@@ -89,7 +92,7 @@ struct TagColorSettings: View {
                     .settingsAnchor("tags.highlight")
                 Toggle("Gruppen (K / B / H …)", isOn: $mix.prefs.ui.tagGroups)
                     .settingsAnchor("tags.groups")
-                Text("einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe. je gruppe: name, farbe aus der wellenform oder eigene farbe").settingsHint()
+                Text("einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu.").settingsHint().help("einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe. je gruppe: name, farbe aus der wellenform oder eigene farbe")
                 if mix.prefs.ui.tagGroups {
                     ForEach(groupMarkers, id: \.self) { g in
                         LabeledContent("Gruppe \(g)") {
@@ -111,6 +114,8 @@ struct TagColorSettings: View {
                     }
                 }
             }
+            }
+            if colors {
             Section("Tag-Farben") {
                 TextField("Filtern", text: $filter).settingsField().frame(maxWidth: 260)
                     .settingsAnchor("tags.colors")
@@ -128,6 +133,7 @@ struct TagColorSettings: View {
                         }
                     }
                 }
+            }
             }
         }
     }
