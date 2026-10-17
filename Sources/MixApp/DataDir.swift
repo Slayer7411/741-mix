@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Daten einer Session im Ordner `MINOS-741` neben der Collection-Datei: Einstellungen (`settings.plist`), Analysen,
@@ -36,23 +37,31 @@ enum DataDir {
     }
 }
 
-/// Einstellungen als Datei im Datenordner (`settings.plist`): alle Werte der App (auch Fenster, Teiler, Audio-Interface,
-/// Kanalpaare, Controller), damit die Session überall gleich aussieht. Beim Start übernommen, wenn die Datei seit dem
-/// letzten Mal geändert wurde (anderer Mac, zurückgespielt); geschrieben beim Start, nach jeder Änderung und beim
-/// Beenden. Nur der Zwei-Mac-Modus bleibt auf dem Mac (wer schreibt, welche Decks – sonst wären beide gleich)
+/// Einstellungen als Datei im Datenordner (`settings.plist`): alles – Fenster, Teiler, Spalten, Ansicht, FX, Controller,
+/// Tasten. Geschrieben beim Start, nach jeder Änderung und beim Beenden; beim Start übernommen, wenn die Datei seit dem
+/// letzten Mal geändert wurde (anderer Mac, zurückgespielt). Auf dem Mac bleiben nur die Audio-Geräte-Einstellungen
+/// (Interface, Rate, Puffer, Kanalpaare, Mixer-Modus, Aufnahme-Eingang) und der Zwei-Mac-Modus
 enum SettingsFile {
     static var url: URL { DataDir.shared.appendingPathComponent("settings.plist") }
     static let stampKey = "settings.imported"
+    /// Audio-Gerät: eigene Schlüssel (MixModel.saveSetup)
+    static let localKeys: Set<String> = ["deviceUID", "sampleRate", "bufferSize", "internalPair", "deckPairs", "previewPair",
+                                         "mixerMode", "parallelDecks", stampKey]
+    /// in `prefs.v1`: Zwei-Mac-Modus, Aufnahme-Eingang
+    static let localPrefs: [[String]] = [["ui", "pair"], ["record", "inputUID"], ["record", "inputFirstChannel"]]
 
-    static func shared(_ key: String) -> Bool { key != stampKey }
+    /// wird beim Übernehmen geschrieben (alles außer dem Audio-Gerät)
+    static func shared(_ key: String) -> Bool { !localKeys.contains(key) }
 
-    /// `prefs.v1` aus der Datei mit dem eigenen Zwei-Mac-Modus
-    static func keepingRole(_ incoming: Data, local: Data?) -> Data {
+    /// `prefs.v1` aus der Datei, die eigenen Werte aus `localPrefs` bleiben
+    static func keepingLocal(_ incoming: Data, local: Data?) -> Data {
         guard var inc = (try? JSONSerialization.jsonObject(with: incoming)) as? [String: Any] else { return incoming }
-        var ui = inc["ui"] as? [String: Any] ?? [:]
-        let own = local.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }?["ui"] as? [String: Any]
-        if let r = own?["pair"] { ui["pair"] = r } else { ui.removeValue(forKey: "pair") }
-        inc["ui"] = ui
+        let own = local.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+        for path in localPrefs where path.count == 2 {
+            var group = inc[path[0]] as? [String: Any] ?? [:]
+            if let v = (own?[path[0]] as? [String: Any])?[path[1]] { group[path[1]] = v } else { group.removeValue(forKey: path[1]) }
+            inc[path[0]] = group
+        }
         return (try? JSONSerialization.data(withJSONObject: inc)) ?? incoming
     }
 
@@ -68,7 +77,7 @@ enum SettingsFile {
               let data = try? Data(contentsOf: url),
               let dict = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] else { return }
         for (k, v) in dict where shared(k) {
-            if k == AppPrefs.key, let p = v as? Data { d.set(keepingRole(p, local: d.data(forKey: k)), forKey: k) } else { d.set(v, forKey: k) }
+            if k == AppPrefs.key, let p = v as? Data { d.set(keepingLocal(p, local: d.data(forKey: k)), forKey: k) } else { d.set(v, forKey: k) }
         }
         d.set(s, forKey: stampKey)
     }
@@ -76,7 +85,8 @@ enum SettingsFile {
     /// alle geteilten Werte in die Datei (atomar)
     static func export(_ d: UserDefaults = .standard) {
         guard !Session.isSelfTest, let id = Bundle.main.bundleIdentifier, let dict = d.persistentDomain(forName: id) else { return }
-        let out = dict.filter { shared($0.key) }
+        // alles in die Datei (auch das Audio-Gerät, zum Nachsehen); beim Übernehmen bleibt es lokal
+        let out = dict.filter { $0.key != stampKey }
         guard !out.isEmpty, let data = try? PropertyListSerialization.data(fromPropertyList: out, format: .binary, options: 0) else { return }
         // unverändert: nicht schreiben (Drive, Zeitstempel)
         if let old = try? Data(contentsOf: url), old == data { return }
@@ -86,6 +96,7 @@ enum SettingsFile {
 
     nonisolated(unsafe) private static var pending: DispatchWorkItem?
     nonisolated(unsafe) private static var observer: NSObjectProtocol?
+    nonisolated(unsafe) private static var quitObserver: NSObjectProtocol?
 
     /// nach einer Änderung: gesammelt nach 2 s
     static func scheduleExport() {
@@ -103,6 +114,11 @@ enum SettingsFile {
         scheduleExport()
         observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: nil) { _ in
             scheduleExport()
+        }
+        // Beenden: sofort schreiben (auch wenn der Weg über AppDelegate.onQuit nicht läuft)
+        quitObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
+            UserDefaults.standard.synchronize()
+            export()
         }
     }
 }

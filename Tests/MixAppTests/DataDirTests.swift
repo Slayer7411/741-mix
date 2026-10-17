@@ -30,16 +30,17 @@ private func tempDir(_ name: String) throws -> URL {
     #expect(DataDir.resolve(collection: URL(fileURLWithPath: "/nicht/da/collection.nml"), local: local, selfTest: false) == local)
 }
 
-@Test func settingsFileTakesEverythingButTheRole() throws {
-    for k in ["prefs.v1", "columns.Basis", "mixerMode", "deviceUID", "deckPairs", "x1.6CB252DB", "NSWindow Frame x", "NSSplitView Subview Frames y"] {
+@Test func settingsFileKeepsAudioDeviceAndPairLocal() throws {
+    for k in ["prefs.v1", "columns.Basis", "x1.6CB252DB", "NSWindow Frame x", "NSSplitView Subview Frames y", "masterVolume", "quantize"] {
         #expect(SettingsFile.shared(k), "\(k)")
     }
-    #expect(!SettingsFile.shared(SettingsFile.stampKey))
-    let incoming = try JSONSerialization.data(withJSONObject: ["ui": ["pair": ["on": true, "writes": true], "zoom": 1.2]])
-    let local = try JSONSerialization.data(withJSONObject: ["ui": ["pair": ["on": true, "writes": false], "zoom": 1.0]])
-    let merged = try #require(try JSONSerialization.jsonObject(with: SettingsFile.keepingRole(incoming, local: local)) as? [String: Any])
-    let ui = try #require(merged["ui"] as? [String: Any])
+    for k in ["deviceUID", "deckPairs", "sampleRate", "bufferSize", "mixerMode", SettingsFile.stampKey] { #expect(!SettingsFile.shared(k), "\(k)") }
+    let incoming = try JSONSerialization.data(withJSONObject: ["ui": ["pair": ["on": true, "writes": true], "zoom": 1.2],
+                                                                "record": ["inputUID": "fremd", "format": "wav"]])
+    let local = try JSONSerialization.data(withJSONObject: ["ui": ["pair": ["on": true, "writes": false], "zoom": 1.0],
+                                                             "record": ["inputUID": "xone", "format": "aiff"]])
+    let merged = try #require(try JSONSerialization.jsonObject(with: SettingsFile.keepingLocal(incoming, local: local)) as? [String: Any])
+    let ui = try #require(merged["ui"] as? [String: Any]), rec = try #require(merged["record"] as? [String: Any])
     #expect((ui["pair"] as? [String: Any])?["writes"] as? Bool == false && ui["zoom"] as? Double == 1.2)
-    let none = try #require(try JSONSerialization.jsonObject(with: SettingsFile.keepingRole(incoming, local: nil)) as? [String: Any])
-    #expect((none["ui"] as? [String: Any])?["pair"] == nil)
+    #expect(rec["inputUID"] as? String == "xone" && rec["format"] as? String == "wav")
 }
