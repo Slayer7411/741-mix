@@ -978,6 +978,7 @@ struct AudioSettings: View {
                     .settingsHint()
             }
             BufferTestSettings()
+            MixerProfileSettings()
             Section("Mixer") {
                 MixerModePicker()
             }

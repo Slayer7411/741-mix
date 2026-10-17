@@ -110,6 +110,7 @@ tested, works with:
 
 * controller: Kontrol X1 mk2, native hid mode, up to two units (left deck a / c, right deck b / d)
 * mixer: Xone:96 in external mixer mode, every deck on its own usb pair
+* mixer profiles, ungetestet – Kanalbelegung bitte prüfen: Pioneer DJM-V10 (6 channels) and DJM-A9 (4 channels). ⌘, -> AUDIO -> Mischpult shows the detected profile and sets external mode with deck A–D on CH1–CH4 (the offer lists the exact pairs). optional MIDI clock to a MIDI output, off by default; how the mixer reacts to it is not tested
 * audio: any core audio interface. internal mixer -> one stereo pair. external mixer -> one pair per deck (8 outputs for 4 decks, 10 with preview)
 * keyboard: every action mappable (⌘, -> keyboard)
 

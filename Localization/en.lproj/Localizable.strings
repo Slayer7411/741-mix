@@ -2035,7 +2035,6 @@
 "Updates: Prüfung fehlgeschlagen – %@" = "Updates: check failed – %@";
 "Weiterleitung auf %@ abgelehnt" = "redirect to %@ refused";
 "Server antwortet mit HTTP %d" = "server replies with HTTP %d";
-"Zeitüberschreitung" = "timed out";
 "latest.json nicht lesbar" = "latest.json unreadable";
 "keine HTTP-Antwort" = "no HTTP response";
 
@@ -2088,3 +2087,21 @@
 "Warnung" = "Warning";
 "Fehler" = "Error";
 "neben der Collection" = "next to the collection";
+/* Externe Mischpulte (MixerProfileSettings.swift) */
+"Mischpult" = "Mixer";
+"Erkannt" = "Detected";
+"kein bekanntes Pult am Gerät" = "no known mixer on this device";
+"ungetestet – Kanalbelegung bitte prüfen" = "untested – please check the channel mapping";
+"Profil anwenden" = "Apply profile";
+"Setzt Modus Extern: " = "Sets external mode: ";
+"MIDI-Clock" = "MIDI clock";
+"MIDI-Clock an MIDI-Ausgang senden" = "Send MIDI clock to a MIDI output";
+"Ausgang" = "Output";
+"Song Position mitsenden" = "Send song position";
+"Versatz" = "Offset";
+"Status" = "Status";
+"24 Takte je Viertel aus der Master-Clock an den gewählten MIDI-Ausgang, Start und Stop folgen dem Transport. Wie das empfangende Gerät darauf reagiert, ist nicht geprüft." = "24 pulses per quarter note from the master clock to the chosen MIDI output; start and stop follow the transport. How the receiving device reacts is not tested.";
+"kein MIDI-Ausgang gefunden" = "no MIDI output found";
+"sendet an %@" = "sending to %@";
+"%@ erkannt – ungetestet – Kanalbelegung bitte prüfen. Übernehmen setzt: %@" = "%@ detected – untested, please check the channel mapping. Apply sets: %@";
+"%@ übernommen (ungetestet – Kanalbelegung bitte prüfen): %@" = "%@ applied (untested, please check the channel mapping): %@";

@@ -156,6 +156,8 @@ final class MixModel {
     static let previewAuto = -1, previewOff = -2
     /// Puffer-Test (⌘, -> AUDIO): misst die Puffergrößen des Geräts, Lauf im eigenen Objekt
     @ObservationIgnored private(set) lazy var bufferTest: BufferTestRunner = BufferTestRunner(mix: self)
+    /// Externe Mischpulte: Profil-Angebot, MIDI-Clock zum Pult (MixerProfileSettings.swift)
+    @ObservationIgnored private(set) lazy var mixerLink: ExternalMixerController = ExternalMixerController(mix: self)
     /// Vorhör-Player im Kern (eigenes Kanalpaar, Laden über den Datei-Dienst)
     @ObservationIgnored private(set) lazy var previewer: PreviewPlayer = {
         let p = PreviewPlayer(engine: engine)
@@ -264,6 +266,7 @@ final class MixModel {
         previewer.setVolume(prefs.ui.previewVolume)
         refreshDevices()   // auch: Interface an einem anderen USB-Port
         applyRouting()
+        mixerLink.apply()
         engine.onConfigurationChange = { [weak self] in
             Task { @MainActor in
                 // Selbsttest: nie selbst umleiten (sonst landet der Test mit gespeicherter Lautstärke auf dem Live-Interface)
@@ -326,6 +329,7 @@ final class MixModel {
 
     func pull() {
         checkParallelWatchdog()
+        mixerLink.transport(playing: (0..<MixEngine.deckCount).contains { deck($0).playing })
         var s = core.snapshot()
         for i in s.decks.indices { s.decks[i].nudge = 0 }
         if s != state {
@@ -860,6 +864,7 @@ final class MixModel {
 
     func refreshDevices() {
         outputDevices = MixEngine.outputDevices()
+        mixerLink.deviceChanged()
         // gewähltes USB-Interface an einem anderen Port: neue UID übernehmen (sonst Standardgerät bzw. ewiges Warten)
         if let uid = deviceUID, !outputDevices.contains(where: { $0.uid == uid }),
            let moved = MixEngine.relocatedUID(uid, among: outputDevices.map(\.uid)) {
