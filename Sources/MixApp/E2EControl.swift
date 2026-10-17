@@ -230,6 +230,26 @@ final class E2EControl {
             CrashPrompt.shared.openIssue()
             done(true, crashState())
 
+        case "update-check":
+            Updater.shared.check { r in
+                switch r {
+                case .success(let c):
+                    done(true, ["build": Updater.shared.currentBuild, "available": c.map { ["version": $0.manifest.version,
+                                                                                         "build": $0.manifest.build,
+                                                                                         "file": $0.manifest.file] as [String: Any] } ?? NSNull()])
+                case .failure(let e): done(false, e.message)
+                }
+            }
+
+        case "update-install", "update-rollback":
+            let cb: @MainActor (Result<[String: Any], UpdateError>) -> Void = { r in
+                switch r {
+                case .success(let body): done(true, body)
+                case .failure(let e): done(false, e.message)
+                }
+            }
+            if req.command == "update-install" { Updater.shared.install(completion: cb) } else { Updater.shared.rollback(completion: cb) }
+
         case "drag":
             done(false, "nicht verdrahtet: Ziehen läuft über Fenster-Ereignisse (NSDraggingInfo); "
                  + "Ersatz: load (Deck), add-to-playlist (Playlist)")

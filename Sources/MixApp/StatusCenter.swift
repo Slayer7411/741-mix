@@ -13,6 +13,8 @@ final class StatusCenter {
 
     private(set) var log = StatusLog()
     @ObservationIgnored private var cancels: [Int: @MainActor () -> Void] = [:]
+    /// Knopf am Eintrag („Installieren“ beim Update), sonst keiner
+    @ObservationIgnored private var actions: [Int: (title: String, run: @MainActor () -> Void)] = [:]
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private weak var attached: MixController?
 
@@ -35,11 +37,12 @@ final class StatusCenter {
     /// von jedem Thread; auf dem Hauptthread sofort, sonst der Reihe nach über die Haupt-Queue
     nonisolated static func post(_ level: StatusMessage.Level, _ text: String, detail: String? = nil, key: String? = nil,
                                  progress: Double? = nil, progressText: String? = nil, job: Bool = false,
-                                 cancel: (@MainActor @Sendable () -> Void)? = nil) {
+                                 cancel: (@MainActor @Sendable () -> Void)? = nil,
+                                 action: (title: String, run: @MainActor @Sendable () -> Void)? = nil) {
         let now = Date()
         let run: @MainActor @Sendable () -> Void = {
             shared.post(level, text, detail: detail, key: key, progress: progress, progressText: progressText, job: job,
-                        cancel: cancel, now: now)
+                        cancel: cancel, action: action, now: now)
         }
         if Thread.isMainThread { MainActor.assumeIsolated { run() } } else { DispatchQueue.main.async { run() } }
     }
@@ -51,10 +54,11 @@ final class StatusCenter {
 
     func post(_ level: StatusMessage.Level, _ text: String, detail: String? = nil, key: String? = nil,
               progress: Double? = nil, progressText: String? = nil, job: Bool = false, cancel: (@MainActor () -> Void)? = nil,
-              now: Date = Date()) {
+              action: (title: String, run: @MainActor () -> Void)? = nil, now: Date = Date()) {
         let id = log.post(level, text, detail: detail, key: key, progress: progress, progressText: progressText,
                           cancellable: cancel != nil, job: job, now: now)
         cancels[id] = cancel
+        actions[id] = action
         if let m = log.history.first(where: { $0.id == id }) {
             if let i = recent.firstIndex(where: { $0.id == id }) {
                 recent[i] = m
@@ -72,7 +76,11 @@ final class StatusCenter {
     func dismiss(_ m: StatusMessage) {
         log.dismiss(id: m.id)
         cancels[m.id] = nil
+        actions[m.id] = nil
     }
+
+    /// Knopf des Eintrags, solange er angezeigt wird
+    func action(for m: StatusMessage) -> (title: String, run: @MainActor () -> Void)? { actions[m.id] }
 
     func cancel(_ m: StatusMessage) {
         cancels.removeValue(forKey: m.id)?()
@@ -111,6 +119,7 @@ final class StatusCenter {
                 var l = self.log
                 if l.expire(now: Date()) {
                     for id in self.cancels.keys where !l.active.contains(where: { $0.id == id }) { self.cancels[id] = nil }
+                    for id in self.actions.keys where !l.active.contains(where: { $0.id == id }) { self.actions[id] = nil }
                     self.log = l
                 }
                 self.schedule()

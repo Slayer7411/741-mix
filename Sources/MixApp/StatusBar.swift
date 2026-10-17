@@ -64,6 +64,9 @@ struct StatusBar: View {
                     if center.activeCount > 1 {
                         Text(verbatim: "+\(center.activeCount - 1)").foregroundStyle(Theme.muted)
                     }
+                    if let a = center.action(for: m) {
+                        Button(a.title) { a.run() }.buttonStyle(.plain).foregroundStyle(Theme.state)
+                    }
                     if m.cancellable {
                         Button("✕") { center.cancel(m) }.buttonStyle(.plain).foregroundStyle(Theme.muted).help("Abbrechen")
                     }

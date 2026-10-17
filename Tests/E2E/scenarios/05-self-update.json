@@ -1,0 +1,36 @@
+{
+  "name": "self-update",
+  "description": "Update aus dem Ordner-Kanal: latest.json und DMG prüfen, App im Testordner tauschen, neu starten (der neue Prozess meldet den neuen Build), keine weitere Meldung danach, Rückgabe zur vorherigen Version",
+  "instances": ["A"],
+  "update": true,
+  "steps": [
+    {"do": "ping", "expect": [{"path": "body.build", "equals": "${installed_build}"}]},
+    {"do": "set-prefs", "args": {"ui": {"updateChannel": "folder", "updateFolder": "${root}/updates"}},
+     "expect": [{"path": "body.ui.updateChannel", "equals": "folder"}, {"path": "body.ui.updateFolder", "equals": "${root}/updates"}]},
+    {"do": "update-check", "retry": true, "expect": [
+      {"path": "body.available.build", "equals": "${update_build}"},
+      {"path": "body.available.version", "equals": "${update_version}"}
+    ]},
+    {"do": "update-install", "expect": [{"path": "body.relaunch", "equals": true}]},
+    {"do": "relaunch", "timeout": 60},
+    {"do": "ping", "expect": [{"path": "body.build", "equals": "${update_build}"}]},
+    {"do": "file-check", "path": "${root}/logs/update.log", "contains": "getauscht"},
+    {"do": "file-check", "path": "${root}/apps/installed/.MINOS-741-update.app", "exists": false},
+    {"do": "plist", "file": "${root}/apps/installed/MINOS-741.app/Contents/Info.plist", "expect": [
+      {"path": "CFBundleVersion", "equals": "${update_build}"}
+    ]},
+    {"do": "plist", "file": "${root}/apps/installed/.MINOS-741-previous.app/Contents/Info.plist", "expect": [
+      {"path": "CFBundleVersion", "equals": "${installed_build}"}
+    ]},
+    {"do": "update-check", "retry": true, "expect": [{"path": "body.available", "equals": null}]},
+    {"do": "update-rollback", "expect": [{"path": "body.relaunch", "equals": true}]},
+    {"do": "relaunch", "timeout": 60},
+    {"do": "ping", "expect": [{"path": "body.build", "equals": "${installed_build}"}]},
+    {"do": "plist", "file": "${root}/apps/installed/MINOS-741.app/Contents/Info.plist", "expect": [
+      {"path": "CFBundleVersion", "equals": "${installed_build}"}
+    ]},
+    {"do": "plist", "file": "${root}/apps/installed/.MINOS-741-previous.app/Contents/Info.plist", "expect": [
+      {"path": "CFBundleVersion", "equals": "${update_build}"}
+    ]}
+  ]
+}

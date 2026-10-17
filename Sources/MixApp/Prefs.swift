@@ -365,6 +365,13 @@ struct UIPrefs: Codable, Equatable {
     /// Ausgabe der gerenderten Dateien (RENDER, Schnitt, JOIN, SPLIT, Tool-Loop): Format, Bit, Abtastrate, Dither, Name
     var export = ExportOptions()
 
+    /// Update-Kanal: neuester Build (Standard), stabile Versionen, eigener Ordner, aus (Updater.swift)
+    var updateChannel = UpdateChannel.latestBuild
+    /// Update-Ordner für den Kanal „Eigener Ordner“ (latest.json + DMG, scripts/make-dmg.sh --publish)
+    var updateFolder = ""
+    /// Updates automatisch installieren, sobald nichts spielt, LIVE aus ist und 2 min keine Eingabe kam; Standard aus
+    var autoUpdate = false
+
     /// Ansichts-Profile (Menü Darstellung -> Profil, ⌘, -> Anzeige); fehlt das Feld, legt AppPrefs.decode drei an
     var layoutProfiles: [LayoutProfile] = []
     /// zuletzt angewendetes Profil (LayoutProfile.id, "" = keins)

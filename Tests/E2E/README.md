@@ -22,6 +22,9 @@ Environment:
 | `E2E_OUT` | where logs and screenshots of failed scenarios go (default `$TMPDIR/minos741-e2e`) |
 | `E2E_KEEP=1` | keep the temporary instance folders (also for passing scenarios) |
 
+The `self-update` scenario (`05-self-update.json`) builds its own app bundles and a DMG in the test root, so it needs no
+network and never touches `/Applications` or the user's folders (see *Update* below).
+
 Scenario names may be given as file stem, with or without the number prefix (`start-collection`, `01-start-collection`).
 
 Output: one row per scenario, `PASS` / `FAIL`, step count, duration, and on failure the first failing step with
@@ -128,6 +131,9 @@ Track keys are NML keys (`E2E/:…/:music/:t01.wav`). Scenarios write them as `$
 | `crash-state` | – | `{shown, count, file, title, text, opened, askAfterCrash, folderSet}`: Absturz-Sheet (`text` is the public, redacted report) |
 | `crash-open` | – | the same, after the GitHub issue action: the address goes to `opened`, never to the browser |
 | `crash-close` | – | the same, after closing the sheet |
+| `update-check` | – | `{build, available: {version, build, file}\|null}`; checks the channel now (folder channel in the test: `updateChannel` folder, `updateFolder` in the root). The network channels are off in the test run |
+| `update-install` | – | `{relaunch, build, version, to}` once the helper is started; the app then quits (the runner follows the new process, step `relaunch`). Refused while a deck plays, LIVE is on or a recording runs |
+| `update-rollback` | – | `{relaunch, rollback, to}`: back to `.MINOS-741-previous.app`, same restart |
 | `drag` | – | **not wired**: drops arrive as window/AppKit drag events, not reachable from the mailbox. Use `load` and `add-to-playlist` |
 
 `snapshot` body (keys used by the scenarios; the rest is the same as `scripts/pairdebug.sh snapshot`):
@@ -177,6 +183,9 @@ File `Tests/E2E/scenarios/NN-name.json`:
   - `plist` (`file`, `expect`): read a plist; the `prefs.v1` key (JSON bytes) is decoded, so paths like
     `prefs.v1.ui.hidePlayedTracks` work. `file` may use `${root:A}`.
   - `store-var` (`name`, `value`): set a variable.
+  - `relaunch` (`who`, `timeout`): after `update-install` / `update-rollback`: waits until the old process has exited, then follows the new one by its pid (from `ping`).
+  - `file-check` (`path`, `exists` default true, `contains`): a file is there (or not), and optionally contains a text.
+- `update: true` in a scenario: the instance runs as the "installed" app `<root>/apps/installed/MINOS-741.app` (`MIX741_E2E_APP`, an own bundle copy with its own build and date), and the runner writes a newer build as `updates/MINOS-741-<version>-<build>.dmg` plus `updates/latest.json` (sha-256, size, date). Variables `installed_build`, `update_build`, `update_version`.
 - `who`: instance letter for the step, default `A`.
 - `args`: the command arguments; strings may contain variables (below).
 - `expect`: list of expectations, see below. A command step passes when `ok` equals `expect_ok` (default `true`)
@@ -232,6 +241,14 @@ Totals: 10 tracks, 2 playlists, 3 smartlists, 1 folder.
 - Use `snapshot` expectations after mutating commands: decks load and start asynchronously.
 - Two instances: give each its own letter in `who`; shared state (played marks) must use keys from the same audio folder.
 
+## Update (`self-update`)
+
+`MIX741_E2E_APP` names the copy the update may replace; the app refuses any target outside the test root. The updater
+only ever acts on that copy: it downloads/copies the DMG under `<root>/tmp`, checks size and sha-256, mounts it
+(`hdiutil -nobrowse -readonly`), copies the app next to the old one, removes the quarantine flag, checks the bundle
+version and `codesign --verify`, then a small bash helper waits for the old pid, swaps the bundles (the old one stays as
+`.MINOS-741-previous.app`) and starts the new one directly with the test environment. Log: `<root>/logs/update.log`.
+
 ## Limitations
 
 - **No sound.** The audio output is a null output on a timer (`CoreAudioOutput.startNull`). Decoding, rendering,
@@ -254,5 +271,8 @@ Totals: 10 tracks, 2 playlists, 3 smartlists, 1 folder.
 - **The user's app may run at the same time.** Its own folders change while a run is going. The runner never writes
   to them; a change in `~/Native Instruments/…` during a run is not from the test.
 - **Cloud library** (File Provider) is not exercised: fixtures are local files.
+- **Update: folder channel only.** The network channels (GitHub) are off in the test run (`networkAllowed`); the
+  download, the redirect rule and the host list are unit tests (`UpdaterTests`). The `self-update` scenario relaunches
+  its own bundle copy, not a `/Applications` install.
 - **One scenario at a time per runner.** Two runners in parallel get separate run ids, roots and suites, but the
   DAW bridge port conflicts with each other.

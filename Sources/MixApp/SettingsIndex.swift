@@ -85,6 +85,13 @@ enum SettingsIndex {
         return [
             e(t, "Sprache", "display.language", "Sprache (wirkt nach Neustart)", kw: "deutsch english"),
             e(t, "Zoom", "display.zoom", "Hauptfenster (⌘+ / ⌘− / ⌘0)", kw: "zoom größe skalierung"),
+            e(t, "Updates", "display.update.channel", "Update-Kanal",
+              hint: "neuester build: jeder build (rollendes release). stabile versionen: nur vX.Y.Z-releases. eigener ordner: latest.json und dmg aus einem ordner. aus: keine updates",
+              kw: "update aktualisierung version kanal channel github release neuester build stabil"),
+            e(t, "Updates", "display.update.folder", "Ordner", kw: "update aktualisierung drive ordner latest dmg"),
+            e(t, "Updates", "display.update.auto", "Updates automatisch installieren",
+              hint: "nur wenn kein deck spielt, live aus ist und 2 min keine eingabe kam", kw: "update automatisch installieren auto-update"),
+            e(t, "Updates", "display.update.check", "Jetzt prüfen", kw: "update prüfen version wiederherstellen rollback"),
             e(t, "Layout", "display.deckcount", "Decks anzeigen", kw: "4 decks"),
             e(t, "Layout", "display.deckslots", "Links oben", kw: "deck anordnung position platz links rechts oben unten a b c d"),
             e(t, "Layout", "display.twodecks", "Zwei Decks", kw: "nebeneinander übereinander zwei decks"),
