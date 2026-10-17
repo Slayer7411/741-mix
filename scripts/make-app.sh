@@ -8,6 +8,7 @@ cd "$(dirname "$0")/.."
 VERSION=$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//')
 VERSION=${VERSION:-0.0.0}
 BUILD=$(git rev-parse --short HEAD 2>/dev/null || echo dev)
+CODENAME=$(scripts/codename.sh "$VERSION") || { print -u2 "make-app: kein codename für $VERSION"; exit 1 }
 APP=build/MINOS-741.app
 
 ARCHS=()
@@ -51,6 +52,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${BUILD}</string>
+  <key>MINOSCodename</key><string>${CODENAME}</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -62,7 +64,7 @@ PLIST
 codesign --force --sign - --options runtime "$APP/Contents/MacOS/minos-files"
 codesign --force --sign - "$APP"
 codesign --verify --strict "$APP"
-echo "gebaut: $APP ($VERSION, $BUILD)"
+echo "gebaut: $APP ($VERSION $CODENAME, $BUILD)"
 
 if [[ "${1:-}" != "--no-install" ]]; then
   pkill -x MINOS-741 2>/dev/null || true
