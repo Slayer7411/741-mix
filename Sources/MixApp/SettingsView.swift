@@ -438,6 +438,8 @@ struct DeckSettings: View {
                         }
                     }
                     .settingsAnchor("decks.pairdecks")
+                    Toggle("Fernzugriff zum Analysieren erlauben", isOn: $mix.prefs.ui.pair.remoteDebug)
+                        .settingsAnchor("decks.pairdebug")
                 }
                 Text("zwei macs als eine session: jeder spielt seine decks über sein eigenes interface ins pult (kanalpaare unter audio), takt über link (schaltet sich beim verbinden ein). genau ein mac schreibt in collection und history-ordner, der andere verbindet sich mit ihm. verbindung per ethernet, usb-c/thunderbolt-kabel oder gleiches netz, ohne einrichten. gespielt-markierungen gelten auf beiden. wirkt sofort; die anordnung der decks unter darstellung -> layout. bleibt auf diesem mac (nicht in settings.plist).")
                     .settingsHint()

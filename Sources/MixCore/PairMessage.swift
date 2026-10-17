@@ -12,8 +12,12 @@ public enum PairMessage: Codable, Equatable, Sendable {
     case live(Bool)
     /// Änderung der Gespielt-Markierungen (beide Richtungen)
     case played(add: [String], remove: [String])
+    /// Fernzugriff: Befehl an den anderen Mac (`command`: ping, snapshot, status, prefs-get, prefs-set, defaults-get, defaults-set)
+    case debugRequest(id: Int, command: String, args: String)
+    /// Antwort auf `debugRequest`: `body` ist JSON-Text
+    case debugReply(id: Int, ok: Bool, body: String)
 
-    public static let version = 3
+    public static let version = 4
 
     public func line() -> Data {
         var d = (try? JSONEncoder().encode(self)) ?? Data()

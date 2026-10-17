@@ -18,6 +18,9 @@ final class StatusCenter {
 
     /// letzter Ladefehler je Deck (Totenkopf in der Wellenform, DeckIdleView)
     private(set) var loadFailed: [Int: Date] = [:]
+    /// letzte Meldungen (neueste zuletzt) für den Fernzugriff (PairDebug); Fortschritt ersetzt den Eintrag
+    @ObservationIgnored private(set) var recent: [StatusMessage] = []
+    static let recentLimit = 100
 
     var current: StatusMessage? { log.current }
     var history: [StatusMessage] { log.history }
@@ -52,6 +55,14 @@ final class StatusCenter {
         let id = log.post(level, text, detail: detail, key: key, progress: progress, progressText: progressText,
                           cancellable: cancel != nil, job: job, now: now)
         cancels[id] = cancel
+        if let m = log.history.first(where: { $0.id == id }) {
+            if let i = recent.firstIndex(where: { $0.id == id }) {
+                recent[i] = m
+            } else {
+                recent.append(m)
+                if recent.count > Self.recentLimit { recent.removeFirst(recent.count - Self.recentLimit) }
+            }
+        }
         if Session.isSelfTest || MixController.debug { print("[status] \(level) \(text)" + (detail.map { " · \($0)" } ?? "")); fflush(stdout) }
         schedule()
     }

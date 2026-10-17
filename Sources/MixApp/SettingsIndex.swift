@@ -170,6 +170,7 @@ enum SettingsIndex {
             e(t, "Zwei Macs", "decks.pair", "Zwei-Mac-Modus", kw: "zwei-mac pair zweiter mac bildschirm ethernet usb thunderbolt"),
             e(t, "Zwei Macs", "decks.pairwrites", "Dieser Mac schreibt (Collection, History)", kw: "zwei-mac schreiben collection history"),
             e(t, "Zwei Macs", "decks.pairdecks", "Decks dieses Macs (höchstens 2)", kw: "zwei-mac decks a b c d"),
+            e(t, "Zwei Macs", "decks.pairdebug", "Fernzugriff zum Analysieren erlauben", kw: "zwei-mac debug analyse remote fernzugriff"),
             e(t, "Tempo & Sync", "decks.keylock", "Keylock beim ersten Laden an", kw: "master tempo"),
             e(t, "Tempo & Sync", "decks.temporange", "Tempo-Bereich (Standard)", kw: "pitch range"),
             e(t, "Tempo & Sync", "decks.phaselock", "Phase laufend nachführen (Beat-Sync)"),
