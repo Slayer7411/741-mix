@@ -2136,3 +2136,18 @@
 "zwei macs als eine session: jeder mac spielt seine decks, takt über link. genau ein mac schreibt in collection und history." = "two macs as one session: each mac plays its own decks, tempo and bar via link. exactly one mac writes to collection and history.";
 "trennzeichen: '%@' (einstellbar unter ⌘, → BROWSER → Tags)" = "separators: '%@' (set under ⌘, → BROWSER → Tags)";
 "zwei macs als eine session: jeder spielt seine decks über sein eigenes interface ins pult (kanalpaare unter audio), takt über link (schaltet sich beim verbinden ein). genau ein mac schreibt in collection und history-ordner, der andere verbindet sich mit ihm. verbindung per ethernet, usb-c/thunderbolt-kabel oder gleiches netz, ohne einrichten. gespielt-markierungen gelten auf beiden. wirkt sofort; die anordnung der decks unter ANZEIGE -> Layout. bleibt auf diesem mac (nicht in settings.plist)." = "two macs as one session: each one plays its own decks through its own interface into the mixer (channel pairs under audio), tempo and bar via link (switches on when connected). exactly one mac writes to the collection and history folder, the other connects to it. connection via ethernet, usb-c/thunderbolt cable or the same network, no setup. played marks apply on both. takes effect at once; the arrangement of the decks is under ANZEIGE -> Layout. stays on this mac (not in settings.plist).";
+"CONTROLLER & TASTEN" = "CONTROLLER & KEYS";
+"nur wenn der track keinen loop hat. beginnt am phrasenanfang, nicht aktiv." = "only if the track has no loop. starts at the phrase start, not active.";
+"rechtsklick auf einen loop-hotcue: active loop (rastet ein)." = "right-click a loop hotcue: active loop (locks in).";
+"für alle decks, wächst mit dem zoom." = "for all decks, grows with the zoom.";
+"ohne pitch-fader, hotcues und grid-werkzeuge: die wellenform wird breiter." = "without pitch fader, hotcues and grid tools: the waveform gets wider.";
+"format der ausgabe von render, schnitt, join, split und tool-loop." = "output format of render, cut, join, split and tool loop.";
+"amp hebt nur an, join hängt die zweite datei an." = "amp only raises the level, join appends the second file.";
+"rec in der oberen leiste oder im mixer: klick = start, noch mal = stopp." = "rec in the top bar or the mixer: click = start, again = stop.";
+"datei-dienst: dateien in einem eigenen prozess gelesen und dekodiert." = "file service: files read and decoded in a separate process.";
+"rechtsklick auf einen regler oder eine taste wählt den parameter direkt." = "right-click a knob or button to pick its parameter directly.";
+"je pixelzeile gemischt: tiefen innen, mitten als ring, höhen außen." = "mixed per pixel row: lows inside, mids as ring, highs outside.";
+"gruppen-marker: das erste wort der gruppe zählt (K tief, B sub, H off)." = "group markers: the first word of the group counts (K low, B sub, H off).";
+"live-liste: artist, title, bpm, key, time mit markerspalte vorn." = "live list: artist, title, bpm, key, time with a marker column in front.";
+"spalte ☁ im browser: ● lokal · ☁ nur online · ↓ lädt · ✕ fehlt." = "column ☁ in the browser: ● local · ☁ online only · ↓ loading · ✕ missing.";
+"was ein profil speichert: decks, mixer, fx-units, zeilen, browser, statusleiste." = "what a profile stores: decks, mixer, fx units, rows, browser, status bar.";

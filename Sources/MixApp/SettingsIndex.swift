@@ -31,7 +31,7 @@ enum SettingsIndex {
         "MIXER & FX|FX-Belegung (D/W · Regler · Tasten)", "MIXER & FX|Gemerkte Belegungen", "MIXER & FX|Gemerkte Racks",
         "ANZEIGE|Mischung (3-Band)",
         "BROWSER|Browser-Vorschau", "BROWSER|Tag-Farben", "BROWSER|Analyse",
-        "CONTROLLER|LED-Helligkeit", "CONTROLLER|Feste Belegung (Standard)",
+        "CONTROLLER & TASTEN|LED-Helligkeit", "CONTROLLER & TASTEN|Feste Belegung (Standard)",
         "LIVE & SYNC|Groove → MIDI",
         "CLOUD|Dauerhaft offline",
     ]
@@ -42,7 +42,7 @@ enum SettingsIndex {
     /// Tastatur: ein Eintrag je Aktion, Titel in der aktuellen Sprache, Stichwörter aus der ID (englisch)
     static var shortcuts: [SettingsEntry] {
         ShortcutID.allCases.map { a in
-            SettingsEntry(tab: "TASTATUR", section: a.group.title, anchor: keyAnchor(a), label: a.title,
+            SettingsEntry(tab: "CONTROLLER & TASTEN", section: a.group.title, anchor: keyAnchor(a), label: a.title,
                           keywords: a.rawValue.split(separator: ".").map(String.init) + ["kürzel", "shortcut"])
         }
     }
@@ -71,6 +71,9 @@ enum SettingsIndex {
             e(t, "Ausgabegerät", "audio.buffer", "Puffer (Latenz)", kw: "frames ms"),
             e(t, "Puffer-Test", "audio.buffertest", "PUFFER TESTEN", hint: BufferTestSettings.hint,
               kw: "buffer test latency latenz frames empfehlung recommendation xrun aussetzer"),
+            e(t, "Mischpult", "audio.mixerprofile", "Erkannt", kw: "mixer profil pult djm desk midi"),
+            e(t, "MIDI-Clock", "audio.midiclock", "MIDI-Clock an MIDI-Ausgang senden",
+              hint: "24 Takte je Viertel aus der Master-Clock an den gewählten MIDI-Ausgang, Start und Stop folgen dem Transport. Wie das empfangende Gerät darauf reagiert, ist nicht geprüft.", kw: "midi clock tempo takt ausgang"),
             e(t, "Ausgabegerät", "audio.reconnect", "Neu verbinden",
               hint: "startet die Ausgabe neu, z. B. wenn das Interface nach einem USB-Aussetzer stumm bleibt", kw: "reconnect usb"),
             e(t, "Mixer", "audio.mixermode", "Modus", kw: "mixer intern extern mischpult internal external"),
@@ -146,11 +149,11 @@ enum SettingsIndex {
             e(t, "Beatgrid", "display.grid.barnumbers", "Taktnummern", kw: "grid"),
             e(t, "Beatgrid", "display.grid.markers", "Marker alle 8 / 16 / 32 Takte (magenta)", kw: "grid"),
             e(t, "Beatgrid", "display.grid.lines", "Linien", kw: "grid"),
-            e("CONTROLLER", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.start", "Start-Cue (Load / AutoGrid)", kw: "farbe pads"),
-            e("CONTROLLER", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.cue", "Cue", kw: "farbe pads"),
-            e("CONTROLLER", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.loop", "Loop", kw: "farbe pads"),
-            e("CONTROLLER", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.shortloop", "Kurzer Loop", kw: "farbe pads"),
-            e("CONTROLLER", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.shortbars", "Kurz = bis", kw: "farbe pads"),
+            e("CONTROLLER & TASTEN", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.start", "Start-Cue (Load / AutoGrid)", kw: "farbe pads"),
+            e("CONTROLLER & TASTEN", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.cue", "Cue", kw: "farbe pads"),
+            e("CONTROLLER & TASTEN", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.loop", "Loop", kw: "farbe pads"),
+            e("CONTROLLER & TASTEN", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.shortloop", "Kurzer Loop", kw: "farbe pads"),
+            e("CONTROLLER & TASTEN", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.shortbars", "Kurz = bis", kw: "farbe pads"),
         ]
     }()
 
@@ -430,11 +433,11 @@ enum SettingsIndex {
     }()
 
     private static let keys: [SettingsEntry] = [
-        e("TASTATUR", "TASTATUR", "keys.reset", "ALLE ZURÜCKSETZEN", kw: "kürzel shortcut tasten standard"),
+        e("CONTROLLER & TASTEN", "TASTATUR", "keys.reset", "ALLE ZURÜCKSETZEN", kw: "kürzel shortcut tasten standard"),
     ]
 
     private static let controller: [SettingsEntry] = {
-        let t = "CONTROLLER", d = "Controller (nativ, HID)", b = "Belegung", l = "LEDs"
+        let t = "CONTROLLER & TASTEN", d = "Controller (nativ, HID)", b = "Belegung", l = "LEDs"
         return [
             e(t, d, "controller.devices", "Seite", kw: "links rechts a c b d"),
             e(t, d, "controller.devices", "Links", kw: "decks"),
@@ -455,8 +458,8 @@ enum SettingsIndex {
             e(t, b, "controller.shiftload", "Shift + LOAD"),
             e(t, b, "controller.browsepush", "Browse drücken",
               hint: "shift + drücken = vorhören. matching: filter „passt zum master“ im browser-bereich des controllers"),
-            e("CONTROLLER", "LED-Helligkeit", "controller.ledon", "Helligkeit an", kw: "led"),
-            e("CONTROLLER", "LED-Helligkeit", "controller.ledoff", "Helligkeit aus",
+            e("CONTROLLER & TASTEN", "LED-Helligkeit", "controller.ledon", "Helligkeit an", kw: "led"),
+            e("CONTROLLER & TASTEN", "LED-Helligkeit", "controller.ledoff", "Helligkeit aus",
               hint: "pad-farben: ⌘, -> CONTROLLER -> Cue-Farben (gleich wie auf dem bildschirm)", kw: "led"),
             e(t, l, "controller.startshow", "Startsequenz beim Verbinden",
               hint: "rot / weiß / lila, dann die decks der seite auf der 7-segment-anzeige, weißer blitz, bereit (3,4 s). eine eingabe bricht ab.",

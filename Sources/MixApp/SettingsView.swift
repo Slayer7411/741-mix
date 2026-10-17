@@ -15,9 +15,8 @@ struct SettingsView: View {
         SettingsTab("PLUGINS") { PluginSettingsView() },
         SettingsTab("BROWSER") { BrowserSettings() },
         SettingsTab("ANZEIGE") { DisplaySettings() },
-        SettingsTab("CONTROLLER") { ControllerSettings() },
+        SettingsTab("CONTROLLER & TASTEN") { ControllerSettings() },
         SettingsTab("LIVE & SYNC") { LiveSyncSettings() },
-        SettingsTab("TASTATUR") { ShortcutSettings() },
         SettingsTab("CLOUD") { CloudSettings() },
     ]
 
@@ -38,8 +37,13 @@ struct SettingsView: View {
     /// Bereiche in der gespeicherten Reihenfolge
     static func ordered(_ saved: [String]) -> [SettingsTab] {
         let byID = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
-        return SettingsTabOrder.merged(saved, defaults: tabs.map(\.id)).compactMap { byID[$0] }
+        // gespeicherte Reihenfolge: CONTROLLER und TASTATUR wurden zu CONTROLLER & TASTEN
+        let migrated = saved.map { renamedTabs[$0] ?? $0 }
+        return SettingsTabOrder.merged(migrated, defaults: tabs.map(\.id)).compactMap { byID[$0] }
     }
+
+    /// alte Bereichs-Kennungen -> neue (für die gespeicherte Reihenfolge)
+    static let renamedTabs = ["CONTROLLER": "CONTROLLER & TASTEN", "TASTATUR": "CONTROLLER & TASTEN"]
 
     var body: some View {
         let tabs = Self.ordered(mix.prefs.ui.settingsTabOrder)
@@ -119,6 +123,15 @@ struct SettingsView: View {
         guard !Task.isCancelled else { return }
         let e = j.entry
         let anchor = SettingsAnchors.present.contains(e.anchor) ? e.anchor : (e.alt ?? e.anchor)
+        if e.advanced {
+            // Zeile in ERWEITERT: der Abschnitt klappt beim Sprung auf; erst wenn die Zeile da ist, scrollen
+            for _ in 0..<20 where !SettingsAnchors.present.contains(e.anchor) && !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            guard !Task.isCancelled else { return }
+            try? await Task.sleep(for: .milliseconds(120))   // ein Layoutschritt für den aufgeklappten Abschnitt
+            guard !Task.isCancelled else { return }
+        }
         proxy.scrollTo(anchor, anchor: .center)
         nav.flash = anchor
         try? await Task.sleep(for: .seconds(1.5))
@@ -285,7 +298,8 @@ private struct SettingsFormBody: View {
 
     private func shown(_ row: Subview) -> Bool {
         guard let filter else { return true }
-        return filter.contains(row.containerValues.settingsAnchorId ?? "")
+        if filter.contains(row.containerValues.settingsAnchorId ?? "") { return true }
+        return !filter.isDisjoint(with: row.containerValues.settingsContainedIds)
     }
 
     private func rows(_ content: SubviewsCollection) -> some View {
@@ -332,6 +346,8 @@ extension ContainerValues {
     @Entry var settingsHint = false
     /// Anker-ID der Zeile (Favoriten-Filter der Form)
     @Entry var settingsAnchorId: String? = nil
+    /// Anker, die in dieser Zeile stecken (eigene Tabelle wie TASTATUR): zeigt sie sich im Favoriten-Filter
+    @Entry var settingsContainedIds: Set<String> = []
 }
 
 extension View {
@@ -525,16 +541,18 @@ struct DeckSettings: View {
                     ForEach(ActiveLoopMode.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 .settingsAnchor("decks.activeloop")
-                Text("rechtsklick auf einen loop-hotcue -> active loop (punkt auf der taste, gestrichelter rahmen in der wellenform). erreicht die position den loop-anfang, rastet der loop ein, die loop-taste verlässt ihn. gespeichert je track in den eigenen änderungen.")
+                Text("rechtsklick auf einen loop-hotcue: active loop (rastet ein).")
                     .settingsHint()
+                    .help("rechtsklick auf einen loop-hotcue -> active loop (punkt auf der taste, gestrichelter rahmen in der wellenform). erreicht die position den loop-anfang, rastet der loop ein, die loop-taste verlässt ihn. gespeichert je track in den eigenen änderungen.")
                 Picker("Auto-Loop beim Laden", selection: $mix.prefs.engine.autoLoopBars) {
                     Text("Aus").tag(0)
                     ForEach([4, 8, 16, 32], id: \.self) { Text("\($0) Takte").tag($0) }
                 }
                 .background(UITestMark(name: "auto loop"))
                 .settingsAnchor("decks.autoloop")
-                Text("nur wenn der track keinen loop hat (loop-hotcue, loop-memory-cue). beginnt am ersten phrasenanfang (phrasen-anker, sonst grid-anker) im schnitt, nicht aktiv, rahmen mit AUTO in der wellenform. reloop springt hinein, loop übernimmt ihn ohne sprung, wenn die position darin oder kurz davor liegt. nicht gespeichert.")
+                Text("nur wenn der track keinen loop hat. beginnt am phrasenanfang, nicht aktiv.")
                     .settingsHint()
+                    .help("nur wenn der track keinen loop hat (loop-hotcue, loop-memory-cue). beginnt am ersten phrasenanfang (phrasen-anker, sonst grid-anker) im schnitt, nicht aktiv, rahmen mit AUTO in der wellenform. reloop springt hinein, loop übernimmt ihn ohne sprung, wenn die position darin oder kurz davor liegt. nicht gespeichert.")
             }
             Section("Zeilen je Deck") {
                 ForEach(Array(DeckRows.all.enumerated()), id: \.offset) { _, row in
@@ -544,7 +562,7 @@ struct DeckSettings: View {
                 .settingsAnchor("decks.rows")
                 Toggle("Kompakte Decks (ohne Pitch-Fader, Hotcues, Grid-Werkzeuge)", isOn: $mix.prefs.ui.compactDecks)
                     .settingsAnchor("decks.compact")
-                Text("auch im menü decks -> zeilen / kompakte decks. ohne pitch-fader nimmt die wellenform die breite. wellenform und kopfzeile bleiben immer.").settingsHint()
+                Text("ohne pitch-fader, hotcues und grid-werkzeuge: die wellenform wird breiter.").settingsHint().help("auch im menü decks -> zeilen / kompakte decks. ohne pitch-fader nimmt die wellenform die breite. wellenform und kopfzeile bleiben immer.")
             }
             Section("Größen") {
                 sliderRow("Cover-Breite (pt)", $mix.prefs.ui.deckCoverSize, UIPrefs.deckCoverRange, step: 4, format: "%.0f", unit: "pt")
@@ -555,9 +573,9 @@ struct DeckSettings: View {
                     .disabled(!mix.prefs.ui.deckRows.overview)
                     .background(UITestMark(name: "overview height"))
                     .settingsAnchor("decks.overviewheight")
-                Text("für alle decks, wächst mit dem zoom. cover bis 40 pt im kopf, darüber eigene spalte links über kopf und wellenform; rechts bleiben mindestens 360 pt für titel und anzeigen, sonst wird das cover schmaler. cover an/aus: ⌘, -> browser -> cover. beide werte gehören zum ansichts-profil.").settingsHint()
+                Text("für alle decks, wächst mit dem zoom.").settingsHint().help("für alle decks, wächst mit dem zoom. cover bis 40 pt im kopf, darüber eigene spalte links über kopf und wellenform; rechts bleiben mindestens 360 pt für titel und anzeigen, sonst wird das cover schmaler. cover an/aus: ⌘, -> browser -> cover. beide werte gehören zum ansichts-profil.")
             }
-            SettingsAdvancedHeader(open: $advanced)
+            SettingsAdvancedHeader(tab: "DECKS", open: $advanced)
             if advanced || filter != nil {
                 Section("Loop-Snap") {
                     Group {
@@ -615,8 +633,9 @@ struct DeckSettings: View {
                         .settingsAnchor("decks.prep.clip")
                     Toggle("Vorbereiten JOIN: Tempo der zweiten angleichen (bis ±0,5 %)", isOn: $mix.prefs.ui.prepJoinMatchTempo)
                         .settingsAnchor("decks.prep.jointempo")
-                    Text("vorbereiten (profil oder deck-zeile): amp hebt nur an (samples × faktor, kein limiter), ohne clipping höchstens bis 0 dbfs, norm = spitze −0.3 dbfs. join hängt die zweite datei am nächsten taktanfang an, split teilt am takt. alles als neue datei neben dem original.")
+                    Text("amp hebt nur an, join hängt die zweite datei an.")
                         .settingsHint()
+                        .help("vorbereiten (profil oder deck-zeile): amp hebt nur an (samples × faktor, kein limiter), ohne clipping höchstens bis 0 dbfs, norm = spitze −0.3 dbfs. join hängt die zweite datei am nächsten taktanfang an, split teilt am takt. alles als neue datei neben dem original.")
                 }
                 Section("Ausgabe (Render)") {
                     Picker("Ausgabe: Format", selection: $mix.prefs.ui.export.container) {
@@ -639,8 +658,9 @@ struct DeckSettings: View {
                         .settingsAnchor("decks.export.dither")
                     TextField("Ausgabe: Dateiname (Muster {name} {tag}, leer = wie bisher)", text: $mix.prefs.ui.export.pattern)
                         .settingsAnchor("decks.export.pattern")
-                    Text("ausgabe von render, schnitt, join, split und tool-loop. wie quelle: wav / aiff bleiben (vorbereiten), sonst apple lossless. dither nur beim schritt auf 16 bit. metadaten stehen in der datei: m4a mit atom-schlüsseln, wav / aiff als id3-chunk (wav zusätzlich list info). das fenster export (vor render im audio-edit) ändert das für eine datei.")
+                    Text("format der ausgabe von render, schnitt, join, split und tool-loop.")
                         .settingsHint()
+                        .help("ausgabe von render, schnitt, join, split und tool-loop. wie quelle: wav / aiff bleiben (vorbereiten), sonst apple lossless. dither nur beim schritt auf 16 bit. metadaten stehen in der datei: m4a mit atom-schlüsseln, wav / aiff als id3-chunk (wav zusätzlich list info). das fenster export (vor render im audio-edit) ändert das für eine datei.")
                 }
             }
         }
@@ -732,7 +752,7 @@ struct MixerFXSettings: View {
                 sliderRow("Reverb-Vorverzögerung (ms)", $mix.prefs.engine.reverbPreDelayMs, 0...120, step: 1, format: "%.0f")
                     .settingsAnchor("fx.reverbpredelay")
             }
-            SettingsAdvancedHeader(open: $advanced)
+            SettingsAdvancedHeader(tab: "MIXER & FX", open: $advanced)
             if advanced || filter != nil {
                 Section("FX-Belegung (D/W · Regler · Tasten)") {
                     LabeledContent("Parameter suchen") {
@@ -752,8 +772,9 @@ struct MixerFXSettings: View {
                             LabeledContent { FXAssignRow(u: u, c: c, search: search) } label: { Text(c.title) }
                         }
                     }
-                    Text("rechtsklick auf einen regler oder eine taste der fx-unit wählt den parameter direkt – jeder parameter jedes slots. gilt für die unit und wird je rack gemerkt (effekte in reihenfolge): hat eine unit dieselben slots wieder, ist die belegung wieder da. die sitzung behält die belegung jeder unit. tasten: schalter um, listen eine stufe weiter, stufenlose zwischen min und max. d/w der unit wirkt nur, solange ein bedienelement darauf liegt.")
+                    Text("rechtsklick auf einen regler oder eine taste wählt den parameter direkt.")
                         .settingsHint()
+                        .help("rechtsklick auf einen regler oder eine taste der fx-unit wählt den parameter direkt – jeder parameter jedes slots. gilt für die unit und wird je rack gemerkt (effekte in reihenfolge): hat eine unit dieselben slots wieder, ist die belegung wieder da. die sitzung behält die belegung jeder unit. tasten: schalter um, listen eine stufe weiter, stufenlose zwischen min und max. d/w der unit wirkt nur, solange ein bedienelement darauf liegt.")
                 }
                 Section("Gemerkte Belegungen") {
                     let stored = mix.prefs.engine.fxMappings
@@ -883,8 +904,9 @@ struct DisplaySettings: View {
                 let fine = mix.prefs.ui.waveformStyle == .spectrum, blend = mix.prefs.ui.waveformStyle == .blend
                 if blend {
                     WavePresetSettings()
-                    Text("je pixelzeile gemischt: tiefen als körper von der mitte, mitten als ring, höhen außen an den spitzen, helligkeit nach oben weich auslaufend. gehaltener bass / sub-ausklang orange, gehaltene höhen (offene hats, ride) hellblau. höhen-betonung 1 = standard, 3 = höhen ×4.")
+                    Text("je pixelzeile gemischt: tiefen innen, mitten als ring, höhen außen.")
                         .settingsHint()
+                        .help("je pixelzeile gemischt: tiefen als körper von der mitte, mitten als ring, höhen außen an den spitzen, helligkeit nach oben weich auslaufend. gehaltener bass / sub-ausklang orange, gehaltene höhen (offene hats, ride) hellblau. höhen-betonung 1 = standard, 3 = höhen ×4.")
                 } else {
                     Picker("Farben", selection: $mix.prefs.ui.waveformPalette) {
                         ForEach(WaveformPalette.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
@@ -928,7 +950,7 @@ struct DisplaySettings: View {
                 .background(UITestMark(name: "grid lines"))
                 .settingsAnchor("display.grid.lines")
             }
-            SettingsAdvancedHeader(open: $advanced)
+            SettingsAdvancedHeader(tab: "ANZEIGE", open: $advanced)
             if advanced || filter != nil {
                 if mix.prefs.ui.waveformStyle == .blend {
                     Section("Mischung (3-Band)") {
@@ -1047,7 +1069,7 @@ struct AudioSettings: View {
             ForEach(Array(stride(from: 0, to: max(2, mix.deviceChannels - 1), by: 2)), id: \.self) { c in
                 Text("\(c + 1)/\(c + 2)").tag(c)
             }
-            SettingsAdvancedHeader(open: $advanced)
+            SettingsAdvancedHeader(tab: "AUDIO", open: $advanced)
             if advanced || filter != nil {
                 BufferTestSettings()
                 LoadCacheSettings()
@@ -1160,8 +1182,9 @@ private struct RecordSettings: View {
                 if !mix.prefs.record.folder.isEmpty { Button("Standard") { mix.prefs.record.folder = "" } }
             }
             .settingsAnchor("audio.record.folder")
-            Text("rec in der oberen leiste oder im mixer (zeile master): klick = start, noch mal = stopp. interner master = das main-paar nach fadern, crossfader, master-fx, main und begrenzung, ohne metronom und vorhören. eingang vom pult = das gewählte eingangspaar der soundkarte (pult-summe auf usb legen). datei: jjjj-mm-tt hh.mm set.m4a mit der rate des kerns bzw. des eingangs, daneben .txt und .cue mit den tracks aus der history (alle 60 s und beim stopp). gerät weg: datei wird geschlossen, keine automatische fortsetzung.")
+            Text("rec in der oberen leiste oder im mixer: klick = start, noch mal = stopp.")
                 .settingsHint()
+                .help("rec in der oberen leiste oder im mixer (zeile master): klick = start, noch mal = stopp. interner master = das main-paar nach fadern, crossfader, master-fx, main und begrenzung, ohne metronom und vorhören. eingang vom pult = das gewählte eingangspaar der soundkarte (pult-summe auf usb legen). datei: jjjj-mm-tt hh.mm set.m4a mit der rate des kerns bzw. des eingangs, daneben .txt und .cue mit den tracks aus der history (alle 60 s und beim stopp). gerät weg: datei wird geschlossen, keine automatische fortsetzung.")
         }
         .onAppear { inputs = MixEngine.inputDevices() }
     }
@@ -1195,8 +1218,9 @@ private struct LoadCacheSettings: View {
             if let usage {
                 LabeledContent("Belegt", value: String(format: "%.1f GB · %d Tracks", Double(usage.bytes) / 1e9, usage.files))
             }
-            Text("datei-dienst: dateien werden in einem eigenen prozess gelesen und dekodiert. hängt eine cloud-datei, lädt das deck weiter (hinweis), abgebrochen wird erst nach der zweiten grenze. ohne datei-dienst: abbruch schon nach der ersten. cache: ~/Library/Application Support/MINOS-741/cache, älteste zuerst gelöscht, tracks in den decks bleiben.")
+            Text("datei-dienst: dateien in einem eigenen prozess gelesen und dekodiert.")
                 .settingsHint()
+                .help("datei-dienst: dateien werden in einem eigenen prozess gelesen und dekodiert. hängt eine cloud-datei, lädt das deck weiter (hinweis), abgebrochen wird erst nach der zweiten grenze. ohne datei-dienst: abbruch schon nach der ersten. cache: ~/Library/Application Support/MINOS-741/cache, älteste zuerst gelöscht, tracks in den decks bleiben.")
         }
         .task(id: mix.prefs.engine.cacheLimitGB) {
             guard let service else { return }
@@ -1267,7 +1291,7 @@ struct BrowserSettings: View {
                     LabeledContent("gleich") { TextField("", text: $mix.prefs.ui.match.keep).settingsField().frame(width: 120) }
                     LabeledContent("anders") { TextField("", text: $mix.prefs.ui.match.change).settingsField().frame(width: 120) }
                 }
-                Text("gruppen-marker mit leerzeichen, es zählt das erste wort der gruppe (K tief, B sub, H off). ähnlich: diese gruppen gleich wie beim master. ergänzend: „gleich“ gleich, „anders“ anders, keine gemeinsame rolle (BASIS, SYNTH …). master ohne gruppen: egal, track ohne gruppen: passt nicht").settingsHint()
+                Text("gruppen-marker: das erste wort der gruppe zählt (K tief, B sub, H off).").settingsHint().help("gruppen-marker mit leerzeichen, es zählt das erste wort der gruppe (K tief, B sub, H off). ähnlich: diese gruppen gleich wie beim master. ergänzend: „gleich“ gleich, „anders“ anders, keine gemeinsame rolle (BASIS, SYNTH …). master ohne gruppen: egal, track ohne gruppen: passt nicht")
             }
             TagColorSettings()
             Section("Cover") {
@@ -1299,7 +1323,7 @@ struct BrowserSettings: View {
                 Text("browser-menü -> collection prüfen … oder rechtsklick auf TRACK COLLECTION. nur lesen: dateien, audio-kopf, dauer, schreibweise, namen, doppelte, analyse, grid, playlist-einträge. abbrechen jederzeit.")
                     .settingsHint()
             }
-            SettingsAdvancedHeader(open: $advanced)
+            SettingsAdvancedHeader(tab: "BROWSER", open: $advanced)
             if advanced || filter != nil {
                 PreviewSettings()
                 TagColorSettings(colors: true)
@@ -1481,7 +1505,10 @@ struct ControllerSettings: View {
                 }
                 .settingsAnchor("display.cue.shortbars")
             }
-            SettingsAdvancedHeader(open: $advanced)
+            Section("TASTATUR") {
+                ShortcutTable(keys: $mix.prefs.keys, embedded: true)
+            }
+            SettingsAdvancedHeader(tab: "CONTROLLER & TASTEN", open: $advanced)
             if advanced || filter != nil {
                 Section("LED-Helligkeit") {
                     sliderRow("Helligkeit an", Binding(get: { Double(mix.prefs.controller.ledOn) }, set: { mix.prefs.controller.ledOn = Int($0) }),
@@ -1503,7 +1530,7 @@ struct ControllerSettings: View {
                 Section("Letztes Ereignis") { Text(status.lastEvent.isEmpty ? "—" : status.lastEvent).font(Theme.mono(11)) }
             }
         }
-        .settingsAdvancedReveal("CONTROLLER", open: $advanced)
+        .settingsAdvancedReveal("CONTROLLER & TASTEN", open: $advanced)
     }
 
     /// Beschriftung über/neben einem Geräte-Picker (gleiche Spalten in jedem Block)
@@ -1535,3 +1562,4 @@ private struct KeyProfileSettings: View {
             .settingsHint()
     }
 }
+

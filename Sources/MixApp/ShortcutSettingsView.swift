@@ -2,19 +2,12 @@ import SwiftUI
 import AppKit
 import MixCore
 
-/// Einstellungen -> Tastatur: jedes Kürzel der App neu belegen, entfernen, auf Standard zurück.
-struct ShortcutSettings: View {
-    @Environment(MixModel.self) private var mix
-
-    var body: some View {
-        @Bindable var mix = mix
-        ScrollView { ShortcutTable(keys: $mix.prefs.keys) }
-            .background(Theme.chitin)
-    }
-}
-
+/// Tastatur: jedes Kürzel der App neu belegen, entfernen, auf Standard zurück. Im Bereich CONTROLLER & TASTEN
+/// als Abschnitt („embedded“: ohne eigenen Titel und Rand)
 struct ShortcutTable: View {
     @Binding var keys: ShortcutMap
+    /// im Abschnitt TASTATUR des Bereichs CONTROLLER & TASTEN (ohne eigenen Titel)
+    var embedded = false
     @State private var recording: ShortcutID?
     @State private var monitor: Any?
     /// Favoriten-Modus: nur markierte Kürzel, ohne Kopf
@@ -24,9 +17,10 @@ struct ShortcutTable: View {
     static let reserved: Set<KeyCombo> = [KeyCombo("q"), KeyCombo("h"), KeyCombo("h", [.option, .command]), KeyCombo("m"),
                                           KeyCombo("f", [.control, .command]), KeyCombo("q", [.control, .command])]
 
-    init(keys: Binding<ShortcutMap>, recording: ShortcutID? = nil) {
+    init(keys: Binding<ShortcutMap>, recording: ShortcutID? = nil, embedded: Bool = false) {
         _keys = keys
         _recording = State(initialValue: recording)
+        self.embedded = embedded
     }
 
     var body: some View {
@@ -34,7 +28,7 @@ struct ShortcutTable: View {
         VStack(alignment: .leading, spacing: 0) {
             if filter == nil {
             HStack(alignment: .firstTextBaseline) {
-                Text("TASTATUR").font(Theme.label(15, .bold)).foregroundStyle(Theme.bone)
+                if !embedded { Text("TASTATUR").font(Theme.label(15, .bold)).foregroundStyle(Theme.bone) }
                 Spacer()
                 DeckButton(title: "ALLE ZURÜCKSETZEN") { stop(); keys = ShortcutMap() }
                     .help("Alle Kürzel auf Standard")
@@ -61,7 +55,9 @@ struct ShortcutTable: View {
                 }
             }
         }
-        .padding(16)
+        .padding(embedded ? 0 : 16)
+        // für den Favoriten-Filter: die Tabelle zeigt sich, wenn eines ihrer Kürzel markiert ist
+        .containerValue(\.settingsContainedIds, Set(ShortcutID.allCases.map { SettingsIndex.keyAnchor($0) }))
         .onDisappear { stop() }
     }
 

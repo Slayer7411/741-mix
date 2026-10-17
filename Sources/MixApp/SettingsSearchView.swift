@@ -234,3 +234,4 @@ private struct SettingsHitRow: View {
         return "… " + s[start...]
     }
 }
+

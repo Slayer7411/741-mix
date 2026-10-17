@@ -211,8 +211,9 @@ struct CloudSettings: View {
                     }
                 }
                 .settingsAnchor("cloud.checked")
-                Text("spalte ☁ im browser: ● lokal · ☁ nur online · ↓ lädt · ✕ fehlt. rechtsklick auf tracks oder eine liste -> bereitmachen. set-check im browser-kopf: preparation + liste lokal? geprüft per dateistatus, ohne etwas zu laden; neu bei änderungen im ordner und alle 10 min.")
+                Text("spalte ☁ im browser: ● lokal · ☁ nur online · ↓ lädt · ✕ fehlt.")
                     .settingsHint()
+                    .help("spalte ☁ im browser: ● lokal · ☁ nur online · ↓ lädt · ✕ fehlt. rechtsklick auf tracks oder eine liste -> bereitmachen. set-check im browser-kopf: preparation + liste lokal? geprüft per dateistatus, ohne etwas zu laden; neu bei änderungen im ordner und alle 10 min.")
             }
             Section("Lokal halten, solange MINOS-741 läuft") {
                 Picker("Lokal halten", selection: $mix.prefs.cloud.keepMode) {
@@ -260,7 +261,7 @@ struct CloudSettings: View {
         case .notPinned: t = String(localized: "nein")
         case .unknown: t = String(localized: "nicht ermittelbar")
             TidalSettingsSection()
-            SettingsAdvancedHeader(open: $advanced)
+            SettingsAdvancedHeader(tab: "CLOUD", open: $advanced)
             if advanced || filter != nil {
                 Section("Dauerhaft offline") {
                     LabeledContent("Library-Ordner") {

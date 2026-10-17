@@ -23,8 +23,9 @@ struct LiveSyncSettings: View {
                 .settingsAnchor("browser.live.weight")
                 Toggle("Zeilen abwechselnd getönt", isOn: $mix.prefs.ui.liveListStripes)
                     .settingsAnchor("browser.live.stripes")
-                Text("live-liste: spalten artist, title, bpm, key, time. vorn eine markerspalte: ✓ gespielt, ✕ datei fehlt, ☁ nur online, ✓ analysiert, rip-befund. alles knochenweiß, gespielte nicht gedimmt, ausgewählte zeile invertiert. schriftgröße unabhängig vom zoom, zeilenhöhe = schrift × 1,6. bei LIVE automatisch an, sonst von hand. die normale spaltenanordnung bleibt gespeichert, im live-modus wird nichts gespeichert.")
+                Text("live-liste: artist, title, bpm, key, time mit markerspalte vorn.")
                     .settingsHint()
+                    .help("live-liste: spalten artist, title, bpm, key, time. vorn eine markerspalte: ✓ gespielt, ✕ datei fehlt, ☁ nur online, ✓ analysiert, rip-befund. alles knochenweiß, gespielte nicht gedimmt, ausgewählte zeile invertiert. schriftgröße unabhängig vom zoom, zeilenhöhe = schrift × 1,6. bei LIVE automatisch an, sonst von hand. die normale spaltenanordnung bleibt gespeichert, im live-modus wird nichts gespeichert.")
             }
             Section("Zwei Macs") {
                 Toggle("Zwei-Mac-Modus", isOn: $mix.prefs.ui.pair.on)
@@ -69,7 +70,7 @@ struct LiveSyncSettings: View {
                 Text("im extern-modus z. b. auf das paar vom kopfhörer-cue legen -> klick nur auf dem kopfhörer").settingsHint()
             }
             DAWBridgeSettings()
-            SettingsAdvancedHeader(open: $advanced)
+            SettingsAdvancedHeader(tab: "LIVE & SYNC", open: $advanced)
             if advanced || filter != nil {
                 GrooveSettingsSection()
             }

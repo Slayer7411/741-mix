@@ -44,6 +44,7 @@ struct SettingsFavoritesList: View {
 /// Kopf „ERWEITERT“ am Seitenende (zugeklappt): ein Sprung der Suche auf einen Eintrag darin klappt ihn auf.
 /// Die Abschnitte selbst stehen danach im Bereich unter `open`
 struct SettingsAdvancedHeader: View {
+    let tab: String
     @Binding var open: Bool
 
     var body: some View {
@@ -57,8 +58,11 @@ struct SettingsAdvancedHeader: View {
                 }
             }
             .buttonStyle(.plain)
+            .id(Self.anchorID(tab))   // Ziel für den Sprung der Suche (Kopf, dann Zeile)
         }
     }
+
+    static func anchorID(_ tab: String) -> String { "settings.advanced." + tab }
 }
 
 /// Auf der Form (nicht am Kopf): ein Sprung der Suche auf einen Eintrag in ERWEITERT dieses Bereichs klappt ihn auf.
