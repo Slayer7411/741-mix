@@ -28,9 +28,9 @@ import Testing
 }
 
 @Test func pairInitiatorIsTheSmallerName() {
-    #expect(PairLink.initiates(own: "TIO-00001", peer: "TIO-00245"))
-    #expect(!PairLink.initiates(own: "TIO-00245", peer: "TIO-00001"))
-    #expect(!PairLink.initiates(own: "TIO-00001", peer: "TIO-00001"))
+    #expect(PairLink.keeps(initiator: "TIO-00001", over: "TIO-00245"))
+    #expect(!PairLink.keeps(initiator: "TIO-00245", over: "TIO-00001"))
+    #expect(!PairLink.keeps(initiator: "TIO-00001", over: "TIO-00001"))
 }
 
 @Test func deckLayoutTwoDecksSideBySideOrStacked() {
