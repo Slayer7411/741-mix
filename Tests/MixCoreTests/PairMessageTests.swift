@@ -7,6 +7,8 @@ import Testing
         .hello(writes: true, decks: [0, 2], version: PairMessage.version, name: "Mac 1", played: ["a", "b"]),
         .playedSet(["a", "b", "c"]),
         .played(add: ["x"], remove: ["a"]),
+        .state(writes: false, decks: [1, 3]),
+        .live(true),
     ]
     var stream = Data()
     for m in msgs { stream.append(m.line()) }

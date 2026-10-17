@@ -7,7 +7,7 @@ import Testing
     #expect(DeckLayout.columns(visible: [0, 1], slots: def) == ([0], [1]))
     #expect(DeckLayout.columns(visible: [0], slots: def) == ([0], []))
     // nur rechts belegt -> links, volle Breite
-    #expect(DeckLayout.columns(visible: [1, 3], slots: def) == ([1, 3], []))
+    #expect(DeckLayout.columns(visible: [1, 3], slots: def, twoSideBySide: false) == ([1, 3], []))
     // B links oben, D rechts oben -> nebeneinander
     let s = DeckLayout.setting(DeckLayout.setting(def, slot: 0, deck: 1), slot: 2, deck: 3)
     #expect(Set(s) == [0, 1, 2, 3] && s[0] == 1 && s[2] == 3)
@@ -25,4 +25,18 @@ import Testing
     #expect(PairSetup.toggled([1], 1) == [1])
     #expect(PairSetup.toggled([1], 2) == [1, 2])
     #expect(PairSetup.valid([5, 2, 2, 0, 1]) == [0, 1])
+}
+
+@Test func pairInitiatorIsTheSmallerName() {
+    #expect(PairLink.initiates(own: "TIO-00001", peer: "TIO-00245"))
+    #expect(!PairLink.initiates(own: "TIO-00245", peer: "TIO-00001"))
+    #expect(!PairLink.initiates(own: "TIO-00001", peer: "TIO-00001"))
+}
+
+@Test func deckLayoutTwoDecksSideBySideOrStacked() {
+    let def = DeckLayout.defaultSlots
+    // B rechts oben, D rechts unten: nebeneinander in Platz-Reihenfolge, übereinander auf voller Breite
+    #expect(DeckLayout.columns(visible: [1, 3], slots: def, twoSideBySide: true) == ([1], [3]))
+    #expect(DeckLayout.columns(visible: [1, 3], slots: def, twoSideBySide: false) == ([1, 3], []))
+    #expect(DeckLayout.columns(visible: [0, 1], slots: def, twoSideBySide: true) == ([0], [1]))
 }

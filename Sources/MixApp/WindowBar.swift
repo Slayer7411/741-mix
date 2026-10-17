@@ -194,6 +194,16 @@ struct WindowSwitches: View {
     var body: some View {
         let ui = mix.prefs.ui
         HStack(spacing: 0) {
+            BarCell(title: "LIVE", active: mix.live, width: 30, help: "LIVE: kein Ruhezustand, kein Bildschirmschoner, Display bleibt an (gekoppelt: beide Macs)") {
+                mix.setLive(!mix.live)
+            }
+            BarDivider()
+            if ui.pair.on {
+                BarCell(title: "SCHREIBT", active: ui.pair.writes, width: 54, help: "Zwei Macs: dieser Mac schreibt in Collection und History; an = der andere gibt ab") {
+                    mix.prefs.ui.pair.writes.toggle()
+                }
+                BarDivider()
+            }
             BarCell(title: "MIXER", active: ui.showMixer, help: "Internen Mixer ein-/ausblenden") {
                 mix.prefs.ui.showMixer.toggle()
             }

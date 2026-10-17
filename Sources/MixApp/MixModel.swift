@@ -90,6 +90,18 @@ final class MixModel {
     private(set) var linkPeersShown = 0
     private(set) var effectiveMaster: Int?
     private(set) var clockMaster = false
+    /// LIVE (Schalter oben): Mac bleibt wach; nicht gespeichert, gekoppelt folgt der andere Mac
+    private(set) var live = false
+
+    func setLive(_ on: Bool, fromPeer: Bool = false) {
+        guard on != live else { return }
+        live = on
+        LiveMode.set(on)
+        if !fromPeer { PairLink.shared.sendLive(on) }
+        StatusCenter.post(on ? .ok : .info, on ? String(localized: "LIVE: kein Ruhezustand, kein Bildschirmschoner")
+                                              : String(localized: "LIVE aus"), key: "live")
+    }
+
     var focusedDeck = 0 { didSet { if focusedDeck != oldValue { updateHarmony() } } }
     /// Bezug für den Browser (Key-Farben, Matching, Sortierung „Harmonie“): hörbarer Key (Code 0–23) und Tempo (0,1 BPM,
     /// 0 = keins) des Master-Decks, ohne spielenden Master des Fokus-Decks. Getrennt beobachtet: die Key-Farben hängen

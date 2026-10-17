@@ -4,8 +4,9 @@ import SystemConfiguration
 import MixCore
 import MixEngine
 
-/// Zwei Macs als eine Session: der schreibende Mac bietet sich per Bonjour an (`_minos741._tcp`, jede Verbindung:
-/// Ethernet, Thunderbolt-/USB-Bridge, WLAN), der andere verbindet sich. Jeder Mac spielt seine Decks (⌘, -> DECKS)
+/// Zwei Macs als eine Session: beide bieten sich per Bonjour an (`_minos741._tcp`, jede Verbindung: Ethernet,
+/// Thunderbolt-/USB-Bridge, WLAN) und suchen sich gegenseitig; der Mac mit dem kleineren Namen verbindet sich (eine
+/// Verbindung, unabhängig davon, wer schreibt – sonst warteten zwei schreibende Macs still). Jeder Mac spielt seine Decks (⌘, -> DECKS)
 /// über sein eigenes Interface, den Takt hält Link. Über die Verbindung laufen die Gespielt-Markierungen; in die
 /// Collection schreibt nur der schreibende Mac. Umschalten wirkt sofort
 @MainActor
@@ -21,10 +22,22 @@ final class PairLink {
     private var browser: NWBrowser?
     private var connection: NWConnection?
     private var reader = PairLineReader()
+    /// Stand des anderen Macs (nach hello / state)
+    private(set) var peer: (name: String, writes: Bool, decks: [Int])?
+    /// LIVE-Schalter (nicht gespeichert): kein Ruhezustand
+    @ObservationIgnored var onLive: ((Bool) -> Void)?
 
-    /// Einstellung übernehmen: Verbindung abbauen und nach der neuen Einstellung wieder aufbauen
+    /// Einstellung übernehmen. An/aus baut die Verbindung auf oder ab; Schreiber und Decks gehen über die bestehende
+    /// Verbindung an den anderen Mac (kein Neuaufbau)
     func configure(_ new: PairSetup, history: HistoryStore, mix: MixModel) {
         guard !Session.isSelfTest, new != setup else { return }
+        if new.on, setup.on {
+            setup = new
+            send(.state(writes: new.writes, decks: new.decks))
+            report()
+            return
+        }
+        peer = nil
         listener?.cancel(); listener = nil
         browser?.cancel(); browser = nil
         let old = connection
@@ -41,7 +54,8 @@ final class PairLink {
         history.onPlayedChange = { add, remove in
             PairLink.shared.send(.played(add: add.sorted(), remove: remove.sorted()))
         }
-        if new.writes { listen() } else { browse() }
+        listen()
+        browse()
     }
 
     private static var computerName: String {
@@ -74,7 +88,7 @@ final class PairLink {
             }
             l.start(queue: queue)
             listener = l
-            StatusCenter.post(.info, String(localized: "Zwei-Mac: schreibender Mac wartet auf den zweiten"), key: "pair")
+            StatusCenter.post(.info, String(localized: "Zwei-Mac: sucht den zweiten Mac"), key: "pair")
         } catch {
             StatusCenter.post(.error, String(localized: "Zwei-Mac: kein Netz-Dienst (\(error.localizedDescription))"), key: "pair")
         }
@@ -84,24 +98,32 @@ final class PairLink {
         listener?.cancel()
         listener = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            MainActor.assumeIsolated { let p = PairLink.shared; if p.setup.on, p.setup.writes, p.listener == nil { p.listen() } }
+            MainActor.assumeIsolated { let p = PairLink.shared; if p.setup.on, p.listener == nil { p.listen() } }
         }
     }
 
     private func browse() {
         browser?.cancel()
         let b = NWBrowser(for: .bonjour(type: Self.service, domain: nil), using: Self.parameters())
+        let own = Self.computerName
         b.browseResultsChangedHandler = { results, _ in
-            guard let ep = results.first?.endpoint else { return }
-            Self.main { PairLink.shared.found(ep) }
+            // der andere Mac; verbinden nur, wenn der eigene Name kleiner ist (der andere nimmt an)
+            for r in results {
+                guard case let .service(name, _, _, _) = r.endpoint, Self.initiates(own: own, peer: name) else { continue }
+                let ep = r.endpoint
+                Self.main { PairLink.shared.found(ep) }
+                break
+            }
         }
         b.start(queue: queue)
         browser = b
-        StatusCenter.post(.info, String(localized: "Zwei-Mac: sucht den schreibenden Mac"), key: "pair")
     }
 
+    /// wer die Verbindung aufbaut: nicht man selbst, der kleinere Name
+    nonisolated static func initiates(own: String, peer: String) -> Bool { peer != own && own < peer }
+
     private func found(_ ep: NWEndpoint) {
-        guard connection == nil else { return }
+        guard setup.on, connection == nil else { return }
         adopt(NWConnection(to: ep, using: Self.parameters()))
     }
 
@@ -126,11 +148,12 @@ final class PairLink {
             c.cancel()
         case .cancelled:
             connection = nil
+            peer = nil
             StatusCenter.post(.warning, String(localized: "Zwei-Mac: Verbindung getrennt"), key: "pair")
-            // nicht schreibender Mac: neu suchen (die Trefferliste meldet nur Änderungen)
-            if setup.on, !setup.writes {
+            // neu suchen (die Trefferliste meldet nur Änderungen)
+            if setup.on {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    MainActor.assumeIsolated { let p = PairLink.shared; if p.setup.on, !p.setup.writes, p.connection == nil { p.browse() } }
+                    MainActor.assumeIsolated { let p = PairLink.shared; if p.setup.on, p.connection == nil { p.browse() } }
                 }
             }
         default:
@@ -160,28 +183,53 @@ final class PairLink {
         guard let history else { return }
         switch m {
         case let .hello(writes, decks, version, name, played):
-            let problems = PairCheck.problems(ownWrites: setup.writes, ownDecks: setup.decks, peerWrites: writes, peerDecks: decks)
-            if problems.contains(.bothWrite) || problems.contains(.noneWrites) {
-                StatusCenter.post(.error, problems.contains(.bothWrite) ? String(localized: "Zwei-Mac: beide Macs schreiben (⌘, -> DECKS)")
-                                  : String(localized: "Zwei-Mac: kein Mac schreibt (⌘, -> DECKS)"), key: "pair")
-                connection?.cancel()
-                return
+            peer = (name, writes, decks)
+            if version != PairMessage.version {
+                StatusCenter.post(.error, String(localized: "Zwei-Mac: \(name) hat eine andere Version – beide Macs auf denselben Stand bringen"), key: "pair")
             }
-            var note = version == PairMessage.version ? "" : " · " + String(localized: "andere Version")
-            for case let .sharedDecks(d) in problems {
-                note += " · " + String(localized: "Deck \(d.map { deckLetters[$0] }.joined(separator: "/")) auf beiden")
-            }
-            let theirs = decks.map { deckLetters[$0] }.joined(separator: "/")
-            StatusCenter.post(note.isEmpty ? .ok : .warning, String(localized: "Zwei-Mac: verbunden mit \(name) (Decks \(theirs))") + note, key: "pair")
+            // beide schreiben: der Mac mit dem größeren Namen gibt ab (danach Schalter oben)
+            if writes, setup.writes, Self.computerName > name { mix?.prefs.ui.pair.writes = false }
+            report()
             if setup.writes {
                 let s = PairPlayed.merged(history.played, Set(played))
                 history.applyPlayed(s)
                 send(.playedSet(s.sorted()))
             }
+            if let mix, mix.live { send(.live(true)) }
+        case let .state(writes, decks):
+            guard let p = peer else { return }
+            peer = (p.name, writes, decks)
+            // der andere hat das Schreiben übernommen -> abgeben
+            if writes, setup.writes { mix?.prefs.ui.pair.writes = false }
+            report()
+        case let .live(on):
+            if let mix, mix.live != on { mix.setLive(on, fromPeer: true) }
         case let .playedSet(s):
             if !setup.writes { history.applyPlayed(Set(s)) }
         case let .played(add, remove):
             history.applyPlayed(history.played.subtracting(remove).union(add))
         }
     }
+
+    /// Statusleiste: verbunden mit wem, wer schreibt, Probleme
+    private func report() {
+        guard let p = peer else { return }
+        let problems = PairCheck.problems(ownWrites: setup.writes, ownDecks: setup.decks, peerWrites: p.writes, peerDecks: p.decks)
+        let theirs = p.decks.map { deckLetters[$0] }.joined(separator: "/")
+        var text = String(localized: "Zwei-Mac: verbunden mit \(p.name) (Decks \(theirs))") + " · "
+            + (setup.writes ? String(localized: "dieser Mac schreibt") : p.writes ? String(localized: "\(p.name) schreibt") : "")
+        for q in problems {
+            switch q {
+            case .bothWrite: text += String(localized: "beide schreiben")
+            case .noneWrites: text += String(localized: "kein Mac schreibt – Schalter SCHREIBT oben")
+            case let .sharedDecks(d): text += " · " + String(localized: "Deck \(d.map { deckLetters[$0] }.joined(separator: "/")) auf beiden")
+            }
+        }
+        StatusCenter.post(problems.isEmpty ? .ok : .warning, text, key: "pair")
+    }
+
+    var connected: Bool { peer != nil }
+
+    /// LIVE an/aus an den anderen Mac
+    func sendLive(_ on: Bool) { send(.live(on)) }
 }

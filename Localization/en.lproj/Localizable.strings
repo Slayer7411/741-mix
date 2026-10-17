@@ -1884,7 +1884,6 @@
 "Aus" = "Off";
 "Zwei-Mac: kein Netz-Dienst (%@)" = "Two Macs: no network service (%@)";
 "Zwei-Mac: Verbindung getrennt" = "Two Macs: connection lost";
-"andere Version" = "other version";
 
 /* EXPLORER-Suche */
 "Suchen (Ordner, Dateien)" = "Search (folders, files)";
@@ -1901,9 +1900,22 @@
 "Rechts unten" = "Bottom right";
 "platz je deck in der übersicht. ein deck an einen besetzten platz -> die beiden tauschen. ausgeblendete decks (1 / 2 decks, zwei-mac-modus) lassen ihren platz frei; ist nur eine seite belegt, nutzen die decks die volle breite." = "position of each deck in the overview. a deck on an occupied position -> the two swap. hidden decks (1 / 2 decks, two-mac mode) leave their position free; with only one side used the decks take the full width.";
 "Zwei-Mac: aus" = "Two Macs: off";
-"Zwei-Mac: schreibender Mac wartet auf den zweiten" = "Two Macs: writing Mac waiting for the second";
-"Zwei-Mac: sucht den schreibenden Mac" = "Two Macs: looking for the writing Mac";
-"Zwei-Mac: beide Macs schreiben (⌘, -> DECKS)" = "Two Macs: both Macs write (⌘, -> DECKS)";
-"Zwei-Mac: kein Mac schreibt (⌘, -> DECKS)" = "Two Macs: no Mac writes (⌘, -> DECKS)";
+"Zwei-Mac: sucht den zweiten Mac" = "Two Macs: looking for the second Mac";
 "Zwei-Mac: verbunden mit %@ (Decks %@)" = "Two Macs: connected to %@ (decks %@)";
 "Deck %@ auf beiden" = "deck %@ on both";
+
+/* LIVE, Schreiber, zwei Decks */
+"LIVE: kein Ruhezustand, kein Bildschirmschoner, Display bleibt an (gekoppelt: beide Macs)" = "LIVE: no sleep, no screen saver, display stays on (paired: both Macs)";
+"LIVE: kein Ruhezustand, kein Bildschirmschoner" = "LIVE: no sleep, no screen saver";
+"LIVE aus" = "LIVE off";
+"Zwei Macs: dieser Mac schreibt in Collection und History; an = der andere gibt ab" = "Two Macs: this Mac writes the collection and history; on = the other one stops";
+"Zwei Decks" = "Two decks";
+"Nebeneinander" = "Side by side";
+"Übereinander" = "Stacked";
+"Deck %@ spielt auf diesem Mac" = "Deck %@ plays on this Mac";
+"Deck %@ auf diesem Mac spielen" = "Play deck %@ on this Mac";
+"Zwei-Mac: %@ hat eine andere Version – beide Macs auf denselben Stand bringen" = "Two Macs: %@ runs another version – bring both Macs to the same build";
+"dieser Mac schreibt" = "this Mac writes";
+"%@ schreibt" = "%@ writes";
+"beide schreiben" = "both write";
+"kein Mac schreibt – Schalter SCHREIBT oben" = "no Mac writes – switch WRITES at the top";
