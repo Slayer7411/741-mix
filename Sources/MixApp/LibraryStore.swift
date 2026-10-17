@@ -9,6 +9,7 @@ import MixEngine
 final class LibraryStore {
     /// Standard-Collection: neueste `collection.nml` im Benutzerordner der Collection-Software
     nonisolated static let defaultNML: URL = {
+        if let c = E2E.collection { return c }   // Ende-zu-Ende: eigene Collection der Instanz
         let base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Native Instruments")
         let dirs = (try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)) ?? []
         let found = dirs.filter { $0.lastPathComponent.hasPrefix("Traktor") }
@@ -62,12 +63,12 @@ final class LibraryStore {
     @ObservationIgnored var suggestionCache: [String: [(value: String, count: Int)]] = [:]
 
     /// Preparation: wird gespeichert, beim nächsten Start archiviert und geleert (Selbsttest/Messung: nur im Speicher)
-    var preparation: [String] = Session.isSelfTest ? [] : UserDefaults.standard.stringArray(forKey: "prep.current") ?? [] {
+    var preparation: [String] = Session.isSelfTest ? [] : E2E.defaults.stringArray(forKey: "prep.current") ?? [] {
         didSet {
             preparationRevision += 1
             guard !Session.isSelfTest else { return }
-            UserDefaults.standard.set(preparation, forKey: "prep.current")
-            UserDefaults.standard.set(Date(), forKey: "prep.date")
+            E2E.defaults.set(preparation, forKey: "prep.current")
+            E2E.defaults.set(Date(), forKey: "prep.date")
             let ui = uiPrefs()
             if ui.writeCollection, ui.writePlaylists { scheduleWriteBack(after: 10) }
         }
@@ -88,7 +89,7 @@ final class LibraryStore {
         }
     }
     @ObservationIgnored var preparationArchived = false
-    var preparationDate: Date { UserDefaults.standard.object(forKey: "prep.date") as? Date ?? Date() }
+    var preparationDate: Date { E2E.defaults.object(forKey: "prep.date") as? Date ?? Date() }
     /// einmal nach dem ersten Laden der Collection
     @ObservationIgnored var onLoaded: (() -> Void)?
     /// MUSIC FOLDERS (Dateibaum der Musik-Ordner)
@@ -1001,7 +1002,7 @@ struct CustomSmartlist: Codable, Hashable, Identifiable {
     var query: String
 
     static func load() -> [CustomSmartlist] {
-        guard let d = UserDefaults.standard.data(forKey: "smartlists.custom"),
+        guard let d = E2E.defaults.data(forKey: "smartlists.custom"),
               let l = try? JSONDecoder().decode([CustomSmartlist].self, from: d) else { return [] }
         return l
     }
@@ -1055,7 +1056,7 @@ enum ReloadBench {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         // Audio nur auf ein eingebautes Gerät (wie SettingsShot), gespeichertes Setup danach unverändert zurück
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         let keys = ["mixerMode", "deviceUID", "internalPair", "deckPairs", "sampleRate", "bufferSize", "prefs.v1"]
         let saved = keys.map { ($0, d.object(forKey: $0)) }
         d.setVolatileDomain(["deviceUID": "BuiltInSpeakerDevice", "mixerMode": "Intern", "sampleRate": 0.0, "bufferSize": 0],

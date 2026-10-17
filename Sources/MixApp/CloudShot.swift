@@ -20,7 +20,7 @@ enum CloudShot {
         }
 
         // Audio-Modell wie SettingsShot: eingebaute Lautsprecher, stumm, Setup danach zurück
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         let keys = ["mixerMode", "deviceUID", "internalPair", "deckPairs", "sampleRate", "bufferSize", "prefs.v1"]
         let saved = keys.map { ($0, d.object(forKey: $0)) }
         d.setVolatileDomain(["deviceUID": "BuiltInSpeakerDevice", "mixerMode": "Intern", "sampleRate": 0.0, "bufferSize": 0],

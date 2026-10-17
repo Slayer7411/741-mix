@@ -27,7 +27,7 @@ enum PlaylistShot {
             while Date() < end, !done() { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
         }
         // Audio-Setup sichern, eingebautes Gerät, Ausgabe gleich wieder aus (wie TagShot)
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         let keys = ["mixerMode", "deviceUID", "internalPair", "deckPairs", "sampleRate", "bufferSize", "prefs.v1"]
         let saved = keys.map { ($0, d.object(forKey: $0)) }
         let devs = MixEngine.outputDevices()

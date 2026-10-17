@@ -1,6 +1,7 @@
 import AudioToolbox
 import CoreAudio
 import Foundation
+import MixCore
 import MixDSP
 
 /// Ein einziger CoreAudio-Ausgang (AUHAL) direkt auf dem Gerät. Der Render-Callback ist C++ (mdsp_au_render) –
@@ -57,6 +58,8 @@ final class CoreAudioOutput: @unchecked Sendable {
 
     private func open(_ device: AudioDeviceID?, _ engine: OpaquePointer, _ engineRate: Double, _ bufferFrames: UInt32?,
                       _ setDeviceRate: Double?) throws {
+        // Ende-zu-Ende (MIX741_E2E_ROOT): kein Gerät anfassen, der Kern rendert im eigenen Takt (startNull)
+        if E2E.isActive { startNull(engine, engineRate, bufferFrames); return }
         var desc = AudioComponentDescription(componentType: kAudioUnitType_Output, componentSubType: kAudioUnitSubType_HALOutput,
                                              componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0)
         guard let comp = AudioComponentFindNext(nil, &desc) else { throw err("kein AUHAL") }
@@ -188,8 +191,46 @@ final class CoreAudioOutput: @unchecked Sendable {
         return n
     }
 
+    /// Ende-zu-Ende: Zwischenpuffer-Ausgabe ohne Gerät. Ein Timer auf eigener Queue rendert Blöcke der Puffergröße in
+    /// Echtzeit (`mdsp_render`), so laufen Position, Wiedergabe und Analyse wie mit Gerät, nur ohne Ton
+    private var nullTimer: DispatchSourceTimer?
+    private let nullQueue = DispatchQueue(label: "minos741.e2e.null", qos: .userInitiated)
+
+    private func startNull(_ engine: OpaquePointer, _ engineRate: Double, _ bufferFrames: UInt32?) {
+        let frames = max(16, Int(bufferFrames ?? 512))
+        self.engine = engine
+        infoLock.withLock {
+            _info = Info(channels: 2, deviceRate: engineRate, running: true, outputLatency: Double(frames) / engineRate,
+                         bufferFrameSize: UInt32(frames), device: 0, uid: E2E.nullDeviceUID, name: E2E.nullDeviceName)
+        }
+        let left = UnsafeMutablePointer<Float>.allocate(capacity: frames)
+        let right = UnsafeMutablePointer<Float>.allocate(capacity: frames)
+        let outs = UnsafeMutablePointer<UnsafeMutablePointer<Float>?>.allocate(capacity: 2)
+        outs[0] = left
+        outs[1] = right
+        let t = DispatchSource.makeTimerSource(queue: nullQueue)
+        t.schedule(deadline: .now(), repeating: .nanoseconds(Int(Double(frames) / engineRate * 1e9)), leeway: .microseconds(50))
+        t.setEventHandler {
+            mdsp_set_render_host(engine, mach_absolute_time())
+            mdsp_render(engine, outs, 2, Int32(frames))
+        }
+        // Speicher erst nach dem letzten Block freigeben (stopNull wartet auf die Queue)
+        t.setCancelHandler { left.deallocate(); right.deallocate(); outs.deallocate() }
+        nullTimer = t
+        t.resume()
+    }
+
+    private func stopNull() {
+        guard let t = nullTimer else { return }
+        nullTimer = nil
+        t.cancel()
+        nullQueue.sync {}
+        infoLock.withLock { _info.running = false }
+    }
+
     func stop() {
         removeListeners()
+        stopNull()
         guard let au = unit else { return }
         AudioOutputUnitStop(au)   // wartet, bis der Render-Callback durch ist
         AudioUnitUninitialize(au)

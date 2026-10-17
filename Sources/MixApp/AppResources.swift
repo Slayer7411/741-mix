@@ -1,4 +1,5 @@
 import Foundation
+import MixCore
 
 /// Ressourcen finden: im App-Paket (Contents/Resources/Resources/…) oder beim Direktstart aus dem SwiftPM-Bundle.
 /// Bundle.module bricht hart ab, wenn das Bundle fehlt – deshalb zuerst im App-Paket suchen.
@@ -11,7 +12,7 @@ enum AppResources {
 
     /// Einstellungen und Daten aus alten Namen übernehmen (741mix, 741-mix-App), einmalig
     static func migrateDefaults() {
-        let d = UserDefaults.standard
+        let d = E2E.defaults
         if !d.bool(forKey: "migrated.v2") {
             for suite in ["com.github.slayer7411.741mix", "741mix"] where suite != Bundle.main.bundleIdentifier {
                 guard let old = UserDefaults(suiteName: suite) else { continue }

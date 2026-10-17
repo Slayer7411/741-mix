@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import MixCore
 
 /// Spenden-Hinweis beim Start: Bier oder ein paar Tokens, PayPal mit freiem Betrag. Weg ist er erst mit `donated`
 /// (Zahlung dieser Instanz, Kennung `code` reist als item_number mit); `scripts/make-app.sh` setzt beim Installieren `donated` (die eigene Installation
@@ -9,9 +10,9 @@ enum DonateHint {
     /// Kennung dieser Installation (8 Hex): geht als item_number / custom mit zu PayPal, damit eine spätere Prüfung
     /// die Zahlung dieser Instanz zuordnen kann
     static var code: String {
-        if let c = UserDefaults.standard.string(forKey: "donateCode"), c.count == 8 { return c }
+        if let c = E2E.defaults.string(forKey: "donateCode"), c.count == 8 { return c }
         let c = String(format: "%08x", UInt32.random(in: 0...UInt32.max))
-        UserDefaults.standard.set(c, forKey: "donateCode")
+        E2E.defaults.set(c, forKey: "donateCode")
         return c
     }
     static var url: URL {
@@ -32,16 +33,16 @@ enum DonateHint {
     }
 
     static var mode: Mode {
-        get { Mode(rawValue: UserDefaults.standard.string(forKey: "donateHint") ?? "") ?? .always }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "donateHint") }
+        get { Mode(rawValue: E2E.defaults.string(forKey: "donateHint") ?? "") ?? .always }
+        set { E2E.defaults.set(newValue.rawValue, forKey: "donateHint") }
     }
     static var donated: Bool {
-        get { UserDefaults.standard.bool(forKey: "donated") }
-        set { UserDefaults.standard.set(newValue, forKey: "donated") }
+        get { E2E.defaults.bool(forKey: "donated") }
+        set { E2E.defaults.set(newValue, forKey: "donated") }
     }
     static var lastShown: Date? {
-        get { UserDefaults.standard.object(forKey: "donateLast") as? Date }
-        set { UserDefaults.standard.set(newValue, forKey: "donateLast") }
+        get { E2E.defaults.object(forKey: "donateLast") as? Date }
+        set { E2E.defaults.set(newValue, forKey: "donateLast") }
     }
 
     /// Hinweis fällig? Reine Regel für den Test: nie nach einer Spende oder bei „nie“, wöchentlich = 7 Tage seit dem letzten Mal
@@ -54,7 +55,7 @@ enum DonateHint {
         }
     }
 
-    static var dueNow: Bool { !Session.isSelfTest && due(mode: mode, donated: donated, lastShown: lastShown) }
+    static var dueNow: Bool { !Session.isSelfTest && !E2E.isActive && due(mode: mode, donated: donated, lastShown: lastShown) }
 
     static func open() { NSWorkspace.shared.open(url) }
 }

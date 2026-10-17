@@ -312,6 +312,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !Session.isSelfTest else { return .terminateNow }
+        if E2E.isActive {   // Ende-zu-Ende: ohne Rückfrage, aber mit dem vollen Beenden (Sitzung, Einstellungen)
+            MainActor.assumeIsolated { onQuit?() }
+            return .terminateNow
+        }
         let a = NSAlert()
         a.messageText = String(localized: "MINOS-741 beenden?")
         a.informativeText = String(localized: "Sitzung und History werden gespeichert.")
@@ -536,6 +540,7 @@ extension MixApp {
         browser.history = history
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
         history.start(store: store, mix: mix)
+        E2EControl.start(mix: mix, store: store, browser: browser, history: history)   // nur mit MIX741_E2E_ROOT
         PairLink.shared.configure(mix.prefs.ui.pair, history: history, mix: mix)
         store.history = history
         mix.autoMix.store = store
@@ -604,8 +609,8 @@ SettingsFile.importIfChanged()   // Einstellungen aus dem Datenordner neben der 
 SettingsFile.watch()
 // Sprache aus den Einstellungen (vor dem ersten Fenster)
 switch AppPrefs.load().ui.language {
-case "de", "en": UserDefaults.standard.set([AppPrefs.load().ui.language], forKey: "AppleLanguages")
-default: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+case "de", "en": E2E.defaults.set([AppPrefs.load().ui.language], forKey: "AppleLanguages")
+default: E2E.defaults.removeObject(forKey: "AppleLanguages")
 }
 Theme.registerFonts()
 if !Session.isSelfTest { MainActor.assumeIsolated { ZoomControl.apply(AppPrefs.load().ui.zoom) } }   // Zoom vor dem ersten Layout, Selbsttest 100 %
@@ -654,7 +659,7 @@ if Session.isSelfTest, let shot = ProcessInfo.processInfo.environment["MIX741_SH
 }
 // Als SwiftPM-Executable ohne Bundle: als normale App im Dock starten.
 NSApplication.shared.setActivationPolicy(.regular)
-if ProcessInfo.processInfo.environment["MIX741_SHOT"] == nil { NSApplication.shared.activate(ignoringOtherApps: true) }
+if ProcessInfo.processInfo.environment["MIX741_SHOT"] == nil, !E2E.isActive { NSApplication.shared.activate(ignoringOtherApps: true) }
 setAppIcon()
 MixApp.main()
 
