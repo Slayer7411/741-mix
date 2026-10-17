@@ -55,6 +55,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * collection check: actions on the selected rows, toolbar and right click: `Aus Collection entfernen` (ENTRY and playlist references out, files stay), `Aus Collection entfernen + Dateien` (files to the trash, never deleted; cloud placeholders: the local entry only), `Analysieren`, `Fehlende → TIDAL` (missing files). every removal asks first with counts and the first 10 entries, cancel is the default; writing into the collection off -> asks to switch it on for the action
 
 ### changed
+* top bar: master clock and bar counter exactly centred whatever the FX units weigh; on narrow windows the centre moves to its own row above the sides instead of clipping them
 * analysis: a new (re-)analysis reaches a loaded deck right away (grid unless edited by hand, bpm, key, loudness for auto gain), no reload needed; the browser lists follow as before
 * collection check: double click on a column divider fits the column to its longest text, as in the track table
 * waveform: ruler strip no longer darkened on its own (phrase tint runs the full height), auto loop without frame (it drew a line along the top and bottom of the whole track), tint and `AUTO` only

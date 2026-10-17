@@ -342,6 +342,7 @@ struct TopBarHost: View {
                     .scaleEffect(s, anchor: .topLeading)
             }
             .frame(height: natural > 0 ? (natural * s).rounded() : nil)
+            .fixedSize(horizontal: false, vertical: true)   // Höhe nicht vom Deck-Bereich zusammendrücken lassen
             .clipped()
             Rectangle().fill(Theme.hairline).frame(height: 1)
                 .padding(.top, 2.z)
@@ -364,32 +365,91 @@ struct TopBarHost: View {
     }
 }
 
-/// Obere Leiste: FX 1 · Master-Clock · FX 2
+/// Drei Gruppen (links, Mitte, rechts): die Mitte sitzt exakt auf der Mitte der Breite, unabhängig von den Seiten.
+/// Passt eine Seite nicht mehr neben die Mitte, rückt die Mitte in eine Zeile darüber, die Seiten darunter (kein Überlappen)
+struct CentredBar: Layout {
+    var gap: CGFloat
+
+    /// Rahmen je Gruppe (Index 0 links, 1 Mitte, 2 rechts) und Gesamtgröße
+    private func plan(_ width: CGFloat?, _ subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
+        // Höhe bei der eigenen Breite messen: Zeilen, die umbrechen, sind sonst ohne Breite zu niedrig
+        let s = subviews.map { v -> CGSize in
+            let w = v.sizeThatFits(.unspecified).width
+            return v.sizeThatFits(ProposedViewSize(width: w, height: nil))
+        }
+        let (l, c, r) = (s[0], s[1], s[2])
+        let side = max(l.width, r.width)
+        let w = width ?? c.width + 2 * (side > 0 ? side + gap : 0)
+        var frames = [CGRect](repeating: .zero, count: 3)
+        // nebeneinander: jede Seite in ihrer Hälfte neben der Mitte
+        if c.width <= w, side == 0 || side + gap <= (w - c.width) / 2 {
+            let h = max(l.height, c.height, r.height)
+            frames[0] = CGRect(x: 0, y: (h - l.height) / 2, width: l.width, height: l.height)
+            frames[1] = CGRect(x: (w - c.width) / 2, y: (h - c.height) / 2, width: c.width, height: c.height)
+            frames[2] = CGRect(x: w - r.width, y: (h - r.height) / 2, width: r.width, height: r.height)
+            return (CGSize(width: w, height: h), frames)
+        }
+        // zu schmal: Mitte allein oben, darunter Seiten (nebeneinander, wenn sie passen)
+        frames[1] = CGRect(x: max(0, (w - c.width) / 2), y: 0, width: c.width, height: c.height)
+        var y = c.height
+        let rows: [[Int]] = l.width > 0 && r.width > 0 && l.width + gap + r.width <= w ? [[0, 2]] : [[0], [2]]
+        for row in rows where row.contains(where: { s[$0].width > 0 }) {
+            let h = row.map { s[$0].height }.max() ?? 0
+            y += y > 0 ? gap : 0
+            for i in row where s[i].width > 0 {
+                let x = i == 0 ? 0 : w - s[i].width
+                frames[i] = CGRect(x: x, y: y + (h - s[i].height) / 2, width: s[i].width, height: s[i].height)
+            }
+            y += h
+        }
+        return (CGSize(width: w, height: y), frames)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 3 else { return .zero }
+        return plan(proposal.width, subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 3 else { return }
+        let f = plan(bounds.width, subviews).frames
+        for i in 0..<3 where f[i].width > 0 {
+            subviews[i].place(at: CGPoint(x: bounds.minX + f[i].minX, y: bounds.minY + f[i].minY), anchor: .topLeading,
+                              proposal: ProposedViewSize(f[i].size))
+        }
+    }
+}
+
+/// Obere Leiste: FX 1 links · Master-Clock und Bar-Zähler mittig · Uhr, Aufnahme, FX 2 rechts
 struct TopBar: View {
     @Environment(MixModel.self) private var mix
 
     var body: some View {
-        HStack(spacing: 6.z) {
-            if mix.prefs.ui.showFXUnits {
-                FXUnitView(u: 0)
-                if mix.prefs.ui.fxUnitCount == 4 { FXUnitView(u: 2) }
+        CentredBar(gap: 6.z) {
+            HStack(spacing: 6.z) {
+                if mix.prefs.ui.showFXUnits {
+                    FXUnitView(u: 0)
+                    if mix.prefs.ui.fxUnitCount == 4 { FXUnitView(u: 2) }
+                }
             }
-            Spacer(minLength: 4.z)
-            MasterClockPanel()
-            BarCounter()
-            SessionClockView()
-            RecordPanel()
-            HelpModeButton()
-            Button { mix.core.resetSession() } label: {
-                Text("↺").font(Theme.mono(14.z)).foregroundStyle(Theme.bone).frame(width: 22.z, height: 42.z)
+            HStack(spacing: 6.z) {
+                MasterClockPanel()
+                BarCounter()
+                Button { mix.core.resetSession() } label: {
+                    Text("↺").font(Theme.mono(14.z)).foregroundStyle(Theme.bone).frame(width: 22.z, height: 42.z)
+                }
+                .buttonStyle(.plain)
+                .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+                .help("Takt-Zähler neu starten: der aktuelle Beat wird Takt 1")
             }
-            .buttonStyle(.plain)
-            .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-            .help("Takt-Zähler neu starten: der aktuelle Beat wird Takt 1")
-            Spacer(minLength: 4.z)
-            if mix.prefs.ui.showFXUnits {
-                FXUnitView(u: 1)
-                if mix.prefs.ui.fxUnitCount == 4 { FXUnitView(u: 3) }
+            HStack(spacing: 6.z) {
+                SessionClockView()
+                RecordPanel()
+                HelpModeButton()
+                if mix.prefs.ui.showFXUnits {
+                    FXUnitView(u: 1)
+                    if mix.prefs.ui.fxUnitCount == 4 { FXUnitView(u: 3) }
+                }
             }
         }
     }
@@ -412,7 +472,7 @@ struct MasterClockPanel: View {
                 .help("Einstellungen (⌘,)")
         }
         .padding(.horizontal, 8.z)
-        .padding(.vertical, 4.z)
+        .frame(height: 42.z)   // gleiche Höhe wie Bar-Zähler, Uhr und Aufnahme
         .background(Rectangle().fill(Theme.deck))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
     }
@@ -546,16 +606,18 @@ struct BarCounter: View {
             let frac = beat - beat.rounded(.down)
             let pulse = CGFloat(max(0, 1 - frac * 2.5))
             let phraseBars = max(1, mix.prefs.ui.phraseBeats / 4)
-            CG.text("\(bar % phraseBars + 1).\(inBar + 1)", size: 15, weight: "SemiBold", color: CG.boneNS, rightAt: 46, y: 4)
+            CG.text("\(bar % phraseBars + 1).\(inBar + 1)", size: 15, weight: "SemiBold", color: CG.boneNS, rightAt: 46, y: 5)
             let toNext16 = 16 - bar % 16
-            CG.text("16 ▸ \(toNext16)", size: 9, weight: "Regular", color: toNext16 == 1 ? CG.stateNS : CG.mutedNS, rightAt: 46, y: 26)
+            CG.text("16 ▸ \(toNext16)", size: 9, weight: "Regular", color: toNext16 == 1 ? CG.stateNS : CG.mutedNS, rightAt: 46, y: 25)
             let x0: CGFloat = 66, w = size.width - x0 - 4
+            // drei Reihen gleicher Höhe und Abstand, mittig im Feld; je Reihe gleich breite Zellen, Lücke 2 pt,
+            // alle Reihen auf derselben linken und rechten Kante
             for (row, n) in [4, 8, 16].enumerated() {
-                let y = 3 + CGFloat(row) * 13, h: CGFloat = 10
-                let cw = w / CGFloat(n)
+                let y = 5.5 + CGFloat(row) * 11, h: CGFloat = 9
+                let cw = (w - 2 * CGFloat(n - 1)) / CGFloat(n)
                 let cur = bar % n
                 for i in 0..<n {
-                    let r = CGRect(x: x0 + CGFloat(i) * cw + 1, y: y, width: cw - 2, height: h)
+                    let r = CGRect(x: x0 + CGFloat(i) * (cw + 2), y: y, width: cw, height: h)
                     let last = cur == n - 1
                     if i < cur {
                         ctx.setFillColor(Self.played)
@@ -572,7 +634,7 @@ struct BarCounter: View {
                         ctx.fill(CGRect(x: r.minX + r.width * CGFloat(inBar + 1) / 4, y: r.minY, width: r.width * CGFloat(3 - inBar) / 4, height: r.height))
                     }
                 }
-                CG.text("\(n)", size: 8, weight: "Regular", color: CG.mutedNS, rightAt: x0 - 2 + 0, y: y - 1)
+                CG.text("\(n)", size: 8, weight: "Regular", color: CG.mutedNS, rightAt: x0 - 3, y: y - 1)
             }
         }
         .frame(width: 300.z, height: 42.z)

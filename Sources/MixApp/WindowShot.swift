@@ -72,6 +72,8 @@ enum WindowShot {
             LayoutProfiles.apply(p, mix: mix, browser: browser)
             log("Profil \(p.name): \(p.deckCount) Decks, Mixer \(p.showMixer), Browser \(p.browserLayout.rawValue) \(Int(p.browserHeight)) pt")
         }
+        // MIX741_SHOT_FX=0|1: FX-Units in der oberen Leiste aus / an (nur dieses Bild)
+        if let fx = env["MIX741_SHOT_FX"] { mix.prefs.ui.showFXUnits = fx != "0" }
         store.load()
         spin(120, until: { !store.tracks.isEmpty })
         // nur Dateien mit Inhalt auf der Platte, mit Grid, Key und Tags; je Künstler einer. 4 Decks, 12 Preparation
