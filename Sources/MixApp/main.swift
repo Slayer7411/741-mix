@@ -318,6 +318,10 @@ struct ContentView: View {
 /// Beenden nur nach Rückfrage (Sicherheit im Set); davor Sitzung und History schreiben
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var onQuit: (@MainActor () -> Void)?
+    /// Dock-Menü: LIVE, Decks stoppen, Einstellungen, Einrichtung (Modell gesetzt in startControllers)
+    let dockMenu = MainActor.assumeIsolated { DockMenu() }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? { MainActor.assumeIsolated { dockMenu.menu() } }
 
     /// Fenster weg (auf welchem Weg auch immer) -> Beenden mit Rückfrage statt App ohne Fenster
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -411,6 +415,7 @@ struct MixApp: App {
             // alle Kürzel aus den Einstellungen (⌘, -> Tastatur); ausgelöst werden sie vom KeyMonitor
             let keys = mix.prefs.keys
             let run = actions
+            let model = mix, library = store   // für Fenster, die die Werte später selbst lesen
             CommandGroup(after: .newItem) {
                 Button(ShortcutID.openCollection.title) { run(.openCollection) }
                     .shortcut(keys.combo(.openCollection))
@@ -418,6 +423,10 @@ struct MixApp: App {
             CommandGroup(replacing: .appSettings) {
                 SettingsLink { Text(ShortcutID.settings.title) }
                     .shortcut(keys.combo(.settings))
+            }
+            CommandGroup(replacing: .appInfo) {
+                Button(String(localized: "Über MINOS-741")) { AboutWindow.show() }
+                Button(String(localized: "Nach Updates suchen …")) { Updater.shared.check(manual: true) }
             }
             CommandGroup(after: .appInfo) {
                 let up = Updater.shared
@@ -429,9 +438,21 @@ struct MixApp: App {
                     Button(String(localized: "Vorherige Version wiederherstellen …")) { up.rollback() }
                 }
             }
-            CommandGroup(after: .help) {
+            CommandGroup(replacing: .help) {
+                Button(String(localized: "MINOS-741 Handbuch")) { ManualWindow.show() }
+                Button(String(localized: "Tastenkürzel")) { ShortcutWindow.show(keys: { model.prefs.keys }) }
+                Divider()
+                Button(String(localized: "Fehler melden …")) { CrashLinks.open(BugReport.url(BugReport.current())) }
+                Button(String(localized: "Protokoll anzeigen")) { StatusLogWindow.show() }
+                Divider()
                 Button(String(localized: "Einrichtung …")) { NotificationCenter.default.post(name: .showSetup, object: nil) }
                 Button(String(localized: "Kauf mir einen Kaffee …")) { NotificationCenter.default.post(name: .showDonate, object: nil) }
+            }
+            CommandGroup(replacing: .importExport) {
+                Button(String(localized: "Einstellungen exportieren …")) { SettingsTransfer.exportAsking() }
+                Button(String(localized: "Einstellungen importieren …")) { SettingsTransfer.importAsking(mix: model) }
+                Divider()
+                Button(String(localized: "Collection-Backup wiederherstellen …")) { CollectionBackupWindow.show(store: library) }
             }
             CommandGroup(replacing: .saveItem) {
                 Button(String(localized: "Fenster schließen")) { run(.closeWindow) }
@@ -582,6 +603,7 @@ extension MixApp {
         mix.autoMix.store = store
         mix.autoMix.history = history
         mix.autoMix.browser = browser
+        appDelegate.dockMenu.mix = mix
         appDelegate.onQuit = { [mix, browser, history] in
             mix.recorder.stopNow()   // laufende Aufnahme sauber schließen (Tracklist dabei)
             Session.saveNow(mix: mix, browser: browser)
@@ -681,6 +703,7 @@ MainActor.assumeIsolated { TableShot.runIfRequested() }   // nur Selbsttest mit 
 MainActor.assumeIsolated { SettingsShot.runPluginsIfRequested() }   // nur PLUGINS-Tab, ohne Audio: MIX741_SHOT=plugins:<ordner>
 MainActor.assumeIsolated { SetupShot.runIfRequested() }
 MainActor.assumeIsolated { CrashShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=crash:<png>, endet mit exit(0)   // nur Selbsttest mit MIX741_SHOT=setup:<png>, MIX741_SHOT_STEP=collection|music|audio|network|done
+MainActor.assumeIsolated { BasicsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=basics:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=status:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { CloudShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cloud:<ordner>, endet mit exit(0)

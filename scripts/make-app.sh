@@ -24,6 +24,8 @@ cp "$BIN/minos741" "$APP/Contents/MacOS/MINOS-741"
 cp "$BIN/minos-files" "$APP/Contents/MacOS/minos-files"
 cp -R Sources/MixApp/Resources/. "$APP/Contents/Resources/Resources/"
 cp -R Localization/. "$APP/Contents/Resources/"
+# Handbuch fürs Hilfe-Menü („MINOS-741 Handbuch“, in der App lesbar)
+cp docs/MANUAL.md "$APP/Contents/Resources/Resources/MANUAL.md"
 # Lizenzhinweise der fremden Bibliotheken (VST 3 SDK: MIT-Text + Markenhinweis) mit ausliefern
 cp THIRD-PARTY-NOTICES.md "$APP/Contents/Resources/"
 

@@ -1,0 +1,34 @@
+{
+  "name": "backup-restore",
+  "description": "Grundfunktionen: Fenster (Über, Handbuch, Tastenkürzel, Protokoll, Backup) werden gemerkt, nie gezeigt; Fehlermeldung nur als Adresse gemerkt; Sicherung anlegen, wiederherstellen (bisheriger Stand wird vorher gesichert), Bibliothek lädt neu",
+  "instances": ["A"],
+  "steps": [
+    {"do": "wait-ready", "timeout": 60, "expect": [{"path": "body.tracks", "equals": 10}]},
+    {"do": "window", "args": {"id": "about"}, "expect": [{"path": "body.recorded", "contains": "about"}]},
+    {"do": "window", "args": {"id": "manual"}, "expect": [{"path": "body.recorded", "contains": "manual"}]},
+    {"do": "window", "args": {"id": "shortcuts"}, "expect": [{"path": "body.recorded", "contains": "shortcuts"}]},
+    {"do": "window", "args": {"id": "log"}, "expect": [{"path": "body.recorded", "contains": "log"}]},
+    {"do": "window", "args": {"id": "backups"}, "expect": [{"path": "body.recorded", "contains": "backups"}]},
+    {"do": "issue", "expect": [
+      {"path": "body.opened.0", "startswith": "https://github.com/Slayer7411/MINOS-741/issues/new?title=Bug%20report%3A%20"},
+      {"path": "body.opened.0", "not_contains": "/Users/"}
+    ]},
+    {"do": "backup-list", "retry": true, "expect": [{"path": "body.backups.0", "exists": false}]},
+    {"do": "backup-now", "save": {"bk": "body.name"}, "expect": [{"path": "body.name", "matches": "^collection_\\d{4}-\\d{2}-\\d{2}_\\d{6}\\.nml$"}]},
+    {"do": "backup-list", "retry": true, "expect": [
+      {"path": "body.backups.0.tracks", "equals": 10},
+      {"path": "body.backups.0.bytes", "gt": 0}
+    ]},
+    {"do": "sleep", "seconds": 1.2},
+    {"do": "backup-restore", "args": {"name": "${bk}"}, "expect": [{"path": "body.tracks", "equals": 10}]},
+    {"do": "snapshot", "retry": true, "timeout": 30, "expect": [
+      {"path": "body.library.loaded", "equals": true},
+      {"path": "body.library.tracks", "equals": 10}
+    ]},
+    {"do": "backup-list", "retry": true, "expect": [
+      {"path": "body.backups.1.tracks", "equals": 10},
+      {"path": "body.backups.0.tracks", "equals": 10}
+    ]},
+    {"do": "file-check", "path": "${root}/collection/Backup MINOS-741/${bk}", "exists": true}
+  ]
+}

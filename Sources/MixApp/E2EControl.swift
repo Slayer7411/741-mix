@@ -250,6 +250,45 @@ final class E2EControl {
             }
             if req.command == "update-install" { Updater.shared.install(completion: cb) } else { Updater.shared.rollback(completion: cb) }
 
+        case "window":
+            // Grundfunktionen-Fenster wie aus dem Menü; im Ende-zu-Ende nie sichtbar, nur gemerkt (BasicWindows)
+            switch a["id"] as? String ?? "" {
+            case "about": AboutWindow.show()
+            case "manual": ManualWindow.show()
+            case "shortcuts": ShortcutWindow.show(keys: { [mix] in mix.prefs.keys })
+            case "log": StatusLogWindow.show()
+            case "backups": CollectionBackupWindow.show(store: store)
+            default: return done(false, "unbekanntes Fenster")
+            }
+            done(true, ["recorded": BasicWindows.recorded])
+
+        case "issue":
+            // Fehlermeldung: nur die Adresse wird gemerkt (CrashLinks), nie im Browser
+            CrashLinks.open(BugReport.url(BugReport.current()))
+            done(true, ["opened": CrashLinks.recorded])
+
+        case "backup-list":
+            let dir = CollectionBackups.folder(for: store.sourceURL ?? LibraryStore.defaultNML)
+            done(true, ["backups": CollectionBackups.list(in: dir).map { e -> [String: Any] in
+                ["name": e.id, "tracks": CollectionBackups.trackCount(e.url) ?? -1, "bytes": e.bytes]
+            }])
+
+        case "backup-now":
+            do {
+                let url = try CollectionBackups.backupNow(store.sourceURL ?? LibraryStore.defaultNML)
+                done(url != nil, ["name": url?.lastPathComponent ?? ""])
+            } catch {
+                done(false, error.localizedDescription)
+            }
+
+        case "backup-restore":
+            let dir = CollectionBackups.folder(for: store.sourceURL ?? LibraryStore.defaultNML)
+            guard let e = CollectionBackups.list(in: dir).first(where: { $0.id == (a["name"] as? String ?? "") }) else {
+                return done(false, "Sicherung fehlt")
+            }
+            let r = CollectionRestore.run(e.url, store: store)
+            done(r.ok, ["message": r.message, "tracks": r.tracks ?? -1])
+
         case "drag":
             done(false, "nicht verdrahtet: Ziehen läuft über Fenster-Ereignisse (NSDraggingInfo); "
                  + "Ersatz: load (Deck), add-to-playlist (Playlist)")
