@@ -118,6 +118,23 @@ final class SetupFlow {
     }
 }
 
+/// Zeile im Sheet: Look wie SettingsRowStyle (Plex Mono, Beschriftung links), aber schmale Beschriftungsspalte,
+/// weil das Sheet nur 560 pt breit ist
+private struct SetupRowStyle: LabeledContentStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .center, spacing: 12.z) {
+            configuration.label
+                .font(Theme.mono(11.z)).foregroundStyle(Theme.bone)
+                .frame(width: 64.z, alignment: .leading)
+            configuration.content
+                .font(Theme.mono(11.z))
+                .frame(maxWidth: 380.z, alignment: .leading)
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 22.z)
+    }
+}
+
 /// Das Sheet: ein Schritt nach dem anderen, Kopf mit Nummer, Fuß mit Zurück / Überspringen / Weiter
 struct SetupFlowView: View {
     @Environment(MixModel.self) private var mix
@@ -126,12 +143,13 @@ struct SetupFlowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14.z) {
-            HStack {
+            HStack(alignment: .center, spacing: 12.z) {
                 Text("EINRICHTUNG · SCHRITT \(flow.step.number) VON \(SetupFlow.Step.allCases.count)")
-                    .font(Theme.mono(10.z)).foregroundStyle(Theme.bone.opacity(0.6))
+                    .font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
                 Spacer()
+                progress
             }
-            Text(title).font(Theme.label(15.z))
+            Text(title).font(Theme.label(15.z)).textCase(.uppercase).foregroundStyle(Theme.bone)
             Group {
                 switch flow.step {
                 case .collection: collectionStep
@@ -141,8 +159,9 @@ struct SetupFlowView: View {
                 case .done: doneStep
                 }
             }
+            .font(Theme.mono(11.z))
             .frame(maxWidth: .infinity, alignment: .leading)
-            Divider()
+            Rectangle().fill(Theme.hairline).frame(height: 1)
             footer
         }
         .padding(18.z)
@@ -150,6 +169,26 @@ struct SetupFlowView: View {
         .background(Theme.background)
         .foregroundStyle(Theme.bone)
         .tint(Theme.state)
+        // Esc: auf dem letzten Schritt schließen (sonst überspringt der Abbrechen-Schalter den Schritt)
+        .onExitCommand { if flow.step == .done { flow.close() } }
+    }
+
+    /// Fortschritt: ein Haarlinien-Segment je Schritt, der aktuelle gefüllt
+    private var progress: some View {
+        HStack(spacing: 4.z) {
+            ForEach(SetupFlow.Step.allCases) { s in
+                Rectangle()
+                    .fill(s == flow.step ? Theme.bone : Color.clear)
+                    .overlay(Rectangle().stroke(s == flow.step ? Theme.bone : Theme.hairline, lineWidth: 1))
+                    .frame(width: 18.z, height: 4.z)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// Flacher 741-Schalter (wie DeckButton): Versalien, Haarlinie; `primary` = rot gefüllt
+    private func button(_ title: String, primary: Bool = false, _ action: @escaping () -> Void) -> some View {
+        DeckButton(title: title, active: primary, action: action).textCase(.uppercase)
     }
 
     private var title: String {
@@ -169,14 +208,14 @@ struct SetupFlowView: View {
             Text("MINOS-741 liest die Collection (collection.nml) deiner DJ-Software. Ohne sie zeigt das Fenster nur die Musik-Ordner.")
                 .fixedSize(horizontal: false, vertical: true)
             if let c = LibraryStore.chosenNML, FileManager.default.fileExists(atPath: c.path) {
-                Text("Gewählt: \(c.path)").font(Theme.mono(10.z)).lineLimit(2).truncationMode(.middle)
+                Text("Gewählt: \(c.path)").font(Theme.mono(10.z)).foregroundStyle(Theme.muted).lineLimit(2).truncationMode(.middle)
             } else if FileManager.default.fileExists(atPath: LibraryStore.defaultNML.path) {
-                Text("Gefunden: \(LibraryStore.defaultNML.path)").font(Theme.mono(10.z)).lineLimit(2).truncationMode(.middle)
+                Text("Gefunden: \(LibraryStore.defaultNML.path)").font(Theme.mono(10.z)).foregroundStyle(Theme.muted).lineLimit(2).truncationMode(.middle)
             } else {
                 Text("Keine Collection gefunden.").font(Theme.mono(10.z)).foregroundStyle(Theme.state)
             }
             HStack {
-                Button("Collection wählen …") { chooseCollection() }
+                button("Collection wählen …") { chooseCollection() }
                 Spacer()
             }
             Text("Der Datenordner (Einstellungen, Verlauf) liegt dann neben dieser Datei. Er wird beim nächsten Start benutzt.")
@@ -191,20 +230,20 @@ struct SetupFlowView: View {
                 .fixedSize(horizontal: false, vertical: true)
             let roots = store.folders.roots
             if mix.prefs.ui.musicFolders.isEmpty {
-                Text("Automatisch: \(store.folders.defaultRoot ?? "–")").font(Theme.mono(10.z)).lineLimit(1).truncationMode(.middle)
+                Text("Automatisch: \(store.folders.defaultRoot ?? "–")").font(Theme.mono(10.z)).foregroundStyle(Theme.muted).lineLimit(1).truncationMode(.middle)
             }
             ForEach(roots, id: \.self) { p in
                 Text(verbatim: p).font(Theme.mono(10.z)).lineLimit(1).truncationMode(.middle)
             }
             ForEach(drive.filter { !roots.contains($0) }, id: \.self) { p in
                 HStack {
-                    Text("Google Drive: \(p)").font(Theme.mono(10.z)).lineLimit(1).truncationMode(.middle)
+                    Text("Google Drive: \(p)").font(Theme.mono(10.z)).foregroundStyle(Theme.muted).lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Button("Hinzufügen") { flow.addMusicFolders([p], store: store) }
+                    button("Hinzufügen") { flow.addMusicFolders([p], store: store) }
                 }
             }
             HStack {
-                Button("Ordner hinzufügen …") { addFolders() }
+                button("Ordner hinzufügen …") { addFolders() }
                 Spacer()
             }
         }
@@ -218,11 +257,15 @@ struct SetupFlowView: View {
                 Text("Das gespeicherte Gerät ist nicht angeschlossen. Anschließen oder „Systemstandard“ wählen.")
                     .foregroundStyle(Theme.state).fixedSize(horizontal: false, vertical: true)
             }
+            // Zeilen, Radio und Tasten wie in den Einstellungen (SettingsPage), Beschriftungsspalte schmaler
             Form {
                 AudioDevicePicker()
                 MixerModePicker()
             }
             .formStyle(SettingsFormStyle())
+            .labeledContentStyle(SetupRowStyle())
+            .buttonStyle(SettingsButtonStyle())
+            .controlSize(.small)
             Text(mix.engineStatus).settingsHint()
         }
     }
@@ -232,7 +275,7 @@ struct SetupFlowView: View {
             Text("Der Zwei-Mac-Modus und Link finden den anderen Rechner im lokalen Netz. macOS fragt dafür einmal nach der Berechtigung „Lokales Netzwerk“. Wurde sie abgelehnt, lässt sie sich nur in den Systemeinstellungen wieder einschalten.")
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("Systemeinstellungen öffnen …") {
+                button("Systemeinstellungen öffnen …") {
                     if let u = URL(string: SetupFlow.privacyLocalNetwork) { NSWorkspace.shared.open(u) }
                 }
                 Spacer()
@@ -255,7 +298,7 @@ struct SetupFlowView: View {
 
     private func summary(_ k: String, _ v: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(k).font(Theme.label(10.z)).frame(width: 130.z, alignment: .leading)
+            Text(k).font(Theme.label(10.z)).textCase(.uppercase).foregroundStyle(Theme.muted).frame(width: 130.z, alignment: .leading)
             Text(verbatim: v).font(Theme.mono(10.z)).lineLimit(2).truncationMode(.middle)
             Spacer()
         }
@@ -263,20 +306,22 @@ struct SetupFlowView: View {
 
     // MARK: Fuß
 
+    /// Zurück links; rechts Überspringen (Esc) und Weiter (Return). Auf dem letzten Schritt Fertig (Return, Esc schließt).
     private var footer: some View {
         let steps = SetupFlow.Step.allCases
         let i = steps.firstIndex(of: flow.step) ?? 0
         let last = flow.step == .done
         return HStack(spacing: 8.z) {
-            if i > 0 { Button("Zurück") { flow.step = steps[i - 1] } }
+            if i > 0 { button("Zurück") { flow.step = steps[i - 1] } }
             Spacer()
             if !last {
-                Button(flow.step == .collection ? "Ohne Collection weiter" : "Überspringen") { flow.step = steps[i + 1] }
+                button(flow.step == .collection ? "Ohne Collection weiter" : "Überspringen") { flow.step = steps[i + 1] }
+                    .keyboardShortcut(.cancelAction)
             }
             if last {
-                Button("Fertig") { flow.close() }.keyboardShortcut(.defaultAction)
+                button("Fertig", primary: true) { flow.close() }.keyboardShortcut(.defaultAction)
             } else {
-                Button("Weiter") { flow.step = steps[i + 1] }.keyboardShortcut(.defaultAction)
+                button("Weiter", primary: true) { flow.step = steps[i + 1] }.keyboardShortcut(.defaultAction)
             }
         }
     }

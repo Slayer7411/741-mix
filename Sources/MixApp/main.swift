@@ -660,7 +660,8 @@ MainActor.assumeIsolated { CoverShot.runIfRequested() }   // nur Selbsttest mit 
 MainActor.assumeIsolated { TagShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=tags:<ordner>, endet mit exit
 MainActor.assumeIsolated { TableShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=table:<ordner>, endet mit exit
 MainActor.assumeIsolated { SettingsShot.runPluginsIfRequested() }   // nur PLUGINS-Tab, ohne Audio: MIX741_SHOT=plugins:<ordner>
-MainActor.assumeIsolated { SetupShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=setup:<png>, MIX741_SHOT_STEP=collection|music|audio|network|done
+MainActor.assumeIsolated { SetupShot.runIfRequested() }
+MainActor.assumeIsolated { CrashShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=crash:<png>, endet mit exit(0)   // nur Selbsttest mit MIX741_SHOT=setup:<png>, MIX741_SHOT_STEP=collection|music|audio|network|done
 MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=status:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { CloudShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cloud:<ordner>, endet mit exit(0)
