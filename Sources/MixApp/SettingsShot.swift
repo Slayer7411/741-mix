@@ -62,6 +62,11 @@ enum SettingsShot {
         nav.flash = "audio.buffer"
         render(AnyView(SettingsView(nav: nav).environment(mix).environment(store).environment(status).environment(browser).frame(width: 820, height: 640)),
                to: dir.appendingPathComponent("00-suche-sprung.png"))
+        // Unterseite ERWEITERT von AUDIO (eigene Seite im Bereich)
+        let advNav = SettingsNav(tab: "AUDIO")
+        advNav.advancedTabs = ["AUDIO"]
+        render(AnyView(SettingsView(nav: advNav).environment(mix).environment(store).environment(status).environment(browser).frame(width: 820, height: 640)),
+               to: dir.appendingPathComponent("00-audio-erweitert.png"))
         // Favoriten: vier markierte Einstellungen (nur im Speicher, Selbsttest speichert nichts), Seite FAVORITEN und Popover
         mix.prefs.ui.settingsFavorites = ["decks.snap", "decks.loopsize", "mixer.xfader", "browser.live.on"]
         let favIDs = SettingsFavorites.resolved(mix.prefs.ui.settingsFavorites, known: SettingsIndex.anchors)

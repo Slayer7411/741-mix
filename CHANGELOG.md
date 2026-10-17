@@ -17,7 +17,7 @@ codenames: every major version is named after a circle of hell (minos judges the
 * basics: dock menu: LIVE, stop all decks, settings, setup
 
 ### changed
-* settings (⌘,): regrouped into tabs by task. new first tab ALLGEMEIN (setup, language and zoom, data folder, updates, crash reports, LIVE, start behavior; opens on first start only), new LIVE & SYNC (live readability, two macs, link, DAW bridge, groove). rare options sit in a collapsible ERWEITERT section at the bottom of each tab (search opens it). favorites: ☆ on every setting, FAVORITEN page, and a ★ popover in the top bar; stored in the settings file.
+* settings (⌘,): regrouped into tabs by task. new first tab ALLGEMEIN (setup, language and zoom, data folder, updates, crash reports, LIVE, start behavior; opens on first start only), new LIVE & SYNC (live readability, two macs, link, DAW bridge, groove). rare options sit on an ERWEITERT sub-page per tab (link at the bottom of each tab; search and deep links open it). favorites: ☆ on every setting, FAVORITEN page, and a ★ popover in the top bar; stored in the settings file.
 
 ### fixed
 * updates: release downloads redirected to `release-assets.githubusercontent.com` were refused silently (check found nothing). redirect target allowed, https only. `Jetzt prüfen` shows every outcome with its reason; automatic failures go to the status log after the first one

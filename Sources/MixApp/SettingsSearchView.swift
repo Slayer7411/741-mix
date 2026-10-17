@@ -17,6 +17,8 @@ final class SettingsNav {
     /// Anker, der gerade lila hervorgehoben ist
     var flash: String?
     var jump: Jump?
+    /// Bereiche, die gerade ihre Unterseite ERWEITERT zeigen (bleibt je Bereich, solange das Fenster offen ist)
+    var advancedTabs: Set<String> = []
     /// hochzählen = Suchfeld fokussieren (⌘F)
     var focus = 0
     @ObservationIgnored weak var window: NSWindow?
@@ -29,8 +31,14 @@ final class SettingsNav {
     func open(_ e: SettingsEntry) {
         tab = e.tab
         showResults = false
+        // ERWEITERT-Zeile: deren Unterseite direkt zeigen; sonst die Hauptseite des Bereichs
+        setAdvanced(e.tab, e.advanced)
         jumps += 1
         jump = Jump(entry: e, n: jumps)
+    }
+
+    func setAdvanced(_ tab: String, _ on: Bool) {
+        if on { advancedTabs.insert(tab) } else { advancedTabs.remove(tab) }
     }
 
     /// Bereich in der Seitenleiste angeklickt: Suche weg

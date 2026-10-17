@@ -25,8 +25,9 @@ struct BrowserRowsSettings: View {
             .settingsAnchor("browser.detailbar")
             Toggle("Werte kürzen", isOn: $mix.prefs.ui.shortValues)
                 .settingsAnchor("browser.shortvalues")
-            Text("gilt für bereiche ohne eigene wahl; je bereich umschaltbar mit ≡ / ☰ und ▭ im kopf. werte kürzen: version im titel als kürzel (OM, EXT, RMX …), titel und artist in der mitte gekürzt, bpm ganzzahlig, datum kurz. sortierung und suche nutzen die vollen werte.")
+            Text("gilt für bereiche ohne eigene wahl; je bereich umschaltbar mit ≡ / ☰ und ▭.")
                 .settingsHint()
+                .help("gilt für bereiche ohne eigene wahl; je bereich umschaltbar mit ≡ / ☰ und ▭ im kopf. werte kürzen: version im titel als kürzel (OM, EXT, RMX …), titel und artist in der mitte gekürzt, bpm ganzzahlig, datum kurz. sortierung und suche nutzen die vollen werte.")
             TrackPartsEditor(raw: $mix.prefs.ui.trackParts)
                 .settingsAnchor("browser.trackparts")
         }
@@ -67,8 +68,9 @@ struct TrackPartsEditor: View {
                     DeckButton(title: name.uppercased(), active: parts == preset, verbatim: true) { set(preset) }
                 }
             }
-            Text("zeile 1 bis „— Zeile 2 —“, der rest darunter. vorlage kommentar zuerst: kommentar · titel, darunter artist · tags. schmale spalten (☁✓, bpm, key, time …) bleiben eigene spalten.")
+            Text("zeile 1 bis „— Zeile 2 —“, der rest darunter.")
                 .settingsHint()
+                .help("zeile 1 bis „— Zeile 2 —“, der rest darunter. vorlage kommentar zuerst: kommentar · titel, darunter artist · tags. schmale spalten (☁✓, bpm, key, time …) bleiben eigene spalten.")
         }
     }
 

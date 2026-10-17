@@ -193,8 +193,9 @@ struct MixerProfileSettings: View {
             }
             Text(verbatim: String(localized: "Status") + ": " + link.statusText)
                 .settingsHint()
-            Text("24 Takte je Viertel aus der Master-Clock an den gewählten MIDI-Ausgang, Start und Stop folgen dem Transport. Wie das empfangende Gerät darauf reagiert, ist nicht geprüft.")
+            Text("24 Takte je Viertel aus der Master-Clock an den gewählten MIDI-Ausgang.")
                 .settingsHint()
+                .help("24 Takte je Viertel aus der Master-Clock an den gewählten MIDI-Ausgang, Start und Stop folgen dem Transport. Wie das empfangende Gerät darauf reagiert, ist nicht geprüft.")
         }
         .onAppear { link.refreshDestinations() }
     }

@@ -367,8 +367,9 @@ struct DAWBridgeSettings: View {
             Text(bridge.startError ?? (bridge.connected ? String(localized: "verbunden: \(bridge.clips.count) Clips")
                                                         : String(localized: "keine Verbindung")))
                 .settingsHint()
-            Text("remote script aus extras/daw-bridge in den ordner „Remote Scripts“ der DAW kopieren und dort als control surface wählen. nur 127.0.0.1, port gleich in config.json des scripts.")
+            Text("remote script aus extras/daw-bridge kopieren und als control surface wählen.")
                 .settingsHint()
+                .help("remote script aus extras/daw-bridge in den ordner „Remote Scripts“ der DAW kopieren und dort als control surface wählen. nur 127.0.0.1, port gleich in config.json des scripts.")
         }
     }
 }

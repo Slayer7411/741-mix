@@ -7,11 +7,12 @@ import MixEngine
 struct LiveSyncSettings: View {
     @Environment(MixModel.self) private var mix
     @Environment(\.settingsFilter) private var filter
-    @State private var advanced = false
+    @Environment(\.settingsAdvancedPage) private var advancedPage
 
     var body: some View {
         @Bindable var mix = mix
         Form {
+            if !advancedPage || filter != nil {
             Section("Live-Lesbarkeit") {
                 Toggle("Live-Lesbarkeit in der Liste", isOn: $mix.prefs.ui.liveList)
                     .settingsAnchor("browser.live.on")
@@ -70,11 +71,12 @@ struct LiveSyncSettings: View {
                 Text("im extern-modus z. b. auf das paar vom kopfhörer-cue legen -> klick nur auf dem kopfhörer").settingsHint()
             }
             DAWBridgeSettings()
-            SettingsAdvancedHeader(tab: "LIVE & SYNC", open: $advanced)
-            if advanced || filter != nil {
+                if filter == nil { SettingsAdvancedLink(tab: "LIVE & SYNC") }
+            }
+            if advancedPage || filter != nil {
+                SettingsAdvancedBack(tab: "LIVE & SYNC")
                 GrooveSettingsSection()
             }
         }
-        .settingsAdvancedReveal("LIVE & SYNC", open: $advanced)
     }
 }

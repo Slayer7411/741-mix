@@ -193,7 +193,7 @@ struct SetCheckView: View {
 
 struct CloudSettings: View {
     @Environment(\.settingsFilter) private var filter
-    @State private var advanced = false
+    @Environment(\.settingsAdvancedPage) private var advancedPage
     @Environment(MixModel.self) private var mix
     @Environment(LibraryStore.self) private var store
 
@@ -201,6 +201,7 @@ struct CloudSettings: View {
         @Bindable var mix = mix
         let c = CloudLibrary.shared
         Form {
+            if !advancedPage || filter != nil {
             Section("Cloud-Library") {
                 LabeledContent("Stand") { Text(verbatim: stateLine(c)).foregroundStyle((c.counts[.cloud] ?? 0) > 0 ? Theme.gold : Theme.bone) }
                     .settingsAnchor("cloud.state")
@@ -230,11 +231,35 @@ struct CloudSettings: View {
                 .settingsAnchor("cloud.minfree")
                 Toggle("Beim Beenden offene Downloads an den Anbieter übergeben", isOn: $mix.prefs.cloud.handOffOnQuit)
                     .settingsAnchor("cloud.handoff")
-                Text("ausgelagerte tracks (speicher optimieren) werden neu geholt. lokal halten lädt einzeln und zuletzt, bereitmachen geht vor, neue downloads warten, solange ein deck lädt. übergeben: der anbieter lädt nach dem beenden weiter, ohne MINOS-741.")
+                Text("ausgelagerte tracks werden neu geholt. übergeben: der anbieter lädt ohne MINOS-741 weiter.")
                     .settingsHint()
+                    .help("ausgelagerte tracks (speicher optimieren) werden neu geholt. lokal halten lädt einzeln und zuletzt, bereitmachen geht vor, neue downloads warten, solange ein deck lädt. übergeben: der anbieter lädt nach dem beenden weiter, ohne MINOS-741.")
+            }
+            TidalSettingsSection()
+                if filter == nil { SettingsAdvancedLink(tab: "CLOUD") }
+            }
+            if advancedPage || filter != nil {
+                SettingsAdvancedBack(tab: "CLOUD")
+                Section("Dauerhaft offline") {
+                    LabeledContent("Library-Ordner") {
+                        Text(verbatim: c.folder.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "—")
+                            .lineLimit(2).truncationMode(.head)
+                    }
+                    .settingsAnchor("cloud.folder")
+                    LabeledContent("Offline verfügbar") {
+                        Text(verbatim: pinLine(c)).foregroundStyle(c.folderStatus?.pin == .notPinned ? Theme.gold : Theme.bone)
+                    }
+                    .settingsAnchor("cloud.offline")
+                    HStack(spacing: 8) {
+                        Button("Im Finder zeigen") { c.revealFolder() }.disabled(c.folder == nil)
+                        Button("Prüfen") { c.checkFolder() }.disabled(c.folder == nil)
+                    }
+                    .settingsControlColumn()
+                    Text("\(c.provider ?? "Google Drive"): rechtsklick auf den ordner im finder -> „Offline verfügbar machen“. der anbieter hält dann alles lokal, auch ohne MINOS-741. MINOS-741 ändert keine einstellungen des anbieters.")
+                        .settingsHint()
+                }
             }
         }
-        .settingsAdvancedReveal("CLOUD", open: $advanced)
         .onAppear {
             if c.lastScan == nil, !store.tracks.isEmpty { c.collectionChanged(store.tracks) }
             if c.folderStatus == nil { c.checkFolder() }
@@ -260,28 +285,6 @@ struct CloudSettings: View {
         case .pinned: t = String(localized: "ja (angeheftet)")
         case .notPinned: t = String(localized: "nein")
         case .unknown: t = String(localized: "nicht ermittelbar")
-            TidalSettingsSection()
-            SettingsAdvancedHeader(tab: "CLOUD", open: $advanced)
-            if advanced || filter != nil {
-                Section("Dauerhaft offline") {
-                    LabeledContent("Library-Ordner") {
-                        Text(verbatim: c.folder.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "—")
-                            .lineLimit(2).truncationMode(.head)
-                    }
-                    .settingsAnchor("cloud.folder")
-                    LabeledContent("Offline verfügbar") {
-                        Text(verbatim: pinLine(c)).foregroundStyle(c.folderStatus?.pin == .notPinned ? Theme.gold : Theme.bone)
-                    }
-                    .settingsAnchor("cloud.offline")
-                    HStack(spacing: 8) {
-                        Button("Im Finder zeigen") { c.revealFolder() }.disabled(c.folder == nil)
-                        Button("Prüfen") { c.checkFolder() }.disabled(c.folder == nil)
-                    }
-                    .settingsControlColumn()
-                    Text("\(c.provider ?? "Google Drive"): rechtsklick auf den ordner im finder -> „Offline verfügbar machen“. der anbieter hält dann alles lokal, auch ohne MINOS-741. MINOS-741 ändert keine einstellungen des anbieters.")
-                        .settingsHint()
-                }
-            }
         }
         if let all = s.recursivelyDownloaded { t += " · " + (all ? String(localized: "alles lokal") : String(localized: "nicht alles lokal")) }
         return t

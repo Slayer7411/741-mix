@@ -92,7 +92,7 @@ struct TagColorSettings: View {
                     .settingsAnchor("tags.highlight")
                 Toggle("Gruppen (K / B / H …)", isOn: $mix.prefs.ui.tagGroups)
                     .settingsAnchor("tags.groups")
-                Text("einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe. je gruppe: name, farbe aus der wellenform oder eigene farbe").settingsHint()
+                Text("einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu.").settingsHint().help("einzelner großbuchstabe = gruppe, die folgenden tags gehören dazu und tragen ihre farbe. wort nur in großbuchstaben (BASIS) = rolle. tags ▾ zeigt eine spalte je gruppe. je gruppe: name, farbe aus der wellenform oder eigene farbe")
                 if mix.prefs.ui.tagGroups {
                     ForEach(groupMarkers, id: \.self) { g in
                         LabeledContent("Gruppe \(g)") {

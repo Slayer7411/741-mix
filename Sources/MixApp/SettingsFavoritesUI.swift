@@ -41,51 +41,51 @@ struct SettingsFavoritesList: View {
     }
 }
 
-/// Kopf „ERWEITERT“ am Seitenende (zugeklappt): ein Sprung der Suche auf einen Eintrag darin klappt ihn auf.
-/// Die Abschnitte selbst stehen danach im Bereich unter `open`
-struct SettingsAdvancedHeader: View {
+/// Umschalter der Unterseite ERWEITERT: an = die Unterseite des Bereichs (sonst die Hauptseite)
+extension EnvironmentValues {
+    @Entry var settingsAdvancedPage: Bool = false
+    @Entry var settingsSetAdvanced: ((String, Bool) -> Void)? = nil
+}
+
+/// Zeile „Erweitert ›“ am Ende der Hauptseite: wechselt auf die Unterseite des Bereichs
+struct SettingsAdvancedLink: View {
     let tab: String
-    @Binding var open: Bool
+    @Environment(\.settingsSetAdvanced) private var setAdvanced
 
     var body: some View {
         Section {
             EmptyView()
         } header: {
-            Button { open.toggle() } label: {
+            Button { setAdvanced?(tab, true) } label: {
                 HStack(spacing: 8) {
-                    Text(verbatim: open ? "▾" : "▸")
+                    Text("Erweitert")
+                    Spacer(minLength: 0)
+                    Text(verbatim: "›")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+/// Kopf der Unterseite ERWEITERT: „‹ BEREICH · ERWEITERT“, zurück zur Hauptseite
+struct SettingsAdvancedBack: View {
+    let tab: String
+    @Environment(\.settingsSetAdvanced) private var setAdvanced
+
+    var body: some View {
+        Section {
+            EmptyView()
+        } header: {
+            Button { setAdvanced?(tab, false) } label: {
+                HStack(spacing: 6) {
+                    Text(verbatim: "‹ " + tab + " · ")
                     Text("Erweitert")
                 }
             }
             .buttonStyle(.plain)
-            .id(Self.anchorID(tab))   // Ziel für den Sprung der Suche (Kopf, dann Zeile)
         }
-    }
-
-    static func anchorID(_ tab: String) -> String { "settings.advanced." + tab }
-}
-
-/// Auf der Form (nicht am Kopf): ein Sprung der Suche auf einen Eintrag in ERWEITERT dieses Bereichs klappt ihn auf.
-/// Modifier am Section-Kopf gingen verloren, weil der FormStyle die Abschnitte zerlegt
-struct SettingsAdvancedReveal: ViewModifier {
-    let tab: String
-    @Binding var open: Bool
-    @Environment(\.settingsJump) private var jump
-
-    func body(content: Content) -> some View {
-        content
-            .onAppear { reveal() }
-            .onChange(of: jump) { reveal() }
-    }
-
-    private func reveal() {
-        if let j = jump, j.tab == tab, j.advanced { open = true }
-    }
-}
-
-extension View {
-    func settingsAdvancedReveal(_ tab: String, open: Binding<Bool>) -> some View {
-        modifier(SettingsAdvancedReveal(tab: tab, open: open))
     }
 }
 

@@ -44,7 +44,7 @@ struct GeneralSettings: View {
                     Text(verbatim: SettingsFile.url.lastPathComponent).font(Theme.mono(10)).foregroundStyle(.secondary)
                 }
                 .settingsAnchor("general.settingsfile")
-                Text("Ordner MINOS-741 neben der Collection-Datei: settings.plist, Analysen, Edits, Cuts, Playlists, History. Zieht mit der Collection um.").settingsHint()
+                Text("Ordner MINOS-741 neben der Collection-Datei; zieht mit der Collection um.").settingsHint().help("Ordner MINOS-741 neben der Collection-Datei: settings.plist, Analysen, Edits, Cuts, Playlists, History. Zieht mit der Collection um.")
             }
             Section("Updates") {
                 UpdateSettingsSection()
@@ -52,8 +52,9 @@ struct GeneralSettings: View {
             Section("Absturzberichte") {
                 Toggle("Nach Absturz fragen", isOn: $mix.prefs.ui.askAfterCrash)
                     .settingsAnchor("cloud.crash.ask")
-                Text("Beim nächsten Start zeigt MINOS-741 den bereinigten Bericht (ohne Pfade, Nutzer, Rechner, Geräte). Gesendet wird nur, was du in dem Fenster auslöst: GitHub-Issue im Browser oder Kopieren.")
+                Text("Nach Absturz: beim nächsten Start bereinigter Bericht. Gesendet wird nur, was du auslöst.")
                     .settingsHint()
+                    .help("Beim nächsten Start zeigt MINOS-741 den bereinigten Bericht (ohne Pfade, Nutzer, Rechner, Geräte). Gesendet wird nur, was du in dem Fenster auslöst: GitHub-Issue im Browser oder Kopieren.")
                 Toggle("Vollständige Berichte in Ordner ablegen", isOn: $mix.prefs.ui.crashReports)
                     .settingsAnchor("cloud.crash.on")
                 HStack {
@@ -64,8 +65,9 @@ struct GeneralSettings: View {
                     Button("Ordner wählen …") { pickCrashFolder() }
                 }
                 .settingsAnchor("cloud.crash.folder")
-                Text("Mit Ordner und eingeschalteter Option wird jeder neue Absturzbericht zusätzlich vollständig dort abgelegt (Bericht, Statusmeldungen, Einstellungen ohne Geräte-Kennungen). Nichts wird ins Netz geschickt.")
+                Text("Mit Ordner: jeder Bericht wird zusätzlich vollständig dort abgelegt. Nichts geht ins Netz.")
                     .settingsHint()
+                    .help("Mit Ordner und eingeschalteter Option wird jeder neue Absturzbericht zusätzlich vollständig dort abgelegt (Bericht, Statusmeldungen, Einstellungen ohne Geräte-Kennungen). Nichts wird ins Netz geschickt.")
             }
             Section("LIVE") {
                 Toggle("Lesbarkeit bei LIVE automatisch", isOn: $mix.prefs.ui.liveListAuto)
