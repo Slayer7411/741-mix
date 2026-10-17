@@ -7,6 +7,7 @@ codenames: every major version is named after a circle of hell (minos judges the
 ## ◆ [UNRELEASED]
 
 ### added
+* updates: first rolling update through the `latest-build` channel (no app change)
 * automatic updates (⌘, -> ANZEIGE -> Updates): channel newest build (rolling release `latest-build`, default), stable releases, own folder, or off. check after 30 s, then every 6 h; install only when no deck plays, LIVE is off and nothing is recording; download is size and sha-256 checked, the old app stays as `.MINOS-741-previous.app` for one rollback. `scripts/make-dmg.sh --publish`, `scripts/release.sh` (needs `--yes`, `--dry-run` to see the commands). unit tests (manifest, channels, hosts and redirects, ordering, checksum, install rule), e2e scenario `self-update`
 
 ## ◆ [0.8.2] · 2026-10-17 · LIMBUS · TWO MACS
