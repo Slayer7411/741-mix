@@ -1,0 +1,39 @@
+title: "◆ SET: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        -=[ submit a set recorded with MINOS-741 ]=-
+        it gets reposted on [soundcloud.com/minos-741](https://soundcloud.com/minos-741) and posted on [@minos_741](https://www.instagram.com/minos_741/), credits to you.
+  - type: input
+    id: soundcloud
+    attributes:
+      label: SoundCloud link
+      description: public track url, e.g. https://soundcloud.com/you/your-set
+      placeholder: https://soundcloud.com/...
+    validations:
+      required: true
+  - type: input
+    id: instagram
+    attributes:
+      label: Instagram
+      description: your handle for the credit (optional)
+      placeholder: "@you"
+  - type: input
+    id: genre
+    attributes:
+      label: Genre
+      placeholder: techno
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: venue, date, setup, anything (optional)
+  - type: checkboxes
+    id: permission
+    attributes:
+      label: Permission
+      options:
+        - label: I am the artist (or have their ok) and MINOS-741 may repost and post this set with credits
+          required: true
