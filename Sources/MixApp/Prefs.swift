@@ -426,6 +426,8 @@ struct AppPrefs: Codable, Equatable {
     var cloud = CloudPrefs()
     /// Groove → MIDI (⌘, -> DECKS)
     var groove = GroovePrefs()
+    /// MIDI-Clock zum Mischpult (⌘, -> AUDIO)
+    var midiClock = MIDIClockPrefs()
     /// Aufnahme (⌘, -> AUDIO)
     var record = RecordPrefs()
     /// Auto-Mix (⌘, -> MIXER & FX)
