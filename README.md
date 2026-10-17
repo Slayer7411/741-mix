@@ -71,6 +71,18 @@ brew install --cask slayer7411/tap/minos-741
 
 or the dmg from [releases](https://github.com/Slayer7411/MINOS-741/releases/latest). not signed by apple -> first start: system settings -> privacy & security -> OPEN ANYWAY.
 
+## ◆ HARDWARE
+
+tested, works with:
+
+* controller: Kontrol X1 mk2, native hid mode, up to two units (left deck a / c, right deck b / d)
+* mixer: Xone:96 in external mixer mode, every deck on its own usb pair
+* audio: any core audio interface. internal mixer -> one stereo pair. external mixer -> one pair per deck (8 outputs for 4 decks, 10 with preview)
+* keyboard: every action mappable (⌘, -> keyboard)
+
+not yet: midi controllers and midi learn -> planned for 1.0, plus mapping files you can build yourself.
+your controller or mixer missing? -> [request it](https://github.com/Slayer7411/MINOS-741/discussions/3) or dm [@minos_741](https://www.instagram.com/minos_741/).
+
 ## ◆ RUN IT
 
 from source, needs xcode / swift 6.
