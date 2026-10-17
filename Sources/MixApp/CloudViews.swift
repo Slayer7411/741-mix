@@ -248,11 +248,39 @@ struct CloudSettings: View {
                 Text("\(c.provider ?? "Google Drive"): rechtsklick auf den ordner im finder -> „Offline verfügbar machen“. der anbieter hält dann alles lokal, auch ohne MINOS-741. MINOS-741 ändert keine einstellungen des anbieters.")
                     .settingsHint()
             }
+            Section("Absturzberichte") {
+                Toggle("Nach Absturz fragen", isOn: $mix.prefs.ui.askAfterCrash)
+                    .settingsAnchor("cloud.crash.ask")
+                Text("Beim nächsten Start zeigt MINOS-741 den bereinigten Bericht (ohne Pfade, Nutzer, Rechner, Geräte). Gesendet wird nur, was du in dem Fenster auslöst: GitHub-Issue im Browser oder Kopieren.")
+                    .settingsHint()
+                Toggle("Vollständige Berichte in Ordner ablegen", isOn: $mix.prefs.ui.crashReports)
+                    .settingsAnchor("cloud.crash.on")
+                HStack {
+                    Text("Ordner")
+                    Spacer()
+                    Text(verbatim: mix.prefs.ui.crashReportFolder.isEmpty ? "—" : (mix.prefs.ui.crashReportFolder as NSString).abbreviatingWithTildeInPath)
+                        .font(Theme.mono(10)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Button("Ordner wählen …") { pickCrashFolder() }
+                }
+                .settingsAnchor("cloud.crash.folder")
+                Text("Mit Ordner und eingeschalteter Option wird jeder neue Absturzbericht zusätzlich vollständig dort abgelegt (Bericht, Statusmeldungen, Einstellungen ohne Geräte-Kennungen). Nichts wird ins Netz geschickt.")
+                    .settingsHint()
+            }
         }
         .onAppear {
             if c.lastScan == nil, !store.tracks.isEmpty { c.collectionChanged(store.tracks) }
             if c.folderStatus == nil { c.checkFolder() }
         }
+    }
+
+    private func pickCrashFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.message = String(localized: "Ordner für Absturzberichte")
+        guard panel.runModal() == .OK, let u = panel.url else { return }
+        mix.prefs.ui.crashReportFolder = u.path
     }
 
     private func stateLine(_ c: CloudLibrary) -> String {

@@ -92,6 +92,7 @@ struct ContentView: View {
             store.updateUIPrefs = { [mix] change in change(&mix.prefs.ui) }
             store.onRefreshed = { [mix] t in mix.collectionUpdated(t) }
             if store.tracks.isEmpty { store.load() }
+            SetupFlow.shared.checkAtStart(mix: mix)
             // MIX741_LAYOUT=nomixer,1deck,2decks,nobrowser: Teile der Oberfläche für Layout-Messungen abschalten (nur Selbsttest)
             if Session.isSelfTest, let l = ProcessInfo.processInfo.environment["MIX741_LAYOUT"] {
                 if l.contains("nomixer") { mix.prefs.ui.showMixer = false }
@@ -110,6 +111,15 @@ struct ContentView: View {
         }
         .sheet(isPresented: $donate) { DonateView(shown: $donate) }
         .onReceive(NotificationCenter.default.publisher(for: .showDonate)) { _ in donate = true }
+        // Einrichtung: beim Start nur wenn nötig (SetupFlow.checkAtStart), Menü „Einrichtung …“ jederzeit
+        .sheet(isPresented: Binding(get: { SetupFlow.shared.sheetShown }, set: { if !$0 { SetupFlow.shared.close() } })) {
+            SetupFlowView()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showSetup)) { _ in SetupFlow.shared.open() }
+        // Absturz: beim Start gefragt, wenn ein neuer Bericht da ist (CrashReports.scheduleScan); nichts wird gesendet
+        .sheet(isPresented: Binding(get: { CrashPrompt.shared.sheetShown }, set: { if !$0 { CrashPrompt.shared.close() } })) {
+            CrashPromptView()
+        }
     }
 
     /// RUNNING TRACKS im Browser nachführen – eigene leere Ansicht: liest alle vier Decks, ohne dass
@@ -402,6 +412,7 @@ struct MixApp: App {
                     .shortcut(keys.combo(.settings))
             }
             CommandGroup(after: .help) {
+                Button(String(localized: "Einrichtung …")) { NotificationCenter.default.post(name: .showSetup, object: nil) }
                 Button(String(localized: "Kauf mir einen Kaffee …")) { NotificationCenter.default.post(name: .showDonate, object: nil) }
             }
             CommandGroup(replacing: .saveItem) {
@@ -543,6 +554,10 @@ extension MixApp {
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
         history.start(store: store, mix: mix)
         E2EControl.start(mix: mix, store: store, browser: browser, history: history)   // nur mit MIX741_E2E_ROOT
+        // Absturzberichte: Ordner nach der Einstellung; Suche 20 s nach dem Start (im Hintergrund), Frage nach Absturz
+        CrashReports.configure(mix.prefs.ui)
+        StatusLogFile.shared.beginRun(marker: CrashReports.runMarker(version: CrashReports.appVersion, build: CrashReports.buildNumber))
+        CrashReports.scheduleScan(prefs: mix.prefs.ui, mix: mix)
         PairLink.shared.configure(mix.prefs.ui.pair, history: history, mix: mix)
         store.history = history
         mix.autoMix.store = store
@@ -606,6 +621,7 @@ if CommandLine.arguments.count >= 4, CommandLine.arguments[1] == PluginSelfCheck
     exit(r.passed ? 0 : 1)
 }
 
+SetupFlow.firstLaunch = E2E.defaults.data(forKey: AppPrefs.key) == nil   // vor der Übernahme alter Einstellungen (migrateDefaults)
 AppResources.migrateDefaults()
 SettingsFile.importIfChanged()   // Einstellungen aus dem Datenordner neben der Collection (anderer Mac, zurückgespielt)
 SettingsFile.watch()
@@ -644,6 +660,7 @@ MainActor.assumeIsolated { CoverShot.runIfRequested() }   // nur Selbsttest mit 
 MainActor.assumeIsolated { TagShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=tags:<ordner>, endet mit exit
 MainActor.assumeIsolated { TableShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=table:<ordner>, endet mit exit
 MainActor.assumeIsolated { SettingsShot.runPluginsIfRequested() }   // nur PLUGINS-Tab, ohne Audio: MIX741_SHOT=plugins:<ordner>
+MainActor.assumeIsolated { SetupShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=setup:<png>, MIX741_SHOT_STEP=collection|music|audio|network|done
 MainActor.assumeIsolated { SettingsShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=settings:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { StatusShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=status:<ordner>, endet mit exit(0)
 MainActor.assumeIsolated { CloudShot.runIfRequested() }   // nur Selbsttest mit MIX741_SHOT=cloud:<ordner>, endet mit exit(0)
@@ -685,4 +702,5 @@ enum BrowserDrag {
 extension Notification.Name {
     /// Spenden-Hinweis aus dem Hilfe-Menü öffnen
     static let showDonate = Notification.Name("minos741.showDonate")
+    static let showSetup = Notification.Name("minos741.showSetup")
 }

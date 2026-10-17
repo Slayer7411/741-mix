@@ -7,9 +7,24 @@ import MixEngine
 /// Hält die geladene Collection; alle Browser-Bereiche lesen daraus.
 @MainActor @Observable
 final class LibraryStore {
-    /// Standard-Collection: neueste `collection.nml` im Benutzerordner der Collection-Software
-    nonisolated static let defaultNML: URL = {
-        if let c = E2E.collection { return c }   // Ende-zu-Ende: eigene Collection der Instanz
+    /// Collection-Datei, die die Einrichtung gewählt hat (`ui.collectionPath`, beim Start aus den Einstellungen gelesen)
+    nonisolated(unsafe) static var chosenNML: URL? = readChosenNML()
+
+    nonisolated static func readChosenNML() -> URL? {
+        guard let data = E2E.defaults.data(forKey: AppPrefs.key),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let ui = obj["ui"] as? [String: Any], let p = ui["collectionPath"] as? String, !p.isEmpty else { return nil }
+        return URL(fileURLWithPath: p)
+    }
+
+    /// Standard-Collection: die gewählte (wenn sie noch da ist), sonst die automatisch gefundene (siehe `autoNML`)
+    nonisolated static var defaultNML: URL {
+        if let c = chosenNML, FileManager.default.fileExists(atPath: c.path) { return c }
+        return E2E.collection ?? autoNML   // Ende-zu-Ende: eigene Collection der Instanz
+    }
+
+    /// automatisch: neueste `collection.nml` im Benutzerordner der Collection-Software
+    nonisolated private static let autoNML: URL = {
         let base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Native Instruments")
         let dirs = (try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)) ?? []
         let found = dirs.filter { $0.lastPathComponent.hasPrefix("Traktor") }

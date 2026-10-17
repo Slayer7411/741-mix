@@ -26,7 +26,7 @@ import build_fixture  # noqa: E402  (Tests/E2E/fixtures/build_fixture.py)
 
 SCEN_DIR = os.path.join(HERE, "scenarios")
 MISSING = object()
-READ_ONLY = {"ping", "snapshot", "list", "prefs-get", "status", "wait-ready"}
+READ_ONLY = {"ping", "snapshot", "list", "prefs-get", "status", "wait-ready", "setup-state", "crash-state"}
 DEFAULT_TIMEOUT = 20.0
 
 
@@ -103,7 +103,7 @@ def ops_of(e):
 # MARK: Instanz
 
 class Instance:
-    def __init__(self, who, run_id, binary, base_dir, scenario_tag, music):
+    def __init__(self, who, run_id, binary, base_dir, scenario_tag, music, extra_env=None, absent=False, fake_crash=False):
         self.who = who
         self.shared = os.path.join(base_dir, "shared")   # Portmeldungen des Laufs (Zwei-Mac-Verbindung)
         os.makedirs(self.shared, exist_ok=True)
@@ -116,8 +116,15 @@ class Instance:
         self.launches = 0
         self.counter = 0
         self.logs = []
-        # Collection und Datenordner gehören dieser Instanz; der Audio-Ordner ist für alle Instanzen gleich (nur lesen)
-        build_fixture.build(self.root, music)
+        self.extra_env = dict(extra_env or {})
+        # Collection und Datenordner gehören dieser Instanz; der Audio-Ordner ist für alle Instanzen gleich (nur lesen).
+        # absent: keine Collection am Standardort (Erststart); die Fixture liegt unter <root>/fixture (für setup-choose)
+        if absent:
+            build_fixture.build(os.path.join(self.root, "fixture"), music)
+        else:
+            build_fixture.build(self.root, music)
+        if fake_crash:
+            build_fixture.write_fake_crash(self.root)
         for sub in ("control/outbox", "control/inbox", "appsupport", "logs", "shots", "music"):
             os.makedirs(os.path.join(self.root, sub), exist_ok=True)
 
@@ -132,8 +139,10 @@ class Instance:
 
     def env(self):
         env = {k: v for k, v in os.environ.items() if not k.startswith("MIX741_")}
+        # Einrichtung (Sheet) aus, außer ein Szenario verlangt sie (MIX741_SETUP=on)
         env.update({"MIX741_E2E_ROOT": self.root, "MIX741_E2E_NAME": self.name, "MIX741_E2E_SERVICE": self.service,
-                    "MIX741_E2E_SHARED": self.shared})
+                    "MIX741_E2E_SHARED": self.shared, "MIX741_SETUP": "off"})
+        env.update(self.extra_env)
         return env
 
     def start(self):
@@ -269,8 +278,13 @@ class Scenario:
         ok = True
         try:
             build_fixture.write_audio(self.music)
+            # Szenario-Optionen: "env" (für alle Instanzen), "collection": "absent" (ohne Collection am Standardort)
+            extra_env = self.spec.get("env", {})
+            absent = self.spec.get("collection") == "absent"
+            fake_crash = bool(self.spec.get("fake_crash"))
             for who in self.spec.get("instances", ["A"]):
-                self.instances[who] = Instance(who, self.run_id, self.binary, self.base_dir, self.name, self.music)
+                self.instances[who] = Instance(who, self.run_id, self.binary, self.base_dir, self.name, self.music,
+                                               extra_env=extra_env, absent=absent, fake_crash=fake_crash)
             for inst in self.instances.values():
                 inst.start()
             for inst in self.instances.values():

@@ -389,6 +389,13 @@ enum SettingsIndex {
               kw: "cloud"),
             e(t, "Dauerhaft offline", "cloud.folder", "Library-Ordner", kw: "cloud finder"),
             e(t, "Dauerhaft offline", "cloud.offline", "Offline verfügbar", kw: "cloud finder"),
+            e(t, "Absturzberichte", "cloud.crash.ask", "Nach Absturz fragen",
+              hint: "Beim nächsten Start zeigt MINOS-741 den bereinigten Bericht (ohne Pfade, Nutzer, Rechner, Geräte). Gesendet wird nur, was du in dem Fenster auslöst.",
+              kw: "absturz crash bericht report frage github issue"),
+            e(t, "Absturzberichte", "cloud.crash.on", "Vollständige Berichte in Ordner ablegen",
+              hint: "Mit Ordner und eingeschalteter Option wird jeder neue Absturzbericht zusätzlich vollständig dort abgelegt. Nichts wird ins Netz geschickt.",
+              kw: "absturz crash bericht report drive ordner"),
+            e(t, "Absturzberichte", "cloud.crash.folder", "Ordner", kw: "absturz crash bericht ordner folder"),
         ]
     }()
 

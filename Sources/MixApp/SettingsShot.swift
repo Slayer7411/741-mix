@@ -97,7 +97,7 @@ enum SettingsShot {
     }
 
     /// in ein nie gezeigtes Fenster hängen (manche AppKit-Steuerelemente zeichnen nur mit Fenster), dann als PNG
-    private static func render(_ view: AnyView, to url: URL, fitHeight: Bool = false) {
+    static func render(_ view: AnyView, to url: URL, fitHeight: Bool = false) {
         let host = NSHostingView(rootView: view)
         host.appearance = NSAppearance(named: .darkAqua)
         var size = host.fittingSize

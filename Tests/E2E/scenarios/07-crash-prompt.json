@@ -1,0 +1,120 @@
+{
+  "name": "crash-prompt",
+  "description": "Absturzbericht im isolierten Berichtsordner: beim Start (nach 20 s) erscheint das Sheet mit dem bereinigten Bericht (ohne Pfade, Nutzer, Geräte-Kennung), Schließen merkt den Bericht",
+  "instances": [
+    "A"
+  ],
+  "fake_crash": true,
+  "steps": [
+    {
+      "do": "crash-state",
+      "timeout": 60,
+      "expect": [
+        {
+          "path": "body.shown",
+          "equals": true
+        },
+        {
+          "path": "body.count",
+          "equals": 1
+        },
+        {
+          "path": "body.file",
+          "equals": "MINOS-741_2026-10-17-100000_E2E.ips"
+        },
+        {
+          "path": "body.text",
+          "contains": "MINOS-741 crash report (redacted)"
+        },
+        {
+          "path": "body.text",
+          "contains": "EXC_BAD_ACCESS (SIGSEGV)"
+        },
+        {
+          "path": "body.text",
+          "contains": "mixer_process+12"
+        },
+        {
+          "path": "body.text",
+          "contains": "ARM-64"
+        },
+        {
+          "path": "body.text",
+          "contains": "macOS 26.0 (25A100)"
+        },
+        {
+          "path": "body.text",
+          "not_contains": "cs.privat"
+        },
+        {
+          "path": "body.text",
+          "not_contains": "6F3C2A1B"
+        },
+        {
+          "path": "body.text",
+          "not_contains": "/Users/"
+        },
+        {
+          "path": "body.title",
+          "equals": "Crash: 9.9.9 (4242) · EXC_BAD_ACCESS"
+        }
+      ]
+    },
+    {
+      "do": "crash-open",
+      "expect": [
+        {
+          "path": "body.opened.0",
+          "contains": "https://github.com/Slayer7411/MINOS-741/issues/new?title=Crash%3A%209.9.9%20%284242%29"
+        },
+        {
+          "path": "body.opened.0",
+          "contains": "labels=crash"
+        },
+        {
+          "path": "body.opened.0",
+          "not_contains": "cs.privat"
+        },
+        {
+          "path": "body.shown",
+          "equals": false
+        }
+      ]
+    },
+    {
+      "do": "crash-close",
+      "expect": [
+        {
+          "path": "body.shown",
+          "equals": false
+        }
+      ]
+    },
+    {
+      "do": "prefs-get",
+      "expect": [
+        {
+          "path": "body.ui.crashLastPrompted",
+          "gt": 0
+        }
+      ]
+    },
+    {
+      "do": "restart",
+      "who": "A"
+    },
+    {
+      "do": "sleep",
+      "seconds": 25
+    },
+    {
+      "do": "crash-state",
+      "expect": [
+        {
+          "path": "body.shown",
+          "equals": false
+        }
+      ]
+    }
+  ]
+}

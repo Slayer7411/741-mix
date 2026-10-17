@@ -14,7 +14,8 @@ enum AppResources {
     static func migrateDefaults() {
         let d = E2E.defaults
         if !d.bool(forKey: "migrated.v2") {
-            for suite in ["com.github.slayer7411.741mix", "741mix"] where suite != Bundle.main.bundleIdentifier {
+            // Ende-zu-Ende: nie die Einstellungen des echten Nutzers übernehmen (Tests/E2E/README.md, Isolation)
+            for suite in E2E.isActive ? [] : ["com.github.slayer7411.741mix", "741mix"] where suite != Bundle.main.bundleIdentifier {
                 guard let old = UserDefaults(suiteName: suite) else { continue }
                 for (k, v) in old.dictionaryRepresentation()
                 where !k.hasPrefix("NS") && !k.hasPrefix("Apple") && !k.hasPrefix("migrated") && d.object(forKey: k) == nil {
