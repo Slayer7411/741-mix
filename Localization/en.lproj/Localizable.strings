@@ -2031,3 +2031,10 @@
 "neuester build: jeder build (rollendes release). stabile versionen: nur vX.Y.Z-releases. eigener ordner: latest.json und dmg aus einem ordner. aus: keine updates" = "newest build: every build (rolling release). stable releases: only vX.Y.Z releases. own folder: latest.json and DMG from a folder. off: no updates";
 "nicht automatisch (nach Zurückwechseln)" = "not automatic (after switching back)";
 "Update verfügbar: %@ · %@ (%@)" = "Update available: %@ · %@ (%@)";
+"Updates: aktuell (%@)" = "Updates: up to date (%@)";
+"Updates: Prüfung fehlgeschlagen – %@" = "Updates: check failed – %@";
+"Weiterleitung auf %@ abgelehnt" = "redirect to %@ refused";
+"Server antwortet mit HTTP %d" = "server replies with HTTP %d";
+"Zeitüberschreitung" = "timed out";
+"latest.json nicht lesbar" = "latest.json unreadable";
+"keine HTTP-Antwort" = "no HTTP response";

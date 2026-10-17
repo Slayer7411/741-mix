@@ -231,7 +231,7 @@ final class E2EControl {
             done(true, crashState())
 
         case "update-check":
-            Updater.shared.check { r in
+            Updater.shared.check(manual: true) { r in
                 switch r {
                 case .success(let c):
                     done(true, ["build": Updater.shared.currentBuild, "available": c.map { ["version": $0.manifest.version,

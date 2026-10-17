@@ -67,19 +67,25 @@ enum UpdateChannel: String, CaseIterable, Codable, Identifiable {
 
 /// Netz-Regeln: nur HTTPS, nur GitHub (Adresse und Weiterleitungen), kein Cookie, kein Cache
 enum UpdateNet {
+    /// direkte Adressen (Manifest, DMG-Adresse)
     static let hosts: Set<String> = ["github.com", "objects.githubusercontent.com"]
+    /// Ziele von Weiterleitungen: GitHub leitet Release-Assets auf release-assets.githubusercontent.com um
+    /// (ältere Release-Downloads auf objects.githubusercontent.com)
+    static let redirectHosts: Set<String> = hosts.union(["release-assets.githubusercontent.com"])
     static let maxManifestBytes = 64 * 1024
 
     /// erlaubte Adresse: https, Host github.com oder objects.githubusercontent.com, ohne Benutzer und Port
-    static func isAllowed(_ url: URL) -> Bool {
-        url.scheme?.lowercased() == "https" && url.user == nil && url.password == nil
-            && (url.port == nil || url.port == 443) && hosts.contains(url.host?.lowercased() ?? "")
-    }
+    static func isAllowed(_ url: URL) -> Bool { allowed(url, hosts: hosts) }
 
     static func isAllowed(_ text: String) -> Bool { URL(string: text).map(isAllowed) ?? false }
 
-    /// Weiterleitung nur auf erlaubte Ziele (GitHub leitet Release-Assets auf objects.githubusercontent.com um)
-    static func redirectAllowed(_ url: URL?) -> Bool { url.map(isAllowed) ?? false }
+    /// Weiterleitung nur auf erlaubte Ziele (`redirectHosts`, gleiche Regeln wie `isAllowed`)
+    static func redirectAllowed(_ url: URL?) -> Bool { url.map { allowed($0, hosts: redirectHosts) } ?? false }
+
+    private static func allowed(_ url: URL, hosts: Set<String>) -> Bool {
+        url.scheme?.lowercased() == "https" && url.user == nil && url.password == nil
+            && (url.port == nil || url.port == 443) && hosts.contains(url.host?.lowercased() ?? "")
+    }
 
     /// Sitzung ohne Cookies, ohne Cache; 15 s Inaktivität, Download darf länger laufen
     static let session: URLSession = {
@@ -109,24 +115,33 @@ enum UpdateNet {
         return r
     }
 
-    /// Manifest holen (höchstens 64 KB, nur HTTP 200)
+    /// Manifest holen (höchstens 64 KB, nur HTTP 200 nach erlaubten Weiterleitungen)
     static func fetchManifest(_ url: URL) async throws -> Data {
         guard isAllowed(url) else { throw UpdateError.notAllowed }
         let (data, resp) = try await session.data(for: request(url), delegate: guardDelegate)
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200, redirectAllowed(resp.url) else {
-            throw UpdateError.network(String(localized: "latest.json nicht gefunden"))
-        }
+        guard let http = resp as? HTTPURLResponse else { throw UpdateError.network(String(localized: "keine HTTP-Antwort")) }
+        try checkResponse(http, final: resp.url)
         guard data.count <= maxManifestBytes else { throw UpdateError.manifestInvalid }
         return data
+    }
+
+    /// Antwort prüfen: eine abgelehnte Weiterleitung kommt als 3xx zurück (Ziel in `Location`); sonst nur HTTP 200
+    /// auf erlaubter Adresse
+    static func checkResponse(_ http: HTTPURLResponse, final: URL?) throws {
+        if (300..<400).contains(http.statusCode) {
+            let target = http.value(forHTTPHeaderField: "Location").flatMap { URL(string: $0, relativeTo: final) }
+            throw UpdateError.redirectRefused(target?.host ?? "?")
+        }
+        guard http.statusCode == 200 else { throw UpdateError.http(http.statusCode) }
+        guard redirectAllowed(final) else { throw UpdateError.redirectRefused(final?.host ?? "?") }
     }
 
     /// DMG laden nach `dir/name`; liefert die lokale Datei
     static func download(_ url: URL, named name: String, into dir: URL) async throws -> URL {
         guard isAllowed(url) else { throw UpdateError.notAllowed }
         let (tmp, resp) = try await session.download(for: request(url), delegate: guardDelegate)
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200, redirectAllowed(resp.url) else {
-            throw UpdateError.network(String(localized: "Download fehlgeschlagen"))
-        }
+        guard let http = resp as? HTTPURLResponse else { throw UpdateError.network(String(localized: "keine HTTP-Antwort")) }
+        try checkResponse(http, final: resp.url)
         let dest = dir.appendingPathComponent(name)
         try FileManager.default.moveItem(at: tmp, to: dest)
         return dest
@@ -216,6 +231,7 @@ enum UpdateError: Error, Equatable {
     case off, noFolder, folderMissing, noManifest, manifestInvalid, dmgMissing(String), busy, noCandidate, noPrevious
     case blocked(UpdateRules.Block), notABundle, notWritable(String), outsideTestRoot, notAllowed, network(String)
     case io(String), sizeMismatch, checksum, hdiutil(String), noAppInDMG, packageMismatch, signature(String)
+    case redirectRefused(String), http(Int), timeout, decode
 
     var message: String {
         switch self {
@@ -241,6 +257,10 @@ enum UpdateError: Error, Equatable {
         case .noAppInDMG: String(localized: "Das DMG enthält keine MINOS-741.app")
         case .packageMismatch: String(localized: "Das Paket passt nicht zum Manifest")
         case .signature(let t): String(format: String(localized: "Signatur ungültig: %@"), t)
+        case .redirectRefused(let h): String(format: String(localized: "Weiterleitung auf %@ abgelehnt"), h)
+        case .http(let c): String(format: String(localized: "Server antwortet mit HTTP %d"), c)
+        case .timeout: String(localized: "Zeitüberschreitung")
+        case .decode: String(localized: "latest.json nicht lesbar")
         }
     }
 }
@@ -281,6 +301,8 @@ final class Updater {
     @ObservationIgnored private var announced: String?
     /// Build, bei dem die Automatik gescheitert ist: bis zum nächsten Kandidaten nicht erneut versuchen
     @ObservationIgnored private var autoFailedBuild: String?
+    /// die erste gescheiterte Automatik seit dem Start ist gemeldet; danach nur im Statusprotokoll
+    @ObservationIgnored private var autoFailureShown = false
 
     /// erste automatische Prüfung 30 s nach dem Start, Takt 5 s
     static let firstCheckDelay: TimeInterval = 30
@@ -365,7 +387,7 @@ final class Updater {
         if ch != .off, !checking, ch == .folder || networkAllowed {
             let due = lastAutoCheck.map { now.timeIntervalSince($0) >= ch.checkInterval }
                 ?? (now.timeIntervalSince(started) >= Self.firstCheckDelay)
-            if due { lastAutoCheck = now; check() }
+            if due { lastAutoCheck = now; check(manual: false) }
         }
         if mix.prefs.ui.autoUpdate, let c = candidate, c.manifest.build != autoFailedBuild, !installing, !relaunching,
            UpdateRules.autoInstallDue(enabled: true, pending: true, block: block, idle: now.timeIntervalSince(lastActivity),
@@ -379,14 +401,14 @@ final class Updater {
 
     // MARK: Prüfen
 
-    /// Manifest des gewählten Kanals laden und prüfen (Hintergrund); Ergebnis über `completion` und die Statusleiste
-    func check(completion: (@MainActor (Result<Candidate?, UpdateError>) -> Void)? = nil) {
+    /// Manifest des gewählten Kanals laden und prüfen (Hintergrund); Ergebnis über `completion` und die Statusleiste.
+    /// `manual`: „Jetzt prüfen“ (jedes Ergebnis wird gemeldet), sonst die Automatik (Fehler nur einmal sichtbar)
+    func check(manual: Bool = false, completion: (@MainActor (Result<Candidate?, UpdateError>) -> Void)? = nil) {
         let ch = channel
-        guard ch != .off else { completion?(.failure(.off)); return }
-        guard !checking, !installing, !relaunching else { completion?(.failure(.busy)); return }
+        guard ch != .off else { return failCheck(.off, manual: manual, completion) }
+        guard !checking, !installing, !relaunching else { return failCheck(.busy, manual: manual, completion) }
         if ch != .folder && !networkAllowed {
-            completion?(.failure(.network(String(localized: "im Testlauf aus"))))
-            return
+            return failCheck(.network(String(localized: "im Testlauf aus")), manual: manual, completion)
         }
         checking = true
         let build = currentBuild, date = currentDate, folder = folder
@@ -394,7 +416,25 @@ final class Updater {
             let loaded = await Updater.load(ch, folder: folder)
             Updater.shared.finishCheck(loaded.map { m, source in
                 UpdateRules.isCandidate(m, currentBuild: build, currentDate: date) ? Candidate(manifest: m, source: source) : nil
-            }, completion: completion)
+            }, manual: manual, completion: completion)
+        }
+    }
+
+    /// Prüfung gar nicht gestartet: Fehler melden; „belegt“ nur bei „Jetzt prüfen“
+    private func failCheck(_ e: UpdateError, manual: Bool, _ completion: (@MainActor (Result<Candidate?, UpdateError>) -> Void)?) {
+        if manual || e != .busy { reportFailure(e, manual: manual) }
+        completion?(.failure(e))
+    }
+
+    /// Fehler einer Prüfung in die Statusleiste: „Jetzt prüfen“ immer, die Automatik nur beim ersten Mal seit dem Start;
+    /// danach nur im Statusprotokoll (Stufe info)
+    private func reportFailure(_ e: UpdateError, manual: Bool) {
+        let text = String(format: String(localized: "Updates: Prüfung fehlgeschlagen – %@"), e.message)
+        if manual || !autoFailureShown {
+            if !manual { autoFailureShown = true }
+            StatusCenter.post(.warning, text, key: "update")
+        } else {
+            StatusLogFile.shared.append("\(StatusLogFile.stamp(Date())) info \(text)")
         }
     }
 
@@ -410,12 +450,16 @@ final class Updater {
             guard let url = ch.manifestURL else { return .failure(.notAllowed) }
             do {
                 let m = try await UpdateNet.fetchManifest(url)
-                guard let parsed = UpdateManifest.parse(m), let dmg = parsed.url, let dmgURL = URL(string: dmg) else {
-                    return .failure(.manifestInvalid)
+                guard let parsed = UpdateManifest.parse(m) else {
+                    let decodable = (try? JSONDecoder().decode(UpdateManifest.self, from: m)) != nil
+                    return .failure(decodable ? .manifestInvalid : .decode)
                 }
+                guard let dmg = parsed.url, let dmgURL = URL(string: dmg) else { return .failure(.manifestInvalid) }
                 return .success((parsed, .download(dmgURL)))
             } catch let e as UpdateError {
                 return .failure(e)
+            } catch let e as URLError where e.code == .timedOut {
+                return .failure(.timeout)
             } catch {
                 return .failure(.network(error.localizedDescription))
             }
@@ -433,13 +477,15 @@ final class Updater {
         return .success(m)
     }
 
-    private func finishCheck(_ result: Result<Candidate?, UpdateError>, completion: (@MainActor (Result<Candidate?, UpdateError>) -> Void)?) {
+    private func finishCheck(_ result: Result<Candidate?, UpdateError>, manual: Bool,
+                             completion: (@MainActor (Result<Candidate?, UpdateError>) -> Void)?) {
         checking = false
         lastChecked = Date()
         switch result {
         case .failure(let e):
             lastError = e.message
             candidate = nil
+            reportFailure(e, manual: manual)
             completion?(.failure(e))
         case .success(let c):
             lastError = nil
@@ -449,12 +495,15 @@ final class Updater {
                 mix.prefs.ui.updateSkipBuild = ""
                 mix.prefs.ui.updateSkipDate = ""
             }
-            if let c, announced != c.manifest.build {
-                // einmal je Build melden; bleibt stehen bis Klick oder ✕, Menü und Einstellungen zeigen es weiter
+            if let c, manual || announced != c.manifest.build {
+                // Automatik: einmal je Build melden; „Jetzt prüfen“ meldet jedes Mal. Bleibt stehen bis Klick oder ✕,
+                // Menü und Einstellungen zeigen es weiter
                 announced = c.manifest.build
                 let text = UpdateRules.noticeText(version: c.manifest.version, codename: c.manifest.codename, build: c.manifest.build)
                 StatusCenter.post(.info, text, key: "update", sticky: true,
                                   action: (String(localized: "Installieren"), { Updater.shared.install() }))
+            } else if c == nil, manual {
+                StatusCenter.post(.ok, String(format: String(localized: "Updates: aktuell (%@)"), currentBuild), key: "update")
             }
             completion?(.success(c))
         }
@@ -764,7 +813,7 @@ struct UpdateSettingsSection: View {
             if up.hasPrevious, !up.installing {
                 Button("Vorherige Version wiederherstellen") { up.rollback() }
             }
-            Button("Jetzt prüfen") { up.check() }
+            Button("Jetzt prüfen") { up.check(manual: true) }
                 .disabled(up.channel == .off || up.checking)
         }
         .settingsAnchor("display.update.check")
