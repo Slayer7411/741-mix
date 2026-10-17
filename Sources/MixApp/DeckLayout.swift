@@ -46,9 +46,14 @@ enum DeckLayout {
         return deckCount <= 1 ? [0] : deckCount == 2 ? [0, 1] : [0, 1, 2, 3]
     }
 
-    /// Spalten von oben nach unten; nur eine Spalte belegt -> links (volle Breite)
-    static func columns(visible: [Int], slots: [Int]) -> (left: [Int], right: [Int]) {
+    /// Spalten von oben nach unten; nur eine Spalte belegt -> links (volle Breite). Genau zwei Decks: in der Reihenfolge
+    /// ihrer Plätze nebeneinander oder übereinander
+    static func columns(visible: [Int], slots: [Int], twoSideBySide: Bool = true) -> (left: [Int], right: [Int]) {
         let s = normalized(slots)
+        if visible.count == 2 {
+            let two = s.filter(visible.contains)
+            return twoSideBySide ? ([two[0]], [two[1]]) : (two, [])
+        }
         let left = s[0...1].filter(visible.contains), right = s[2...3].filter(visible.contains)
         return left.isEmpty ? (right, []) : (left, right)
     }

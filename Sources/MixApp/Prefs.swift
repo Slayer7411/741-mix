@@ -182,6 +182,8 @@ struct UIPrefs: Codable, Equatable {
     var deckCount = 4
     /// Deck je Platz: links oben, links unten, rechts oben, rechts unten (DeckLayout)
     var deckSlots = DeckLayout.defaultSlots
+    /// genau zwei sichtbare Decks: nebeneinander (sonst übereinander)
+    var twoDecksSideBySide = true
     /// Abstand zwischen den Decks und zum Fensterrand in pt (0 = keiner: die Wellenformen enden am Rand)
     var deckGap = 0.0
     var showFXUnits = true

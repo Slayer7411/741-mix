@@ -87,6 +87,7 @@ enum SettingsIndex {
             e(t, "Zoom", "display.zoom", "Hauptfenster (⌘+ / ⌘− / ⌘0)", kw: "zoom größe skalierung"),
             e(t, "Layout", "display.deckcount", "Decks anzeigen", kw: "4 decks"),
             e(t, "Layout", "display.deckslots", "Links oben", kw: "deck anordnung position platz links rechts oben unten a b c d"),
+            e(t, "Layout", "display.twodecks", "Zwei Decks", kw: "nebeneinander übereinander zwei decks"),
             e(t, "Layout", "display.deckgap", "Abstand zwischen Decks (pt)",
               hint: "0 = die Wellenformen enden an den Deck-Rändern und am Fensterrand, nur die Rahmenlinie dazwischen."),
             e(t, "Layout", "display.browserlayout", "Browser-Anordnung"),

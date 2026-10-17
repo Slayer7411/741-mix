@@ -6,10 +6,14 @@ public enum PairMessage: Codable, Equatable, Sendable {
     case hello(writes: Bool, decks: [Int], version: Int, name: String, played: [String])
     /// schreibender Mac -> anderer: gemeinsamer Stand nach dem Verbinden
     case playedSet([String])
+    /// Einstellung geändert (Schalter oben, ⌘,): wer schreibt, welche Decks – übernimmt ein Mac das Schreiben, gibt der andere ab
+    case state(writes: Bool, decks: [Int])
+    /// LIVE an/aus (kein Ruhezustand), der andere Mac folgt
+    case live(Bool)
     /// Änderung der Gespielt-Markierungen (beide Richtungen)
     case played(add: [String], remove: [String])
 
-    public static let version = 2
+    public static let version = 3
 
     public func line() -> Data {
         var d = (try? JSONEncoder().encode(self)) ?? Data()

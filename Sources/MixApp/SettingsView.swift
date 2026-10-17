@@ -423,9 +423,17 @@ struct DeckSettings: View {
                     LabeledContent("Decks dieses Macs (höchstens 2)") {
                         HStack(spacing: 4) {
                             ForEach(0..<4, id: \.self) { d in
-                                Toggle(deckLetters[d], isOn: Binding(get: { mix.prefs.ui.pair.decks.contains(d) },
-                                                                     set: { _ in mix.prefs.ui.pair.decks = PairSetup.toggled(mix.prefs.ui.pair.decks, d) }))
-                                    .toggleStyle(.button)
+                                let on = mix.prefs.ui.pair.decks.contains(d)
+                                Button { mix.prefs.ui.pair.decks = PairSetup.toggled(mix.prefs.ui.pair.decks, d) } label: {
+                                    Text(verbatim: deckLetters[d])
+                                        .font(Theme.label(12, .bold))
+                                        .frame(width: 28, height: 22)
+                                        .foregroundStyle(on ? Theme.void : Theme.muted)
+                                        .background(on ? Theme.bone : Color.clear)
+                                        .overlay(Rectangle().stroke(on ? Theme.bone : Theme.hairline, lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                                .help(on ? "Deck \(deckLetters[d]) spielt auf diesem Mac" : "Deck \(deckLetters[d]) auf diesem Mac spielen")
                             }
                         }
                     }
@@ -798,6 +806,11 @@ struct DisplaySettings: View {
                     }
                 }
                 .settingsAnchor("display.deckslots")
+                Picker("Zwei Decks", selection: $mix.prefs.ui.twoDecksSideBySide) {
+                    Text("Nebeneinander").tag(true)
+                    Text("Übereinander").tag(false)
+                }
+                .settingsAnchor("display.twodecks")
                 Text("platz je deck in der übersicht. ein deck an einen besetzten platz -> die beiden tauschen. ausgeblendete decks (1 / 2 decks, zwei-mac-modus) lassen ihren platz frei; ist nur eine seite belegt, nutzen die decks die volle breite.")
                     .settingsHint()
                 sliderRow("Abstand zwischen Decks (pt)", $mix.prefs.ui.deckGap, 0...12, step: 1, format: "%.0f")

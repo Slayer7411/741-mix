@@ -243,7 +243,7 @@ struct ContentView: View {
             // 1 Deck: nur A über die volle Breite, B–D spielen unsichtbar weiter
             GeometryReader { geo in
                 // Plätze aus ⌘, -> DARSTELLUNG -> Layout; ausgeblendete Decks spielen unsichtbar weiter
-                let cols = DeckLayout.columns(visible: mix.visibleDecks, slots: mix.prefs.ui.deckSlots)
+                let cols = DeckLayout.columns(visible: mix.visibleDecks, slots: mix.prefs.ui.deckSlots, twoSideBySide: mix.prefs.ui.twoDecksSideBySide)
                 let rows = CGFloat(max(1, cols.left.count, cols.right.count))
                 let deckH = max(120.z, (geo.size.height - (rows - 1) * gap) / rows)
                 HStack(alignment: .top, spacing: gap) {
