@@ -6,6 +6,7 @@ import Testing
 @Suite struct UpdaterTests {
     static let sha = String(repeating: "a", count: 64)
     static let dmgURL = "https://github.com/Slayer7411/MINOS-741/releases/download/latest-build/MINOS-741.dmg"
+    static let latestURL = "https://github.com/Slayer7411/MINOS-741/releases/download/latest-build/latest.json"
 
     static func manifestJSON(build: String = "b2", date: String = "2026-10-16T09:00:00Z", sha: String = sha,
                              file: String = "MINOS-741-0.9-b2.dmg", size: String = "1234", url: String? = nil,
@@ -91,11 +92,42 @@ import Testing
         #expect(!UpdateNet.isAllowed("nicht eine adresse"))
     }
 
+    /// GitHub leitet Release-Assets auf release-assets.githubusercontent.com um: nur als Weiterleitungsziel erlaubt
     @Test func redirectsOnlyToAllowedHosts() throws {
         #expect(UpdateNet.redirectAllowed(URL(string: "https://objects.githubusercontent.com/a")))
+        #expect(UpdateNet.redirectAllowed(URL(string: "https://release-assets.githubusercontent.com/github-production-release-asset/1/a")))
+        #expect(UpdateNet.redirectAllowed(URL(string: "https://github.com/a")))
+        #expect(!UpdateNet.isAllowed("https://release-assets.githubusercontent.com/a"))   // keine direkte Adresse
         #expect(!UpdateNet.redirectAllowed(URL(string: "https://attacker.example/a")))
+        #expect(!UpdateNet.redirectAllowed(URL(string: "https://evil.githubusercontent.com.example.com/a")))
+        #expect(!UpdateNet.redirectAllowed(URL(string: "https://release-assets.githubusercontent.com.example.com/a")))
+        #expect(!UpdateNet.redirectAllowed(URL(string: "http://release-assets.githubusercontent.com/a")))
+        #expect(!UpdateNet.redirectAllowed(URL(string: "https://user@release-assets.githubusercontent.com/a")))
+        #expect(!UpdateNet.redirectAllowed(URL(string: "https://release-assets.githubusercontent.com:8443/a")))
         #expect(!UpdateNet.redirectAllowed(URL(string: "http://objects.githubusercontent.com/a")))
         #expect(!UpdateNet.redirectAllowed(nil))
+    }
+
+    static func responseError(_ status: Int, location: String? = nil, final: URL?) -> UpdateError? {
+        let http = HTTPURLResponse(url: final ?? URL(string: "https://github.com/")!, statusCode: status, httpVersion: nil,
+                                   headerFields: location.map { ["Location": $0] })!
+        do {
+            try UpdateNet.checkResponse(http, final: final)
+            return nil
+        } catch {
+            return error as? UpdateError
+        }
+    }
+
+    /// abgelehnte Weiterleitung: Ziel steht im Fehler; Antwort 200 nur auf erlaubter Adresse; andere Status: Code
+    @Test func responseCheckNamesRefusedRedirect() {
+        let start = URL(string: Self.latestURL)!
+        let assets = "https://release-assets.githubusercontent.com/github-production-release-asset/1/a"
+        #expect(Self.responseError(302, location: assets, final: start) == .redirectRefused("release-assets.githubusercontent.com"))
+        #expect(Self.responseError(302, location: "https://attacker.example/x", final: start) == .redirectRefused("attacker.example"))
+        #expect(Self.responseError(200, final: URL(string: assets)) == nil)
+        #expect(Self.responseError(200, final: URL(string: "https://attacker.example/x")) == .redirectRefused("attacker.example"))
+        #expect(Self.responseError(404, final: start) == .http(404))
     }
 
     @Test func channelAddresses() {
@@ -236,5 +268,17 @@ import Testing
         try Updater.helperScript.write(to: f, atomically: true, encoding: .utf8)
         let r = Updater.run("/bin/bash", ["-n", f.path])
         #expect(r.status == 0, Comment(rawValue: r.out))
+    }
+
+    /// echtes GitHub, derselbe Weg wie die App (Sitzung, Weiterleitungsprüfung, Decodierung); nur mit MIX741_LIVE_GITHUB=1
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["MIX741_LIVE_GITHUB"] == "1"))
+    func liveLatestBuildManifest() async throws {
+        switch await Updater.load(.latestBuild, folder: nil) {
+        case .success(let (m, _)):
+            #expect(!m.build.isEmpty)
+            print("[live] latest-build: version \(m.version) build \(m.build) \(m.date)")
+        case .failure(let e):
+            Issue.record("latest.json vom Netz: \(e.message)")
+        }
     }
 }
