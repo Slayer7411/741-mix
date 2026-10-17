@@ -358,19 +358,26 @@ struct MixApp: App {
     @State private var sessionTimer: Timer?
 
 
-    /// Version und Build für die Marke in der Leiste („0.8.1 · db052b1“), gleiche Quelle wie der Fenstertitel
+    /// Version, Codename und Build für die Marke in der Leiste („0.8.2 · LIMBUS · db052b1“), gleiche Quelle wie der Fenstertitel
     static var versionLine: String {
         let info = Bundle.main.infoDictionary
         guard let v = info?["CFBundleShortVersionString"] as? String else { return "dev" }
         let b = info?["CFBundleVersion"] as? String ?? ""
-        return b.isEmpty || b == v ? v : "\(v) · \(b)"
+        let c = codename(info, version: v)
+        return [v, c, b == v ? "" : b].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     static var appTitle: String {
         let info = Bundle.main.infoDictionary
         guard let v = info?["CFBundleShortVersionString"] as? String else { return "MINOS-741 dev" }
         let b = info?["CFBundleVersion"] as? String ?? ""
-        return "MINOS-741 \(v)" + (b.isEmpty || b == v ? "" : " (\(b))")
+        let c = codename(info, version: v)
+        return "MINOS-741 " + [v, c].filter { !$0.isEmpty }.joined(separator: " · ") + (b.isEmpty || b == v ? "" : " (\(b))")
+    }
+
+    /// Codename aus dem Bundle (make-app.sh); ohne Schlüssel (swift run) aus der Version berechnet
+    private static func codename(_ info: [String: Any]?, version: String) -> String {
+        (info?["MINOSCodename"] as? String) ?? Codename.forVersion(version) ?? ""
     }
 
     var body: some Scene {

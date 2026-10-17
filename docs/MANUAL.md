@@ -75,7 +75,7 @@ tracks without an analysis in the collection play, but have no grid -> no sync. 
 ## ◆ 03 · SCREEN
 
 ```
-┌ toolbar ─ ◆ MINOS-741 0.8.1 · db052b1 · PROFILE ▾ ── CLOCK · TAKT · LINK · HID · CPU · TRACKS ── MIXER │ 1 2 4 │ ▭ ◫ ⬒ │ DECKS │ ↻ ┐
+┌ toolbar ◆ MINOS-741 0.8.2 · LIMBUS · db052b1 · PROFILE ▾CLOCK · TAKT · LINK · HID · CPU · TRACKS MIXER │ 1 2 4 │ ▭ ◫ ⬒ │ DECKS │ ↻ ┐
 ├ phrase of the master deck ─────────────────────────────────────────────────┤
 ├ FX 1 ───────┬ master clock + link + metronome ─┬ bars ┬ clock ┬ REC ┬ FX 2 ─┤
 ├ deck A ───────────────────────┬ deck B ────────────────────────────┤

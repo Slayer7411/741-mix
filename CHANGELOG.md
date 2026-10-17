@@ -2,10 +2,11 @@
 
 all notable changes. format: [keep a changelog](https://keepachangelog.com), versions: [semver](https://semver.org).
 `0.x` -> anything can still change.
+codenames: every major version is named after a circle of hell (minos judges the souls there), the release heading reads `◆ [X.Y.Z] · date · CODENAME · NAME`. table in the README under ◆ VERSIONS.
 
 ## ◆ [UNRELEASED]
 
-## ◆ [0.8.2] · 2026-10-17 · TWO MACS
+## ◆ [0.8.2] · 2026-10-17 · LIMBUS · TWO MACS
 
 ### added
 * remote debug channel between the two macs: `scripts/pairdebug.sh <command>` (ping, snapshot, status, prefs-get / prefs-set, defaults-get / defaults-set) asks the other mac over the open connection and prints its answer; the other mac answers unless ⌘, -> DECKS -> Zwei Macs -> `Fernzugriff zum Analysieren erlauben` is off (on by default). unit tests (message round trip, json merge, mailbox format)
@@ -99,12 +100,12 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * browser -> PLAYLISTS, folders, playlists and PREPARATION: drops never arrived in the app (the tree's drop view passed every mouse event through; the ui test called the view directly). now SwiftUI drop targets like the decks
 * browser rows: the drag carries the track text and its file, so rows drag out to the finder and a row drops on a deck as before. finder files drop on a deck title (loads the track when it is in the collection) and into an own playlist list (in the collection only, others are ignored)
 
-## ◆ [0.8.1] · 2026-10-14 · UNIVERSAL
+## ◆ [0.8.1] · 2026-10-14 · LIMBUS · UNIVERSAL
 
 ### fixed
 * release: universal dmg build failed on the x86_64 slice (the layout profiler read the arm thread state); the profiler is arm64 only now, x86_64 returns no samples
 
-## ◆ [0.8.0] · 2026-10-14 · WORKBENCH
+## ◆ [0.8.0] · 2026-10-14 · LIMBUS · WORKBENCH
 
 ### added
 * browser stacked: the pane header (title, count, search, roles, TAGS, PASST, LOKAL, active tags) becomes a column left of the list, the whole pane height goes to track rows
@@ -421,7 +422,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * waveform: a newly loaded track could show the waveform of an earlier one (cache keyed by a reused buffer address); waveforms of unloaded tracks are freed right away (were kept up to 16)
 * deck state on screen kept updating only outside menus: the 30 hz mirror now also runs while a menu is open or the window is resized
 
-## ◆ [0.7.0] · 2026-10-10 · DMG
+## ◆ [0.7.0] · 2026-10-10 · LIMBUS · DMG
 
 ### added
 * universal dmg (apple silicon + intel) attached to every release, built by a github action
@@ -438,7 +439,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ### fixed
 * audio: device running at a different rate than the core played too fast (96 vs 44.1 khz) -> coreaudio converts now
 
-## ◆ [0.6.0] · 2026-10-10 · LINK
+## ◆ [0.6.0] · 2026-10-10 · LIMBUS · LINK
 
 ### added
 * link 3.1.5 (network tempo sync) -> minos leads tempo and bar, peers shown
@@ -449,7 +450,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ### changed
 * license -> GPL-2.0-or-later (link library)
 
-## ◆ [0.5.0] · 2026-10-10 · BROWSER + FX
+## ◆ [0.5.0] · 2026-10-10 · LIMBUS · BROWSER + FX
 
 ### added
 * all library columns -> movable, hideable, saved
@@ -464,7 +465,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 * reverse keeps sync
 * faster browser toggle, tolerant settings load
 
-## ◆ [0.4.0] · 2026-10-10 · GPU WAVEFORM
+## ◆ [0.4.0] · 2026-10-10 · LIMBUS · GPU WAVEFORM
 
 ### added
 * classic deck layout, grid tools, cue colors
@@ -481,7 +482,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ### fixed
 * keylock phase error −0.27 -> 0.0000 beats
 
-## ◆ [0.3.0] · 2026-10-10 · MINOS-741
+## ◆ [0.3.0] · 2026-10-10 · LIMBUS · MINOS-741
 
 ### added
 * master clock: clock in the dsp core, AUTO / MASTER, tempo drag and ±, tap, metronome, snap and quant split
@@ -490,7 +491,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ### changed
 * renamed 741-mix -> MINOS-741 (repo, app, data folder, docs, banner), settings and data migrate
 
-## ◆ [0.2.0] · 2026-10-10 · C++ CORE
+## ◆ [0.2.0] · 2026-10-10 · LIMBUS · C++ CORE
 
 ### added
 * c++ realtime dsp (`MixDSP`) on a single coreaudio output
@@ -499,7 +500,7 @@ all notable changes. format: [keep a changelog](https://keepachangelog.com), ver
 ### fixed
 * ui hangs: cached browser rows, coalesced encoder steps, file checks once at load, less redraw
 
-## ◆ [0.1.0] · 2026-10-10 · FIRST BOOT
+## ◆ [0.1.0] · 2026-10-10 · LIMBUS · FIRST BOOT
 
 ### added
 * `collection.nml` import (14,160 tracks in 0.9 s), playlists, smartlists

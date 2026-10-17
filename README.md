@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/assets/banner.svg" alt="MINOS-741" width="100%"></p>
 
-<p align="center"><a href="https://github.com/Slayer7411/MINOS-741/releases"><img src="https://img.shields.io/github/v/release/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=%24MINOS" alt="release"></a> <a href="https://github.com/Slayer7411/MINOS-741/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/CHANGELOG-%E2%97%86-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="changelog"></a> <a href="docs/MANUAL.md"><img src="https://img.shields.io/badge/MANUAL-%E2%86%92-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="manual"></a> <a href="https://github.com/Slayer7411/MINOS-741/blob/main/LICENSE.md"><img src="https://img.shields.io/badge/LICENSE-GPL--2.0+-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="license"></a> <img src="https://img.shields.io/badge/MACOS-15+-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="macos 15+"> <img src="https://img.shields.io/badge/SWIFT-6-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="swift 6"> <img src="https://img.shields.io/badge/C++-17-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="c++17"></p>
+<p align="center"><a href="https://github.com/Slayer7411/MINOS-741/releases"><img src="https://img.shields.io/github/v/release/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=%24MINOS" alt="release"></a> <img src="https://img.shields.io/badge/CODENAME-LIMBUS-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="codename"> <a href="https://github.com/Slayer7411/MINOS-741/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/CHANGELOG-%E2%97%86-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="changelog"></a> <a href="docs/MANUAL.md"><img src="https://img.shields.io/badge/MANUAL-%E2%86%92-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="manual"></a> <a href="https://github.com/Slayer7411/MINOS-741/blob/main/LICENSE.md"><img src="https://img.shields.io/badge/LICENSE-GPL--2.0+-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="license"></a> <img src="https://img.shields.io/badge/MACOS-15+-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="macos 15+"> <img src="https://img.shields.io/badge/SWIFT-6-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="swift 6"> <img src="https://img.shields.io/badge/C++-17-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="c++17"></p>
 <p align="center"><a href="https://github.com/Slayer7411/MINOS-741/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Slayer7411/MINOS-741/ci.yml?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=CI" alt="ci"></a> <a href="https://github.com/Slayer7411/MINOS-741/commits/main"><img src="https://img.shields.io/github/last-commit/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=LAST%20COMMIT" alt="last commit"></a> <a href="https://github.com/Slayer7411/MINOS-741/graphs/contributors"><img src="https://img.shields.io/github/contributors/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=CONTRIBUTORS" alt="contributors"></a> <a href="https://github.com/Slayer7411/MINOS-741/discussions"><img src="https://img.shields.io/github/discussions/Slayer7411/MINOS-741?style=flat-square&labelColor=0a0a0a&color=e8e4d8&label=DISCUSSIONS" alt="discussions"></a> <a href="https://github.com/sponsors/Slayer7411"><img src="https://img.shields.io/badge/SPONSOR-%E2%99%A5-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="sponsor"></a></p>
 <p align="center"><a href="https://soundcloud.com/minos-741"><img src="https://img.shields.io/badge/SOUNDCLOUD-minos--741-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="soundcloud"></a> <a href="https://www.instagram.com/minos_741/"><img src="https://img.shields.io/badge/INSTAGRAM-@minos__741-e8e4d8?style=flat-square&labelColor=0a0a0a" alt="instagram"></a> <a href="https://github.com/Slayer7411/MINOS-741/discussions/categories/show-and-tell"><img src="https://img.shields.io/badge/SUBMIT%20A%20SET-%E2%86%92-d21f26?style=flat-square&labelColor=0a0a0a" alt="submit a set"></a></p>
 
@@ -51,6 +51,24 @@ new here? -> [START](docs/START.md): from zero to your first recorded set. every
 
 work in progress, `0.x` -> things still change. [releases](https://github.com/Slayer7411/MINOS-741/releases) · [changelog](CHANGELOG.md) · [roadmap](docs/roadmap.md).
 keys and full reference -> [MANUAL](docs/MANUAL.md).
+
+## ◆ VERSIONS
+
+minos judges the souls at the gate of the second circle in dante's inferno; every major version is named after a circle.
+
+| major | name | circle |
+|---|---|---|
+| 0 | LIMBUS | limbo · first circle |
+| 1 | LUXURIA | lust · second circle |
+| 2 | GULA | gluttony · third circle |
+| 3 | AVARITIA | greed · fourth circle |
+| 4 | IRA | wrath · fifth circle |
+| 5 | HAERESIS | heresy · sixth circle |
+| 6 | VIOLENTIA | violence · seventh circle |
+| 7 | FRAUS | fraud · eighth circle |
+| 8 | PRODITIO | treachery · ninth circle |
+| 9 | PURGATORIUM | purgatory · no circle of hell |
+| 10 | PARADISUS | paradise · also every major after 10 |
 
 ## ◆ SETS
 

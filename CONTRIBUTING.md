@@ -77,13 +77,15 @@ readme screenshot -> `scripts/make-app.sh --no-install && MIX741_SELFTEST=1 MIX7
 
 maintainer checklist:
 
-1. move `[UNRELEASED]` in [CHANGELOG.md](CHANGELOG.md) into `[X.Y.Z] · date · NAME`, update the compare links
+1. move `[UNRELEASED]` in [CHANGELOG.md](CHANGELOG.md) into `[X.Y.Z] · date · CODENAME · NAME`, update the compare links. CODENAME: `scripts/codename.sh X.Y.Z`
 2. bump the version in the README ticker
 3. `git tag -a vX.Y.Z -m vX.Y.Z && git push origin main vX.Y.Z`
-4. `gh release create vX.Y.Z --title "◆ vX.Y.Z · NAME"` with the changelog section -> the release action builds the universal dmg and attaches it (`MINOS-741.dmg` + `MINOS-741-X.Y.Z.dmg`), the homebrew cask always points to the latest one
+4. `gh release create vX.Y.Z --title "◆ vX.Y.Z · CODENAME · NAME"` with the changelog section -> the release action builds the universal dmg and attaches it (`MINOS-741.dmg` + `MINOS-741-X.Y.Z.dmg`), the homebrew cask always points to the latest one
 5. `scripts/make-app.sh` -> app title shows the new version
 
 semver: `0.x` minor = new features, patch = fixes.
+
+codenames: every major version is named after a circle of hell (table in the [README](README.md) under ◆ VERSIONS). the source is `Sources/MixCore/Codename.swift`, `scripts/codename.sh` is its shell copy (`CodenameTests` checks they match). a new major -> next name in the list (from 10 on: PARADISUS), `make-app.sh` writes it into the app as `MINOSCodename`.
 
 ## ◆ LICENSE
 
