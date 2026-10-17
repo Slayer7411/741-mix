@@ -56,8 +56,10 @@ enum WindowShot {
             for p in paths.values { mix.prefs.ui[keyPath: p] = false }
             for n in rows.split(separator: ",") { if let p = paths[String(n)] { mix.prefs.ui[keyPath: p] = true } }
         }
-        mix.prefs.ui.zoom = 1
-        ZoomControl.apply(1)
+        // MIX741_SHOT_ZOOM=1.25: Zoom des Fensters (Standard 100 %), nur für dieses Bild
+        let zoom = ZoomSteps.clamp(env["MIX741_SHOT_ZOOM"].flatMap(Double.init) ?? 1)
+        mix.prefs.ui.zoom = zoom
+        ZoomControl.apply(zoom)
 
         let store = LibraryStore(), history = HistoryStore(), browser = BrowserState()
         browser.store = store
