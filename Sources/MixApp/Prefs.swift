@@ -340,6 +340,18 @@ struct UIPrefs: Codable, Equatable {
     var resetPlayedOnStart = true
     /// Zwei-Mac-Modus (bleibt auf dem Mac)
     var pair = PairSetup()
+    /// Collection-Datei, die die Einrichtung gewählt hat (leer = automatisch gesucht); bleibt auf dem Mac
+    var collectionPath = ""
+    /// Vollständige Absturzberichte (ohne Geräte-Kennungen) automatisch in den Ordner unten schreiben; Standard aus
+    var crashReports = false
+    /// Ordner für die Absturzberichte (bleibt auf dem Mac, leer = nichts wird geschrieben)
+    var crashReportFolder = ""
+    /// Nach einem Absturz fragen: Sheet mit dem bereinigten Bericht beim nächsten Start (Standard an)
+    var askAfterCrash = true
+    /// Zeitpunkt des neuesten kopierten Absturzberichts (Sekunden seit 1970, 0 = noch keiner)
+    var crashLastCopied = 0.0
+    /// Zeitpunkt des neuesten Berichts, zu dem gefragt wurde (Sekunden seit 1970, 0 = noch keiner)
+    var crashLastPrompted = 0.0
     /// Schneiden (Bereich entfernen / auf Bereich kürzen): Ergebnis gleich ins selbe Deck laden (Lade-Schutz gilt)
     var cutLoadsResult = false
     /// EDIT-Modus: Raster beim Markieren (Ziehen in der Wellenform), ⌥ = frei

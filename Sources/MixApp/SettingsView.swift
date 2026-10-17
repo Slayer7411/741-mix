@@ -905,26 +905,49 @@ struct DisplaySettings: View {
     }
 }
 
+/// Ausgabegerät mit Neu einlesen: AUDIO-Bereich und Einrichtung (SetupFlow)
+struct AudioDevicePicker: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        LabeledContent("Gerät") {
+            HStack(spacing: 8) {
+                Picker("Gerät", selection: Binding(
+                    get: { mix.deviceUID ?? "" },
+                    set: { mix.deviceUID = $0.isEmpty ? nil : $0; mix.applyRouting() })) {
+                    Text("Systemstandard").tag("")
+                    ForEach(mix.outputDevices) { d in Text("\(d.name) – \(d.channels) Kanäle").tag(d.uid) }
+                }
+                .labelsHidden()
+                Button { mix.refreshDevices() } label: { Text("↻") }
+                    .help("Geräteliste neu einlesen")
+            }
+        }
+        .settingsAnchor("audio.device")
+    }
+}
+
+/// Mixer-Modus (intern / extern): AUDIO-Bereich und Einrichtung (SetupFlow)
+struct MixerModePicker: View {
+    @Environment(MixModel.self) private var mix
+
+    var body: some View {
+        Picker("Modus", selection: Binding(get: { mix.mixerMode }, set: { mix.mixerMode = $0; mix.applyRouting() })) {
+            Text("Intern – Mixer in MINOS-741").tag(MixerMode.internalMixer)
+            Text("Extern – Mischpult (jedes Deck auf eigenem Kanalpaar)").tag(MixerMode.external)
+        }
+        .pickerStyle(.radioGroup)
+        .settingsAnchor("audio.mixermode")
+    }
+}
+
 struct AudioSettings: View {
     @Environment(MixModel.self) private var mix
 
     var body: some View {
         Form {
             Section("Ausgabegerät") {
-                LabeledContent("Gerät") {
-                    HStack(spacing: 8) {
-                        Picker("Gerät", selection: Binding(
-                            get: { mix.deviceUID ?? "" },
-                            set: { mix.deviceUID = $0.isEmpty ? nil : $0; mix.applyRouting() })) {
-                            Text("Systemstandard").tag("")
-                            ForEach(mix.outputDevices) { d in Text("\(d.name) – \(d.channels) Kanäle").tag(d.uid) }
-                        }
-                        .labelsHidden()
-                        Button { mix.refreshDevices() } label: { Text("↻") }
-                            .help("Geräteliste neu einlesen")
-                    }
-                }
-                .settingsAnchor("audio.device")
+                AudioDevicePicker()
                 LabeledContent("Kanäle", value: "\(mix.deviceChannels)")
                     .settingsAnchor("audio.channels")
                 Picker("Samplerate", selection: Binding(get: { mix.sampleRate }, set: { mix.setAudioFormat(rate: $0) })) {
@@ -953,12 +976,7 @@ struct AudioSettings: View {
             }
             BufferTestSettings()
             Section("Mixer") {
-                Picker("Modus", selection: Binding(get: { mix.mixerMode }, set: { mix.mixerMode = $0; mix.applyRouting() })) {
-                    Text("Intern – Mixer in MINOS-741").tag(MixerMode.internalMixer)
-                    Text("Extern – Mischpult (jedes Deck auf eigenem Kanalpaar)").tag(MixerMode.external)
-                }
-                .pickerStyle(.radioGroup)
-                .settingsAnchor("audio.mixermode")
+                MixerModePicker()
             }
             if mix.mixerMode == .internalMixer {
                 Section("Ausgang (Master)") {

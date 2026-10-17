@@ -40,7 +40,8 @@ enum DataDir {
 /// Einstellungen als Datei im Datenordner (`settings.plist`): alles – Fenster, Teiler, Spalten, Ansicht, FX, Controller,
 /// Tasten. Geschrieben beim Start, nach jeder Änderung und beim Beenden; beim Start übernommen, wenn die Datei seit dem
 /// letzten Mal geändert wurde (anderer Mac, zurückgespielt). Auf dem Mac bleiben nur die Audio-Geräte-Einstellungen
-/// (Interface, Rate, Puffer, Kanalpaare, Mixer-Modus, Aufnahme-Eingang) und der Zwei-Mac-Modus
+/// (Interface, Rate, Puffer, Kanalpaare, Mixer-Modus, Aufnahme-Eingang), der Zwei-Mac-Modus, die gewählte Collection
+/// und der Ordner der Absturzberichte
 enum SettingsFile {
     static var url: URL { DataDir.shared.appendingPathComponent("settings.plist") }
     static let stampKey = "settings.imported"
@@ -48,7 +49,9 @@ enum SettingsFile {
     static let localKeys: Set<String> = ["deviceUID", "sampleRate", "bufferSize", "internalPair", "deckPairs", "previewPair",
                                          "mixerMode", "parallelDecks", stampKey]
     /// in `prefs.v1`: Zwei-Mac-Modus, Aufnahme-Eingang
-    static let localPrefs: [[String]] = [["ui", "pair"], ["record", "inputUID"], ["record", "inputFirstChannel"]]
+    static let localPrefs: [[String]] = [["ui", "pair"], ["record", "inputUID"], ["record", "inputFirstChannel"],
+                                         ["ui", "collectionPath"], ["ui", "crashReportFolder"], ["ui", "crashLastCopied"],
+                                         ["ui", "crashLastPrompted"]]
 
     /// wird beim Übernehmen geschrieben (alles außer dem Audio-Gerät)
     static func shared(_ key: String) -> Bool { !localKeys.contains(key) }

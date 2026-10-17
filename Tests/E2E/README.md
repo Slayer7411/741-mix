@@ -49,6 +49,8 @@ under that folder:
 | pairing port file | `<shared>/<name>.port` (`MIX741_E2E_SHARED`, one folder per run, shared by the instances of that run) |
 | audio output | none opened: `CoreAudioOutput` renders to a timer; `outputDeviceID` is 0 |
 | control mailbox | `<root>/control/` |
+| macOS crash reports (`DiagnosticReports`) | `<root>/diagnostic-reports/` (never the user's `~/Library/Logs/DiagnosticReports`) |
+| old settings of the user (migration from older app names) | not read (`AppResources.migrateDefaults` skips them in E2E) |
 
 Two instances of one run share the audio folder and the pairing port folder only (same track keys, as two Macs with the
 same collection). Nothing else is shared.
@@ -119,6 +121,13 @@ Track keys are NML keys (`E2E/:…/:music/:t01.wav`). Scenarios write them as `$
 | `reset-played` | optional `keys` (all if absent) | `{played}` |
 | `shot` | `path` (PNG) | `{path, width, height}` of the main window (pixels) |
 | `quit` | – | `{quitting: true}`, then the normal quit path (session, settings export); the runner waits for exit (step `quit`) |
+| `setup-state` | – | `{shown, step, checked, reasons, firstLaunch, suppressed, collectionFound, collection, chosen, loaded, tracks}`: Einrichtung (Sheet) und Gründe beim Start |
+| `setup-step` | `step`: collection, music, audio, network, done | the same, after opening the sheet at that step (also when suppressed) |
+| `setup-choose` | `path` (collection file) | the same; stores `ui.collectionPath`, loads the collection |
+| `setup-close` | – | the same, after closing the sheet (saves the settings) |
+| `crash-state` | – | `{shown, count, file, title, text, opened, askAfterCrash, folderSet}`: Absturz-Sheet (`text` is the public, redacted report) |
+| `crash-open` | – | the same, after the GitHub issue action: the address goes to `opened`, never to the browser |
+| `crash-close` | – | the same, after closing the sheet |
 | `drag` | – | **not wired**: drops arrive as window/AppKit drag events, not reachable from the mailbox. Use `load` and `add-to-playlist` |
 
 `snapshot` body (keys used by the scenarios; the rest is the same as `scripts/pairdebug.sh snapshot`):
@@ -152,6 +161,12 @@ File `Tests/E2E/scenarios/NN-name.json`:
 }
 ```
 
+- top-level `env`: environment variables for every instance of the scenario (on top of the defaults, e.g. `MIX741_SETUP`).
+  The runner starts instances with `MIX741_SETUP=off` (no first-run sheet) unless the scenario says otherwise.
+- top-level `collection`: `"absent"` = no collection at the default place (first start). The fixture then lies in
+  `${root}/fixture/collection/collection.nml` (for `setup-choose`).
+- top-level `fake_crash: true`: writes one fake `MINOS-741_…ips` into `${root}/diagnostic-reports` before the start
+  (macOS report folder of the instance, see *Isolation*).
 - `instances`: list of letters (`A`, `B`, …), default `["A"]`. All are started and wait for `ping` before the first
   step. Instance B's computer name is `${name:B}`.
 - `do`: a command name from the table above, or a runner step:
@@ -231,6 +246,9 @@ Totals: 10 tracks, 2 playlists, 3 smartlists, 1 folder.
   each instance's own collection.
 - **Suites are files.** `com.github.slayer7411.minos741.e2e.<name>.plist` lives in `~/Library/Preferences`. The runner
   deletes its own suites after each scenario; a crashed run can leave some behind (only with this prefix).
+- **Sheets are not shown.** The setup and crash sheets are not presented in E2E runs (`SetupFlow.sheetShown`,
+  `CrashPrompt.sheetShown`); their state is read with `setup-state` / `crash-state`. No browser is opened: `crash-open`
+  only records the address (`CrashLinks`).
 - **Real machine, read-only:** installed audio plug-ins (`~/Library/Audio/Plug-Ins`, plug-in catalog scan), Spotlight
   for the explorer search, the system audio device list (read, never opened), the DAW bridge port (see above).
 - **The user's app may run at the same time.** Its own folders change while a run is going. The runner never writes

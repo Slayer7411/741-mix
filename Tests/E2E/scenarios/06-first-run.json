@@ -1,0 +1,44 @@
+{
+  "name": "first-run",
+  "description": "Erststart ohne Collection: Einrichtung zeigt den Collection-Schritt, Auswahl der Fixture lädt die Bibliothek, Einrichtung ist weg, Pfad steht in den Einstellungen und bleibt beim Neustart",
+  "instances": ["A"],
+  "collection": "absent",
+  "env": {"MIX741_SETUP": "on"},
+  "steps": [
+    {"do": "setup-state", "expect": [
+      {"path": "ok", "equals": true},
+      {"path": "body.shown", "equals": true},
+      {"path": "body.step", "equals": "collection"},
+      {"path": "body.reasons.0", "equals": "firstLaunch"},
+      {"path": "body.reasons.1", "equals": "collectionMissing"},
+      {"path": "body.collectionFound", "equals": false},
+      {"path": "body.loaded", "equals": false}
+    ]},
+    {"do": "setup-choose", "args": {"path": "${root:A}/fixture/collection/collection.nml"}, "expect": [
+      {"path": "ok", "equals": true},
+      {"path": "body.chosen", "equals": "${root:A}/fixture/collection/collection.nml"}
+    ]},
+    {"do": "snapshot", "timeout": 30, "expect": [
+      {"path": "body.library.loaded", "equals": true},
+      {"path": "body.library.tracks", "equals": 10},
+      {"path": "body.library.collection", "equals": "${root:A}/fixture/collection/collection.nml"}
+    ]},
+    {"do": "setup-close", "expect": [{"path": "body.shown", "equals": false}]},
+    {"do": "setup-state", "expect": [
+      {"path": "body.shown", "equals": false},
+      {"path": "body.collectionFound", "equals": true}
+    ]},
+    {"do": "prefs-get", "expect": [{"path": "body.ui.collectionPath", "equals": "${root:A}/fixture/collection/collection.nml"}]},
+    {"do": "restart", "who": "A"},
+    {"do": "snapshot", "timeout": 30, "expect": [
+      {"path": "body.library.loaded", "equals": true},
+      {"path": "body.library.tracks", "equals": 10},
+      {"path": "body.library.collection", "equals": "${root:A}/fixture/collection/collection.nml"}
+    ]},
+    {"do": "setup-state", "expect": [
+      {"path": "body.firstLaunch", "equals": false},
+      {"path": "body.reasons", "equals": []},
+      {"path": "body.shown", "equals": false}
+    ]}
+  ]
+}

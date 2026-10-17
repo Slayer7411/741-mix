@@ -200,6 +200,36 @@ final class E2EControl {
             // erst die Antwort in der Ordnerpost, dann das übliche Beenden (Sitzung, Einstellungen, Dienste)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
 
+        case "setup-state":
+            done(true, setupState())
+
+        case "setup-step":
+            guard let st = SetupFlow.Step(rawValue: a["step"] as? String ?? "") else { return done(false, "unbekannter Schritt") }
+            SetupFlow.shared.open(st)
+            done(true, setupState())
+
+        case "setup-choose":
+            let p = a["path"] as? String ?? ""
+            guard !p.isEmpty, FileManager.default.fileExists(atPath: p) else { return done(false, "Datei fehlt: \(p)") }
+            SetupFlow.shared.chooseCollection(URL(fileURLWithPath: p), store: store)
+            done(true, setupState())
+
+        case "setup-close":
+            SetupFlow.shared.close()
+            done(true, setupState())
+
+        case "crash-state":
+            done(true, crashState())
+
+        case "crash-close":
+            CrashPrompt.shared.close()
+            done(true, crashState())
+
+        case "crash-open":
+            // nur gemerkt (CrashLinks), nie im Browser
+            CrashPrompt.shared.openIssue()
+            done(true, crashState())
+
         case "drag":
             done(false, "nicht verdrahtet: Ziehen läuft über Fenster-Ereignisse (NSDraggingInfo); "
                  + "Ersatz: load (Deck), add-to-playlist (Playlist)")
@@ -268,6 +298,24 @@ final class E2EControl {
         o["paths"] = ["settings": SettingsFile.url.path, "dataDir": DataDir.shared.path, "root": E2E.root?.path ?? "",
                       "suite": E2E.suite]
         return o
+    }
+
+    /// Einrichtung: Sheet offen, Schritt, Gründe der Prüfung beim Start, Collection
+    private func setupState() -> [String: Any] {
+        let f = SetupFlow.shared
+        return ["shown": f.shown, "step": f.step.rawValue, "checked": f.checked, "reasons": f.reasons.map(\.rawValue),
+                "firstLaunch": SetupFlow.firstLaunch, "suppressed": SetupFlow.suppressed,
+                "collectionFound": FileManager.default.fileExists(atPath: LibraryStore.defaultNML.path),
+                "collection": LibraryStore.defaultNML.path, "chosen": LibraryStore.chosenNML?.path ?? "",
+                "loaded": store.sourceURL != nil, "tracks": store.tracks.count]
+    }
+
+    /// Absturz-Sheet: offen, Anzahl neuer Berichte, Name und bereinigter Text des gezeigten
+    private func crashState() -> [String: Any] {
+        let c = CrashPrompt.shared
+        return ["shown": c.shown, "count": c.item?.count ?? 0, "file": c.item?.fileName ?? "", "text": c.item?.text ?? "",
+                "title": c.item?.title ?? "", "opened": CrashLinks.recorded,
+                "askAfterCrash": mix.prefs.ui.askAfterCrash, "folderSet": !mix.prefs.ui.crashReportFolder.isEmpty]
     }
 
     /// Antwort schreiben (atomar); body wird als JSON abgelegt

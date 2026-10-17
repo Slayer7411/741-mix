@@ -159,3 +159,28 @@ if __name__ == "__main__":
         print("aufruf: build_fixture.py <ziel>", file=sys.stderr)
         sys.exit(2)
     print(build(sys.argv[1]))
+
+
+FAKE_IPS_HEADER = {"app_name": "MINOS-741", "app_version": "9.9.9", "build_version": "4242", "bug_type": "309",
+                   "os_version": "macOS 26.0 (25A100)", "timestamp": "2026-10-17 10:00:00.00 +0200",
+                   "bundleID": "com.github.slayer7411.minos741"}
+FAKE_IPS_BODY = {"procName": "minos741",
+                 "procPath": "/Users/cs.privat/Applications/MINOS-741.app/Contents/MacOS/minos741",
+                 "captureTime": "2026-10-17 10:00:00.00 +0200", "osVersion": {"train": "macOS 26.0", "build": "25A100"},
+                 "cpuType": "ARM-64", "hardwareModel": "Mac15,7", "crashReporterKey": "6F3C2A1B-1111-2222-3333-444455556666",
+                 "exception": {"type": "EXC_BAD_ACCESS", "signal": "SIGSEGV"}, "faultingThread": 0,
+                 "threads": [{"triggered": True, "frames": [
+                     {"imageOffset": 4096, "symbol": "mixer_process", "symbolLocation": 12, "imageIndex": 0},
+                     {"imageOffset": 99, "imageIndex": 1}]}],
+                 "usedImages": [{"path": "/Users/cs.privat/Applications/MINOS-741.app/Contents/MacOS/minos741",
+                                 "name": "minos741"}]}
+
+
+def write_fake_crash(root):
+    """Ein Absturzbericht im isolierten Berichtsordner der Instanz (<root>/diagnostic-reports), Szenario fake_crash"""
+    import json
+    d = os.path.join(root, "diagnostic-reports")
+    os.makedirs(d, exist_ok=True)
+    text = json.dumps(FAKE_IPS_HEADER) + "\n" + json.dumps(FAKE_IPS_BODY, indent=2) + "\n"
+    with open(os.path.join(d, "MINOS-741_2026-10-17-100000_E2E.ips"), "w", encoding="utf-8") as f:
+        f.write(text)

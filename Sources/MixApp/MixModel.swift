@@ -122,6 +122,7 @@ final class MixModel {
         didSet {
             guard prefs != oldValue else { return }
             savePrefs()
+            CrashReports.configure(prefs.ui)
             if prefs.engine != oldValue.engine { core.setPrefs(prefs.engine) }
             if prefs.ui.previewVolume != oldValue.ui.previewVolume { previewer.setVolume(prefs.ui.previewVolume) }
             if prefs.record != oldValue.record { recorder.updateMonitoring() }

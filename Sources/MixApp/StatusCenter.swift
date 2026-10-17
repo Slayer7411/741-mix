@@ -64,6 +64,8 @@ final class StatusCenter {
             }
         }
         if Session.isSelfTest || MixController.debug { print("[status] \(level) \(text)" + (detail.map { " · \($0)" } ?? "")); fflush(stdout) }
+        // lokales Statusprotokoll (Datenordner, nie gesendet): Grundlage der Statuszeilen im Absturzbericht
+        StatusLogFile.shared.append("\(StatusLogFile.stamp(now)) \(level) \(text)" + (detail.map { " · \($0)" } ?? ""))
         schedule()
     }
 
