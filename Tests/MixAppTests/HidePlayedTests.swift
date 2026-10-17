@@ -58,7 +58,7 @@ private func track(_ k: String, _ title: String) -> Track {
 /// Standard allgemein -> speziell; gespeicherte Reihenfolge, unbekannte fallen weg, neue stehen hinter dem Vorgänger
 @MainActor @Test func settingsTabOrder() {
     let ids = SettingsView.tabs.map(\.id)
-    #expect(ids == ["AUDIO", "ANZEIGE", "DECKS", "MIXER & FX", "PLUGINS", "BROWSER", "TAGS", "CLOUD", "TASTATUR", "CONTROLLER"])
+    #expect(ids == ["ALLGEMEIN", "AUDIO", "DECKS", "MIXER & FX", "PLUGINS", "BROWSER", "ANZEIGE", "CONTROLLER", "LIVE & SYNC", "TASTATUR", "CLOUD"])
     #expect(SettingsView.ordered([]).map(\.id) == ids)
     #expect(SettingsTabOrder.merged(["C", "X", "A"], defaults: ["A", "B", "C", "D"]) == ["C", "D", "A", "B"])
     #expect(SettingsTabOrder.merged([], defaults: ["A", "B"]) == ["A", "B"])
@@ -66,7 +66,7 @@ private func track(_ k: String, _ title: String) -> Track {
     #expect(SettingsTabOrder.moved(["A", "B", "C"], "A", before: nil) == ["B", "C", "A"])
     #expect(SettingsTabOrder.moved(["A", "B", "C"], "B", before: "B") == ["A", "B", "C"])
     #expect(SettingsTabOrder.moved(["A", "B"], "fremd", before: "A") == ["A", "B"])
-    #expect(SettingsView.ordered(["CONTROLLER", "AUDIO"]).map(\.id).prefix(2) == ["CONTROLLER", "AUDIO"])
+    #expect(SettingsView.ordered(["CONTROLLER", "AUDIO"]).map(\.id).filter { ["CONTROLLER", "AUDIO"].contains($0) } == ["CONTROLLER", "AUDIO"])
 }
 
 /// neues Feld: alte Einstellungen ohne Reihenfolge -> Standard, gespeicherte bleiben

@@ -765,7 +765,7 @@ struct TagPicker: View {
         let tf = model.tagFilter
         VStack(alignment: .leading, spacing: 6.z) {
             Text("TAGS · KOMMENTAR 2").font(Theme.label(12.z, .bold))
-            Text("trennzeichen: '\(separators)' (einstellbar unter ⌘, → tags)").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
+            Text("trennzeichen: '\(separators)' (einstellbar unter ⌘, → BROWSER → Tags)").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
             Text("klick = filter · ⌥-klick = ausschließen · auch in der liste").font(Theme.mono(10.z)).foregroundStyle(Theme.muted)
             TextField("FILTERN", text: $filter).textFieldStyle(.plain).font(Theme.mono(11.z))
                 .padding(4.z).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))

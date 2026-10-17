@@ -238,7 +238,6 @@ struct WavePresetSettings: View {
             ? Text("eingebaut: die erste änderung legt eine eigene kopie an („… kopie“) und wählt sie. eigene presets: wave-presets.json im minos-741-ordner.")
             : Text("eigenes preset. zurücksetzen = werte des eingebauten presets, aus dem es stammt."))
             .settingsHint()
-        WavePresetFields()
     }
 
     private func askName(_ title: String, _ initial: String, _ done: (String) -> Void) {

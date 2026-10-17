@@ -17,6 +17,8 @@ struct ShortcutTable: View {
     @Binding var keys: ShortcutMap
     @State private var recording: ShortcutID?
     @State private var monitor: Any?
+    /// Favoriten-Modus: nur markierte Kürzel, ohne Kopf
+    @Environment(\.settingsFilter) private var filter
 
     /// bleiben beim System (Beenden, Ausblenden, Minimieren, Vollbild)
     static let reserved: Set<KeyCombo> = [KeyCombo("q"), KeyCombo("h"), KeyCombo("h", [.option, .command]), KeyCombo("m"),
@@ -30,6 +32,7 @@ struct ShortcutTable: View {
     var body: some View {
         let conflicts = keys.conflicts
         VStack(alignment: .leading, spacing: 0) {
+            if filter == nil {
             HStack(alignment: .firstTextBaseline) {
                 Text("TASTATUR").font(Theme.label(15, .bold)).foregroundStyle(Theme.bone)
                 Spacer()
@@ -45,19 +48,24 @@ struct ShortcutTable: View {
                 Text("◆ \(conflicts.count) doppelt belegt -> es gilt die erste aktion in der liste")
                     .font(Theme.mono(10, .medium)).foregroundStyle(Theme.state).padding(.top, 4)
             }
+            }
             ForEach(ShortcutGroup.allCases, id: \.self) { g in
-                Text(g.title).font(Theme.label(11, .bold)).foregroundStyle(Theme.muted)
-                    .padding(.top, 14).padding(.bottom, 4)
-                Rectangle().fill(Theme.hairline).frame(height: 1)
-                ForEach(ShortcutID.allCases.filter { $0.group == g }) { a in
-                    row(a).settingsAnchor(SettingsIndex.keyAnchor(a))
-                    Rectangle().fill(Theme.hairline.opacity(0.5)).frame(height: 1)
+                if ShortcutID.allCases.contains(where: { $0.group == g && visible($0) }) {
+                    Text(g.title).font(Theme.label(11, .bold)).foregroundStyle(Theme.muted)
+                        .padding(.top, 14).padding(.bottom, 4)
+                    Rectangle().fill(Theme.hairline).frame(height: 1)
+                    ForEach(ShortcutID.allCases.filter { $0.group == g && visible($0) }) { a in
+                        row(a).settingsAnchor(SettingsIndex.keyAnchor(a))
+                        Rectangle().fill(Theme.hairline.opacity(0.5)).frame(height: 1)
+                    }
                 }
             }
         }
         .padding(16)
         .onDisappear { stop() }
     }
+
+    private func visible(_ a: ShortcutID) -> Bool { filter?.contains(SettingsIndex.keyAnchor(a)) ?? true }
 
     private func row(_ a: ShortcutID) -> some View {
         let c = keys.combo(a)

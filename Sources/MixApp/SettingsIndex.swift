@@ -12,12 +12,29 @@ struct SettingsEntry: Sendable, Hashable {
     var hint: String?
     var keywords: [String] = []
     var alt: String?
+    /// im einklappbaren Abschnitt ERWEITERT des Bereichs (Sprung klappt ihn auf)
+    var advanced: Bool { SettingsIndex.advancedSections.contains(tab + "|" + section) }
 }
 
 /// Index aller Einstellungen für die Suche (⌘, -> Suchfeld). Statisch statt Introspektion der Views; ein Unit-Test
 /// gleicht ihn mit den Ankern im Quelltext ab
 enum SettingsIndex {
     static let entries: [SettingsEntry] = rows + shortcuts
+
+    /// alle Anker (Favoriten: unbekannte IDs werden ignoriert)
+    static let anchors: Set<String> = Set(entries.map(\.anchor))
+
+    /// Abschnitte im einklappbaren Bereich ERWEITERT, als „BEREICH|Abschnitt“ (Schlüssel gleich dem Quelltext)
+    static let advancedSections: Set<String> = [
+        "AUDIO|Puffer-Test", "AUDIO|Laden & Cache", "AUDIO|Rechenkern",
+        "DECKS|Loop-Snap", "DECKS|Phrasen-Anker", "DECKS|EDIT-Modus & Tool-Loops", "DECKS|Vorbereiten", "DECKS|Ausgabe (Render)",
+        "MIXER & FX|FX-Belegung (D/W · Regler · Tasten)", "MIXER & FX|Gemerkte Belegungen", "MIXER & FX|Gemerkte Racks",
+        "ANZEIGE|Mischung (3-Band)",
+        "BROWSER|Browser-Vorschau", "BROWSER|Tag-Farben", "BROWSER|Analyse",
+        "CONTROLLER|LED-Helligkeit", "CONTROLLER|Feste Belegung (Standard)",
+        "LIVE & SYNC|Groove → MIDI",
+        "CLOUD|Dauerhaft offline",
+    ]
 
     /// Anker einer Tastatur-Zeile
     static func keyAnchor(_ a: ShortcutID) -> String { "keys." + a.rawValue }
@@ -36,7 +53,13 @@ enum SettingsIndex {
                       keywords: kw.split(separator: " ").map(String.init), alt: alt)
     }
 
-    static let rows: [SettingsEntry] = audio + display + decks + mixerFX + plugins + browser + tags + cloud + keys + controller
+    static let rows: [SettingsEntry] = general + audio + decks + mixerFX + plugins + browser + display + controller + tags + cloud + keys
+
+    private static let general: [SettingsEntry] = [
+        e("ALLGEMEIN", "Einrichtung", "general.setup", "Einrichtungs-Ablauf", hint: "Zeigt die Einrichtung noch einmal: Sammlung, Ausgabegerät, Controller. Nichts wird gelöscht.", kw: "setup erststart einrichtung"),
+        e("ALLGEMEIN", "Daten", "general.datafolder", "Datenordner", hint: "Ordner MINOS-741 neben der Collection-Datei: settings.plist, Analysen, Edits, Cuts, Playlists, History. Zieht mit der Collection um.", kw: "daten ordner folder collection settings"),
+        e("ALLGEMEIN", "Daten", "general.settingsfile", "Einstellungsdatei", kw: "settings plist datei"),
+    ]
 
     private static let audio: [SettingsEntry] = {
         let t = "AUDIO"
@@ -83,15 +106,15 @@ enum SettingsIndex {
     private static let display: [SettingsEntry] = {
         let t = "ANZEIGE", w = "Wellenform"
         return [
-            e(t, "Sprache", "display.language", "Sprache (wirkt nach Neustart)", kw: "deutsch english"),
-            e(t, "Zoom", "display.zoom", "Hauptfenster (⌘+ / ⌘− / ⌘0)", kw: "zoom größe skalierung"),
-            e(t, "Updates", "display.update.channel", "Update-Kanal",
+            e("ALLGEMEIN", "Sprache", "display.language", "Sprache (wirkt nach Neustart)", kw: "deutsch english"),
+            e("ALLGEMEIN", "Zoom", "display.zoom", "Hauptfenster (⌘+ / ⌘− / ⌘0)", kw: "zoom größe skalierung"),
+            e("ALLGEMEIN", "Updates", "display.update.channel", "Update-Kanal",
               hint: "neuester build: jeder build (rollendes release). stabile versionen: nur vX.Y.Z-releases. eigener ordner: latest.json und dmg aus einem ordner. aus: keine updates",
               kw: "update aktualisierung version kanal channel github release neuester build stabil"),
-            e(t, "Updates", "display.update.folder", "Ordner", kw: "update aktualisierung drive ordner latest dmg"),
-            e(t, "Updates", "display.update.auto", "Updates automatisch installieren",
+            e("ALLGEMEIN", "Updates", "display.update.folder", "Ordner", kw: "update aktualisierung drive ordner latest dmg"),
+            e("ALLGEMEIN", "Updates", "display.update.auto", "Updates automatisch installieren",
               hint: "nur wenn kein deck spielt, live aus ist und 2 min keine eingabe kam", kw: "update automatisch installieren auto-update"),
-            e(t, "Updates", "display.update.check", "Jetzt prüfen", kw: "update prüfen version wiederherstellen rollback"),
+            e("ALLGEMEIN", "Updates", "display.update.check", "Jetzt prüfen", kw: "update prüfen version wiederherstellen rollback"),
             e(t, "Layout", "display.deckcount", "Decks anzeigen", kw: "4 decks"),
             e(t, "Layout", "display.deckslots", "Links oben", kw: "deck anordnung position platz links rechts oben unten a b c d"),
             e(t, "Layout", "display.twodecks", "Zwei Decks", kw: "nebeneinander übereinander zwei decks"),
@@ -123,19 +146,19 @@ enum SettingsIndex {
             e(t, "Beatgrid", "display.grid.barnumbers", "Taktnummern", kw: "grid"),
             e(t, "Beatgrid", "display.grid.markers", "Marker alle 8 / 16 / 32 Takte (magenta)", kw: "grid"),
             e(t, "Beatgrid", "display.grid.lines", "Linien", kw: "grid"),
-            e(t, "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.start", "Start-Cue (Load / AutoGrid)", kw: "farbe pads"),
-            e(t, "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.cue", "Cue", kw: "farbe pads"),
-            e(t, "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.loop", "Loop", kw: "farbe pads"),
-            e(t, "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.shortloop", "Kurzer Loop", kw: "farbe pads"),
-            e(t, "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.shortbars", "Kurz = bis", kw: "farbe pads"),
+            e("CONTROLLER", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.start", "Start-Cue (Load / AutoGrid)", kw: "farbe pads"),
+            e("CONTROLLER", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.cue", "Cue", kw: "farbe pads"),
+            e("CONTROLLER", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.loop", "Loop", kw: "farbe pads"),
+            e("CONTROLLER", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.shortloop", "Kurzer Loop", kw: "farbe pads"),
+            e("CONTROLLER", "Cue-Farben (Bildschirm und Controller-Pads)", "display.cue.shortbars", "Kurz = bis", kw: "farbe pads"),
         ]
     }()
 
     /// Stil 3-Band (Mischung): Preset und seine Werte, sonst ausgeblendet -> Stil
     private static let wave: [SettingsEntry] = {
-        let t = "ANZEIGE", w = "Wellenform", s = "display.wave.style"
+        let t = "ANZEIGE", w = "Wellenform", s = "display.wave.style", m3 = "Mischung (3-Band)"
         func f(_ anchor: String, _ label: String, hint: String? = nil, kw: String = "") -> SettingsEntry {
-            e(t, w, anchor, label, hint: hint, kw: "preset 3-band " + kw, alt: s)
+            e(t, anchor == "display.wave.preset" ? w : m3, anchor, label, hint: hint, kw: "preset 3-band " + kw, alt: s)
         }
         return [
             f("display.wave.preset", "Preset", hint: "eingebaut: die erste änderung legt eine eigene kopie an („… kopie“) und wählt sie. eigene presets: wave-presets.json im minos-741-ordner."),
@@ -174,10 +197,10 @@ enum SettingsIndex {
             e(t, "Abspielen", "decks.loadprotect", "Lade-Schutz bei laufendem Deck",
               hint: "spielt das deck, wird nicht geladen (doppelklick, taste, controller-load) -> hinweis in der statusleiste. trotzdem laden: ⌥-doppelklick, shift + load, taste „auswahl ins fokus-deck laden (auch wenn es spielt)“.",
               kw: "load lock"),
-            e(t, "Zwei Macs", "decks.pair", "Zwei-Mac-Modus", kw: "zwei-mac pair zweiter mac bildschirm ethernet usb thunderbolt"),
-            e(t, "Zwei Macs", "decks.pairwrites", "Dieser Mac schreibt (Collection, History)", kw: "zwei-mac schreiben collection history"),
-            e(t, "Zwei Macs", "decks.pairdecks", "Decks dieses Macs (höchstens 2)", kw: "zwei-mac decks a b c d"),
-            e(t, "Zwei Macs", "decks.pairdebug", "Fernzugriff zum Analysieren erlauben", kw: "zwei-mac debug analyse remote fernzugriff"),
+            e("LIVE & SYNC", "Zwei Macs", "decks.pair", "Zwei-Mac-Modus", kw: "zwei-mac pair zweiter mac bildschirm ethernet usb thunderbolt"),
+            e("LIVE & SYNC", "Zwei Macs", "decks.pairwrites", "Dieser Mac schreibt (Collection, History)", kw: "zwei-mac schreiben collection history"),
+            e("LIVE & SYNC", "Zwei Macs", "decks.pairdecks", "Decks dieses Macs (höchstens 2)", kw: "zwei-mac decks a b c d"),
+            e("LIVE & SYNC", "Zwei Macs", "decks.pairdebug", "Fernzugriff zum Analysieren erlauben", kw: "zwei-mac debug analyse remote fernzugriff"),
             e(t, "Tempo & Sync", "decks.keylock", "Keylock beim ersten Laden an", kw: "master tempo"),
             e(t, "Tempo & Sync", "decks.temporange", "Tempo-Bereich (Standard)", kw: "pitch range"),
             e(t, "Tempo & Sync", "decks.phaselock", "Phase laufend nachführen (Beat-Sync)"),
@@ -186,14 +209,14 @@ enum SettingsIndex {
             e(t, "Tempo & Sync", "decks.wavegrab", "Wellenform greifen",
               hint: "maus in der wellenform ohne taste, nicht im edit-modus: vinyl = teller, die position folgt der hand (scratch); jog = läuft das deck, pitch-bend nach der geschwindigkeit der hand, steht es, suchen. aus = nur suchen.",
               kw: "scratch jog vinyl nudge"),
-            e(t, "Tempo & Sync", "decks.linkoffset", "Link-Versatz (ms)", kw: "link latenz"),
+            e("LIVE & SYNC", "Takt & Link", "decks.linkoffset", "Link-Versatz (ms)", kw: "link latenz"),
             e(t, l, "decks.loopsize", "Loopgröße (Standard)"),
             e(t, l, "decks.jumpsize", "Beatjump-Größe (Standard)"),
-            e(t, l, "decks.loopsnap.cues", "Loop-Snap auf Loop-Cues",
+            e("DECKS", "Loop-Snap", "decks.loopsnap.cues", "Loop-Snap auf Loop-Cues",
               hint: "nur mit snap. loop, loop in: ein loop-cue, der bis zum fenster vor der position beginnt oder gerade überspielt wird, wird übernommen; sonst beginnt der loop auf der nächsten 4-takt-grenze (ab grid-anker) innerhalb der toleranz; sonst normaler snap. kein sprung: die position läuft in den loop hinein oder ist schon drin."),
-            e(t, l, "decks.loopsnap.window", "Fenster (Beats)", kw: "loop-snap"),
-            e(t, l, "decks.loopsnap.phrase", "Loop-Snap auf 4-Bar-Raster"),
-            e(t, l, "decks.loopsnap.tolerance", "Toleranz (Beats)", kw: "loop-snap"),
+            e("DECKS", "Loop-Snap", "decks.loopsnap.window", "Fenster (Beats)", kw: "loop-snap"),
+            e("DECKS", "Loop-Snap", "decks.loopsnap.phrase", "Loop-Snap auf 4-Bar-Raster"),
+            e("DECKS", "Loop-Snap", "decks.loopsnap.tolerance", "Toleranz (Beats)", kw: "loop-snap"),
             e(t, l, "decks.activeloop", "Active Loop greift",
               hint: "rechtsklick auf einen loop-hotcue -> active loop (punkt auf der taste, gestrichelter rahmen in der wellenform). erreicht die position den loop-anfang, rastet der loop ein, die loop-taste verlässt ihn. gespeichert je track in den eigenen änderungen."),
             e(t, l, "decks.autoloop", "Auto-Loop beim Laden",
@@ -205,31 +228,31 @@ enum SettingsIndex {
             e(t, "Größen", "decks.overviewheight", "Übersicht Höhe (pt)",
               hint: "für alle decks, wächst mit dem zoom. cover bis 40 pt im kopf, darüber eigene spalte links über kopf und wellenform; rechts bleiben mindestens 360 pt für titel und anzeigen, sonst wird das cover schmaler. cover an/aus: ⌘, -> browser -> cover. beide werte gehören zum ansichts-profil.",
               kw: "overview"),
-            e(t, "Master-Clock & Metronom", "decks.metronome", "Metronom auf Kanalpaar",
+            e("LIVE & SYNC", "Takt & Link", "decks.metronome", "Metronom auf Kanalpaar",
               hint: "im extern-modus z. b. auf das paar vom kopfhörer-cue legen -> klick nur auf dem kopfhörer", kw: "click"),
-            e(t, "Phrasen-Anker", "decks.phraseanchor", "Grid-Anker auf Phrasen ausrichten",
+            e("DECKS", "Phrasen-Anker", "decks.phraseanchor", "Grid-Anker auf Phrasen ausrichten",
               hint: "beim laden prüft minos, ob die strukturwechsel des tracks auf 8-takt-grenzen ab dem grid-anker liegen. vorschlagen -> roter phrase-knopf in der grid-zeile, automatisch -> anker wird um ganze beats verschoben. bpm und raster bleiben, gespeichert in den eigenen änderungen, nie in der collection."),
-            e(t, ed, "decks.edit.snap", "Raster beim Markieren", kw: "edit"),
-            e(t, ed, "decks.edit.cutload", "Schneiden: Ergebnis ins Deck laden", kw: "edit cut"),
-            e(t, ed, "decks.edit.toolfolder", "Tool-Loops in Ordner …",
+            e("DECKS", "EDIT-Modus & Tool-Loops", "decks.edit.snap", "Raster beim Markieren", kw: "edit"),
+            e("DECKS", "EDIT-Modus & Tool-Loops", "decks.edit.cutload", "Schneiden: Ergebnis ins Deck laden", kw: "edit cut"),
+            e("DECKS", "EDIT-Modus & Tool-Loops", "decks.edit.toolfolder", "Tool-Loops in Ordner …",
               hint: "edit-modus: ziehen markiert auf dem raster, klick setzt eine schnittmarke, die zeile bearbeitet die schnittliste, das deck spielt sie. render schreibt <name> [cut].m4a, tool 2 · 4 · 8 · 16 schreibt <name> [tool-loop n].m4a.",
               kw: "edit"),
-            e(t, ed, "decks.prep.clip", "Vorbereiten AMP: Clipping erlauben (über 0 dBFS, Spitzen hart begrenzt)", kw: "prepare"),
-            e(t, ed, "decks.prep.jointempo", "Vorbereiten JOIN: Tempo der zweiten angleichen (bis ±0,5 %)",
+            e("DECKS", "Vorbereiten", "decks.prep.clip", "Vorbereiten AMP: Clipping erlauben (über 0 dBFS, Spitzen hart begrenzt)", kw: "prepare"),
+            e("DECKS", "Vorbereiten", "decks.prep.jointempo", "Vorbereiten JOIN: Tempo der zweiten angleichen (bis ±0,5 %)",
               hint: "vorbereiten (profil oder deck-zeile): amp hebt nur an (samples × faktor, kein limiter), ohne clipping höchstens bis 0 dbfs, norm = spitze −0.3 dbfs. join hängt die zweite datei am nächsten taktanfang an, split teilt am takt. alles als neue datei neben dem original.",
               kw: "prepare"),
-            e(t, ed, "decks.export.format", "Ausgabe: Format", kw: "export format wav aiff aac lossless"),
-            e(t, ed, "decks.export.bits", "Ausgabe: Bit", kw: "export bit depth float 16 24"),
-            e(t, ed, "decks.export.rate", "Ausgabe: Abtastrate", kw: "export sample rate resample 44.1 48 96"),
-            e(t, ed, "decks.export.aac", "Ausgabe: AAC-Bitrate", kw: "export aac bitrate kbps"),
-            e(t, ed, "decks.export.dither", "Ausgabe: Dither (TPDF) beim Schritt auf 16 Bit", kw: "export dither tpdf"),
-            e(t, ed, "decks.export.pattern", "Ausgabe: Dateiname (Muster {name} {tag}, leer = wie bisher)", kw: "export name pattern"),
-            e(t, g, "decks.groove.name", "Name der MIDI-Quelle", kw: "groove midi"),
-            e(t, g, "decks.groove.bass", "Kanal Bass", kw: "groove midi"),
-            e(t, g, "decks.groove.drums", "Kanal Drums", kw: "groove midi"),
-            e(t, g, "decks.groove.octave", "Oktave Bass", kw: "groove midi"),
-            e(t, g, "decks.groove.bars", "Länge ohne Loop", kw: "groove midi"),
-            e(t, g, "decks.groove.offset", "Versatz (ms)",
+            e("DECKS", "Ausgabe (Render)", "decks.export.format", "Ausgabe: Format", kw: "export format wav aiff aac lossless"),
+            e("DECKS", "Ausgabe (Render)", "decks.export.bits", "Ausgabe: Bit", kw: "export bit depth float 16 24"),
+            e("DECKS", "Ausgabe (Render)", "decks.export.rate", "Ausgabe: Abtastrate", kw: "export sample rate resample 44.1 48 96"),
+            e("DECKS", "Ausgabe (Render)", "decks.export.aac", "Ausgabe: AAC-Bitrate", kw: "export aac bitrate kbps"),
+            e("DECKS", "Ausgabe (Render)", "decks.export.dither", "Ausgabe: Dither (TPDF) beim Schritt auf 16 Bit", kw: "export dither tpdf"),
+            e("DECKS", "Ausgabe (Render)", "decks.export.pattern", "Ausgabe: Dateiname (Muster {name} {tag}, leer = wie bisher)", kw: "export name pattern"),
+            e("LIVE & SYNC", "Groove → MIDI", "decks.groove.name", "Name der MIDI-Quelle", kw: "groove midi"),
+            e("LIVE & SYNC", "Groove → MIDI", "decks.groove.bass", "Kanal Bass", kw: "groove midi"),
+            e("LIVE & SYNC", "Groove → MIDI", "decks.groove.drums", "Kanal Drums", kw: "groove midi"),
+            e("LIVE & SYNC", "Groove → MIDI", "decks.groove.octave", "Oktave Bass", kw: "groove midi"),
+            e("LIVE & SYNC", "Groove → MIDI", "decks.groove.bars", "Länge ohne Loop", kw: "groove midi"),
+            e("LIVE & SYNC", "Groove → MIDI", "decks.groove.offset", "Versatz (ms)",
               hint: "deck-zeile groove: muster des tracks am grid lesen (aktiver loop, sonst ab der nächsten eins), hats / bass dazu erzeugen. ▶ midi = virtuelle midi-quelle im takt der clock, in der daw als midi-eingang wählen. bass = grundton aus dem key, kanal 10 = drums (42 / 46 hats). ziehen aus dem raster oder .mid = midi-datei.",
               kw: "groove midi"),
         ]
@@ -288,23 +311,23 @@ enum SettingsIndex {
     private static let browser: [SettingsEntry] = {
         let t = "BROWSER", m = "◆ PASST (Matching)", c = "Collection", a = "Analyse", v = "Browser-Vorschau"
         return [
-            e(t, "Zeilen", "browser.rowpadding", "Luft um den Text",
+            e("BROWSER", "Zeilen & Felder", "browser.rowpadding", "Luft um den Text",
               hint: "zeilenhöhe = schrift + luft (11 pt = bisher, 5 pt = eng). gilt für alle listen, auch mit vorschau.", kw: "zeilenhöhe"),
-            e(t, "Zeilen", "browser.rowlines", "Trennlinie zwischen den Zeilen"),
-            e(t, "Zeilen", "browser.snaprows", "Höhe rastet auf ganze Zeilen"),
+            e("BROWSER", "Zeilen & Felder", "browser.rowlines", "Trennlinie zwischen den Zeilen"),
+            e("BROWSER", "Zeilen & Felder", "browser.snaprows", "Höhe rastet auf ganze Zeilen"),
             e(t, "Zeilen & Felder", "browser.rows", "Zeilen", hint: "gilt für bereiche ohne eigene wahl; je bereich umschaltbar mit ≡ / ☰ und ▭ im kopf. werte kürzen: version im titel als kürzel (OM, EXT, RMX …), titel und artist in der mitte gekürzt, bpm ganzzahlig, datum kurz. sortierung und suche nutzen die vollen werte.",
               kw: "zweizeilig einzeilig two rows lines sammelspalte track"),
             e(t, "Zeilen & Felder", "browser.detailbar", "Detailleiste unter der Liste", kw: "detail bar details info leiste ▭"),
             e(t, "Zeilen & Felder", "browser.shortvalues", "Werte kürzen", kw: "kürzen short values original mix om ext rmx bpm datum"),
             e(t, "Zeilen & Felder", "browser.trackparts", "SPALTE TRACK (ZWEIZEILIG)", kw: "reihenfolge teile order parts kommentar zuerst vorlage"),
-            e(t, "Live-Lesbarkeit", "browser.live.auto", "Lesbarkeit bei LIVE automatisch", kw: "live auto club strobe dj"),
-            e(t, "Live-Lesbarkeit", "browser.live.on", "Live-Lesbarkeit in der Liste", kw: "live club strobe lesbar readable font"),
-            e(t, "Live-Lesbarkeit", "browser.live.size", "Schriftgröße der Liste", kw: "live font size schrift groß"),
-            e(t, "Live-Lesbarkeit", "browser.live.weight", "Schnitt", kw: "live weight medium semibold regular fett"),
-            e(t, "Live-Lesbarkeit", "browser.live.stripes", "Zeilen abwechselnd getönt", kw: "live stripes alternating zebra"),
+            e("ALLGEMEIN", "LIVE", "browser.live.auto", "Lesbarkeit bei LIVE automatisch", kw: "live auto club strobe dj"),
+            e("LIVE & SYNC", "Live-Lesbarkeit", "browser.live.on", "Live-Lesbarkeit in der Liste", kw: "live club strobe lesbar readable font"),
+            e("LIVE & SYNC", "Live-Lesbarkeit", "browser.live.size", "Schriftgröße der Liste", kw: "live font size schrift groß"),
+            e("LIVE & SYNC", "Live-Lesbarkeit", "browser.live.weight", "Schnitt", kw: "live weight medium semibold regular fett"),
+            e("LIVE & SYNC", "Live-Lesbarkeit", "browser.live.stripes", "Zeilen abwechselnd getönt", kw: "live stripes alternating zebra"),
             e(t, "Gespielte Tracks", "browser.dimplayed", "Gespielte Tracks dimmen", kw: "played"),
             e(t, "Gespielte Tracks", "browser.hideplayed", "Gespielte Tracks ausblenden", kw: "played ungespielt"),
-            e(t, "Gespielte Tracks", "browser.resetplayed", "Played-Status beim Start zurücksetzen",
+            e("ALLGEMEIN", "Start", "browser.resetplayed", "Played-Status beim Start zurücksetzen",
               hint: "gespielt = in der history (ab der schwelle unter history & preparation), bis zum zurücksetzen. ausblenden (auch ◆ UNGESPIELT im kopf des bereichs, menü browser) gilt für collection, playlists, smartlists, ordner und suche; history, running tracks und preparation zeigen sie weiter. zurücksetzen jederzeit: rechtsklick auf track collection (alles), auf playlist, smartlist, ordner, music folder, preparation oder auf markierte tracks (nur diese) -> reset played state. im baum mehrere einträge mit ⌘ / ⇧ markieren",
               kw: "played"),
             e(t, "History & Preparation", "browser.historythreshold", "Als gespielt nach (s hörbar)"),
@@ -339,14 +362,14 @@ enum SettingsIndex {
               kw: "nml"),
             e(t, c, "browser.writecuts", "Cuts und Tool-Loops als neue Einträge anlegen"),
             e(t, c, "browser.writeplaylists", "Preparation, History und eigene Playlists als Playlists (Ordner MINOS-741)"),
-            e(t, "Collection prüfen", "browser.checkonstart", "Beim Start prüfen"),
+            e("ALLGEMEIN", "Start", "browser.checkonstart", "Beim Start prüfen"),
             e(t, "Collection prüfen", "browser.checkfolders", "Musik-Ordner nach Dateien ohne Collection-Eintrag durchsuchen",
               hint: "browser-menü -> collection prüfen … oder rechtsklick auf TRACK COLLECTION. nur lesen: dateien, audio-kopf, dauer, schreibweise, namen, doppelte, analyse, grid, playlist-einträge. abbrechen jederzeit."),
-            e(t, "TIDAL", "browser.tidal.clientid", "Client-ID", hint: TidalSettingsSection.hint, kw: "tidal login anmelden developer app"),
-            e(t, "TIDAL", "browser.tidal.pattern", "Playlist-Name",
+            e("CLOUD", "TIDAL", "browser.tidal.clientid", "Client-ID", hint: TidalSettingsSection.hint, kw: "tidal login anmelden developer app"),
+            e("CLOUD", "TIDAL", "browser.tidal.pattern", "Playlist-Name",
               hint: "Muster der Playlist für MISSING: %Y Jahr, %y zwei Stellen, %m Monat, %d Tag. Standard missing-%y%m%d", kw: "tidal playlist missing"),
-            e(t, "TIDAL", "browser.tidal.signin", "Anmelden", kw: "tidal login anmelden"),
-            e(t, "TIDAL", "browser.tidal.signout", "Abmelden", kw: "tidal logout abmelden"),
+            e("CLOUD", "TIDAL", "browser.tidal.signin", "Anmelden", kw: "tidal login anmelden"),
+            e("CLOUD", "TIDAL", "browser.tidal.signout", "Abmelden", kw: "tidal logout abmelden"),
             e(t, a, "browser.bpmlow", "BPM-Bereich ab", kw: "tempo analyse"),
             e(t, a, "browser.bpmhigh", "BPM-Bereich bis",
               hint: "genau eine oktave: das tempo wird in den bereich gefaltet (z. b. 100–200: 96 -> 192). gilt für analysieren / neu analysieren.",
@@ -367,18 +390,18 @@ enum SettingsIndex {
             e(t, a, "browser.keyprofiles", "Key-Profile lernen",
               hint: "lernt aus bis zu 300 lokalen tracks mit tonart aus der collection (keine downloads), im hintergrund wie die analyse. treffer auf jedem 5. track gemessen, der nicht gelernt wird. datei: key-profiles.json im MINOS-741-ordner. gilt für die nächste analyse.",
               kw: "tonart profile verwerfen"),
-            e(t, "DAW-Brücke", "browser.daw", "Warp-Marker und Position aus der DAW empfangen (Remote Script)",
+            e("LIVE & SYNC", "DAW-Brücke", "browser.daw", "Warp-Marker und Position aus der DAW empfangen (Remote Script)",
               hint: "remote script aus extras/daw-bridge in den ordner „Remote Scripts“ der DAW kopieren und dort als control surface wählen. nur 127.0.0.1, port gleich in config.json des scripts.",
               kw: "daw bridge"),
-            e(t, "DAW-Brücke", "browser.dawport", "UDP-Port", kw: "daw bridge"),
+            e("LIVE & SYNC", "DAW-Brücke", "browser.dawport", "UDP-Port", kw: "daw bridge"),
         ]
     }()
 
     private static let tags: [SettingsEntry] = [
-        e("TAGS", "Tags (Kommentar 2)", "tags.separator", "Trennzeichen", kw: "separator kommentar"),
-        e("TAGS", "Tags (Kommentar 2)", "tags.highlight", "Tags farbig markieren"),
-        e("TAGS", "Tags (Kommentar 2)", "tags.groups", "Gruppen (K / B / H …)", kw: "gruppe marker kick bass hats rolle"),
-        e("TAGS", "Tag-Farben", "tags.colors", "Tag-Farben", kw: "farbe filtern"),
+        e("BROWSER", "Tags (Kommentar 2)", "tags.separator", "Trennzeichen", kw: "separator kommentar"),
+        e("BROWSER", "Tags (Kommentar 2)", "tags.highlight", "Tags farbig markieren"),
+        e("BROWSER", "Tags (Kommentar 2)", "tags.groups", "Gruppen (K / B / H …)", kw: "gruppe marker kick bass hats rolle"),
+        e("BROWSER", "Tag-Farben", "tags.colors", "Tag-Farben", kw: "farbe filtern"),
     ]
 
     private static let cloud: [SettingsEntry] = {
@@ -394,15 +417,15 @@ enum SettingsIndex {
             e(t, k, "cloud.handoff", "Beim Beenden offene Downloads an den Anbieter übergeben",
               hint: "ausgelagerte tracks (speicher optimieren) werden neu geholt. lokal halten lädt einzeln und zuletzt, bereitmachen geht vor, neue downloads warten, solange ein deck lädt. übergeben: der anbieter lädt nach dem beenden weiter, ohne MINOS-741.",
               kw: "cloud"),
-            e(t, "Dauerhaft offline", "cloud.folder", "Library-Ordner", kw: "cloud finder"),
-            e(t, "Dauerhaft offline", "cloud.offline", "Offline verfügbar", kw: "cloud finder"),
-            e(t, "Absturzberichte", "cloud.crash.ask", "Nach Absturz fragen",
+            e("CLOUD", "Dauerhaft offline", "cloud.folder", "Library-Ordner", kw: "cloud finder"),
+            e("CLOUD", "Dauerhaft offline", "cloud.offline", "Offline verfügbar", kw: "cloud finder"),
+            e("ALLGEMEIN", "Absturzberichte", "cloud.crash.ask", "Nach Absturz fragen",
               hint: "Beim nächsten Start zeigt MINOS-741 den bereinigten Bericht (ohne Pfade, Nutzer, Rechner, Geräte). Gesendet wird nur, was du in dem Fenster auslöst.",
               kw: "absturz crash bericht report frage github issue"),
-            e(t, "Absturzberichte", "cloud.crash.on", "Vollständige Berichte in Ordner ablegen",
+            e("ALLGEMEIN", "Absturzberichte", "cloud.crash.on", "Vollständige Berichte in Ordner ablegen",
               hint: "Mit Ordner und eingeschalteter Option wird jeder neue Absturzbericht zusätzlich vollständig dort abgelegt. Nichts wird ins Netz geschickt.",
               kw: "absturz crash bericht report drive ordner"),
-            e(t, "Absturzberichte", "cloud.crash.folder", "Ordner", kw: "absturz crash bericht ordner folder"),
+            e("ALLGEMEIN", "Absturzberichte", "cloud.crash.folder", "Ordner", kw: "absturz crash bericht ordner folder"),
         ]
     }()
 
@@ -432,9 +455,9 @@ enum SettingsIndex {
             e(t, b, "controller.shiftload", "Shift + LOAD"),
             e(t, b, "controller.browsepush", "Browse drücken",
               hint: "shift + drücken = vorhören. matching: filter „passt zum master“ im browser-bereich des controllers"),
-            e(t, l, "controller.ledon", "Helligkeit an", kw: "led"),
-            e(t, l, "controller.ledoff", "Helligkeit aus",
-              hint: "pad-farben: ⌘, -> anzeige -> cue-farben (gleich wie auf dem bildschirm)", kw: "led"),
+            e("CONTROLLER", "LED-Helligkeit", "controller.ledon", "Helligkeit an", kw: "led"),
+            e("CONTROLLER", "LED-Helligkeit", "controller.ledoff", "Helligkeit aus",
+              hint: "pad-farben: ⌘, -> CONTROLLER -> Cue-Farben (gleich wie auf dem bildschirm)", kw: "led"),
             e(t, l, "controller.startshow", "Startsequenz beim Verbinden",
               hint: "rot / weiß / lila, dann die decks der seite auf der 7-segment-anzeige, weißer blitz, bereit (3,4 s). eine eingabe bricht ab.",
               kw: "led licht show"),
@@ -446,7 +469,7 @@ enum SettingsIndex {
 // MARK: - Suche
 
 /// Suche ohne Groß/Klein und Akzente, deutsch und englisch; mehrere Wörter = alle müssen passen.
-/// Rang: Name vor Stichwort vor Abschnitt vor Hinweis, Wortanfang vor Teilwort
+/// Rang: Name vor Stichwort vor Abschnitt vor Hinweis, Feldanfang vor Wortanfang vor Teilwort
 struct SettingsSearch {
     struct Hit: Equatable {
         let entry: SettingsEntry
@@ -523,6 +546,7 @@ struct SettingsSearch {
         var best = 0
         for (hay, word, part) in fields where word > best {
             switch find(hay, n) {
+            case 3: best = max(best, word + 1)     // Anfang des Namens (vor Wortanfang in der Mitte)
             case 2: best = max(best, word)
             case 1: best = max(best, part)
             default: break
@@ -545,6 +569,7 @@ struct SettingsSearch {
                         var j = 1
                         while j < m, hp[i + j] == np[j] { j += 1 }
                         if j == m {
+                            if i == 1, hp[0] == 32 { found = 3; return }   // erstes Wort des Feldes
                             if i > 0, hp[i - 1] == 32 { found = 2; return }
                             found = 1
                         }

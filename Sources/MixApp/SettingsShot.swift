@@ -62,8 +62,15 @@ enum SettingsShot {
         nav.flash = "audio.buffer"
         render(AnyView(SettingsView(nav: nav).environment(mix).environment(store).environment(status).environment(browser).frame(width: 820, height: 640)),
                to: dir.appendingPathComponent("00-suche-sprung.png"))
+        // Favoriten: vier markierte Einstellungen (nur im Speicher, Selbsttest speichert nichts), Seite FAVORITEN und Popover
+        mix.prefs.ui.settingsFavorites = ["decks.snap", "decks.loopsize", "mixer.xfader", "browser.live.on"]
+        let favIDs = SettingsFavorites.resolved(mix.prefs.ui.settingsFavorites, known: SettingsIndex.anchors)
+        render(AnyView(SettingsView(selection: SettingsView.favoritesID).environment(mix).environment(store).environment(status).environment(browser).frame(width: 820, height: 640)),
+               to: dir.appendingPathComponent("00-favoriten.png"))
+        render(AnyView(FavoritesPopover(ids: favIDs).environment(mix).environment(store).environment(status).environment(browser)
+            .background(Theme.chitin).preferredColorScheme(.dark)), to: dir.appendingPathComponent("00-favoriten-popover.png"), fitHeight: true)
         restore()
-        print("[shot] \(SettingsView.tabs.count) Bereiche -> \(dir.path)")
+        print("[shot] \(SettingsView.tabs.count) Bereiche, Favoriten \(favIDs.count) -> \(dir.path)")
         exit(0)
     }
 

@@ -7,6 +7,14 @@ struct BrowserRowsSettings: View {
     var body: some View {
         @Bindable var mix = mix
         Section("Zeilen & Felder") {
+            sliderRow("Luft um den Text", $mix.prefs.ui.browserRowPadding, 3...16, step: 1, format: "%.0f", unit: "pt")
+                .settingsAnchor("browser.rowpadding")
+            Toggle("Trennlinie zwischen den Zeilen", isOn: $mix.prefs.ui.browserRowLines)
+                .settingsAnchor("browser.rowlines")
+            Toggle("Höhe rastet auf ganze Zeilen", isOn: $mix.prefs.ui.browserSnapRows)
+                .settingsAnchor("browser.snaprows")
+            Text("zeilenhöhe = schrift + luft (11 pt = bisher, 5 pt = eng). gilt für alle listen, auch mit vorschau.")
+                .settingsHint()
             Picker("Zeilen", selection: $mix.prefs.ui.browserRows) {
                 ForEach(BrowserRows.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
             }
