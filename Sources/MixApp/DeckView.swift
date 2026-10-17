@@ -133,13 +133,18 @@ struct DeckHost: NSViewRepresentable {
         let store: LibraryStore
         let browser: BrowserState
         var body: some View {
-            DeckView(d: d)
-                .environment(mix)
-                .environment(cache)
-                .environment(store)
-                .environment(browser)
-                .foregroundStyle(Theme.bone)
-                .tint(Theme.state)
+            // oben in der Hosting-View verankert: passt das Deck nicht in die Höhe, läuft der Rest nach unten ab,
+            // nicht nach oben über die Leiste (sonst zentriert SwiftUI den Überstand beidseitig)
+            GeometryReader { geo in
+                DeckView(d: d)
+                    .environment(mix)
+                    .environment(cache)
+                    .environment(store)
+                    .environment(browser)
+                    .foregroundStyle(Theme.bone)
+                    .tint(Theme.state)
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+            }
         }
     }
 

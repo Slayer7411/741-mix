@@ -251,16 +251,18 @@ struct ContentView: View {
                 let deckH = max(120.z, (geo.size.height - (rows - 1) * gap) / rows)
                 HStack(alignment: .top, spacing: gap) {
                     VStack(spacing: gap) {
-                        ForEach(cols.left, id: \.self) { DeckHost(d: $0).frame(height: deckH) }
+                        ForEach(cols.left, id: \.self) { DeckHost(d: $0).frame(height: deckH, alignment: .top).clipped() }   // zu hoher Inhalt wird abgeschnitten, nie über die Leiste
                     }
                     if mix.prefs.ui.showMixer { MixerView().fixedSize(horizontal: true, vertical: false) }
                     if !cols.right.isEmpty {
                         VStack(spacing: gap) {
-                            ForEach(cols.right, id: \.self) { DeckHost(d: $0).frame(height: deckH) }
+                            ForEach(cols.right, id: \.self) { DeckHost(d: $0).frame(height: deckH, alignment: .top).clipped() }
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)   // oben links verankert: GeometryReader zentriert sonst zu hohen Inhalt
             }
+            .clipped()
         }
         .padding(.horizontal, gap)
         .padding(.top, max(gap, 2.z))

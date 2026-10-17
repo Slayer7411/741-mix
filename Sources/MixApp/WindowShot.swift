@@ -56,8 +56,10 @@ enum WindowShot {
             for p in paths.values { mix.prefs.ui[keyPath: p] = false }
             for n in rows.split(separator: ",") { if let p = paths[String(n)] { mix.prefs.ui[keyPath: p] = true } }
         }
-        mix.prefs.ui.zoom = 1
-        ZoomControl.apply(1)
+        // MIX741_SHOT_ZOOM=1.25: Zoom des Fensters (Standard 100 %), nur für dieses Bild
+        let zoom = ZoomSteps.clamp(env["MIX741_SHOT_ZOOM"].flatMap(Double.init) ?? 1)
+        mix.prefs.ui.zoom = zoom
+        ZoomControl.apply(zoom)
 
         let store = LibraryStore(), history = HistoryStore(), browser = BrowserState()
         browser.store = store
@@ -72,6 +74,8 @@ enum WindowShot {
             LayoutProfiles.apply(p, mix: mix, browser: browser)
             log("Profil \(p.name): \(p.deckCount) Decks, Mixer \(p.showMixer), Browser \(p.browserLayout.rawValue) \(Int(p.browserHeight)) pt")
         }
+        // MIX741_SHOT_FX=0|1: FX-Units in der oberen Leiste aus / an (nur dieses Bild)
+        if let fx = env["MIX741_SHOT_FX"] { mix.prefs.ui.showFXUnits = fx != "0" }
         store.load()
         spin(120, until: { !store.tracks.isEmpty })
         // nur Dateien mit Inhalt auf der Platte, mit Grid, Key und Tags; je Künstler einer. 4 Decks, 12 Preparation
