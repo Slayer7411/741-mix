@@ -18,6 +18,8 @@ struct UpdateManifest: Codable, Equatable {
     let minSystem: String
     /// Download-Adresse der DMG (GitHub-Release); im Ordner nicht nötig
     let url: String?
+    /// Codename der Hauptversion (MINOSCodename); fehlt bei älteren Manifesten
+    let codename: String?
 
     /// Lesen und prüfen: Pflichtfelder, Dateiname ohne Pfad (.dmg), Hash im Hex-Format, gültiges Datum, erlaubte Adresse
     static func parse(_ data: Data) -> UpdateManifest? {
@@ -28,7 +30,7 @@ struct UpdateManifest: Codable, Equatable {
               UpdateRules.parseDate(m.date) != nil,
               m.url.map(UpdateNet.isAllowed) ?? true else { return nil }
         return UpdateManifest(version: m.version, build: m.build, file: m.file, sha256: m.sha256.lowercased(), size: m.size,
-                              date: m.date, minSystem: m.minSystem, url: m.url)
+                              date: m.date, minSystem: m.minSystem, url: m.url, codename: m.codename)
     }
 }
 
@@ -160,6 +162,14 @@ enum UpdateRules {
     static func isCandidate(_ m: UpdateManifest, currentBuild: String, currentDate: String?) -> Bool {
         guard let current = currentDate.flatMap(parseDate), let new = parseDate(m.date) else { return false }
         return m.build != currentBuild && new > current
+    }
+
+    /// Meldung „Update verfügbar“: mit Codename, wenn das Manifest einen nennt
+    static func noticeText(version: String, codename: String?, build: String) -> String {
+        if let codename, !codename.isEmpty {
+            return String(format: String(localized: "Update verfügbar: %@ · %@ (%@)"), version, codename, build)
+        }
+        return String(format: String(localized: "Update verfügbar: %@ (%@)"), version, build)
     }
 
     /// Grund gegen Installation jetzt (Deck, LIVE, Aufnahme), sonst nil
@@ -442,7 +452,7 @@ final class Updater {
             if let c, announced != c.manifest.build {
                 // einmal je Build melden; bleibt stehen bis Klick oder ✕, Menü und Einstellungen zeigen es weiter
                 announced = c.manifest.build
-                let text = String(format: String(localized: "Update verfügbar: %@ (%@)"), c.manifest.version, c.manifest.build)
+                let text = UpdateRules.noticeText(version: c.manifest.version, codename: c.manifest.codename, build: c.manifest.build)
                 StatusCenter.post(.info, text, key: "update", sticky: true,
                                   action: (String(localized: "Installieren"), { Updater.shared.install() }))
             }

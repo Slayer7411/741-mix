@@ -8,11 +8,13 @@ import Testing
     static let dmgURL = "https://github.com/Slayer7411/MINOS-741/releases/download/latest-build/MINOS-741.dmg"
 
     static func manifestJSON(build: String = "b2", date: String = "2026-10-16T09:00:00Z", sha: String = sha,
-                             file: String = "MINOS-741-0.9-b2.dmg", size: String = "1234", url: String? = nil) -> Data {
+                             file: String = "MINOS-741-0.9-b2.dmg", size: String = "1234", url: String? = nil,
+                             codename: String? = nil) -> Data {
         let u = url.map { ", \"url\": \"\($0)\"" } ?? ""
+        let c = codename.map { ", \"codename\": \"\($0)\"" } ?? ""
         return Data("""
         {"version": "0.9", "build": "\(build)", "file": "\(file)", "sha256": "\(sha)", "size": \(size),
-         "date": "\(date)", "minSystem": "15.0"\(u)}
+         "date": "\(date)", "minSystem": "15.0"\(u)\(c)}
         """.utf8)
     }
 
@@ -44,6 +46,17 @@ import Testing
         #expect(m?.size == 1234)
         #expect(m?.sha256 == Self.sha)   // Kleinbuchstaben
         #expect(m?.url == nil)           // Ordner-Manifest ohne Adresse
+    }
+
+    @Test func manifestCodenameIsOptional() {
+        #expect(UpdateManifest.parse(Self.manifestJSON(codename: "LIMBUS"))?.codename == "LIMBUS")
+        #expect(UpdateManifest.parse(Self.manifestJSON())?.codename == nil)
+    }
+
+    @Test func noticeNamesCodenameWhenKnown() {
+        #expect(UpdateRules.noticeText(version: "0.9", codename: "LUXURIA", build: "b2") == "Update verfügbar: 0.9 · LUXURIA (b2)")
+        #expect(UpdateRules.noticeText(version: "0.9", codename: nil, build: "b2") == "Update verfügbar: 0.9 (b2)")
+        #expect(UpdateRules.noticeText(version: "0.9", codename: "", build: "b2") == "Update verfügbar: 0.9 (b2)")
     }
 
     @Test func manifestWithDownloadURL() {

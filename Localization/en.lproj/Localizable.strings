@@ -2030,3 +2030,4 @@
 "Ohne Automatik meldet MINOS-741 ein Update in der Statusleiste. Die Installation startet nur, wenn kein Deck spielt und LIVE aus ist; die App wird dafür beendet und neu gestartet." = "Without automatic installs MINOS-741 shows an update in the status bar. Installing only starts when no deck plays and LIVE is off; the app quits and restarts for it.";
 "neuester build: jeder build (rollendes release). stabile versionen: nur vX.Y.Z-releases. eigener ordner: latest.json und dmg aus einem ordner. aus: keine updates" = "newest build: every build (rolling release). stable releases: only vX.Y.Z releases. own folder: latest.json and DMG from a folder. off: no updates";
 "nicht automatisch (nach Zurückwechseln)" = "not automatic (after switching back)";
+"Update verfügbar: %@ · %@ (%@)" = "Update available: %@ · %@ (%@)";

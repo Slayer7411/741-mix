@@ -45,14 +45,18 @@ run() {
   [[ -n $DRY ]] || "$@"
 }
 
+# Codename der Hauptversion (scripts/codename.sh; wie CONTRIBUTING.md): rollend = Version des letzten Tags
 if [[ -n $ROLLING ]]; then
   TAG=latest-build
   ASSET=MINOS-741.dmg
-  TITLE="◆ LATEST BUILD"
+  CODE_VERSION=$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//' || true)
+  CODENAME=$(scripts/codename.sh "$CODE_VERSION")
+  TITLE="◆ LATEST BUILD · $CODENAME"
 else
   TAG=v$VERSION
   ASSET=MINOS-741-$VERSION.dmg
-  TITLE="◆ v$VERSION · $NAME"
+  CODENAME=$(scripts/codename.sh "$VERSION")
+  TITLE="◆ v$VERSION · $CODENAME · $NAME"
 fi
 URL="https://github.com/$REPO/releases/download/$TAG/$ASSET"
 OUT=build/release
@@ -86,17 +90,18 @@ run scripts/make-dmg.sh
 if [[ -z $DRY ]]; then
   VER=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" build/MINOS-741.app/Contents/Info.plist)
   BUILD=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" build/MINOS-741.app/Contents/Info.plist)
+  CODE=$(/usr/libexec/PlistBuddy -c "Print MINOSCodename" build/MINOS-741.app/Contents/Info.plist 2>/dev/null || echo "$CODENAME")
   DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   mkdir -p "$OUT"
   cp "build/MINOS-741-$VER.dmg" "$OUT/$ASSET"
   SHA=$(shasum -a 256 "$OUT/$ASSET" | awk '{print $1}')
   SIZE=$(stat -f %z "$OUT/$ASSET")
-  python3 -I - "$OUT/latest.json" "$VER" "$BUILD" "$ASSET" "$SHA" "$SIZE" "$DATE" "$URL" <<'PY'
+  python3 -I - "$OUT/latest.json" "$VER" "$BUILD" "$ASSET" "$SHA" "$SIZE" "$DATE" "$URL" "$CODE" <<'PY'
 import json, sys
-path, ver, build, asset, sha, size, date, url = sys.argv[1:]
+path, ver, build, asset, sha, size, date, url, codename = sys.argv[1:]
 with open(path + ".tmp", "w", encoding="utf-8") as f:
     json.dump({"version": ver, "build": build, "file": asset, "sha256": sha, "size": int(size), "date": date,
-               "minSystem": "15.0", "url": url}, f)
+               "minSystem": "15.0", "url": url, "codename": codename}, f)
 import os; os.replace(path + ".tmp", path)
 PY
   echo "manifest: $OUT/latest.json ($BUILD, $SHA)"

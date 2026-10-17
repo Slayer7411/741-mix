@@ -34,12 +34,13 @@ if [[ -n "$PUBLISH" ]]; then
   SHA=$(shasum -a 256 "$DMG" | awk '{print $1}')
   SIZE=$(stat -f %z "$DMG")
   MINSYS=$(/usr/libexec/PlistBuddy -c "Print LSMinimumSystemVersion" build/MINOS-741.app/Contents/Info.plist)
+  CODENAME=$(/usr/libexec/PlistBuddy -c "Print MINOSCodename" build/MINOS-741.app/Contents/Info.plist 2>/dev/null || echo "")
   # erst unter .part kopieren, dann umbenennen: die App sieht nie eine halbe Datei
   cp "$DMG" "$PUBLISH/$NAME.part"
   mv -f "$PUBLISH/$NAME.part" "$PUBLISH/$NAME"
   # Manifest atomar: temporäre Datei, dann umbenennen
   cat > "$PUBLISH/latest.json.tmp" <<JSON
-{"version": "$VERSION", "build": "$BUILD", "file": "$NAME", "sha256": "$SHA", "size": $SIZE, "date": "$DATE", "minSystem": "$MINSYS"}
+{"version": "$VERSION", "build": "$BUILD", "file": "$NAME", "sha256": "$SHA", "size": $SIZE, "date": "$DATE", "minSystem": "$MINSYS", "codename": "$CODENAME"}
 JSON
   mv -f "$PUBLISH/latest.json.tmp" "$PUBLISH/latest.json"
   # nur die 3 neuesten DMGs behalten (Datum der Datei); das im Manifest genannte bleibt immer
