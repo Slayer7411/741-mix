@@ -24,13 +24,14 @@ public indirect enum SmartQuery: Sendable {
         return q
     }
 
-    public func matches(_ t: Track, now: Date = Date()) -> Bool {
+    /// `played`: Tracks in der History (zählen zu PLAYED wie PLAYCOUNT > 0)
+    public func matches(_ t: Track, now: Date = Date(), played: Set<String> = []) -> Bool {
         switch self {
         case .always: return true
-        case let .and(a, b): return a.matches(t, now: now) && b.matches(t, now: now)
-        case let .or(a, b): return a.matches(t, now: now) || b.matches(t, now: now)
-        case let .not(a): return !a.matches(t, now: now)
-        case let .compare(field, op, value): return Self.compare(t, field, op, value, now)
+        case let .and(a, b): return a.matches(t, now: now, played: played) && b.matches(t, now: now, played: played)
+        case let .or(a, b): return a.matches(t, now: now, played: played) || b.matches(t, now: now, played: played)
+        case let .not(a): return !a.matches(t, now: now, played: played)
+        case let .compare(field, op, value): return Self.compare(t, field, op, value, now, played)
         }
     }
 
@@ -38,7 +39,7 @@ public indirect enum SmartQuery: Sendable {
 
     enum FieldValue { case text(String), number(Double), date(Date?) }
 
-    static func fieldValue(_ t: Track, _ f: String) -> FieldValue {
+    static func fieldValue(_ t: Track, _ f: String, played: Set<String> = []) -> FieldValue {
         switch f {
         case "TITLE": .text(t.title)
         case "ARTIST": .text(t.artist)
@@ -58,7 +59,8 @@ public indirect enum SmartQuery: Sendable {
         case "RATING", "RANKING": .number(Double(t.rating))
         case "COLOR": .number(Double(t.color))
         case "PLAYCOUNT": .number(Double(t.playCount))
-        case "PLAYED": .number(t.playCount > 0 ? 1 : 0)
+        case "PLAYED": .number(t.playCount > 0 || played.contains(t.key) ? 1 : 0)
+        case "LOCK": .number(t.locked ? 1 : 0)
         case "BITRATE": .number(Double(t.bitrate))
         case "PLAYTIME", "TIME": .number(t.duration)
         case "FILESTATE": .number(t.fileExists ? 1 : 2)
@@ -69,21 +71,30 @@ public indirect enum SmartQuery: Sendable {
         }
     }
 
-    static func compare(_ t: Track, _ f: String, _ op: Op, _ v: Value, _ now: Date) -> Bool {
-        let cal = Calendar(identifier: .gregorian)
-        switch (fieldValue(t, f), v) {
+    private static let gregorian = Calendar(identifier: .gregorian)
+
+    /// Text wie in der Suche und im Regel-Editor: ohne Groß/Klein und ohne Akzente (ASCII ohne Umweg)
+    static func fold(_ s: String) -> String {
+        if s.utf8.allSatisfy({ $0 < 0x80 }) { return s.lowercased() }
+        return s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+
+    static func compare(_ t: Track, _ f: String, _ op: Op, _ v: Value, _ now: Date, _ played: Set<String> = []) -> Bool {
+        let cal = gregorian
+        switch (fieldValue(t, f, played: played), v) {
         case let (.text(a), .text(b)):
+            let fa = fold(a), fb = fold(b)
             switch op {
-            case .contains: return a.localizedCaseInsensitiveContains(b)
-            case .notContains: return !a.localizedCaseInsensitiveContains(b)
-            case .eq: return a.caseInsensitiveCompare(b) == .orderedSame
-            case .ne: return a.caseInsensitiveCompare(b) != .orderedSame
-            case .startsWith: return a.lowercased().hasPrefix(b.lowercased())
-            case .endsWith: return a.lowercased().hasSuffix(b.lowercased())
-            case .ge: return a >= b
-            case .le: return a <= b
-            case .gt: return a > b
-            case .lt: return a < b
+            case .contains: return fb.isEmpty || fa.contains(fb)
+            case .notContains: return !(fb.isEmpty || fa.contains(fb))
+            case .eq: return fa == fb
+            case .ne: return fa != fb
+            case .startsWith: return fa.hasPrefix(fb)
+            case .endsWith: return fa.hasSuffix(fb)
+            case .ge: return fa >= fb
+            case .le: return fa <= fb
+            case .gt: return fa > fb
+            case .lt: return fa < fb
             }
         case let (.number(a), _):
             let b: Double = switch v {
@@ -94,10 +105,15 @@ public indirect enum SmartQuery: Sendable {
             }
             return cmp(a, b, op)
         case let (.date(a), _):
+            // Datum gleich „JJJJ/M/T“ oder „JJJJ-MM-TT“: gleicher Tag
+            if case let .text(s) = v, op == .eq || op == .ne, let d = NMLParser.date(s) ?? SmartRules.day(s) {
+                guard let a else { return op == .ne }
+                return cal.isDate(a, inSameDayAs: d) == (op == .eq)
+            }
             let b: Date? = switch v {
                 case let .monthsAgo(n): cal.date(byAdding: .month, value: -n, to: now)
                 case let .daysAgo(n): cal.date(byAdding: .day, value: -n, to: now)
-                case let .text(s): NMLParser.date(s)
+                case let .text(s): NMLParser.date(s) ?? SmartRules.day(s)
                 default: nil
             }
             guard let a, let b else { return op == .ne }
@@ -122,7 +138,20 @@ public indirect enum SmartQuery: Sendable {
 
     enum Token: Equatable, CustomStringConvertible {
         case field(String), op(Op), text(String), number(Double), ident(String), and, or, not, lparen, rparen
-        var description: String { "\(self)" }
+        var description: String {
+            switch self {
+            case let .field(f): "$" + f
+            case let .op(o): o.rawValue
+            case let .text(t): "\"" + t + "\""
+            case let .number(n): String(n)
+            case let .ident(i): i
+            case .and: "&"
+            case .or: "|"
+            case .not: "!"
+            case .lparen: "("
+            case .rparen: ")"
+            }
+        }
     }
 
     static func tokenize(_ s: String) throws -> [Token] {
@@ -146,7 +175,8 @@ public indirect enum SmartQuery: Sendable {
             case "$":
                 var j = i + 1, name = ""
                 while j < c.count, c[j].isLetter || c[j].isNumber || c[j] == "_" { name.append(c[j]); j += 1 }
-                out.append(.field(name.uppercased())); i = j
+                // RELEASE_DATE und RELEASEDATE sind dasselbe Feld
+                out.append(.field(name.uppercased().replacingOccurrences(of: "_", with: ""))); i = j
             case "!", "=", ">", "<":
                 let two = i + 1 < c.count ? String(c[i...i + 1]) : String(ch)
                 if let op = Op(rawValue: two) { out.append(.op(op)); i += 2 }
