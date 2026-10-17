@@ -1893,6 +1893,7 @@
 "Zwei-Mac-Modus" = "Two-Mac mode";
 "Dieser Mac schreibt (Collection, History)" = "This Mac writes (collection, history)";
 "Decks dieses Macs (höchstens 2)" = "Decks of this Mac (at most 2)";
+"Fernzugriff zum Analysieren erlauben" = "Allow remote access for analysis";
 "zwei macs als eine session: jeder spielt seine decks über sein eigenes interface ins pult (kanalpaare unter audio), takt über link (schaltet sich beim verbinden ein). genau ein mac schreibt in collection und history-ordner, der andere verbindet sich mit ihm. verbindung per ethernet, usb-c/thunderbolt-kabel oder gleiches netz, ohne einrichten. gespielt-markierungen gelten auf beiden. wirkt sofort; die anordnung der decks unter darstellung -> layout. bleibt auf diesem mac (nicht in settings.plist)." = "two macs as one session: each plays its decks through its own interface into the mixer (channel pairs under audio), tempo via link (turns on when connected). exactly one mac writes to the collection and the history folder, the other connects to it. connection via ethernet, usb-c/thunderbolt cable or the same network, no setup. played marks apply on both. takes effect at once; deck positions under display -> layout. stays on this mac (not in settings.plist).";
 "Links oben" = "Top left";
 "Links unten" = "Bottom left";

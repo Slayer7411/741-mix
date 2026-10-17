@@ -7,6 +7,8 @@ struct PairSetup: Codable, Equatable {
     var writes = true
     /// Decks dieses Macs (0 = A … 3 = D), höchstens 2, aufsteigend
     var decks = [0, 2]
+    /// Fernzugriff zum Analysieren: der andere Mac darf Stand abfragen und Einstellungen ändern (scripts/pairdebug.sh)
+    var remoteDebug = true
 
     static let maxDecks = 2
 
@@ -18,6 +20,7 @@ struct PairSetup: Codable, Equatable {
         on = (try? c.decodeIfPresent(Bool.self, forKey: .on)) ?? nil ?? on
         writes = (try? c.decodeIfPresent(Bool.self, forKey: .writes)) ?? nil ?? writes
         decks = Self.valid((try? c.decodeIfPresent([Int].self, forKey: .decks)) ?? nil ?? decks)
+        remoteDebug = (try? c.decodeIfPresent(Bool.self, forKey: .remoteDebug)) ?? nil ?? remoteDebug
     }
 
     static func valid(_ d: [Int]) -> [Int] {

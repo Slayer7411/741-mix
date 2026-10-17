@@ -39,3 +39,16 @@ import Testing
     #expect(PairCheck.problems(ownWrites: true, ownDecks: [0], peerWrites: true, peerDecks: [1]) == [.bothWrite])
     #expect(PairCheck.problems(ownWrites: false, ownDecks: [0, 1], peerWrites: false, peerDecks: [1, 3]) == [.noneWrites, .sharedDecks([1])])
 }
+
+@Test func pairDebugMessagesRoundTrip() {
+    let msgs: [PairMessage] = [
+        .debugRequest(id: 1_800_000_001, command: "prefs-set", args: #"{"ui":{"zoom":1.2}}"#),
+        .debugReply(id: 1_800_000_001, ok: false, body: "\"Fernzugriff aus\""),
+        .debugReply(id: 2, ok: true, body: #"{"name":"Mac 2"}"#),
+    ]
+    var stream = Data()
+    for m in msgs { stream.append(m.line()) }
+    var r = PairLineReader()
+    #expect(r.feed(stream) == msgs)
+    #expect(PairMessage.version == 4)
+}

@@ -59,6 +59,7 @@ final class PairLink {
         self.mix = mix
         guard new.on else {
             history.onPlayedChange = nil
+            PairDebug.shared.stop()
             StatusCenter.post(.info, String(localized: "Zwei-Mac: aus"), key: "pair")
             return
         }
@@ -67,9 +68,10 @@ final class PairLink {
         }
         listen()
         browse()
+        PairDebug.shared.start()
     }
 
-    private static var computerName: String {
+    static var computerName: String {
         (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? "MINOS-741"
     }
 
@@ -156,6 +158,7 @@ final class PairLink {
             case .cancelled:
                 active = nil
                 peer = nil
+                PairDebug.shared.connectionLost()
                 StatusCenter.post(.warning, String(localized: "Zwei-Mac: Verbindung getrennt"), key: "pair")
                 retryIfIdle()
             default:
@@ -246,7 +249,7 @@ final class PairLink {
 
     // MARK: Nachrichten
 
-    private func send(_ m: PairMessage) {
+    func send(_ m: PairMessage) {
         guard let c = connection, c.state == .ready else { return }
         c.send(content: m.line(), completion: .contentProcessed { _ in })
     }
@@ -269,6 +272,13 @@ final class PairLink {
                 send(.playedSet(s.sorted()))
             }
             if let mix, mix.live { send(.live(true)) }
+        case let .debugRequest(id, command, args):
+            if let mix {
+                let r = PairDebugResponder.answer(command: command, args: args, mix: mix, allowed: setup.remoteDebug)
+                send(.debugReply(id: id, ok: r.ok, body: r.body))
+            }
+        case let .debugReply(id, ok, body):
+            PairDebug.shared.received(id: id, ok: ok, body: body)
         case let .state(writes, decks):
             guard let p = peer else { return }
             peer = (p.name, writes, decks)
