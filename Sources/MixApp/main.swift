@@ -324,7 +324,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !Session.isSelfTest else { return .terminateNow }
-        if E2E.isActive {   // Ende-zu-Ende: ohne Rückfrage, aber mit dem vollen Beenden (Sitzung, Einstellungen)
+        // Ende-zu-Ende und Neustart nach Update: ohne Rückfrage, aber mit dem vollen Beenden (Sitzung, Einstellungen)
+        if E2E.isActive || MainActor.assumeIsolated({ Updater.shared.relaunching }) {
             MainActor.assumeIsolated { onQuit?() }
             return .terminateNow
         }
@@ -417,6 +418,16 @@ struct MixApp: App {
             CommandGroup(replacing: .appSettings) {
                 SettingsLink { Text(ShortcutID.settings.title) }
                     .shortcut(keys.combo(.settings))
+            }
+            CommandGroup(after: .appInfo) {
+                let up = Updater.shared
+                if let c = up.candidate, !up.installing {
+                    Button(String(format: String(localized: "Update verfügbar: %@ (%@) – installieren …"),
+                                  c.manifest.version, c.manifest.build)) { up.install() }
+                }
+                if up.hasPrevious {
+                    Button(String(localized: "Vorherige Version wiederherstellen …")) { up.rollback() }
+                }
             }
             CommandGroup(after: .help) {
                 Button(String(localized: "Einrichtung …")) { NotificationCenter.default.post(name: .showSetup, object: nil) }
@@ -565,6 +576,7 @@ extension MixApp {
         CrashReports.configure(mix.prefs.ui)
         StatusLogFile.shared.beginRun(marker: CrashReports.runMarker(version: CrashReports.appVersion, build: CrashReports.buildNumber))
         CrashReports.scheduleScan(prefs: mix.prefs.ui, mix: mix)
+        Updater.shared.start(mix: mix)   // Updates aus einem Ordner (ohne Ordner aus)
         PairLink.shared.configure(mix.prefs.ui.pair, history: history, mix: mix)
         store.history = history
         mix.autoMix.store = store

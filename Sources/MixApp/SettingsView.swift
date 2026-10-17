@@ -791,6 +791,9 @@ struct DisplaySettings: View {
                 }
                 .settingsAnchor("display.zoom")
             }
+            Section("Updates") {
+                UpdateSettingsSection()
+            }
             Section("Layout") {
                 Picker("Decks anzeigen", selection: $mix.prefs.ui.deckCount) {
                     Text("1 Deck").tag(1)

@@ -8,6 +8,7 @@ und eine eigene Bonjour-Art dieses Laufs. Die Steuerung läuft über Ordnerpost 
 """
 import datetime
 import glob
+import hashlib
 import json
 import os
 import plistlib
@@ -25,6 +26,10 @@ sys.path.insert(0, os.path.join(HERE, "fixtures"))
 import build_fixture  # noqa: E402  (Tests/E2E/fixtures/build_fixture.py)
 
 SCEN_DIR = os.path.join(HERE, "scenarios")
+REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
+# Update-Szenario: die „installierte“ App und die Version, die sie per Update ersetzt (Tests/E2E/README.md)
+INSTALLED = ("0.0.1", "e2e-old", "2026-10-01T00:00:00Z")
+UPDATED_VERSION = "0.0.2"
 MISSING = object()
 READ_ONLY = {"ping", "snapshot", "list", "prefs-get", "status", "wait-ready", "setup-state", "crash-state"}
 DEFAULT_TIMEOUT = 20.0
@@ -32,6 +37,78 @@ DEFAULT_TIMEOUT = 20.0
 
 class Fail(Exception):
     pass
+
+
+class Adopted:
+    """App, die der Update-Helfer gestartet hat (kein Kind dieses Läufers): Ende über die PID"""
+
+    def __init__(self, pid):
+        self.pid = pid
+        self.returncode = None
+
+    def poll(self):
+        if self.returncode is None:
+            try:
+                os.kill(self.pid, 0)
+            except ProcessLookupError:
+                self.returncode = 0
+            except PermissionError:
+                pass
+        return self.returncode
+
+    def wait(self, timeout=None):
+        end = time.time() + (timeout if timeout is not None else 1e9)
+        while self.poll() is None:
+            if time.time() >= end:
+                raise subprocess.TimeoutExpired(str(self.pid), timeout)
+            time.sleep(0.1)
+        return self.returncode
+
+
+def make_bundle(app, binary, version, build, date):
+    """App-Paket wie scripts/make-app.sh (ohne Icon): Programm, Helfer, Ressourcen, Info.plist, ad hoc signiert"""
+    shutil.rmtree(app, ignore_errors=True)
+    macos = os.path.join(app, "Contents", "MacOS")
+    os.makedirs(macos)
+    shutil.copy2(binary, os.path.join(macos, "MINOS-741"))
+    shutil.copy2(os.path.join(os.path.dirname(binary), "minos-files"), os.path.join(macos, "minos-files"))
+    res = os.path.join(app, "Contents", "Resources")
+    shutil.copytree(os.path.join(REPO, "Sources", "MixApp", "Resources"), os.path.join(res, "Resources"))
+    shutil.copytree(os.path.join(REPO, "Localization"), res, dirs_exist_ok=True)
+    info = {"CFBundleName": "MINOS-741", "CFBundleDisplayName": "MINOS-741",
+            "CFBundleIdentifier": "com.github.slayer7411.minos741", "CFBundleDevelopmentRegion": "de",
+            "CFBundleLocalizations": ["de", "en"], "CFBundleExecutable": "MINOS-741", "CFBundlePackageType": "APPL",
+            "CFBundleShortVersionString": version, "CFBundleVersion": build, "MINOSBuildDate": date,
+            "LSMinimumSystemVersion": "15.0", "NSPrincipalClass": "NSApplication", "NSHighResolutionCapable": True}
+    with open(os.path.join(app, "Contents", "Info.plist"), "wb") as f:
+        plistlib.dump(info, f)
+    subprocess.run(["codesign", "--force", "--sign", "-", app], check=True, capture_output=True)
+
+
+def make_update_package(root, binary, updates):
+    """DMG + latest.json für die neue Version in `updates` (wie scripts/make-dmg.sh --publish); Rückgabe: Build"""
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    build = "e2e-new-" + secrets.token_hex(2)
+    stage = os.path.join(root, "build-new")
+    make_bundle(os.path.join(stage, "MINOS-741.app"), binary, UPDATED_VERSION, build, now)
+    os.makedirs(updates, exist_ok=True)
+    pack = os.path.join(root, "pack.dmg")
+    subprocess.run(["hdiutil", "create", "-volname", "MINOS-741 e2e", "-srcfolder", stage, "-ov", "-format", "UDZO", pack],
+                   check=True, capture_output=True)
+    name = f"MINOS-741-{UPDATED_VERSION}-{build}.dmg"
+    h = hashlib.sha256()
+    with open(pack, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    # erst .part, dann umbenennen; Manifest atomar (wie make-dmg.sh)
+    shutil.copy2(pack, os.path.join(updates, name + ".part"))
+    os.replace(os.path.join(updates, name + ".part"), os.path.join(updates, name))
+    manifest = {"version": UPDATED_VERSION, "build": build, "file": name, "sha256": h.hexdigest(),
+                "size": os.path.getsize(pack), "date": now, "minSystem": "15.0"}
+    with open(os.path.join(updates, "latest.json.tmp"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f)
+    os.replace(os.path.join(updates, "latest.json.tmp"), os.path.join(updates, "latest.json"))
+    return build
 
 
 # MARK: Pfade und Werte
@@ -103,7 +180,8 @@ def ops_of(e):
 # MARK: Instanz
 
 class Instance:
-    def __init__(self, who, run_id, binary, base_dir, scenario_tag, music, extra_env=None, absent=False, fake_crash=False):
+    def __init__(self, who, run_id, binary, base_dir, scenario_tag, music, extra_env=None, absent=False, fake_crash=False,
+                 installed=False):
         self.who = who
         self.shared = os.path.join(base_dir, "shared")   # Portmeldungen des Laufs (Zwei-Mac-Verbindung)
         os.makedirs(self.shared, exist_ok=True)
@@ -117,6 +195,7 @@ class Instance:
         self.counter = 0
         self.logs = []
         self.extra_env = dict(extra_env or {})
+        self.app = None
         # Collection und Datenordner gehören dieser Instanz; der Audio-Ordner ist für alle Instanzen gleich (nur lesen).
         # absent: keine Collection am Standardort (Erststart); die Fixture liegt unter <root>/fixture (für setup-choose)
         if absent:
@@ -127,6 +206,11 @@ class Instance:
             build_fixture.write_fake_crash(self.root)
         for sub in ("control/outbox", "control/inbox", "appsupport", "logs", "shots", "music"):
             os.makedirs(os.path.join(self.root, sub), exist_ok=True)
+        if installed:
+            # „installierte“ App im Testordner: nur diese Kopie darf ein Update ersetzen (MIX741_E2E_APP)
+            self.app = os.path.join(self.root, "apps", "installed", "MINOS-741.app")
+            make_bundle(self.app, binary, *INSTALLED)
+            self.binary = os.path.join(self.app, "Contents", "MacOS", "MINOS-741")
 
     @property
     def control(self):
@@ -143,6 +227,8 @@ class Instance:
         env.update({"MIX741_E2E_ROOT": self.root, "MIX741_E2E_NAME": self.name, "MIX741_E2E_SERVICE": self.service,
                     "MIX741_E2E_SHARED": self.shared, "MIX741_SETUP": "off"})
         env.update(self.extra_env)
+        if self.app:
+            env["MIX741_E2E_APP"] = self.app
         return env
 
     def start(self):
@@ -162,7 +248,10 @@ class Instance:
             return
         if self.proc.poll() is None:
             try:
-                os.killpg(self.proc.pid, signal.SIGKILL)
+                if isinstance(self.proc, Adopted):
+                    os.kill(self.proc.pid, signal.SIGKILL)
+                else:
+                    os.killpg(self.proc.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
             try:
@@ -196,6 +285,26 @@ class Instance:
         except FileNotFoundError:
             pass
         return {"ok": False, "command": command, "body": f"keine Antwort innerhalb {timeout:.0f} s"}
+
+    def relaunch(self, timeout=60.0):
+        """Nach einem Update: die alte App ist beendet, der Helfer hat die neue gestartet. Die neue Instanz wird über
+        ihre PID aus `ping` verfolgt (kein Kind dieses Läufers)."""
+        old = self.proc
+        if old is None:
+            raise Fail(f"{self.who}: keine App zum Ersetzen")
+        try:
+            old.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Fail(f"{self.who}: alte App beendet nicht innerhalb {timeout:.0f} s")
+        self.proc = None
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            reply = self.request("ping", timeout=3)
+            if reply.get("ok") and isinstance(reply.get("body"), dict):
+                self.proc = Adopted(int(reply["body"]["pid"]))
+                return reply
+            time.sleep(0.3)
+        raise Fail(f"{self.who}: neue App antwortet nicht nach dem Neustart (Log: {os.path.join(self.root, 'logs', 'update.log')})")
 
     def wait_ready(self, timeout=60.0):
         deadline = time.time() + timeout
@@ -282,9 +391,15 @@ class Scenario:
             extra_env = self.spec.get("env", {})
             absent = self.spec.get("collection") == "absent"
             fake_crash = bool(self.spec.get("fake_crash"))
+            update = bool(self.spec.get("update"))
             for who in self.spec.get("instances", ["A"]):
                 self.instances[who] = Instance(who, self.run_id, self.binary, self.base_dir, self.name, self.music,
-                                               extra_env=extra_env, absent=absent, fake_crash=fake_crash)
+                                               extra_env=extra_env, absent=absent, fake_crash=fake_crash, installed=update)
+            if update:
+                inst = self.inst("A")
+                self.vars["installed_version"], self.vars["installed_build"] = INSTALLED[0], INSTALLED[1]
+                self.vars["update_version"] = UPDATED_VERSION
+                self.vars["update_build"] = make_update_package(inst.root, self.binary, os.path.join(inst.root, "updates"))
             for inst in self.instances.values():
                 inst.start()
             for inst in self.instances.values():
@@ -341,6 +456,16 @@ class Scenario:
             return
         if kind == "plist":
             return self.plist_step(index, who, step)
+        if kind == "relaunch":
+            inst = self.inst(who)
+            try:
+                reply = inst.relaunch(float(step.get("timeout", 60)))
+            except Fail as e:
+                raise Fail(f"Schritt {index} [{who} relaunch]: {e}")
+            self.last_reply = reply
+            return
+        if kind == "file-check":
+            return self.file_step(index, who, step)
         if kind == "quit":
             # Beenden über die Steuerung; wie es endete, prüft der Schritt (Standard: sauber)
             how = self.inst(who).stop_clean()
@@ -391,6 +516,22 @@ class Scenario:
                 raise Fail(f"{label}: save {name}: {path} fehlt")
             self.vars[name] = value
         self.last_reply = reply
+
+    def file_step(self, index, who, step):
+        """Datei da (exists) oder nicht; `contains`: Text kommt in der Datei vor"""
+        label = f"Schritt {index} [{who} file-check]"
+        path = self.expand(step["path"], who)
+        present = os.path.exists(path)
+        if present != step.get("exists", True):
+            self.detail = f"{label}: {path} {'fehlt' if step.get('exists', True) else 'ist vorhanden'}"
+            raise Fail(self.detail)
+        if "contains" in step and present:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+            needle = self.expand(step["contains"], who)
+            if needle not in text:
+                self.detail = f"{label}: {needle!r} steht nicht in {path}"
+                raise Fail(self.detail)
 
     def plist_step(self, index, who, step):
         label = f"Schritt {index} [{who} plist]"

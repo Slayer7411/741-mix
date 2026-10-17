@@ -9,6 +9,7 @@ VERSION=$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//'
 VERSION=${VERSION:-0.0.0}
 BUILD=$(git rev-parse --short HEAD 2>/dev/null || echo dev)
 CODENAME=$(scripts/codename.sh "$VERSION") || { print -u2 "make-app: kein codename für $VERSION"; exit 1 }
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # Updates: neuer als dieser Build = Kandidat (latest.json)
 APP=build/MINOS-741.app
 
 ARCHS=()
@@ -53,6 +54,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${BUILD}</string>
   <key>MINOSCodename</key><string>${CODENAME}</string>
+  <key>MINOSBuildDate</key><string>${BUILD_DATE}</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
   <key>NSHighResolutionCapable</key><true/>

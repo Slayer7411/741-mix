@@ -91,6 +91,19 @@ brew install --cask slayer7411/tap/minos-741
 
 or the dmg from [releases](https://github.com/Slayer7411/MINOS-741/releases/latest). not signed by apple -> first start: system settings -> privacy & security -> OPEN ANYWAY.
 
+## ◆ UPDATES
+
+the app looks for updates by itself. channel: ⌘, -> ANZEIGE -> Updates.
+
+* **newest build** (default): every build of main, one rolling release [`latest-build`](https://github.com/Slayer7411/MINOS-741/releases/tag/latest-build)
+* **stable releases**: only the named releases `vX.Y.Z`
+* **own folder**: `latest.json` and the DMG in a folder (`scripts/make-dmg.sh --publish <folder>`)
+* **off**
+
+checks 30 s after start, then every 6 h (own folder: every 30 min). a new build shows in the status bar and the menu. with automatic installs (off by default) it installs once no deck plays, LIVE is off and there was no input for 2 min. install: download, size and sha-256 check, replace the app, quit, start the new version. the old app stays next to it as `.MINOS-741-previous.app` (menu: restore previous version). only https to github.com.
+
+releases: `scripts/release.sh --rolling --yes` (`latest-build`) or `scripts/release.sh <version> --name <NAME> --yes`. both refuse without `--yes`; `--dry-run` only prints the commands.
+
 ## ◆ HARDWARE
 
 tested, works with:

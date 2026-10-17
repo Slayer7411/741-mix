@@ -26,6 +26,21 @@ private let t0 = Date(timeIntervalSinceReferenceDate: 1_000_000)
     #expect(log.history.count == 4)
 }
 
+@Test func stickyMessageStaysUntilDismissed() {
+    var log = StatusLog()
+    let id = log.post(.info, "Update verfügbar", key: "update", sticky: true, now: t0)
+    #expect(log.nextExpiry == nil)
+    log.expire(now: t0.addingTimeInterval(3600))
+    #expect(log.active.map(\.text) == ["Update verfügbar"])
+    #expect(log.jobCount == 0)   // kein Hintergrundjob
+    // gleicher Schlüssel ersetzt an der Stelle und bleibt sticky
+    log.post(.info, "Update verfügbar 2", key: "update", sticky: true, now: t0.addingTimeInterval(5))
+    #expect(log.active.count == 1)
+    #expect(log.active[0].sticky)
+    log.dismiss(id: id)
+    #expect(log.active.isEmpty)
+}
+
 @Test func statusDedupeByKeyReplacesInPlace() {
     var log = StatusLog()
     log.post(.info, "andere", key: "x", now: t0)
