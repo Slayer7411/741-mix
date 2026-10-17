@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 import AVFoundation
 import SwiftUI
 import MixCore
@@ -292,8 +293,8 @@ enum UISelfTest {
         check(mix.core.trackAudio(1) != nil, "Deck B lädt nach dem Auswerfen nicht")
     }
 
-    /// Track (wie vom Deck gezogen) auf den Kopf von Deck A fallen lassen: Ziel ist die Hosting-View, die SwiftUI für
-    /// `onDrop` registriert; die Ziehen-Sitzung selbst braucht den Fensterserver und wird durch NSDraggingInfo ersetzt
+    /// Tracks aus der Tabelle auf ein Deck fallen lassen: auf den Kopf und auf die Wellenform (ganze Deckfläche), mehrere
+    /// Zeilen laden die erste. Die Ziehen-Sitzung selbst braucht den Fensterserver und wird durch NSDraggingInfo ersetzt
     static func dropOnDeck(_ u: UIDriver, _ t: [Track]) {
         if u.mix.deck(0).playing { u.mix.togglePlay(0) }
         guard let hdr = u.named("A header") else { fail("Deck-Kopf A nicht gefunden") }
@@ -316,6 +317,16 @@ enum UISelfTest {
         check(u.mix.deck(0).track?.key == other.key, "Finder-Datei: Deck A hat \(u.mix.deck(0).track?.title ?? "nichts") statt \(other.title)")
         u.spin(30) { u.mix.core.trackAudio(0) != nil && u.mix.deck(0).grid != nil }
         check(u.mix.core.trackAudio(0) != nil, "Deck A lädt nach dem Drop nicht")
+        // ganze Deckfläche: Wellenform von Deck B; mehrere Zeilen laden die erste (Reihenfolge der Tabelle)
+        guard let deckB = u.named("deck B") else { fail("Deck B nicht gefunden") }
+        if u.mix.deck(1).playing { u.mix.togglePlay(1) }
+        let mid = u.center(deckB)
+        check(u.drop(string: TrackDrag.prefix + t[2].key, at: mid), "Drop auf die Wellenform von Deck B nicht angenommen")
+        u.spin(30) { u.mix.deck(1).track?.key == t[2].key }
+        check(u.mix.deck(1).track?.key == t[2].key, "Wellenform B: Deck B hat \(u.mix.deck(1).track?.title ?? "nichts") statt \(t[2].title)")
+        check(u.drop(strings: [TrackDrag.prefix + t[0].key, TrackDrag.prefix + t[1].key], at: mid), "Mehrfach-Drop auf Deck B nicht angenommen")
+        u.spin(30) { u.mix.deck(1).track?.key == t[0].key }
+        check(u.mix.deck(1).track?.key == t[0].key, "Mehrfach-Drop: Deck B hat \(u.mix.deck(1).track?.title ?? "nichts") statt des ersten Tracks \(t[0].title)")
     }
 
     /// ⌃ + Ziehen in der Wellenform von Deck A: Bereich auf Beats; Esc hebt ihn auf
@@ -781,19 +792,54 @@ final class UIDriver {
         spin(0.05)
     }
 
-    /// Ziehen und Ablegen eines Texts (Pasteboard) auf die Ansicht am Punkt, die Ziehen annimmt
-    /// `string`: Text-Eintrag (eigene Tracks); `file`: Dateieintrag wie vom Finder
-    func drop(string: String? = nil, file: URL? = nil, at p: NSPoint) -> Bool {
-        // wie AppKit: Ziel ist die innerste Ansicht am Punkt mit angemeldeten Typen (SwiftUI legt dafür eigene Ansichten
-        // neben den Inhalt, die beim Treffer-Test nicht auftauchen)
-        guard let target = views.filter({ !$0.registeredDraggedTypes.isEmpty && frame($0).contains(p) && $0.isDescendant(of: host) })
-            .min(by: { frame($0).width * frame($0).height < frame($1).width * frame($1).height }) else { return false }
-        // bleibt bis zum Ende: SwiftUI liest es nach dem Drop asynchron
+    /// Trefferkette für Meldungen (Diagnose eines fehlgeschlagenen Ziehens)
+    static func chain(_ v: NSView?) -> String {
+        var out: [String] = []
+        var c = v
+        while let x = c, out.count < 10 {
+            out.append(String(describing: Swift.type(of: x)).prefix(40) + (x.registeredDraggedTypes.isEmpty ? "" : "[\(x.registeredDraggedTypes.count)]"))
+            c = x.superview
+        }
+        return out.joined(separator: " < ")
+    }
+
+    /// angemeldet für einen der Typen des Zugs (Typen gleich oder ein Untertyp davon, wie AppKit es abgleicht)
+    static func accepts(_ v: NSView, _ types: [NSPasteboard.PasteboardType]) -> Bool {
+        v.registeredDraggedTypes.contains { reg in
+            types.contains { t in
+                if t == reg { return true }
+                guard let a = UTType(t.rawValue), let b = UTType(reg.rawValue) else { return false }
+                return a.conforms(to: b)
+            }
+        }
+    }
+
+    /// Ziehen und Ablegen eines Texts (Pasteboard) auf die Ansicht am Punkt, die Ziehen annimmt. Wie AppKit: die innerste
+    /// Ansicht unter dem Zeiger (Trefferkette), dann aufwärts bis zur ersten, die für die Typen des Zugs angemeldet ist.
+    /// Ist keine Ansicht angemeldet, nimmt AppKit den Zug nicht an (dann ist die Ablage kaputt, nicht der Test zu lax)
+    /// `string`: Text-Eintrag (eigene Tracks); `strings`: je Zeile ein Eintrag; `file`: Dateieintrag wie vom Finder
+    func drop(string: String? = nil, strings: [String] = [], file: URL? = nil, at p: NSPoint) -> Bool {
         let pb = UIDriver.dragPasteboard ?? NSPasteboard.withUniqueName()
         UIDriver.dragPasteboard = pb
         pb.clearContents()
-        if let string { pb.setString(string, forType: .string) }
+        let texts = strings + (string.map { [$0] } ?? [])
+        // je Zeile ein Eintrag, wie die Tabelle sie schreibt (Reihenfolge der Zeilen bleibt)
+        if texts.count == 1 { pb.setString(texts[0], forType: .string) } else if texts.count > 1 {
+            pb.writeObjects(texts.map { s in let i = NSPasteboardItem(); i.setString(s, forType: .string); return i })
+        }
         if let file { pb.setString(file.absoluteString, forType: .fileURL) }
+        // Zug aus Tabelle oder Baum: Beginn wie beim echten Ziehen (Tabelle: willBeginAt; Baum: gedrückt gezogen), vor dem Treffer
+        let tree = texts.contains { $0.hasPrefix(TrackDrag.prefix) || $0.hasPrefix(TreeDrag.prefix) }
+        let held = TreeDragGate.buttonHeld
+        if tree { TreeDragGate.begin(); TreeDragGate.buttonHeld = { true } }
+        defer { if tree { TreeDragGate.end(); TreeDragGate.buttonHeld = held } }
+        let root = window.contentView?.superview ?? window.contentView
+        var v = root?.hitTest(root?.convert(p, from: nil) ?? .zero)
+        while let c = v, !UIDriver.accepts(c, pb.types ?? []) { v = c.superview }
+        guard let target = v else {
+            UISelfTest.log("ziel nicht gefunden · Trefferkette: " + UIDriver.chain(root?.hitTest(root?.convert(p, from: nil) ?? .zero)))
+            return false
+        }
         let info = UITestDragInfo(window: window, location: p, pasteboard: pb)
         // wie beim echten Ziehen: Betreten, einige Bewegungen über dem Ziel (SwiftUI wertet sie im nächsten Durchlauf aus), Ablegen
         guard target.draggingEntered(info) != [] else { return false }
@@ -1680,6 +1726,12 @@ extension UISelfTest {
         u.spin(1) { store.playlists.parent(of: pl.id) == .some(folder.id) }
         check(store.playlists.parent(of: pl.id) == .some(folder.id), "Playlist nicht im Ordner")
         log("drop auf playlist + ⌫ in der liste + eintrag in ordner ok")
+        // PREPARATION: Track auf die Zeile ziehen, sie hängt ihn an (Zone „tree drop prep“)
+        guard let prep = u.views.first(where: { ($0 as? UITestNamed)?.name == "tree drop prep" && $0.window === u.window }) else { fail("PREPARATION: keine Ablagezone im Baum") }
+        check(u.drop(string: TrackDrag.prefix + t[1].key, at: u.center(prep)), "Drop auf PREPARATION nicht angenommen")
+        u.spin(3) { store.preparation.contains(t[1].key) }
+        check(store.preparation.contains(t[1].key), "PREPARATION nach dem Drop ohne den Track (\(store.preparation.count) Einträge)")
+        log("drop auf preparation ok")
         // Tabelle: Zeile als Text ziehbar, Ablegen aus der eigenen Tabelle = Reihenfolge (zeigt die Playlist-Reihenfolge)
         store.editPlaylists("UI") { $0.addTracks(t.map(\.key), to: pl.id) }
         pane.sortOrder = [KeyPathComparator(\Track.title)]
